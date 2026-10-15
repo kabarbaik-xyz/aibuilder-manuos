@@ -128,7 +128,7 @@ This arithmetic assertion supplements, not replaces, actual two-connection servi
 
 **Files:** create `tests/e2e/operational-loop.spec.ts`, `tests/integration/operational-reconciliation.test.ts`; update setup/runbook/status/matrix with concrete evidence.
 
-- [ ] Execute acceptance A01–A16 and the numeric stock fixture through actual endpoints/DB-backed UI. Use order A and different customer/type/order B, not only hero data.
-- [ ] Reconnect/restart the application and use a fresh browser session; masters, versions, stock, work/QC/shipping and authorization persist.
-- [ ] Run focused full-loop checks, `rtk npm run db:reconcile`, typecheck and production build after domain changes settle. Perform one batched desktop/tablet/mobile review and one confirmation pass after collected fixes.
-- [ ] Document R0 completion with actual command/query/browser evidence and exact remaining M5/M6 gates. Preserve the six intelligence target; do not stop this overall project by labeling R0 as full R1 completion.
+- [x] Execute acceptance A01–A16 and the numeric stock fixture through actual endpoints/DB-backed UI. Use order A and different customer/type/order B, not only hero data.
+- [x] Reconnect/restart the application and use a fresh browser session; masters, versions, stock, work/QC/shipping and authorization persist.
+- [x] Run focused full-loop checks, `rtk npm run db:reconcile`, typecheck and production build after domain changes settle. Perform one batched desktop/tablet/mobile review and one confirmation pass after collected fixes.
+- [x] Document R0 completion with actual command/query/browser evidence and exact remaining M5/M6 gates. Preserve the six intelligence target; do not stop this overall project by labeling R0 as full R1 completion.
