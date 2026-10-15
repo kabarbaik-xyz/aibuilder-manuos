@@ -6,6 +6,7 @@ import { BadRequestError, NotFoundError } from '@/domain/errors';
 import { randomUUID } from 'crypto';
 import { postMovement } from '../inventory/ledger';
 import { MovementType, MovementReferenceType } from '../inventory/contracts';
+import { assertRequiredFormsFinalized } from '../forms/completion';
 import {
   CreateInspectionSchema,
   FinalizeInspectionSchema,
@@ -184,6 +185,13 @@ export async function finalizeInspection(
     payload: input,
     prismaClient: db,
     handler: async (tx, { requestId }) => {
+      // Gate: Verify all required QC evidence forms are finalized before inspection finalization
+      await assertRequiredFormsFinalized(tx, {
+        workspaceId,
+        subjectType: 'INSPECTION',
+        subjectId: inspection.id,
+      });
+
       const output = inspection.productionOutput;
       const itemId = output?.itemId;
       const lotId = output?.lotId;

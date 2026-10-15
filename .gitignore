@@ -58,3 +58,5 @@ artifacts/ui-restoration/
 .next-ui/
 
 .next-ui-build/
+
+storage/*

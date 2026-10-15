@@ -19,6 +19,7 @@ export const MASTER_NAV_ITEMS: readonly MasterNavItem[] = [
   { title: 'Skills & certifications', href: '/settings/skills-certifications', icon: 'certificate', permissions: ['resource.manage'] },
   { title: 'Order types', href: '/settings/order-types', icon: 'order-type', permissions: ['order.read', 'workflow.author'] },
   { title: 'QC checklists', href: '/settings/qc-checklists', icon: 'checklist', permissions: ['quality.read', 'quality.configure'] },
+  { title: 'Form templates', href: '/settings/forms', icon: 'checklist', permissions: ['forms.read', 'forms.create', 'owner'] },
 ];
 
 export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
@@ -35,11 +36,24 @@ export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
   { title: 'Customer Portal', href: '/portal/orders', icon: 'order', permissions: ['customer_order.read_own'] },
 ];
 
-export function getWorkflowNavigation(permissions: readonly string[]) {
+export const ADMIN_NAV_ITEMS: readonly MasterNavItem[] = [
+  { title: 'Users', href: '/settings/users', icon: 'users', permissions: ['access.manage'] },
+  { title: 'Roles', href: '/settings/roles', icon: 'shield', permissions: ['access.manage'] },
+  { title: 'Permissions', href: '/settings/permissions', icon: 'checklist', permissions: ['access.manage'] },
+];
+
+export function getAdminNavigation(permissions: readonly string[], roles: readonly string[] = []) {
+  if (roles.includes('OWNER') || roles.includes('ACCESS_ADMIN')) return ADMIN_NAV_ITEMS;
+  return ADMIN_NAV_ITEMS.filter(item => item.permissions.some(permission => permissions.includes(permission)));
+}
+
+export function getWorkflowNavigation(permissions: readonly string[], roles: readonly string[] = []) {
+  if (roles.includes('OWNER')) return WORKFLOW_NAV_ITEMS;
   return WORKFLOW_NAV_ITEMS.filter((item) => item.permissions.some((permission) => permissions.includes(permission)));
 }
 
-export function getMasterNavigation(permissions: readonly string[]) {
+export function getMasterNavigation(permissions: readonly string[], roles: readonly string[] = []) {
+  if (roles.includes('OWNER')) return MASTER_NAV_ITEMS;
   return MASTER_NAV_ITEMS.filter((item) => item.permissions.some((permission) => permissions.includes(permission)));
 }
 

@@ -16,6 +16,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/icons";
+import { WorkflowCanvas } from "./workflow-canvas";
+import { NodePalette } from "./node-palette";
+import { NodeInspector } from "./node-inspector";
+import { WorkflowCanvasLayout } from "../canvas-adapter";
+import { WorkflowNodeDefinition } from "@/domain/workflow-definition";
+import { GenerationPanel } from "@/features/builder-proposals/components/generation-panel";
+import { ProposalReview } from "@/features/builder-proposals/components/proposal-review";
+import { BuilderProposalDto } from "@/server/modules/builder-proposals/contracts";
 
 interface DefinitionEditorProps {
   template: WorkflowTemplateDto;
@@ -50,6 +58,10 @@ export function DefinitionEditor({
 
   const [fromNode, setFromNode] = useState("");
   const [toNode, setToNode] = useState("");
+
+  const [selectedNode, setSelectedNode] = useState<WorkflowNodeDefinition | null>(null);
+  const [canvasLayout, setCanvasLayout] = useState<WorkflowCanvasLayout | undefined>(undefined);
+  const [aiProposal, setAiProposal] = useState<BuilderProposalDto | null>(null);
 
   const saveMutation = useSaveWorkflowVersionDraft(template.id, version.id);
   const actionMutation = useWorkflowVersionAction(template.id, version.id);
@@ -241,53 +253,99 @@ export function DefinitionEditor({
         </div>
       )}
 
-      {/* Graph Visual / Flow Preview */}
-      <div className="rounded-lg border bg-surface-muted p-6 border-line">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-ink">
-          Execution DAG Topology
-        </h3>
+      {/* AI Builder Assistant */}
+      {!isReadOnly && (
+        <div className="space-y-4">
+          {!aiProposal ? (
+            <GenerationPanel
+              target="WORKFLOW"
+              targetDraftId={version.id}
+              baseRevision={version.versionNumber}
+              onGenerated={(prop) => setAiProposal(prop)}
+            />
+          ) : (
+            <ProposalReview
+              proposal={aiProposal}
+              expectedTargetRevision={version.versionNumber}
+              onApplied={(ref) => {
+                setAiProposal(null);
+                try {
+                  const candidate = JSON.parse(aiProposal.candidateJson);
+                  setDefinition(candidate);
+                } catch {
+                  // ignore
+                }
+                router.refresh();
+              }}
+              onDiscard={() => setAiProposal(null)}
+            />
+          )}
+        </div>
+      )}
 
-        {definition.nodes.length === 0 ? (
-          <p className="text-sm text-muted">
-            No nodes defined in this workflow.
-          </p>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            {definition.nodes.map((n, idx) => {
-              const outEdges = definition.edges.filter(
-                (e) => e.fromNodeKey === n.key,
-              );
-              return (
-                <React.Fragment key={n.key}>
-                  <div className="flex flex-col rounded-md border bg-white p-3 shadow-sm min-w-37.5 border-line">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold text-primary">
-                        {n.key}
-                      </span>
-                      <span className="text-xs text-muted">{n.type}</span>
-                    </div>
-                    <strong className="text-sm mt-1">{n.name}</strong>
-                    <span className="text-xs text-muted mt-1">
-                      {n.plannedDurationMinutes} mins
-                    </span>
-                    {!isReadOnly && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveNode(n.key)}
-                        className="mt-2 text-xs text-danger hover:underline text-left"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                  {idx < definition.nodes.length - 1 && (
-                    <span className="text-muted font-bold">→</span>
-                  )}
-                </React.Fragment>
-              );
-            })}
+      {/* Interactive Workflow Canvas & Inspector */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-8 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-ink">
+              Interactive Execution DAG Canvas
+            </h3>
+            <span className="text-xs text-muted">
+              {definition.nodes.length} nodes · {definition.edges.length} dependencies
+            </span>
           </div>
-        )}
+
+          <WorkflowCanvas
+            definition={definition}
+            layout={canvasLayout}
+            onChange={(res) => {
+              setDefinition(res.definition);
+              setCanvasLayout(res.layout);
+            }}
+            onSelectNode={setSelectedNode}
+            readOnly={isReadOnly}
+          />
+        </div>
+
+        <div className="lg:col-span-4 space-y-4">
+          <NodePalette
+            onAddNode={(type) => {
+              const count = definition.nodes.length + 1;
+              const prefix = type === 'OPERATION' ? 'OP' : type === 'INSPECTION' ? 'QC' : 'AP';
+              const key = `${prefix}${count * 10}`;
+              setDefinition((prev) => ({
+                ...prev,
+                nodes: [
+                  ...prev.nodes,
+                  {
+                    key,
+                    name: `New ${type.toLowerCase()} step`,
+                    type,
+                    plannedDurationMinutes: 60,
+                  },
+                ],
+              }));
+            }}
+            disabled={isReadOnly}
+          />
+
+          <NodeInspector
+            node={selectedNode}
+            onChange={(updated) => {
+              setSelectedNode(updated);
+              setDefinition((prev) => ({
+                ...prev,
+                nodes: prev.nodes.map((n) => (n.key === updated.key ? updated : n)),
+              }));
+            }}
+            onDelete={(key) => {
+              handleRemoveNode(key);
+              setSelectedNode(null);
+            }}
+            catalog={catalog}
+            readOnly={isReadOnly}
+          />
+        </div>
       </div>
 
       {/* Node and Edge Config (only editable in DRAFT) */}

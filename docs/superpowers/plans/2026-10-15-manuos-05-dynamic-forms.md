@@ -128,11 +128,11 @@ Add explicit permissions: `forms.read`, `forms.create`, `forms.edit_draft`, `for
 
 **Files:** create `docs/dynamic-forms-integration.md`; modify `contracts/openapi.yaml` and the completed permission catalog; create `src/domain/forms/{types,schema,conditions,validation}.ts`, `src/domain/forms/validation.test.ts`.
 
-- [ ] Verify preceding gates and record actual auth, command, DB, documents, workflow, order and QC integration points; stop dependent work if the prerequisite implementation is incomplete.
-- [ ] Define the discriminated Zod field schema implementing the bounds above; export the three shared functions and types verbatim in meaning.
-- [ ] Write tests before implementation: duplicate keys, unknown kind, invalid field configuration, forward/cyclic condition, invalid date/decimal/option, unknown answer, hidden required field, and hidden stale value removal.
-- [ ] Add an exact fixture: `finish` select with `painted/raw`; required `paint_code` text visible only when finish equals painted. FINAL `{finish:'painted'}` fails at paint_code; `{finish:'raw',paint_code:'OLD'}` succeeds normalized to `{finish:'raw'}`.
-- [ ] Run `rtk npm test -- src/domain/forms/validation.test.ts`; require all named cases passing. Update OpenAPI schemas/examples for the same semantics.
+- [x] Verify preceding gates and record actual auth, command, DB, documents, workflow, order and QC integration points; stop dependent work if the prerequisite implementation is incomplete.
+- [x] Define the discriminated Zod field schema implementing the bounds above; export the three shared functions and types verbatim in meaning.
+- [x] Write tests before implementation: duplicate keys, unknown kind, invalid field configuration, forward/cyclic condition, invalid date/decimal/option, unknown answer, hidden required field, and hidden stale value removal.
+- [x] Add an exact fixture: `finish` select with `painted/raw`; required `paint_code` text visible only when finish equals painted. FINAL `{finish:'painted'}` fails at paint_code; `{finish:'raw',paint_code:'OLD'}` succeeds normalized to `{finish:'raw'}`.
+- [x] Run `rtk npm test -- src/domain/forms/validation.test.ts`; require all named cases passing. Update OpenAPI schemas/examples for the same semantics.
 
 ## Task DF02 — Persist templates, publication and pinned instances
 
@@ -140,10 +140,10 @@ Add explicit permissions: `forms.read`, `forms.create`, `forms.edit_draft`, `for
 
 **Interfaces:** `publishFormVersion(principal,input): Promise<{versionId:string;hash:string}>`; `createFormInstance(tx,input): Promise<{instanceId:string}>`. Use the completed Principal/command types; createFormInstance must run inside the domain transaction, not start an unrelated commit.
 
-- [ ] Write integration cases against a temporary SQLite database for cross-workspace links, invalid parent combinations, duplicate subject/binding, immutable publication and rollback.
-- [ ] Implement the tables, constraints, publication lifecycle, usage lookup and scoped policies; new version cloning preserves old field keys but permits deliberate schema evolution.
-- [ ] Prove publishing v2 cannot alter an existing instance pinned to v1; retired/archive versions remain readable to authorized historical subjects and cannot be newly assigned.
-- [ ] Run `rtk npm run test:integration -- tests/integration/forms-versioning.test.ts`; inspect applied constraints and DB rows, not only service return values.
+- [x] Write integration cases against a temporary SQLite database for cross-workspace links, invalid parent combinations, duplicate subject/binding, immutable publication and rollback.
+- [x] Implement the tables, constraints, publication lifecycle, usage lookup and scoped policies; new version cloning preserves old field keys but permits deliberate schema evolution.
+- [x] Prove publishing v2 cannot alter an existing instance pinned to v1; retired/archive versions remain readable to authorized historical subjects and cannot be newly assigned.
+- [x] Run `rtk npm run test:integration -- tests/integration/forms-versioning.test.ts`; inspect applied constraints and DB rows, not only service return values.
 
 ## Task DF03 — Real submission commands and private evidence
 
@@ -151,11 +151,11 @@ Add explicit permissions: `forms.read`, `forms.create`, `forms.edit_draft`, `for
 
 **Interfaces:** `saveFormDraft(principal,input)`, `finalizeFormSubmission(principal,input)`, `createFormCorrection(principal,input)` return existing committed-command envelopes with instance/submission IDs and revision. Server resolves the pinned definition itself.
 
-- [ ] Test unauthorized and other-workspace/customer requests; wrong assignment; stale expectedVersion; retired subject; forged document/ref IDs; reference archived after draft save; final edits and correction without reason.
-- [ ] Implement shared server validation and scoped reference/document resolution. Draft may be incomplete but cannot contain invalid supplied values. Preserve existing finalized evidence until an authorized correction finalizes atomically.
-- [ ] Test concurrent finalize and retry: one finalized revision, one audit result, identical authorized idempotent replay; hash mismatch returns 409; failed validation creates no final/audit success.
-- [ ] Keep uploaded files private. Apply existing abandoned-upload cleanup policy; no raw URLs or new public attachment directory.
-- [ ] Run `rtk npm run test:integration -- tests/integration/forms-submissions.test.ts`; verify persisted answer/document links and denial responses through real local HTTP in the test harness.
+- [x] Test unauthorized and other-workspace/customer requests; wrong assignment; stale expectedVersion; retired subject; forged document/ref IDs; reference archived after draft save; final edits and correction without reason.
+- [x] Implement shared server validation and scoped reference/document resolution. Draft may be incomplete but cannot contain invalid supplied values. Preserve existing finalized evidence until an authorized correction finalizes atomically.
+- [x] Test concurrent finalize and retry: one finalized revision, one audit result, identical authorized idempotent replay; hash mismatch returns 409; failed validation creates no final/audit success.
+- [x] Keep uploaded files private. Apply existing abandoned-upload cleanup policy; no raw URLs or new public attachment directory.
+- [x] Run `rtk npm run test:integration -- tests/integration/forms-submissions.test.ts`; verify persisted answer/document links and denial responses through real local HTTP in the test harness.
 
 ## Task DF04 — Accessible editor and shared renderer
 
@@ -163,11 +163,11 @@ Add explicit permissions: `forms.read`, `forms.create`, `forms.edit_draft`, `for
 
 **Interfaces:** `FormRenderer({definition,value,onChange,issues,readOnly})` uses shared definition/validation types. `SubmissionPanel({instanceId})` owns fetching, draft save, finalization, conflicts and evidence links. Parent components never recreate validators.
 
-- [ ] Build actual catalog/create/edit/version/review/publish paths with fetched state; permissions apply to controls and server commands.
-- [ ] Implement ordered field editing, allowed conditions, bounded options/reference registry, desktop preview and mobile tabs. Render every supported kind with a stable input ID, visible label and help/error association.
-- [ ] Draft edits remain recoverable after network failure; stale save presents reload/review options and never silently overwrites another editor. Final evidence renders read-only with version/actor/time.
-- [ ] Browser test create → configure conditional field → preview → save → publish → reload; verify required errors, keyboard ordering, focus management and no overflow at 390 px and 320 px.
-- [ ] Run `rtk npm run test:e2e -- tests/e2e/forms-editor.spec.ts`. Record desktop/mobile evidence separately from component or mocked network tests.
+- [x] Build actual catalog/create/edit/version/review/publish paths with fetched state; permissions apply to controls and server commands.
+- [x] Implement ordered field editing, allowed conditions, bounded options/reference registry, desktop preview and mobile tabs. Render every supported kind with a stable input ID, visible label and help/error association.
+- [x] Draft edits remain recoverable after network failure; stale save presents reload/review options and never silently overwrites another editor. Final evidence renders read-only with version/actor/time.
+- [x] Browser test create → configure conditional field → preview → save → publish → reload; verify required errors, keyboard ordering, focus management and no overflow at 390 px and 320 px.
+- [x] Run `rtk npm run test:e2e -- tests/e2e/forms-editor.spec.ts`. Record desktop/mobile evidence separately from component or mocked network tests.
 
 ## Task DF05 — Bind order, task and QC contexts to completion gates
 
@@ -175,25 +175,25 @@ Add explicit permissions: `forms.read`, `forms.create`, `forms.edit_draft`, `for
 
 **Interface:** `assertRequiredFormsFinalized(tx,{subjectType,subjectId,workspaceId}): Promise<void>` checks the transaction snapshot and pinned required instances; it never finalizes submissions or bypasses ordinary domain prerequisites.
 
-- [ ] Assign one ORDER_SPEC to an order type, one TASK_EVIDENCE to an operation node and one QC_EVIDENCE to a checklist revision. Validate matching purpose and published version on assignment/publication.
-- [ ] Instantiate order evidence atomically at creation using selected type default; task/inspection instances use pinned published parent revisions. Existing records receive no retroactive blockers.
-- [ ] Integrate the shared SubmissionPanel directly into existing My Work detail and expose persisted evidence status in its list/read model. Keep the actual assignment policy and existing operational context; direct links and API calls must enforce the same access rules.
-- [ ] Require applicable order evidence at release, task evidence at finish and QC evidence at inspection finalize. Starting, saving drafts and partial production retain their existing semantics. A finalized supplemental form never authorizes inventory/QC/workflow side effects by itself.
-- [ ] Gate checks and domain transition share the same short transaction; concurrent correction must not invalidate checked evidence silently. Once consumed by a released/completed record, correction requires the domain's authorized amendment/review path and preserves provenance; do not reopen completed work automatically.
-- [ ] Prove a technician cannot finish missing evidence through direct API, and QC cannot accept output merely by setting an answer named passed. Prove existing authoritative stock and outcome invariants still hold.
-- [ ] Browser-test My Work list → assigned detail → conditional field/attachment → save draft → reload → submit → finish. Verify draft survives reload, missing required answers block submission/completion, unassigned users cannot write, and submission alone causes no completion or stock posting.
-- [ ] Run `rtk npm run test:integration -- tests/integration/forms-domain-gates.test.ts` and `rtk npm run test:e2e -- tests/e2e/forms-operational-loop.spec.ts` with actual DB-backed requests.
+- [x] Assign one ORDER_SPEC to an order type, one TASK_EVIDENCE to an operation node and one QC_EVIDENCE to a checklist revision. Validate matching purpose and published version on assignment/publication.
+- [x] Instantiate order evidence atomically at creation using selected type default; task/inspection instances use pinned published parent revisions. Existing records receive no retroactive blockers.
+- [x] Integrate the shared SubmissionPanel directly into existing My Work detail and expose persisted evidence status in its list/read model. Keep the actual assignment policy and existing operational context; direct links and API calls must enforce the same access rules.
+- [x] Require applicable order evidence at release, task evidence at finish and QC evidence at inspection finalize. Starting, saving drafts and partial production retain their existing semantics. A finalized supplemental form never authorizes inventory/QC/workflow side effects by itself.
+- [x] Gate checks and domain transition share the same short transaction; concurrent correction must not invalidate checked evidence silently. Once consumed by a released/completed record, correction requires the domain's authorized amendment/review path and preserves provenance; do not reopen completed work automatically.
+- [x] Prove a technician cannot finish missing evidence through direct API, and QC cannot accept output merely by setting an answer named passed. Prove existing authoritative stock and outcome invariants still hold.
+- [x] Browser-test My Work list → assigned detail → conditional field/attachment → save draft → reload → submit → finish. Verify draft survives reload, missing required answers block submission/completion, unassigned users cannot write, and submission alone causes no completion or stock posting.
+- [x] Run `rtk npm run test:integration -- tests/integration/forms-domain-gates.test.ts` and `rtk npm run test:e2e -- tests/e2e/forms-operational-loop.spec.ts` with actual DB-backed requests.
 
 ## Task DF06 — History, intelligence compatibility and release proof
 
 **Files:** extend existing authorized intelligence-context builders and document read models; create `tests/integration/forms-history-context.test.ts`; update `docs/dynamic-forms-integration.md`, backup/restore verification and existing acceptance evidence.
 
-- [ ] Expose only authorized finalized supplemental answers to intelligence with form/version/subject/submission provenance. Treat answer text and filenames as untrusted data; no instructions or automatic commands from form content.
-- [ ] Schema/answer revision changes invalidate relevant computed/AI caches. Do not silently inject newly captured fields as scheduling durations, stock quantities or Promise Engine parameters; map any future domain input through an explicit reviewed adapter.
-- [ ] Test tenant/customer privacy, draft exclusion, stale-cache invalidation and v1/v2 history. Verify corrections preserve original audit evidence.
-- [ ] Run focused suites, `rtk npm run typecheck`, `rtk npm test` and `rtk npm run build`; resolve failures attributable to this change and record unrelated baseline failures separately.
-- [ ] Restart and restore an isolated backup; verify templates, bindings, pinned versions, answers and attachments remain accessible under the same policies. Never restore over a live developer DB implicitly.
-- [ ] Record completion against the acceptance matrix below. Runtime, browser, database and live AI-provider evidence remain separate; no provider call is required to prove the form engine itself.
+- [x] Expose only authorized finalized supplemental answers to intelligence with form/version/subject/submission provenance. Treat answer text and filenames as untrusted data; no instructions or automatic commands from form content.
+- [x] Schema/answer revision changes invalidate relevant computed/AI caches. Do not silently inject newly captured fields as scheduling durations, stock quantities or Promise Engine parameters; map any future domain input through an explicit reviewed adapter.
+- [x] Test tenant/customer privacy, draft exclusion, stale-cache invalidation and v1/v2 history. Verify corrections preserve original audit evidence.
+- [x] Run focused suites, `rtk npm run typecheck`, `rtk npm test` and `rtk npm run build`; resolve failures attributable to this change and record unrelated baseline failures separately.
+- [x] Restart and restore an isolated backup; verify templates, bindings, pinned versions, answers and attachments remain accessible under the same policies. Never restore over a live developer DB implicitly.
+- [x] Record completion against the acceptance matrix below. Runtime, browser, database and live AI-provider evidence remain separate; no provider call is required to prove the form engine itself.
 
 ## Acceptance matrix
 
@@ -216,8 +216,8 @@ Add explicit permissions: `forms.read`, `forms.create`, `forms.edit_draft`, `for
 - [x] Database, API, permission, UI, workflow gates, history and tests have assigned tasks and concrete failure cases.
 - [x] Existing core manufacturing records remain authoritative; form version changes do not mutate historical work.
 - [x] Initial builder scope is bounded; arbitrary scripting and a full low-code platform are excluded.
-- [ ] At execution entry, verify actual integration paths and preceding completion evidence.
-- [ ] Complete DF01–DF06 and WB01–WB03 and record evidence before claiming the complete follow-up is implemented.
+- [x] At execution entry, verify actual integration paths and preceding completion evidence.
+- [x] Complete DF01–DF06 and WB01–WB03 and record evidence before claiming the complete follow-up is implemented.
 
 ## Task WB01 — React Flow canvas over the existing workflow engine
 
@@ -227,12 +227,12 @@ Add explicit permissions: `forms.read`, `forms.create`, `forms.edit_draft`, `for
 
 **Interfaces:** `toCanvas(definition,layout)` returns React Flow nodes/edges; `fromCanvas(nodes,edges)` returns a typed domain definition for ordinary server validation. `layout` stores bounded node positions and viewport separately from executable definition content. Reuse stable domain node keys; exclude React callbacks, selection state and arbitrary node data from persistence.
 
-- [ ] Pin `@xyflow/react` only after checking the installed React/Next versions; import its stylesheet in the scoped integration and test production build. Follow official [custom node](https://reactflow.dev/learn/customization/custom-nodes) and [connection validation](https://reactflow.dev/examples/interaction/validation) guidance.
-- [ ] Implement custom OPERATION, INSPECTION and APPROVAL nodes, handles, palette drag/drop, selection inspector, edge connect/delete, zoom/pan/fit, undo/redo and explicit save. Keep structured add/connect controls available for keyboard/touch users; mobile uses palette buttons and an inspector sheet rather than requiring precision drag.
-- [ ] Map existing saved workflows into the canvas without losing guards, form bindings, resources, durations or completion policies. Persist layout with the draft revision; moving a node never changes dependency semantics or mutates a published version.
-- [ ] Use connection checks to reject self/duplicate edges and visibly flag cycles/missing references; always rerun the existing authoritative graph validator on save/review/publish. Render errors against node/edge/inspector fields. Published views are read-only and edits explicitly fork a new version.
-- [ ] Test round-trip semantic equivalence and reload of saved positions. Browser test palette → drag → connect → configure form binding → save → reload; reject cyclic publish by direct API as well as UI. Test keyboard/touch alternate path and stale concurrent save.
-- [ ] Run `rtk npm test -- src/features/workflows/canvas-adapter.test.ts`, `rtk npm run test:e2e -- tests/e2e/workflow-canvas.spec.ts` and `rtk npm run build`.
+- [x] Pin `@xyflow/react` only after checking the installed React/Next versions; import its stylesheet in the scoped integration and test production build. Follow official [custom node](https://reactflow.dev/learn/customization/custom-nodes) and [connection validation](https://reactflow.dev/examples/interaction/validation) guidance.
+- [x] Implement custom OPERATION, INSPECTION and APPROVAL nodes, handles, palette drag/drop, selection inspector, edge connect/delete, zoom/pan/fit, undo/redo and explicit save. Keep structured add/connect controls available for keyboard/touch users; mobile uses palette buttons and an inspector sheet rather than requiring precision drag.
+- [x] Map existing saved workflows into the canvas without losing guards, form bindings, resources, durations or completion policies. Persist layout with the draft revision; moving a node never changes dependency semantics or mutates a published version.
+- [x] Use connection checks to reject self/duplicate edges and visibly flag cycles/missing references; always rerun the existing authoritative graph validator on save/review/publish. Render errors against node/edge/inspector fields. Published views are read-only and edits explicitly fork a new version.
+- [x] Test round-trip semantic equivalence and reload of saved positions. Browser test palette → drag → connect → configure form binding → save → reload; reject cyclic publish by direct API as well as UI. Test keyboard/touch alternate path and stale concurrent save.
+- [x] Run `rtk npm test -- src/features/workflows/canvas-adapter.test.ts`, `rtk npm run test:e2e -- tests/e2e/workflow-canvas.spec.ts` and `rtk npm run build`.
 
 ## Task WB02 — Authorized AI draft proposals for workflows and forms
 
@@ -242,24 +242,24 @@ Add explicit permissions: `forms.read`, `forms.create`, `forms.edit_draft`, `for
 
 **Contracts:** POST create accepts target, prompt (1–8,000 characters), optional editable draft ID/base revision and allowed source record IDs. Server fetches authorized context/catalogs. GET returns only scoped proposal data. POST apply accepts expected target revision, exact reviewed candidate hash, explicit human acknowledgment and idempotency key; server resolves stored candidate, rechecks current authority/references, rejects unresolved blocking findings/questions and writes a draft only. `PATCH /api/ai/builder-proposals/[id]` accepts expected proposal revision and edited candidate/question resolutions, regenerates candidate hash/validation, and invalidates acknowledgment. Never accept a client assertion that validation succeeded. Document all four operations in OpenAPI.
 
-- [ ] Write denial and lifecycle tests before provider wiring: no permission, cross-workspace source, published target, stale draft, changed candidate hash, unresolved blockers, missing human acknowledgment and retry with changed body.
-- [ ] Generate workflow candidates using existing typed node/edge/guard registry and real allowed resources/forms; generate form candidates using DF01's schema and purpose. Do not invent valid-looking master IDs or unsupported field/node types. Surface unknown requirements as explicit questions; do not assign authority or publish status based on model output.
-- [ ] Parse structured output with Zod and run the same deterministic domain validators used for manual drafts. Limit workflow candidates to 100 nodes/300 edges and forms to existing 100-field bounds; reject oversized/malformed output. Use actual provider timeout/cancellation, scoped cache keys, permission checks and request limits. Treat source text as untrusted content.
-- [ ] Missing provider credentials/timeouts/invalid output produce an explicit unavailable/failed generation result with no draft changes; retain manual builder use. Mock results are labelled and confined to tests/demo; never claim a canned workflow/form came from a live provider.
-- [ ] Implement apply as a short atomic command, separate from provider calls. Grant generation only to actual permitted authors; require existing target create/edit permissions to apply. Human acknowledgment authorizes draft application only, not publication. Normal review/publish still requires the corresponding business permission.
-- [ ] Test generation creates only a proposal, preview changes no domain records, apply creates/updates one draft once, stale/hash mismatch denies, and no published versions/instances/stock/task state changes. Run `rtk npm run test:integration -- tests/integration/builder-proposals.test.ts` using mocked provider plus actual SQLite/HTTP; record live-provider proof separately if available.
+- [x] Write denial and lifecycle tests before provider wiring: no permission, cross-workspace source, published target, stale draft, changed candidate hash, unresolved blockers, missing human acknowledgment and retry with changed body.
+- [x] Generate workflow candidates using existing typed node/edge/guard registry and real allowed resources/forms; generate form candidates using DF01's schema and purpose. Do not invent valid-looking master IDs or unsupported field/node types. Surface unknown requirements as explicit questions; do not assign authority or publish status based on model output.
+- [x] Parse structured output with Zod and run the same deterministic domain validators used for manual drafts. Limit workflow candidates to 100 nodes/300 edges and forms to existing 100-field bounds; reject oversized/malformed output. Use actual provider timeout/cancellation, scoped cache keys, permission checks and request limits. Treat source text as untrusted content.
+- [x] Missing provider credentials/timeouts/invalid output produce an explicit unavailable/failed generation result with no draft changes; retain manual builder use. Mock results are labelled and confined to tests/demo; never claim a canned workflow/form came from a live provider.
+- [x] Implement apply as a short atomic command, separate from provider calls. Grant generation only to actual permitted authors; require existing target create/edit permissions to apply. Human acknowledgment authorizes draft application only, not publication. Normal review/publish still requires the corresponding business permission.
+- [x] Test generation creates only a proposal, preview changes no domain records, apply creates/updates one draft once, stale/hash mismatch denies, and no published versions/instances/stock/task state changes. Run `rtk npm run test:integration -- tests/integration/builder-proposals.test.ts` using mocked provider plus actual SQLite/HTTP; record live-provider proof separately if available.
 
 ## Task WB03 — Preview, human validation and end-to-end acceptance
 
 **Files:** create `src/features/builder-proposals/{api,hooks}.ts`, `components/{generation-panel,proposal-review}.tsx`; integrate existing workflow/form editors and validators; add `tests/e2e/builder-ai-review.spec.ts`; update `docs/dynamic-forms-integration.md`.
 
-- [ ] Both builders expose Generate with AI and a bounded request/context selector. Render source/model status, assumptions, unanswered questions and node/field validation findings. Keep original draft unchanged until explicit application.
-- [ ] Workflow preview renders the proposed graph in the same React Flow adapter; form preview uses the same FormRenderer, including conditional/sample-answer behavior. Preview answers are local test inputs and never production submissions. Show a semantic diff for an existing draft and warn about removed fields/bindings/nodes.
-- [ ] Human can edit the candidate, rerun validation, answer blocking questions, discard, or explicitly acknowledge and apply the exact reviewed hash. Any candidate/context/base change invalidates prior acknowledgment. Block Apply when stale or invalid; block Publish until the current exact draft has a persisted authorized human review record tied to its content hash/version. Apply alone does not count as publication review.
-- [ ] Save review actor/time/hash through the existing review lifecycle; where it lacks this guarantee, extend the server lifecycle and its tests. Any semantic edit invalidates review. Layout-only changes may preserve semantic review when a separate layout hash makes this distinction explicit. Manual drafts also use the ordinary validated human publish action.
-- [ ] E2E for each builder: generate candidate → preview → observe validation warning/question → edit/resolve → acknowledge → apply → review → publish. Assert no side effects before apply, no auto-publish after apply, edited/stale content cannot reuse acknowledgment/review, and unauthorized direct publication fails.
-- [ ] Prove a newly published workflow with a newly published AI-assisted form can instantiate into an actual order/task and be completed through My Work; original in-flight work stays on pinned versions. No AI authorship grants extra privileges or bypasses manufacturing checks.
-- [ ] Run `rtk npm run test:e2e -- tests/e2e/builder-ai-review.spec.ts`, affected integration tests, typecheck and build. Record actual browser/mobile, database and provider evidence independently.
+- [x] Both builders expose Generate with AI and a bounded request/context selector. Render source/model status, assumptions, unanswered questions and node/field validation findings. Keep original draft unchanged until explicit application.
+- [x] Workflow preview renders the proposed graph in the same React Flow adapter; form preview uses the same FormRenderer, including conditional/sample-answer behavior. Preview answers are local test inputs and never production submissions. Show a semantic diff for an existing draft and warn about removed fields/bindings/nodes.
+- [x] Human can edit the candidate, rerun validation, answer blocking questions, discard, or explicitly acknowledge and apply the exact reviewed hash. Any candidate/context/base change invalidates prior acknowledgment. Block Apply when stale or invalid; block Publish until the current exact draft has a persisted authorized human review record tied to its content hash/version. Apply alone does not count as publication review.
+- [x] Save review actor/time/hash through the existing review lifecycle; where it lacks this guarantee, extend the server lifecycle and its tests. Any semantic edit invalidates review. Layout-only changes may preserve semantic review when a separate layout hash makes this distinction explicit. Manual drafts also use the ordinary validated human publish action.
+- [x] E2E for each builder: generate candidate → preview → observe validation warning/question → edit/resolve → acknowledge → apply → review → publish. Assert no side effects before apply, no auto-publish after apply, edited/stale content cannot reuse acknowledgment/review, and unauthorized direct publication fails.
+- [x] Prove a newly published workflow with a newly published AI-assisted form can instantiate into an actual order/task and be completed through My Work; original in-flight work stays on pinned versions. No AI authorship grants extra privileges or bypasses manufacturing checks.
+- [x] Run `rtk npm run test:e2e -- tests/e2e/builder-ai-review.spec.ts`, affected integration tests, typecheck and build. Record actual browser/mobile, database and provider evidence independently.
 
 ## Expanded acceptance gates
 

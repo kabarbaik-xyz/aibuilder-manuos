@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ApiError } from '@/lib/api/client';
-import { getMasterNavigation, getWorkflowNavigation, isMasterNavActive, type MasterNavItem } from '@/lib/master-navigation';
+import { getAdminNavigation, getMasterNavigation, getWorkflowNavigation, isMasterNavActive, type MasterNavItem } from '@/lib/master-navigation';
 import { useGraphStore } from '@/store/graph-store';
 import { useWorkspaceNavigation } from './workspace-navigation-context';
 import { Icon } from './icons';
@@ -19,5 +19,6 @@ export function MasterNavigation(){
  if(isPending)return <p className="small muted px-4" role="status">Loading workspace…</p>;
  if(error)return <nav className="nav-list" aria-label="Workspace access">{error instanceof ApiError && error.statusCode===401?<Link href="/login" className="nav-item" onClick={close}><Icon name="user"/>Sign in to workspace</Link>:<button type="button" className="nav-item" onClick={()=>refetch()}><Icon name="reset"/>Retry workspace access</button>}</nav>;
  const permissions=principal?.permissions??[];
- return <><NavigationGroup title="Operations" items={getWorkflowNavigation(permissions)} pathname={pathname}/><NavigationGroup title="Master data" items={getMasterNavigation(permissions)} pathname={pathname}/></>;
+ const roles=principal?.roles??[];
+ return <><NavigationGroup title="Operations" items={getWorkflowNavigation(permissions, roles)} pathname={pathname}/><NavigationGroup title="Master data" items={getMasterNavigation(permissions, roles)} pathname={pathname}/><NavigationGroup title="Admin" items={getAdminNavigation(permissions, roles)} pathname={pathname}/></>;
 }

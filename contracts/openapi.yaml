@@ -428,87 +428,117 @@ paths:
 
   /api/users:
     get:
-      summary: List workspace users and memberships
-      description: Requires access.manage permission.
+      summary: List safe membership read models in the current workspace
+      description: Requires access.manage. Includes membership version, roles and scope; never credentials.
       responses:
-        '200':
-          description: List of memberships
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/MembershipItem'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '200': { description: 'Envelope containing data array of memberships, identityUpdatedAt and canEditIdentity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
-      summary: Provision a new user and workspace membership
-      description: Requires access.manage permission.
+      summary: Create a new credential account and workspace membership atomically
+      description: Requires access.manage. Existing emails return 409 and never reset credentials. Idempotency and audit apply.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [name, email, password, roleCodes]
-              properties:
-                name:
-                  type: string
-                email:
-                  type: string
-                password:
-                  type: string
-                roleCodes:
-                  type: array
-                  items:
-                    type: string
-                customerId:
-                  type: string
-                  nullable: true
-                technicianId:
-                  type: string
-                  nullable: true
+            schema: { $ref: '#/components/schemas/CreateAccessUser' }
       responses:
-        '201':
-          description: User and membership created
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+        '201': { description: 'Committed envelope with data.userId, data.membershipId, data.name, data.email and meta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: 'Duplicate email or idempotency payload conflict' }
+  /api/users/{id}:
+    parameters:
+      - { name: id, in: path, required: true, description: Workspace membership ID, schema: { type: string } }
+    get:
+      summary: Read a workspace membership
+      description: Requires access.manage.
+      responses:
+        '200': { description: 'Envelope containing data membership' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: 'Membership not in current workspace' }
+    patch:
+      summary: Replace membership role assignments, scope and status
+      description: Requires access.manage. Optionally edits name/login email when the actor administers every linked workspace. Passwords are unchanged; changing email revokes target sessions and resets email verification. At least one active ACCESS_ADMIN must remain. Grants affect subsequent requests.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAccessMembership' }
+      responses:
+        '200': { description: 'Committed envelope with data.id, data.status, data.name, data.email, data.reauthenticate and meta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: 'Membership not in current workspace' }
+        '409': { description: 'Stale expectedVersion or idempotency conflict; transaction rolled back' }
   /api/roles:
     get:
-      summary: List workspace roles and their granted permissions
+      summary: List active and inactive workspace roles
+      description: Requires access.manage. Each row includes id, code, name, isSystem, isActive, version, memberCount and permission codes.
       responses:
-        '200':
-          description: Workspace roles
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        code:
-                          type: string
-                        name:
-                          type: string
-                        permissions:
-                          type: array
-                          items:
-                            type: string
+        '200': { description: 'Envelope containing data array of roles' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a custom workspace role
+      description: Requires access.manage. Permission codes must exist in the application catalog.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAccessRole' }
+      responses:
+        '201': { description: 'Committed envelope with data.id and meta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: 'Duplicate workspace role code or idempotency conflict' }
+  /api/roles/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Update a custom role name, permissions and active status
+      description: Requires access.manage. System role definitions are immutable. Inactive roles confer no permissions. No destructive delete.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAccessRole' }
+      responses:
+        '200': { description: 'Committed envelope with data.id and meta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: 'Role not in current workspace' }
+        '409': { description: 'Stale expectedVersion or idempotency conflict' }
+  /api/permissions:
+    get:
+      summary: Read the application permission catalog
+      description: Requires access.manage. Permission definitions are read-only and are maintained with application behavior.
+      responses:
+        '200': { description: 'Envelope containing data array with code, description, resource and action' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/access/scopes:
+    get:
+      summary: Read customer and technician link options for access administration
+      description: Requires access.manage. Returns only current workspace options. Assignments validate scope and technician uniqueness.
+      responses:
+        '200': { description: 'Envelope containing data.customers and data.technicians with id, code and name' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
 components:
+  parameters:
+    AccessIdempotency:
+      name: idempotency-key
+      in: header
+      description: Stable key per mutation attempt; replay returns the original result. A different payload with the same key conflicts.
+      schema: { type: string }
   responses:
     Unauthorized:
       description: Missing or expired session
@@ -529,6 +559,60 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    AccessScope:
+      type: object
+      required: [roleCodes]
+      properties:
+        roleCodes:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string }
+        customerId: { type: string, nullable: true, description: 'Required for CUSTOMER; only CUSTOMER role may be assigned to a customer-scoped membership.' }
+        technicianId: { type: string, nullable: true, description: 'Required for TECHNICIAN; must not already belong to another membership. Mutually exclusive with customer scope.' }
+    CreateAccessUser:
+      allOf:
+        - { $ref: '#/components/schemas/AccessScope' }
+        - type: object
+          required: [name, email, password]
+          properties:
+            name: { type: string, minLength: 1, maxLength: 120 }
+            email: { type: string, format: email }
+            password: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+    UpdateAccessMembership:
+      allOf:
+        - { $ref: '#/components/schemas/AccessScope' }
+        - type: object
+          required: [status, expectedVersion]
+          properties:
+            name: { type: string, minLength: 1, maxLength: 120 }
+            email: { type: string, format: email }
+            expectedIdentityUpdatedAt: { type: string, format: date-time, description: 'Required when name or email is supplied; use identityUpdatedAt from the membership read model.' }
+            status: { type: string, enum: [ACTIVE, DISABLED] }
+            expectedVersion: { type: integer, minimum: 1 }
+    CreateAccessRole:
+      type: object
+      required: [code, name, permissions]
+      properties:
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]{1,49}$' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string }
+    UpdateAccessRole:
+      type: object
+      required: [name, permissions, isActive, expectedVersion]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: { type: string }
+        isActive: { type: boolean }
+        expectedVersion: { type: integer, minimum: 1 }
     ErrorResponse:
       type: object
       required: [error, requestId]

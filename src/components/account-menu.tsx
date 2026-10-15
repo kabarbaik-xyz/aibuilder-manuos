@@ -8,6 +8,7 @@ import { apiRequest } from '@/lib/api/client';
 import { Icon } from './icons';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
+import { Badge } from './ui/badge';
 import { useGraphStore } from '../store/graph-store';
 
 interface PrincipalData {
@@ -45,7 +46,9 @@ export function AccountMenu() {
     .slice(0, 2)
     .join('')
     .toUpperCase();
-  const rolesLabel = principal?.roles?.join(', ') || 'Staff';
+  const roles = [...new Set(principal?.roles || [])];
+  const roleName = (code: string) => code.length <= 3 ? code : code.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+  const roleBadges = <div className="account-role-list">{roles.length ? roles.map(role => <Badge key={role}>{roleName(role)}</Badge>) : <span className="muted">No roles assigned</span>}</div>;
 
   useEffect(() => {
     const dismiss = (event: PointerEvent) => {
@@ -103,7 +106,8 @@ export function AccountMenu() {
         <div className="account-popover">
           <div className="account-identity">
             <strong>{name}</strong>
-            <span>{rolesLabel} · {principal?.email || 'Active session'}</span>
+            <span className="account-email">{principal?.email || 'Active session'}</span>
+            <div className="account-access-summary"><span className="account-workspace">{principal?.workspaceName || 'Workspace'}</span><span className="account-role-count">{roles.length} {roles.length === 1 ? 'role' : 'roles'}</span></div>
           </div>
           <nav aria-label="Account">
             <button type="button" onClick={() => openPanel('profile')}>
@@ -137,7 +141,7 @@ export function AccountMenu() {
           </div>
           <div className="spec-row">
             <span>Roles</span>
-            <strong>{rolesLabel}</strong>
+            {roleBadges}
           </div>
           {principal?.customerId && (
             <div className="spec-row">
@@ -166,7 +170,7 @@ export function AccountMenu() {
             </div>
             <div className="spec-row">
               <span>Roles</span>
-              <code className="text-xs font-mono">{rolesLabel}</code>
+              {roleBadges}
             </div>
           </div>
         </Dialog>

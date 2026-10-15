@@ -6,6 +6,7 @@ import { BadRequestError, NotFoundError } from '@/domain/errors';
 import { randomUUID } from 'crypto';
 import { postMovement } from '../inventory/ledger';
 import { MovementType, MovementReferenceType } from '../inventory/contracts';
+import { assertRequiredFormsFinalized } from '../forms/completion';
 import { z } from 'zod';
 
 export const RecordOutputSchema = z.object({
@@ -252,6 +253,13 @@ export async function recordOutput(
           commandId: requestId,
           notes: input.notes,
         },
+      });
+
+      // Gate: If task is completing or moving to WAITING_QC, verify required task evidence forms are finalized
+      await assertRequiredFormsFinalized(tx, {
+        workspaceId,
+        subjectType: 'TASK',
+        subjectId: task.id,
       });
 
       // Update Task status

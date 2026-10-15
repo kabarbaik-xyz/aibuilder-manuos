@@ -421,6 +421,69 @@
       "roles": [
         "CUSTOMER"
       ]
+    },
+    {
+      "code": "forms.read",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER",
+        "TECHNICIAN",
+        "QC",
+        "SALES"
+      ]
+    },
+    {
+      "code": "forms.create",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "QC"
+      ]
+    },
+    {
+      "code": "forms.edit_draft",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "QC"
+      ]
+    },
+    {
+      "code": "forms.submit_review",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "QC"
+      ]
+    },
+    {
+      "code": "forms.publish",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "forms.retire",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "forms.bind",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "forms.correct",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "QC"
+      ]
     }
   ]
 }

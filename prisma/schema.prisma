@@ -148,6 +148,11 @@ model Workspace {
   documents         Document[]
   documentLinks     DocumentLink[]
   passports         Passport[]
+  formTemplates     FormTemplate[]
+  formVersions      FormVersion[]
+  formBindings      FormBinding[]
+  formInstances     FormInstance[]
+  formSubmissions   FormSubmission[]
 
   @@map("workspaces")
 }
@@ -1643,6 +1648,7 @@ model Document {
   workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   uploadedBy     User           @relation(fields: [uploadedById], references: [id])
   links          DocumentLink[]
+  formSubmissionDocuments FormSubmissionDocument[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, storageKey])
@@ -1689,5 +1695,140 @@ model Passport {
   @@index([workspaceId, orderId])
   @@map("passports")
 }
+
+// -------------------------------------------------------------
+// Dynamic Forms & Schema-driven Evidence (Milestone 5 / Plan 05)
+// -------------------------------------------------------------
+
+model FormTemplate {
+  id          String        @id @default(uuid())
+  workspaceId String        @map("workspace_id")
+  code        String
+  name        String
+  purpose     String        // ORDER_SPEC | TASK_EVIDENCE | QC_EVIDENCE
+  description String?
+  archivedAt  DateTime?     @map("archived_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions    FormVersion[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("form_templates")
+}
+
+model FormVersion {
+  id             String         @id @default(uuid())
+  workspaceId    String         @map("workspace_id")
+  templateId     String         @map("template_id")
+  versionNumber  Int            @map("version_number")
+  status         String         @default("DRAFT") // DRAFT | REVIEW | PUBLISHED | RETIRED
+  schemaVersion  Int            @default(1) @map("schema_version")
+  definitionJson String         @map("definition_json")
+  contentHash    String         @map("content_hash")
+  publishedAt    DateTime?      @map("published_at")
+  publishedBy    String?        @map("published_by")
+  version        Int            @default(1)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  template       FormTemplate   @relation(fields: [workspaceId, templateId], references: [workspaceId, id], onDelete: Cascade)
+  bindings       FormBinding[]
+  instances      FormInstance[]
+
+  @@unique([templateId, versionNumber])
+  @@unique([workspaceId, id])
+  @@map("form_versions")
+}
+
+model FormBinding {
+  id                 String         @id @default(uuid())
+  workspaceId        String         @map("workspace_id")
+  formVersionId      String         @map("form_version_id")
+  context            String         // ORDER_TYPE | WORKFLOW_NODE | QC_CHECKLIST
+  orderTypeId        String?        @map("order_type_id")
+  workflowNodeKey    String?        @map("workflow_node_key")
+  workflowVersionId  String?        @map("workflow_version_id")
+  qcChecklistId      String?        @map("qc_checklist_id")
+  required           Boolean        @default(true)
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  workspace          Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  formVersion        FormVersion    @relation(fields: [workspaceId, formVersionId], references: [workspaceId, id], onDelete: Cascade)
+  instances          FormInstance[]
+
+  @@unique([workspaceId, id])
+  @@map("form_bindings")
+}
+
+model FormInstance {
+  id            String           @id @default(uuid())
+  workspaceId   String           @map("workspace_id")
+  formVersionId String           @map("form_version_id")
+  formBindingId String?          @map("form_binding_id")
+  subjectType   String           @map("subject_type") // ORDER | TASK | INSPECTION
+  subjectId     String           @map("subject_id")
+  status        String           @default("PENDING") // PENDING | DRAFT | SUBMITTED
+  version       Int              @default(1)
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  formVersion   FormVersion      @relation(fields: [workspaceId, formVersionId], references: [workspaceId, id], onDelete: Cascade)
+  formBinding   FormBinding?     @relation(fields: [workspaceId, formBindingId], references: [workspaceId, id])
+  submissions   FormSubmission[]
+
+  @@unique([workspaceId, subjectType, subjectId, formVersionId])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, subjectType, subjectId])
+  @@map("form_instances")
+}
+
+model FormSubmission {
+  id               String                   @id @default(uuid())
+  workspaceId      String                   @map("workspace_id")
+  instanceId       String                   @map("instance_id")
+  sequenceNumber   Int                      @map("sequence_number")
+  status           String                   @map("status") // DRAFT | FINAL
+  answersJson      String                   @map("answers_json")
+  actorId          String                   @map("actor_id")
+  finalizedAt      DateTime?                @map("finalized_at")
+  supersedesId     String?                  @map("supersedes_id")
+  correctionReason String?                  @map("correction_reason")
+  version          Int                      @default(1)
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
+
+  workspace        Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  instance         FormInstance             @relation(fields: [workspaceId, instanceId], references: [workspaceId, id], onDelete: Cascade)
+  supersedes       FormSubmission?          @relation("Corrections", fields: [workspaceId, supersedesId], references: [workspaceId, id])
+  supersededBy     FormSubmission[]         @relation("Corrections")
+  documents        FormSubmissionDocument[]
+
+  @@unique([instanceId, sequenceNumber])
+  @@unique([workspaceId, id])
+  @@map("form_submissions")
+}
+
+model FormSubmissionDocument {
+  id           String         @id @default(uuid())
+  workspaceId  String         @map("workspace_id")
+  submissionId String         @map("submission_id")
+  fieldKey     String         @map("field_key")
+  documentId   String         @map("document_id")
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  submission   FormSubmission @relation(fields: [workspaceId, submissionId], references: [workspaceId, id], onDelete: Cascade)
+  document     Document       @relation(fields: [workspaceId, documentId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, submissionId])
+  @@map("form_submission_documents")
+}
+
 
 

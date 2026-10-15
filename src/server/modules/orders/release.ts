@@ -5,6 +5,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import { ConflictError, NotFoundError, BadRequestError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 import { instantiateWorkflow, InstantiationResult } from '@/server/modules/workflow/instantiate';
+import { assertRequiredFormsFinalized } from '@/server/modules/forms/completion';
 
 export async function releaseOrder(
   principal: Principal,
@@ -101,6 +102,13 @@ export async function releaseOrder(
           `Workflow version '${approvedRev.workflowVersionId}' is not found or not in PUBLISHED status.`
         );
       }
+
+      // Verify all required order specification forms are finalized before release
+      await assertRequiredFormsFinalized(tx, {
+        workspaceId: principal.workspaceId,
+        subjectType: 'ORDER',
+        subjectId: order.id,
+      });
 
       // Instantiate workflow atomically
       const result = await instantiateWorkflow({
