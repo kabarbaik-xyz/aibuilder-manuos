@@ -1,267 +1,71 @@
-"use client";
+'use client';
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useCreateOrderDraft } from "../hooks";
-import {
-  useCustomers,
-  useOrderTypes,
-  useItems,
-} from "@/features/masters/hooks";
-import { Button } from "@/components/ui/button";
-import { FormErrorSummary } from "@/components/ui/form-errors";
-
-const PRESETS = [
-  {
-    name: "Aerospace Valve Manifold",
-    text: "Procurement RFQ: 50 units Hydraulic Valve Body per drawing H-2026-A. 5-axis CNC machining, wire EDM and 350-bar pressure test required. Target delivery in 4 weeks.",
-  },
-  {
-    name: "Precision Mounting Bracket",
-    text: "Request for Quotation: 120 units Mounting Bracket X1 in stainless steel. Laser cut, 90-deg bending, passivation and CMM inspection required.",
-  },
-  {
-    name: "Industrial Control Panel",
-    text: "Custom assembly request: 25 units Industrial Control Enclosure. Dual-track subassembly, CNC milling and functional Hi-Pot testing required.",
-  },
-];
+import { useId, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useCreateOrderDraft } from '../hooks';
+import { useCustomers, useOrderTypes, useItems } from '@/features/masters/hooks';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { FormErrorSummary } from '@/components/ui/form-errors';
+import { ErrorState, LoadingState } from '@/components/ui/resource-state';
+import { useWorkspaceNavigation } from '@/components/workspace-navigation-context';
 
 export function OrderForm() {
   const router = useRouter();
+  const prefix = useId();
   const createOrder = useCreateOrderDraft();
+  const customersQuery = useCustomers();
+  const typesQuery = useOrderTypes();
+  const itemsQuery = useItems();
+  const { principal } = useWorkspaceNavigation();
+  const customers = customersQuery.data?.data || [];
+  const orderTypes = typesQuery.data?.data || [];
+  const items = itemsQuery.data?.data || [];
+  const [customerId, setCustomerId] = useState('');
+  const [orderTypeId, setOrderTypeId] = useState('');
+  const [itemId, setItemId] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [requestedDate, setRequestedDate] = useState('');
+  const [promisedDate, setPromisedDate] = useState('');
+  const [rfqText, setRfqText] = useState('');
+  const [rfqSourceType, setRfqSourceType] = useState<'MANUAL' | 'EMAIL' | 'UPLOAD'>('MANUAL');
+  const [error, setError] = useState<Error | null>(null);
+  const pending = createOrder.isPending;
+  const queries = [customersQuery, typesQuery, itemsQuery];
+  const ready = queries.every(query => !query.isPending && !query.error) && customers.length > 0 && orderTypes.length > 0 && items.length > 0;
 
-  const { data: customersRes } = useCustomers();
-  const { data: orderTypesRes } = useOrderTypes();
-  const { data: itemsRes } = useItems();
+  function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (pending || !ready) return;
+    setError(null);
+    createOrder.mutate({ customerId, orderTypeId, itemId, orderedQuantity: Number(quantity), requestedDate: new Date(requestedDate).toISOString(), promisedDate: promisedDate ? new Date(promisedDate).toISOString() : null, rfqText, rfqSourceType }, {
+      onSuccess: response => router.push(`/orders/${response.data.id}`),
+      onError: err => setError(err),
+    });
+  }
 
-  const customers = customersRes?.data || [];
-  const orderTypes = orderTypesRes?.data || [];
-  const items = itemsRes?.data || [];
-
-  const [customerId, setCustomerId] = useState("");
-  const [orderTypeId, setOrderTypeId] = useState("");
-  const [itemId, setItemId] = useState("");
-  const [quantity, setQuantity] = useState(10);
-  const [requestedDate, setRequestedDate] = useState("2026-11-20");
-  const [promisedDate, setPromisedDate] = useState("2026-11-25");
-  const [rfqText, setRfqText] = useState(PRESETS[0].text);
-  const [rfqSourceType, setRfqSourceType] = useState<
-    "MANUAL" | "EMAIL" | "UPLOAD"
-  >("EMAIL");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-
-    if (!customerId || !orderTypeId || !itemId) {
-      setErrorMsg("Please select customer, order type, and target item.");
-      return;
-    }
-
-    createOrder.mutate(
-      {
-        customerId,
-        orderTypeId,
-        itemId,
-        orderedQuantity: Number(quantity),
-        requestedDate: new Date(requestedDate).toISOString(),
-        promisedDate: promisedDate
-          ? new Date(promisedDate).toISOString()
-          : null,
-        rfqText,
-        rfqSourceType,
-      },
-      {
-        onSuccess: (res: any) => {
-          router.push(`/orders/${res.data.id}`);
-        },
-        onError: (err: any) => {
-          setErrorMsg(err.message || "Failed to create order draft");
-        },
-      },
-    );
-  };
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="max-w-3xl space-y-6 rounded-lg border bg-white p-6 shadow-sm"
-    >
-      <div className="border-b pb-4">
-        <h2 className="text-lg font-bold text-slate-900">New Order Intake</h2>
-        <p className="text-sm text-slate-500">
-          Create an authoritative order draft from customer RFQ or commercial
-          demand.
-        </p>
-      </div>
-
-      {errorMsg && <FormErrorSummary message={errorMsg} />}
-
-      {/* RFQ Draft Preset Shortcuts */}
-      <div className="rounded-md border border-blue-100 bg-blue-50/50 p-4">
-        <label className="text-xs font-semibold uppercase tracking-wider text-blue-900">
-          RFQ Intake Presets
-        </label>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              onClick={() => setRfqText(p.text)}
-              className="rounded bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm border hover:bg-slate-50"
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Master References Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs font-medium text-slate-700">
-            Customer *
-          </label>
-          <select
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
-            required
-          >
-            <option value="">Select customer…</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} - {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-xs font-medium text-slate-700">
-            Order Type *
-          </label>
-          <select
-            value={orderTypeId}
-            onChange={(e) => setOrderTypeId(e.target.value)}
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
-            required
-          >
-            <option value="">Select order type…</option>
-            {orderTypes.map((ot) => (
-              <option key={ot.id} value={ot.id}>
-                {ot.code} - {ot.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="text-xs font-medium text-slate-700">
-            Target Item *
-          </label>
-          <select
-            value={itemId}
-            onChange={(e) => setItemId(e.target.value)}
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
-            required
-          >
-            <option value="">Select item…</option>
-            {items.map((it) => (
-              <option key={it.id} value={it.id}>
-                {it.code} - {it.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-xs font-medium text-slate-700">
-            Ordered Quantity *
-          </label>
-          <input
-            type="number"
-            value={quantity}
-            onChange={(e) => setQuantity(Number(e.target.value))}
-            min="1"
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="text-xs font-medium text-slate-700">
-            RFQ Source Type
-          </label>
-          <select
-            value={rfqSourceType}
-            onChange={(e) => setRfqSourceType(e.target.value as any)}
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
-          >
-            <option value="EMAIL">Email</option>
-            <option value="MANUAL">Manual Entry</option>
-            <option value="UPLOAD">Document Upload</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs font-medium text-slate-700">
-            Requested Delivery Date *
-          </label>
-          <input
-            type="date"
-            value={requestedDate}
-            onChange={(e) => setRequestedDate(e.target.value)}
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="text-xs font-medium text-slate-700">
-            Committed / Promised Date
-          </label>
-          <input
-            type="date"
-            value={promisedDate}
-            onChange={(e) => setPromisedDate(e.target.value)}
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="text-xs font-medium text-slate-700">
-          Raw RFQ Context & Notes
-        </label>
-        <textarea
-          rows={4}
-          value={rfqText}
-          onChange={(e) => setRfqText(e.target.value)}
-          className="w-full rounded border px-3 py-2 text-sm mt-1 font-mono"
-          placeholder="Paste customer RFQ specification or notes…"
-        />
-      </div>
-
-      <div className="flex justify-end gap-3 pt-4 border-t">
-        <Button type="button" variant="default" onClick={() => router.back()}>
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={createOrder.isPending}
-        >
-          {createOrder.isPending
-            ? "Creating Order Draft…"
-            : "Create Order Draft"}
-        </Button>
-      </div>
+  return <div className="page-stack order-intake">
+    <PageHeader title="New order" description="Capture the customer request. Engineering and production release follow after review." actions={<Link className="btn" href="/orders">Back to orders</Link>} />
+    {queries.some(query => query.isPending) ? <LoadingState message="Loading customers, order types and items…" /> : queries.some(query => query.error) ? <ErrorState title="Unable to load order references" onRetry={() => queries.forEach(query => query.refetch())} /> : !ready && <div className="form-section page-stack"><h2>Set up order references first</h2><p className="muted">An order needs a customer, an order type and an item before it can be saved.</p><div className="page-header-actions">{!customers.length && principal?.permissions.includes('customer.manage') && <Link className="btn" href="/settings/customers">Add customer</Link>}{!orderTypes.length && principal?.permissions.includes('workflow.author') && <Link className="btn" href="/settings/order-types">Set up order types</Link>}{!items.length && principal?.permissions.includes('item.manage') && <Link className="btn" href="/inventory/items">Add item</Link>}</div></div>}
+    <form onSubmit={handleSubmit} className="page-stack" aria-busy={pending}>
+      <FormErrorSummary error={error} />
+      <section className="form-section page-stack"><div><h2>Order details</h2><p className="field-help">Fields marked * are required.</p></div><div className="form-grid">
+        <FormField id={`${prefix}-customer`} label="Customer" required><Select value={customerId} onChange={e => setCustomerId(e.target.value)} disabled={!ready || pending}><option value="">Select customer…</option>{customers.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}</Select></FormField>
+        <FormField id={`${prefix}-type`} label="Order type" required><Select value={orderTypeId} onChange={e => setOrderTypeId(e.target.value)} disabled={!ready || pending}><option value="">Select order type…</option>{orderTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></FormField>
+        <FormField id={`${prefix}-item`} label="Target item" required><Select value={itemId} onChange={e => setItemId(e.target.value)} disabled={!ready || pending}><option value="">Select item…</option>{items.map(i => <option key={i.id} value={i.id}>{i.code} · {i.name}</option>)}</Select></FormField>
+        <FormField id={`${prefix}-quantity`} label="Ordered quantity" required><Input type="number" min="0.000001" step="any" value={quantity} onChange={e => setQuantity(e.target.value)} disabled={pending} placeholder="Enter quantity" /></FormField>
+      </div></section>
+      <section className="form-section page-stack"><div><h2>Delivery dates</h2><p className="field-help">Keep the customer's request separate from an agreed delivery commitment.</p></div><div className="form-grid">
+        <FormField id={`${prefix}-requested`} label="Requested delivery date" required><Input type="date" value={requestedDate} onChange={e => setRequestedDate(e.target.value)} disabled={pending} /></FormField>
+        <FormField id={`${prefix}-promised`} label="Committed delivery date" help="Optional. Set only when a delivery date has been agreed."><Input type="date" value={promisedDate} onChange={e => setPromisedDate(e.target.value)} disabled={pending} /></FormField>
+      </div></section>
+      <section className="form-section page-stack"><h2>Customer request</h2><FormField id={`${prefix}-source`} label="Request source"><Select value={rfqSourceType} onChange={e => setRfqSourceType(e.target.value as typeof rfqSourceType)} disabled={pending}><option value="MANUAL">Manual entry</option><option value="EMAIL">Email</option></Select></FormField><FormField id={`${prefix}-notes`} label="RFQ context and notes" help="Include specifications, drawing references and questions that engineering needs to review."><Textarea value={rfqText} onChange={e => setRfqText(e.target.value)} disabled={pending} placeholder="Describe the customer request…" /></FormField></section>
+      <div className="form-page-actions"><Link href="/orders" className="btn">Cancel</Link><Button type="submit" variant="primary" disabled={!ready || pending}>{pending ? 'Creating draft…' : 'Create order draft'}</Button></div>
     </form>
-  );
+  </div>;
 }

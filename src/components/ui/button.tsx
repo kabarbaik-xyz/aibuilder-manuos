@@ -1,11 +1,11 @@
 import React from 'react';
-import { Icon } from '../icons';
+import { Icon, type IconName } from '../icons';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'default' | 'primary' | 'soft' | 'ghost' | 'icon' | 'text';
   size?: 'normal' | 'small';
-  icon?: string;
-  iconRight?: string;
+  icon?: IconName;
+  iconRight?: IconName;
   fullWidth?: boolean;
 }
 

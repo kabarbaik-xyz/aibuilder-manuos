@@ -1,5 +1,8 @@
 'use client';
 
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { PageHeader } from '@/components/ui/page-header';
+import { Select } from '@/components/ui/select';
 import React, { useState } from 'react';
 import { useLocations } from '@/features/masters/hooks';
 import { Location } from '@/features/masters/api';
@@ -7,7 +10,7 @@ import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
-import { CreateLocationDrawer } from '@/features/masters/components/resource-forms';
+import { CreateLocationModal } from '@/features/masters/components/resource-forms';
 
 export default function LocationsPage() {
   const [typeFilter, setTypeFilter] = useState('');
@@ -22,12 +25,12 @@ export default function LocationsPage() {
     {
       key: 'code',
       header: 'Location Code',
-      render: (l) => <span className="font-mono font-semibold text-blue-400">{l.code}</span>,
+      render: (l) => <span className="font-mono font-semibold text-primary">{l.code}</span>,
     },
     {
       key: 'name',
       header: 'Location Name',
-      render: (l) => <span className="font-medium text-neutral-100">{l.name}</span>,
+      render: (l) => <span className="font-medium text-ink">{l.name}</span>,
     },
     {
       key: 'type',
@@ -42,7 +45,7 @@ export default function LocationsPage() {
       key: 'attributes',
       header: 'Properties',
       render: (l) => (
-        <span className="text-xs text-neutral-400">
+        <span className="text-xs text-muted">
           {l.isPickable ? 'Pickable' : ''}
           {l.isPickable && l.isReceiving ? ' · ' : ''}
           {l.isReceiving ? 'Receiving' : ''}
@@ -63,21 +66,15 @@ export default function LocationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-100">Warehouse Locations</h1>
-          <p className="text-sm text-neutral-400">Configure physical zones, raw racks, WIP staging areas and quarantine bins</p>
-        </div>
-        <Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
+      <PageHeader title="Warehouse Locations" description="Configure physical zones, raw racks, WIP staging areas and quarantine bins" actions={<><PermissionGate permission="location.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Location
-        </Button>
-      </div>
+        </Button></PermissionGate></>} />
 
       <div className="flex items-center gap-3">
-        <select
+        <Select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-md border border-neutral-800 bg-neutral-900/80 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
+          className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-primary/20 focus:outline-none"
         >
           <option value="">All Zone Types</option>
           <option value="RAW">Raw Material Zone</option>
@@ -85,7 +82,7 @@ export default function LocationsPage() {
           <option value="QUARANTINE">Quarantine Zone</option>
           <option value="FINISHED_GOODS">Finished Goods (FG)</option>
           <option value="SCRAP">Scrap Bin</option>
-        </select>
+        </Select>
       </div>
 
       {error ? (
@@ -100,7 +97,7 @@ export default function LocationsPage() {
         />
       )}
 
-      <CreateLocationDrawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateLocationModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
     </div>
   );
 }

@@ -41,7 +41,7 @@ export default function WorkflowVersionPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="">
       <DefinitionEditor
         template={template}
         version={version}

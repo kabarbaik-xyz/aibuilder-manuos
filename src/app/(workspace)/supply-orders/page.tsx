@@ -1,14 +1,15 @@
 'use client';
 
+import { ErrorState } from '@/components/ui/resource-state';
+import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
 import { useSupplyOrders } from '@/features/supply/hooks';
-import { AppShell } from '@/components/app-shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 export default function SupplyOrdersPage() {
-  const { data: orders, isLoading } = useSupplyOrders();
+  const { data: orders, isLoading, refetch, error: queryError } = useSupplyOrders();
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
@@ -25,29 +26,12 @@ export default function SupplyOrdersPage() {
     }
   };
 
+  if (queryError) return <div className="page-stack"><PageHeader title="Supply orders"/><ErrorState message={queryError.message} onRetry={()=>refetch()}/></div>;
+
   return (
-    <AppShell
-      breadcrumb={
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span>Operations</span>
-          <span>/</span>
-          <span className="text-white">Supply Orders</span>
-        </div>
-      }
-      activeTitle="Supply Orders"
-    >
+    <div className="page-stack">
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1>
-            <p className="text-sm text-muted">
-              Manage external procurement, vendor POs, expected lead times, and inbound shipments.
-            </p>
-          </div>
-          <Link href="/supply-orders/new">
-            <Button variant="primary">+ New Purchase Order</Button>
-          </Link>
-        </div>
+        <PageHeader title="Purchase Orders" description="Manage external procurement, vendor POs, expected lead times, and inbound shipments." actions={<><Link href="/supply-orders/new" className="btn primary ">+ New Purchase Order</Link></>} />
 
         <div className="card p-0 overflow-hidden">
           {isLoading ? (
@@ -55,14 +39,12 @@ export default function SupplyOrdersPage() {
           ) : !orders || orders.length === 0 ? (
             <div className="p-12 text-center space-y-3">
               <p className="text-muted text-sm">No supply purchase orders created yet.</p>
-              <Link href="/supply-orders/new">
-                <Button variant="default" size="small">Create First Purchase Order</Button>
-              </Link>
+              <Link href="/supply-orders/new" className="btn  ">Create First Purchase Order</Link>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="text-xs uppercase text-muted bg-muted/20 border-b border-border">
+                <thead className="text-xs uppercase text-muted bg-surface-muted border-b border-line">
                   <tr>
                     <th className="px-4 py-3">PO Number</th>
                     <th className="px-4 py-3">Supplier</th>
@@ -72,11 +54,11 @@ export default function SupplyOrdersPage() {
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-line">
                   {orders.map((po) => (
-                    <tr key={po.id} className="hover:bg-muted/10 transition">
+                    <tr key={po.id} className="hover:bg-surface-muted transition">
                       <td className="px-4 py-3 font-mono font-medium">
-                        <Link href={`/supply-orders/${po.id}`} className="text-sky-400 hover:underline">
+                        <Link href={`/supply-orders/${po.id}`} className="text-primary hover:underline">
                           {po.orderNumber}
                         </Link>
                       </td>
@@ -96,9 +78,7 @@ export default function SupplyOrdersPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Link href={`/supply-orders/${po.id}`}>
-                          <Button variant="default" size="small">View / Receive</Button>
-                        </Link>
+                        <Link href={`/supply-orders/${po.id}`} className="btn  ">View / Receive</Link>
                       </td>
                     </tr>
                   ))}
@@ -108,6 +88,6 @@ export default function SupplyOrdersPage() {
           )}
         </div>
       </div>
-    </AppShell>
+    </div>
   );
 }

@@ -1,11 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Icon } from '../icons';
+import { Icon, type IconName } from '../icons';
 
 export interface ToastProps {
   message: string | null;
-  iconName?: string;
+  iconName?: IconName;
 }
 
 export function Toast({ message, iconName = 'check' }: ToastProps) {

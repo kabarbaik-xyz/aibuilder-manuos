@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useGraphStore } from '../store/graph-store';
+import { useWorkspaceNavigation } from './workspace-navigation-context';
 import { Dialog } from './ui/dialog';
 import { RecoveryStudio } from '../features/recovery/recovery-studio';
 import { PromiseModal } from '../features/promise/promise-modal';
@@ -17,14 +18,19 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
 export function ModalManager() {
+  const { isDemo } = useWorkspaceNavigation();
   const { activeModal, modalData, closeModal, setScreen } = useGraphStore();
 
   if (!activeModal) return null;
+  if (!isDemo) {
+    return <Dialog isOpen onClose={closeModal} title={activeModal === 'search' ? 'Find a page' : 'Ask ManuOS'} type={activeModal === 'search' ? 'search' : 'drawer'}>{activeModal === 'search' ? <SearchDialog/> : <div className="page-stack"><Badge variant="default">Unavailable</Badge><h3>Production intelligence is not connected yet</h3><p className="muted">Workspace answers will appear here when intelligence is connected to your operational records.</p></div>}</Dialog>;
+  }
 
   return (
     <>
       {activeModal === 'recovery' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Review recovery"
@@ -36,6 +42,7 @@ export function ModalManager() {
 
       {activeModal === 'promise' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Can we promise this?"
@@ -47,6 +54,7 @@ export function ModalManager() {
 
       {activeModal === 'intake' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="New order intake"
@@ -58,6 +66,7 @@ export function ModalManager() {
 
       {activeModal === 'brain' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Ask ManuOS"
@@ -70,6 +79,7 @@ export function ModalManager() {
 
       {activeModal === 'memory' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Factory memory"
@@ -81,6 +91,7 @@ export function ModalManager() {
 
       {activeModal === 'passport' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Manufacturing passport"
@@ -92,6 +103,7 @@ export function ModalManager() {
 
       {activeModal === 'deal' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title={modalData?.capacity ? 'Review capacity match' : 'Review material proposal'}
@@ -107,6 +119,7 @@ export function ModalManager() {
 
       {activeModal === 'event' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Simulate an event"
@@ -118,6 +131,7 @@ export function ModalManager() {
 
       {activeModal === 'audit' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Activity log"
@@ -129,10 +143,10 @@ export function ModalManager() {
 
       {activeModal === 'search' && (
         <Dialog
+          type="search"
           isOpen
           onClose={closeModal}
           title="Go to a workspace"
-          type="modal"
         >
           <SearchDialog />
         </Dialog>
@@ -140,6 +154,7 @@ export function ModalManager() {
 
       {activeModal === 'factory-info' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Precision Works"
@@ -171,6 +186,7 @@ export function ModalManager() {
 
       {activeModal === 'record-output' && (
         <Dialog
+          type="drawer"
           isOpen
           onClose={closeModal}
           title="Record output"

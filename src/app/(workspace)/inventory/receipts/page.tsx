@@ -1,37 +1,23 @@
 'use client';
 
+import { ErrorState } from '@/components/ui/resource-state';
+import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
 import { useSupplyReceipts } from '@/features/supply/hooks';
-import { AppShell } from '@/components/app-shell';
 import { formatQuantity } from '@/domain/quantity';
 
 export default function InventoryReceiptsPage() {
-  const { data: receipts, isLoading } = useSupplyReceipts();
+  const { data: receipts, isLoading, refetch, error: queryError } = useSupplyReceipts();
+
+  if (queryError) return <div className="page-stack"><PageHeader title="Inbound receipts"/><ErrorState message={queryError.message} onRetry={()=>refetch()}/></div>;
 
   return (
-    <AppShell
-      breadcrumb={
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span>Operations</span>
-          <span>/</span>
-          <span className="text-white">Inbound Receipts</span>
-        </div>
-      }
-      activeTitle="Inbound Receipts"
-    >
+    <div className="page-stack">
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Inbound Receipts</h1>
-            <p className="text-sm text-muted">
-              Chronological log of verified incoming shipments posted into inventory balances.
-            </p>
-          </div>
-          <Link href="/supply-orders">
+        <PageHeader title="Inbound Receipts" description="Chronological log of verified incoming shipments posted into inventory balances." actions={<><Link href="/supply-orders">
             <button className="btn btn-outline text-sm">View Purchase Orders</button>
-          </Link>
-        </div>
+          </Link></>} />
 
         <div className="card p-0 overflow-hidden">
           {isLoading ? (
@@ -42,15 +28,15 @@ export default function InventoryReceiptsPage() {
               <p className="text-xs">Receive shipments against approved purchase orders to post inventory entries.</p>
             </div>
           ) : (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-line">
               {receipts.map((rec) => (
-                <div key={rec.id} className="p-4 space-y-3 hover:bg-muted/5 transition">
+                <div key={rec.id} className="p-4 space-y-3 hover:bg-surface-muted transition">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                     <div className="flex items-center gap-3">
-                      <span className="font-mono font-bold text-base text-white">{rec.receiptNumber}</span>
+                      <span className="font-mono font-bold text-base text-ink">{rec.receiptNumber}</span>
                       <span className="text-xs text-muted">
                         against PO{' '}
-                        <Link href={`/supply-orders/${rec.supplyOrderId}`} className="text-sky-400 hover:underline">
+                        <Link href={`/supply-orders/${rec.supplyOrderId}`} className="text-primary hover:underline">
                           {rec.orderNumber}
                         </Link>{' '}
                         ({rec.supplierName})
@@ -63,7 +49,7 @@ export default function InventoryReceiptsPage() {
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs text-left">
-                      <thead className="text-muted border-b border-border bg-muted/10">
+                      <thead className="text-muted border-b border-line bg-surface-muted">
                         <tr>
                           <th className="px-3 py-1.5">Material</th>
                           <th className="px-3 py-1.5">Storage Location</th>
@@ -71,15 +57,15 @@ export default function InventoryReceiptsPage() {
                           <th className="px-3 py-1.5 text-right font-bold">Received Quantity</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-border/50">
+                      <tbody className="divide-y divide-line/50">
                         {rec.lines.map((l) => (
                           <tr key={l.id}>
                             <td className="px-3 py-2 font-medium">
                               {l.itemCode} - {l.itemName}
                             </td>
                             <td className="px-3 py-2 font-mono text-muted">{l.locationCode}</td>
-                            <td className="px-3 py-2 font-mono text-sky-400">{l.lotNumber || '-'}</td>
-                            <td className="px-3 py-2 text-right font-mono font-bold text-emerald-400">
+                            <td className="px-3 py-2 font-mono text-primary">{l.lotNumber || '-'}</td>
+                            <td className="px-3 py-2 text-right font-mono font-bold text-success">
                               +{formatQuantity(l.receivedAtoms)}
                             </td>
                           </tr>
@@ -95,6 +81,6 @@ export default function InventoryReceiptsPage() {
           )}
         </div>
       </div>
-    </AppShell>
+    </div>
   );
 }

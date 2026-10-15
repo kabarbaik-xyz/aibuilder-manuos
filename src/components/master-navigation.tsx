@@ -1,83 +1,23 @@
 'use client';
-
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { ApiError, apiRequest } from '@/lib/api/client';
-import { queryKeys } from '@/lib/api/query-keys';
-import { getMasterNavigation, getWorkflowNavigation, isMasterNavActive } from '@/lib/master-navigation';
-import type { PrincipalJson } from '@/server/auth/principal';
+import { useEffect, useState } from 'react';
+import { ApiError } from '@/lib/api/client';
+import { getMasterNavigation, getWorkflowNavigation, isMasterNavActive, type MasterNavItem } from '@/lib/master-navigation';
 import { useGraphStore } from '@/store/graph-store';
+import { useWorkspaceNavigation } from './workspace-navigation-context';
 import { Icon } from './icons';
-
-export function MasterNavigation() {
-  const pathname = usePathname();
-  const closeNavMenu = useGraphStore((state) => state.closeNavMenu);
-  const { data, error, isPending, refetch } = useQuery({
-    queryKey: queryKeys.me(),
-    queryFn: () => apiRequest<{ data: PrincipalJson }>('/api/me'),
-    retry: false,
-  });
-
-  if (isPending) return <p className="small muted px-4" role="status">Loading workspace access…</p>;
-  if (error) {
-    return (
-      <nav className="nav-list" aria-label="Workspace access">
-        {error instanceof ApiError && error.statusCode === 401 ? (
-          <Link className="nav-item" href="/login" onClick={closeNavMenu}>
-            <Icon name="user" /><span>Sign in to workspace</span>
-          </Link>
-        ) : (
-          <button className="nav-item" type="button" onClick={() => refetch()}>
-            <Icon name="reset" /><span>Retry workspace access</span>
-          </button>
-        )}
-      </nav>
-    );
-  }
-
-  const permissions = data?.data.permissions ?? [];
-  const workflowItems = getWorkflowNavigation(permissions);
-  const masterItems = getMasterNavigation(permissions);
-
-  return (
-    <>
-      {workflowItems.length > 0 && (
-        <>
-          <div className="nav-group-label">Operations</div>
-          <nav className="nav-list" aria-label="Operations">
-            {workflowItems.map((item) => {
-              const active = isMasterNavActive(pathname, item.href);
-              return (
-                <Link key={item.href} href={item.href} onClick={closeNavMenu}
-                  className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
-                  <Icon name={item.href.includes('order') ? 'box' : item.href.includes('engineering') ? 'brain' : 'route'} />
-                  <span>{item.title}</span>
-                </Link>
-              );
-            })}
-          </nav>
-          <div className="nav-divider" />
-        </>
-      )}
-
-      {masterItems.length > 0 && (
-        <>
-          <div className="nav-group-label">Master data</div>
-          <nav className="nav-list" aria-label="Master data">
-            {masterItems.map((item) => {
-              const active = isMasterNavActive(pathname, item.href);
-              return (
-                <Link key={item.href} href={item.href} onClick={closeNavMenu}
-                  className={`nav-item ${active ? 'active' : ''}`} aria-current={active ? 'page' : undefined}>
-                  <Icon name="settings" /><span>{item.title}</span>
-                </Link>
-              );
-            })}
-          </nav>
-          <div className="nav-divider" />
-        </>
-      )}
-    </>
-  );
+function NavigationGroup({title,items,pathname}:{title:string;items:readonly MasterNavItem[];pathname:string}) {
+ const active=items.some(item=>isMasterNavActive(pathname,item.href));
+ const [open,setOpen]=useState(true);
+ const close=useGraphStore(s=>s.closeNavMenu);
+ useEffect(()=>{try {const saved=localStorage.getItem(`nav-${title}`);if(saved!==null)setOpen(active || saved==='open');}catch{}},[title,active]);
+ if(!items.length)return null;
+ return <section className="navigation-group"><button type="button" className="nav-group-toggle" aria-expanded={open} onClick={()=>{const next=!open;setOpen(next);try{localStorage.setItem(`nav-${title}`,next?'open':'closed')}catch{}}}>{title}<Icon name="down" className={open?'':'nav-group-closed'}/></button>{open&&<nav className="nav-list" aria-label={title}>{items.map(item=><Link key={item.href} href={item.href} onClick={close} className={`nav-item ${isMasterNavActive(pathname,item.href)?'active':''}`} aria-current={isMasterNavActive(pathname,item.href)?'page':undefined}><Icon name={item.icon}/><span>{item.title}</span></Link>)}</nav>}</section>;
+}
+export function MasterNavigation(){
+ const {principal,pathname,error,isPending,refetch}=useWorkspaceNavigation();const close=useGraphStore(s=>s.closeNavMenu);
+ if(isPending)return <p className="small muted px-4" role="status">Loading workspace…</p>;
+ if(error)return <nav className="nav-list" aria-label="Workspace access">{error instanceof ApiError && error.statusCode===401?<Link href="/login" className="nav-item" onClick={close}><Icon name="user"/>Sign in to workspace</Link>:<button type="button" className="nav-item" onClick={()=>refetch()}><Icon name="reset"/>Retry workspace access</button>}</nav>;
+ const permissions=principal?.permissions??[];
+ return <><NavigationGroup title="Operations" items={getWorkflowNavigation(permissions)} pathname={pathname}/><NavigationGroup title="Master data" items={getMasterNavigation(permissions)} pathname={pathname}/></>;
 }

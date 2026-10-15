@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import { EmptyState, LoadingState } from './resource-state';
 
 export interface Column<T> {
@@ -15,6 +16,7 @@ export interface DataTableProps<T> {
   emptyTitle?: string;
   emptyDescription?: string;
   onRowClick?: (row: T) => void;
+  getRowHref?: (row: T) => string;
 }
 
 export function DataTable<T extends { id?: string }>({
@@ -24,6 +26,7 @@ export function DataTable<T extends { id?: string }>({
   emptyTitle,
   emptyDescription,
   onRowClick,
+  getRowHref,
 }: DataTableProps<T>) {
   if (isLoading) {
     return <LoadingState />;
@@ -34,9 +37,9 @@ export function DataTable<T extends { id?: string }>({
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-neutral-800 bg-neutral-900/40">
-      <table className="w-full text-left text-sm text-neutral-300">
-        <thead className="border-b border-neutral-800 bg-neutral-900/80 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+    <div className="data-table">
+      <table className="w-full text-left text-sm text-ink">
+        <thead className="border-b border-line bg-surface text-xs font-semibold uppercase tracking-wider text-muted">
           <tr>
             {columns.map((col) => (
               <th key={col.key} className={`px-4 py-3 ${col.className || ''}`}>
@@ -45,18 +48,18 @@ export function DataTable<T extends { id?: string }>({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-neutral-800/60">
+        <tbody className="divide-y divide-line">
           {data.map((row, idx) => (
             <tr
               key={row.id || idx}
-              onClick={() => onRowClick?.(row)}
-              className={`transition hover:bg-neutral-800/40 ${
+
+              className={`transition hover:bg-surface ${
                 onRowClick ? 'cursor-pointer' : ''
               }`}
             >
-              {columns.map((col) => (
+              {columns.map((col, columnIndex) => (
                 <td key={col.key} className={`px-4 py-3 ${col.className || ''}`}>
-                  {col.render ? col.render(row) : (row as any)[col.key]}
+                  {columnIndex === 0 && getRowHref ? <Link className="record-link" href={getRowHref(row)}>{col.render ? col.render(row) : (row as any)[col.key]}</Link> : columnIndex === 0 && onRowClick ? <button type="button" className="record-link" onClick={() => onRowClick(row)}>{col.render ? col.render(row) : (row as any)[col.key]}</button> : col.render ? col.render(row) : (row as any)[col.key]}
                 </td>
               ))}
             </tr>

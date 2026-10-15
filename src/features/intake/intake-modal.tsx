@@ -311,7 +311,7 @@ export function IntakeModal() {
 
       {extractedDraft && (
         <div className="result-box mt">
-          <div className="between pb-2 border-b border-[var(--line)]">
+          <div className="between pb-2 border-b border-[var(--line)] border-line">
             <div>
               <h3>Engineering Review Draft</h3>
               <p className="small muted">Structured specification parsed by Copilot</p>
@@ -386,7 +386,7 @@ export function IntakeModal() {
               {loading ? 'Drafting workflow DAG…' : 'Preview dynamic workflow'}
             </Button>
           ) : (
-            <div className="mt-4 pt-3 border-t border-[var(--line)]">
+            <div className="mt-4 pt-3 border-t border-[var(--line)] border-line">
               <div className="between mb-2">
                 <strong className="text-xs">Generated DAG Sequence:</strong>
                 <Badge variant="success">Validated Acyclic DAG</Badge>
@@ -422,7 +422,7 @@ export function IntakeModal() {
         </div>
       )}
 
-      <div className="between mt-4 pt-3 border-t border-[var(--line)]">
+      <div className="between mt-4 pt-3 border-t border-[var(--line)] border-line">
         <span className="small muted">Need full workspace view?</span>
         <Link
           href="/orders/new"

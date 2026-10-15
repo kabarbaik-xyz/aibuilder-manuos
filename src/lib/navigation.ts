@@ -1,10 +1,11 @@
+import type { IconName } from '@/components/icons';
 export type PersonaType = 'Owner' | 'Supervisor' | 'Technician' | 'Customer';
 export type ScreenType = 'command' | 'orchestrator' | 'workstation' | 'customer' | 'network';
 
 export interface ScreenConfig {
   id: ScreenType;
   title: string;
-  icon: string;
+  icon: IconName;
   defaultPersona: PersonaType;
   allowedPersonas: PersonaType[];
 }

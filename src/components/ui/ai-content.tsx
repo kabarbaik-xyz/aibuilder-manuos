@@ -36,7 +36,7 @@ export function AIContent({
   }
 
   return (
-    <div className={`p-4 rounded-xl border border-[#d8d3f7] bg-[#fbfaff] ${className}`}>
+    <div className={`p-4 rounded-xl border border-[#d8d3f7] bg-[#fbfaff] ${className}`} border-line>
       <div className="flex items-center justify-between mb-2">
         <Badge variant="ai" icon="spark">
           {badgeLabel}

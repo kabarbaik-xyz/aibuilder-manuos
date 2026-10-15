@@ -1,11 +1,24 @@
 import { apiRequest } from '@/lib/api/client';
+import { normalizeMasterRecord, masterRequestBody } from './compatibility';
+async function masterRequest<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const request = { ...options };
+  if (typeof request.body === 'string') request.body = JSON.stringify(masterRequestBody(url, JSON.parse(request.body), request.method || 'GET'));
+  const result = await apiRequest<any>(url, request);
+  if (result && 'data' in result) return { ...result, data: normalizeMasterRecord(result.data) };
+  return result;
+}
+
 
 export interface Customer {
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  isActive?: boolean;
   id: string;
   workspaceId: string;
   code: string;
   name: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
+  status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'ARCHIVED';
   creditTermsDays: number;
   taxId: string | null;
   currency: string;
@@ -27,11 +40,16 @@ export interface CustomerContact {
 }
 
 export interface Supplier {
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  address?: string | null;
+  isActive?: boolean;
   id: string;
   workspaceId: string;
   code: string;
   name: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
+  status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'ARCHIVED';
   currency: string;
   leadTimeDays: number;
   addressJson: string;
@@ -72,6 +90,8 @@ export interface Item {
 }
 
 export interface ItemConversion {
+  ratioNumerator?: number;
+  ratioDenominator?: number;
   id: string;
   itemId: string;
   toUomId: string;
@@ -127,6 +147,7 @@ export interface CalendarException {
 }
 
 export interface Machine {
+  machineClassId?: string;
   id: string;
   workspaceId: string;
   code: string;
@@ -142,6 +163,8 @@ export interface Machine {
 }
 
 export interface Technician {
+  name?: string;
+  code?: string;
   id: string;
   workspaceId: string;
   membershipId: string;
@@ -230,65 +253,84 @@ export interface QcChecklistCheck {
 export const mastersApi = {
   // Customers
   getCustomers: (params?: { search?: string }) => {
-    const q = params?.search ? `?search=${encodeURIComponent(params.search)}` : '';
-    return apiRequest<{ data: Customer[] }>(`/api/customers${q}`);
+    const q = params?.search ? `?q=${encodeURIComponent(params.search)}` : '';
+    return masterRequest<{ data: Customer[] }>(`/api/customers${q}`);
   },
-  getCustomer: (id: string) => apiRequest<{ data: Customer }>(`/api/customers/${id}`),
+  getCustomer: (id: string) => masterRequest<{ data: Customer }>(`/api/customers/${id}`),
   createCustomer: (data: {
     code: string;
     name: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    isActive?: boolean;
     creditTermsDays?: number;
     taxId?: string;
+    contactName?: string;
+    contactEmail?: string;
+    contactPhone?: string;
     currency?: string;
-    addressJson?: string;
-  }) => apiRequest<{ data: Customer }>('/api/customers', { method: 'POST', body: JSON.stringify(data) }),
+    addressJson?: string;  }) => masterRequest<{ data: Customer }>('/api/customers', { method: 'POST', body: JSON.stringify(data) }),
   updateCustomer: (id: string, data: {
     expectedVersion: number;
     name?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    isActive?: boolean;
     creditTermsDays?: number;
     taxId?: string;
+    contactName?: string;
+    contactEmail?: string;
+    contactPhone?: string;
     currency?: string;
-    status?: string;
-  }) => apiRequest<{ data: Customer }>(`/api/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    status?: string;  }) => masterRequest<{ data: Customer }>(`/api/customers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Suppliers
   getSuppliers: (params?: { search?: string }) => {
-    const q = params?.search ? `?search=${encodeURIComponent(params.search)}` : '';
-    return apiRequest<{ data: Supplier[] }>(`/api/suppliers${q}`);
+    const q = params?.search ? `?q=${encodeURIComponent(params.search)}` : '';
+    return masterRequest<{ data: Supplier[] }>(`/api/suppliers${q}`);
   },
-  getSupplier: (id: string) => apiRequest<{ data: Supplier }>(`/api/suppliers/${id}`),
+  getSupplier: (id: string) => masterRequest<{ data: Supplier }>(`/api/suppliers/${id}`),
   createSupplier: (data: {
     code: string;
     name: string;
+    contactName?: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    address?: string;
+    isActive?: boolean;
     currency?: string;
-    leadTimeDays?: number;
-  }) => apiRequest<{ data: Supplier }>('/api/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+    leadTimeDays?: number;  }) => masterRequest<{ data: Supplier }>('/api/suppliers', { method: 'POST', body: JSON.stringify(data) }),
   updateSupplier: (id: string, data: {
     expectedVersion: number;
     name?: string;
+    contactName?: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    address?: string;
+    isActive?: boolean;
     currency?: string;
     leadTimeDays?: number;
-    status?: string;
-  }) => apiRequest<{ data: Supplier }>(`/api/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    status?: string;  }) => masterRequest<{ data: Supplier }>(`/api/suppliers/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // UOMs
-  getUoms: () => apiRequest<{ data: UnitOfMeasure[] }>('/api/uoms'),
+  getUoms: () => masterRequest<{ data: UnitOfMeasure[] }>('/api/uoms'),
   createUom: (data: {
     code: string;
     name: string;
     precision: number;
-    dimension: string;
-  }) => apiRequest<{ data: UnitOfMeasure }>('/api/uoms', { method: 'POST', body: JSON.stringify(data) }),
+    dimension: string;  }) => masterRequest<{ data: UnitOfMeasure }>('/api/uoms', { method: 'POST', body: JSON.stringify(data) }),
 
   // Items
   getItems: (params?: { type?: string; search?: string }) => {
     const query = new URLSearchParams();
-    if (params?.type) query.set('type', params.type);
-    if (params?.search) query.set('search', params.search);
+    if (params?.type) query.set('itemType', ({RAW_MATERIAL:'RAW',FINISHED_GOOD:'FINISHED',SUBASSEMBLY:'WIP'} as Record<string,string>)[params.type] || params.type);
+    if (params?.search) query.set('q', params.search);
     const qs = query.toString() ? `?${query.toString()}` : '';
-    return apiRequest<{ data: Item[] }>(`/api/items${qs}`);
+    return masterRequest<{ data: Item[] }>(`/api/items${qs}`);
   },
-  getItem: (id: string) => apiRequest<{ data: Item }>(`/api/items/${id}`),
+  getItem: (id: string) => masterRequest<{ data: Item }>(`/api/items/${id}`),
   createItem: (data: {
     code: string;
     name: string;
@@ -296,18 +338,16 @@ export const mastersApi = {
     baseUomId: string;
     isLotTracked?: boolean;
     isSerialTracked?: boolean;
-    shelfLifeDays?: number;
-  }) => apiRequest<{ data: Item }>('/api/items', { method: 'POST', body: JSON.stringify(data) }),
+    shelfLifeDays?: number;  }) => masterRequest<{ data: Item }>('/api/items', { method: 'POST', body: JSON.stringify(data) }),
   updateItem: (id: string, data: {
     expectedVersion: number;
     name?: string;
     isLotTracked?: boolean;
     isSerialTracked?: boolean;
     shelfLifeDays?: number;
-    status?: string;
-  }) => apiRequest<{ data: Item }>(`/api/items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    status?: string;  }) => masterRequest<{ data: Item }>(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   addItemConversion: (itemId: string, data: { toUomId: string; factorAtoms: string }) =>
-    apiRequest<{ data: ItemConversion }>(`/api/items/${itemId}/conversions`, {
+    masterRequest<{ data: ItemConversion }>(`/api/items/${itemId}/conversions`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -315,49 +355,45 @@ export const mastersApi = {
   // Locations
   getLocations: (params?: { type?: string }) => {
     const q = params?.type ? `?type=${encodeURIComponent(params.type)}` : '';
-    return apiRequest<{ data: Location[] }>(`/api/locations${q}`);
+    return masterRequest<{ data: Location[] }>(`/api/locations${q}`);
   },
   createLocation: (data: {
     code: string;
     name: string;
     type: string;
     isPickable?: boolean;
-    isReceiving?: boolean;
-  }) => apiRequest<{ data: Location }>('/api/locations', { method: 'POST', body: JSON.stringify(data) }),
+    isReceiving?: boolean;  }) => masterRequest<{ data: Location }>('/api/locations', { method: 'POST', body: JSON.stringify(data) }),
   updateLocation: (id: string, data: {
     expectedVersion: number;
     name?: string;
     isPickable?: boolean;
     isReceiving?: boolean;
-    status?: string;
-  }) => apiRequest<{ data: Location }>(`/api/locations/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    status?: string;  }) => masterRequest<{ data: Location }>(`/api/locations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Organization & Resources
-  getDepartments: () => apiRequest<{ data: Department[] }>('/api/resources/departments'),
+  getDepartments: () => masterRequest<{ data: Department[] }>('/api/resources/departments'),
   createDepartment: (data: { code: string; name: string }) =>
-    apiRequest<{ data: Department }>('/api/resources/departments', { method: 'POST', body: JSON.stringify(data) }),
+    masterRequest<{ data: Department }>('/api/resources/departments', { method: 'POST', body: JSON.stringify(data) }),
 
-  getCalendars: () => apiRequest<{ data: Calendar[] }>('/api/resources/calendars'),
+  getCalendars: () => masterRequest<{ data: Calendar[] }>('/api/resources/calendars'),
   createCalendar: (data: {
     code: string;
     name: string;
     timezone: string;
     weeklyJson: string;
-    shiftJson?: string;
-  }) => apiRequest<{ data: Calendar }>('/api/resources/calendars', { method: 'POST', body: JSON.stringify(data) }),
+    shiftJson?: string;  }) => masterRequest<{ data: Calendar }>('/api/resources/calendars', { method: 'POST', body: JSON.stringify(data) }),
   addCalendarException: (calendarId: string, data: {
     date: string;
     isWorkingDay: boolean;
     intervalsJson?: string;
-    reason?: string;
-  }) => apiRequest<{ data: CalendarException }>(`/api/resources/calendars/${calendarId}/exceptions`, {
+    reason?: string;  }) => masterRequest<{ data: CalendarException }>(`/api/resources/calendars/${calendarId}/exceptions`, {
     method: 'POST',
     body: JSON.stringify(data),
   }),
 
   getMachines: (params?: { departmentId?: string }) => {
     const q = params?.departmentId ? `?departmentId=${encodeURIComponent(params.departmentId)}` : '';
-    return apiRequest<{ data: Machine[] }>(`/api/resources/machines${q}`);
+    return masterRequest<{ data: Machine[] }>(`/api/resources/machines${q}`);
   },
   createMachine: (data: {
     code: string;
@@ -365,17 +401,15 @@ export const mastersApi = {
     machineClass: string;
     departmentId: string;
     calendarId: string;
-    hourlyRateCents?: number;
-  }) => apiRequest<{ data: Machine }>('/api/resources/machines', { method: 'POST', body: JSON.stringify(data) }),
+    hourlyRateCents?: number;  }) => masterRequest<{ data: Machine }>('/api/resources/machines', { method: 'POST', body: JSON.stringify(data) }),
 
-  getTechnicians: () => apiRequest<{ data: Technician[] }>('/api/resources/technicians'),
+  getTechnicians: () => masterRequest<{ data: Technician[] }>('/api/resources/technicians'),
   createTechnician: (data: {
     membershipId: string;
     calendarId: string;
-    hourlyRateCents?: number;
-  }) => apiRequest<{ data: Technician }>('/api/resources/technicians', { method: 'POST', body: JSON.stringify(data) }),
+    hourlyRateCents?: number;  }) => masterRequest<{ data: Technician }>('/api/resources/technicians', { method: 'POST', body: JSON.stringify(data) }),
   addTechnicianSkill: (technicianId: string, data: { skillId: string; level: number }) =>
-    apiRequest<{ data: TechnicianSkill }>(`/api/resources/technicians/${technicianId}/skills`, {
+    masterRequest<{ data: TechnicianSkill }>(`/api/resources/technicians/${technicianId}/skills`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -383,21 +417,20 @@ export const mastersApi = {
     certId: string;
     certificateNumber: string;
     issuedAt: string;
-    expiresAt?: string | null;
-  }) => apiRequest<{ data: TechnicianCertification }>(`/api/resources/technicians/${technicianId}/certs`, {
+    expiresAt?: string | null;  }) => masterRequest<{ data: TechnicianCertification }>(`/api/resources/technicians/${technicianId}/certs`, {
     method: 'POST',
     body: JSON.stringify(data),
   }),
 
-  getSkills: () => apiRequest<{ data: Skill[] }>('/api/resources/skills'),
+  getSkills: () => masterRequest<{ data: Skill[] }>('/api/resources/skills'),
   createSkill: (data: { code: string; name: string; category?: string }) =>
-    apiRequest<{ data: Skill }>('/api/resources/skills', { method: 'POST', body: JSON.stringify(data) }),
+    masterRequest<{ data: Skill }>('/api/resources/skills', { method: 'POST', body: JSON.stringify(data) }),
 
-  getOrderTypes: () => apiRequest<{ data: OrderType[] }>('/api/resources/order-types'),
+  getOrderTypes: () => masterRequest<{ data: OrderType[] }>('/api/resources/order-types'),
   createOrderType: (data: { code: string; name: string; defaultTemplateId?: string }) =>
-    apiRequest<{ data: OrderType }>('/api/resources/order-types', { method: 'POST', body: JSON.stringify(data) }),
+    masterRequest<{ data: OrderType }>('/api/resources/order-types', { method: 'POST', body: JSON.stringify(data) }),
 
-  getQcChecklists: () => apiRequest<{ data: QcChecklist[] }>('/api/resources/qc-checklists'),
+  getQcChecklists: () => masterRequest<{ data: QcChecklist[] }>('/api/resources/qc-checklists'),
   createQcChecklist: (data: {
     code: string;
     name: string;
@@ -409,6 +442,5 @@ export const mastersApi = {
       unit?: string | null;
       limitsJson: string;
       isRequired: boolean;
-    }>;
-  }) => apiRequest<{ data: QcChecklist }>('/api/resources/qc-checklists', { method: 'POST', body: JSON.stringify(data) }),
+    }>;  }) => masterRequest<{ data: QcChecklist }>('/api/resources/qc-checklists', { method: 'POST', body: JSON.stringify(data) }),
 };

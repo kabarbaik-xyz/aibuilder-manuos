@@ -1,5 +1,8 @@
 'use client';
 
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { PageHeader } from '@/components/ui/page-header';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useCalendars, useAddCalendarException } from '@/features/masters/hooks';
 import { Calendar } from '@/features/masters/api';
@@ -8,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { ErrorState } from '@/components/ui/resource-state';
 import { FormErrorSummary } from '@/components/ui/form-errors';
-import { CreateCalendarDrawer } from '@/features/masters/components/resource-forms';
+import { CreateCalendarModal } from '@/features/masters/components/resource-forms';
 import { ApiError } from '@/lib/api/client';
 
 export default function CalendarsPage() {
@@ -47,40 +50,34 @@ export default function CalendarsPage() {
     {
       key: 'code',
       header: 'Calendar Code',
-      render: (c) => <span className="font-mono font-semibold text-blue-400">{c.code}</span>,
+      render: (c) => <span className="font-mono font-semibold text-primary">{c.code}</span>,
     },
     {
       key: 'name',
       header: 'Calendar Name',
-      render: (c) => <span className="font-medium text-neutral-100">{c.name}</span>,
+      render: (c) => <span className="font-medium text-ink">{c.name}</span>,
     },
     {
       key: 'timezone',
       header: 'Timezone',
-      render: (c) => <span className="font-mono text-neutral-300">{c.timezone}</span>,
+      render: (c) => <span className="font-mono text-ink">{c.timezone}</span>,
     },
     {
       key: 'actions',
       header: 'Exceptions',
       render: (c) => (
-        <Button variant="default" size="small" onClick={(e) => { e.stopPropagation(); setExceptionCalendar(c); }}>
+        <PermissionGate permission="resource.manage"><Button variant="default" size="small" onClick={(e) => { e.stopPropagation(); setExceptionCalendar(c); }}>
           Add Exception
-        </Button>
+        </Button></PermissionGate>
       ),
     },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-100">Working Calendars</h1>
-          <p className="text-sm text-neutral-400">Configure standard operating hours, weekly shifts and holiday exceptions</p>
-        </div>
-        <Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
+      <PageHeader title="Working Calendars" description="Configure standard operating hours, weekly shifts and holiday exceptions" actions={<><PermissionGate permission="resource.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Calendar
-        </Button>
-      </div>
+        </Button></PermissionGate></>} />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load calendars'} onRetry={() => refetch()} />
@@ -94,7 +91,7 @@ export default function CalendarsPage() {
         />
       )}
 
-      <CreateCalendarDrawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateCalendarModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
 
       {/* Exception Dialog */}
       <Dialog
@@ -106,38 +103,38 @@ export default function CalendarsPage() {
         <form onSubmit={handleExceptionSubmit} className="space-y-4">
           <FormErrorSummary error={exceptionError} />
           <div>
-            <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1">Date (YYYY-MM-DD) *</label>
-            <input
+            <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Date (YYYY-MM-DD) *
+            <Input
               type="date"
               required
               value={exceptionDate}
               onChange={(e) => setExceptionDate(e.target.value)}
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-blue-500 focus:outline-none"
-            />
+              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-primary/20 focus:outline-none"
+            /></label>
           </div>
           <div>
-            <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <label className="flex items-center gap-2 text-sm text-ink">
               <input
                 type="checkbox"
                 checked={isWorkingDay}
                 onChange={(e) => setIsWorkingDay(e.target.checked)}
-                className="rounded border-neutral-700 bg-neutral-900 text-blue-600 focus:ring-0"
+                className="rounded border-line bg-surface text-primary focus:ring-0"
               />
               Is Working Day (e.g. Overtime Saturday)
             </label>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1">Reason / Description</label>
-            <input
+            <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Reason / Description
+            <Input
               type="text"
               placeholder="e.g. Public Holiday or Planned Maintenance"
               value={exceptionReason}
               onChange={(e) => setExceptionReason(e.target.value)}
-              className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-blue-500 focus:outline-none"
-            />
+              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-primary/20 focus:outline-none"
+            /></label>
           </div>
-          <div className="flex justify-end gap-2 pt-4 border-t border-neutral-800">
-            <Button variant="ghost" onClick={() => setExceptionCalendar(null)}>Cancel</Button>
+          <div className="flex justify-end gap-2 pt-4 border-t border-line">
+            <PermissionGate permission="resource.manage"><Button variant="ghost" onClick={() => setExceptionCalendar(null)}>Cancel</Button></PermissionGate>
             <Button type="submit" variant="primary" disabled={addException.isPending}>
               {addException.isPending ? 'Saving...' : 'Add Exception'}
             </Button>

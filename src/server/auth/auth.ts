@@ -160,6 +160,7 @@ export async function resolvePrincipal(
     email: user.email,
     name: user.name,
     workspaceId: workspace.id,
+    workspaceName: workspace.name,
     membershipId: membership.id,
     permissions,
     roles: roleCodes,

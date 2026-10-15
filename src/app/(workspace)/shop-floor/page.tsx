@@ -1,5 +1,4 @@
 import React from 'react';
-import { AppShell } from '@/components/app-shell';
 import { ShopFloorTaskListView } from '@/features/execution/components/ShopFloorTaskListView';
 
 export const metadata = {
@@ -9,19 +8,10 @@ export const metadata = {
 
 export default function ShopFloorPage() {
   return (
-    <AppShell
-      breadcrumb={
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span>Operations</span>
-          <span>/</span>
-          <span className="text-slate-100 font-medium">Shop Floor Workstations</span>
-        </div>
-      }
-      activeTitle="Shop Floor Operations"
-    >
-      <div className="p-6 max-w-7xl mx-auto">
+    <div className="page-stack">
+      <div className="max-w-7xl mx-auto">
         <ShopFloorTaskListView />
       </div>
-    </AppShell>
+    </div>
   );
 }

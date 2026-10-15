@@ -1,5 +1,10 @@
 'use client';
 
+import { ErrorState } from '@/components/ui/resource-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { Dialog } from '@/components/ui/dialog';
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useStockMovements, useReverseMovement } from '../hooks';
@@ -13,7 +18,7 @@ export function StockMovementsView() {
   const [reversalReason, setReversalReason] = useState('');
   const [reversalError, setReversalError] = useState<string | null>(null);
 
-  const { data: movements, isLoading, refetch } = useStockMovements({
+  const { data: movements, isLoading, refetch, error: queryError } = useStockMovements({
     movementType: movementTypeFilter || undefined,
   });
 
@@ -49,33 +54,25 @@ export function StockMovementsView() {
     }
   };
 
+  if (queryError) return <div className="page-stack"><PageHeader title="Stock movements"/><ErrorState message={queryError.message} onRetry={()=>refetch()}/></div>;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Stock Card Ledger</h1>
-          <p className="text-sm text-muted">
-            Append-only audit trail of every stock entry, transfer, issue, count adjustment, and reversal.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/inventory">
-            <Button variant="default" size="small">View Current Balances</Button>
-          </Link>
+      <PageHeader title="Stock Card Ledger" description="Append-only audit trail of every stock entry, transfer, issue, count adjustment, and reversal." actions={<><div className="flex flex-wrap items-center gap-2">
+          <Link href="/inventory" className="btn  ">View Current Balances</Link>
           <Button variant="default" size="small" onClick={() => refetch()}>Refresh Ledger</Button>
-        </div>
-      </div>
+        </div></>} />
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <input
+        <Input
           type="text"
           placeholder="Filter by item code or name..."
           className="input flex-1"
           value={itemFilter}
           onChange={(e) => setItemFilter(e.target.value)}
         />
-        <select
+        <Select
           className="input sm:w-60"
           value={movementTypeFilter}
           onChange={(e) => setMovementTypeFilter(e.target.value)}
@@ -90,7 +87,7 @@ export function StockMovementsView() {
           <option value="PRODUCTION_OUTPUT">Production Output</option>
           <option value="ADJUSTMENT">Adjustment</option>
           <option value="SHIPMENT">Shipment</option>
-        </select>
+        </Select>
       </div>
 
       {/* Ledger Table */}
@@ -105,7 +102,7 @@ export function StockMovementsView() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-muted/10 border-b border-border text-xs text-muted uppercase font-semibold">
+              <thead className="bg-surface-muted border-b border-line text-xs text-muted uppercase font-semibold">
                 <tr>
                   <th className="p-3">Occurred At</th>
                   <th className="p-3">Type</th>
@@ -119,26 +116,26 @@ export function StockMovementsView() {
                   <th className="p-3 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-line">
                 {filteredMovements.map((m) => (
-                  <tr key={m.id} className="hover:bg-muted/5 transition">
+                  <tr key={m.id} className="hover:bg-surface-muted transition">
                     <td className="p-3 font-mono text-xs text-muted whitespace-nowrap">
                       {new Date(m.occurredAt).toLocaleString()}
                     </td>
                     <td className="p-3">
                       <span className={`text-xs px-2 py-0.5 rounded font-mono font-medium ${
-                        m.movementType === 'OPENING_BALANCE' ? 'bg-indigo-500/10 text-indigo-400' :
-                        m.movementType === 'PURCHASE_RECEIPT' ? 'bg-emerald-500/10 text-emerald-400' :
-                        m.movementType === 'ISSUE_TO_WIP' ? 'bg-amber-500/10 text-amber-400' :
-                        m.movementType === 'RETURN_FROM_WIP' ? 'bg-sky-500/10 text-sky-400' :
-                        m.movementType === 'ADJUSTMENT' ? 'bg-purple-500/10 text-purple-400' :
-                        'bg-muted/20 text-muted'
+                        m.movementType === 'OPENING_BALANCE' ? 'bg-primary-soft text-primary' :
+                        m.movementType === 'PURCHASE_RECEIPT' ? 'bg-success-soft text-success' :
+                        m.movementType === 'ISSUE_TO_WIP' ? 'bg-warning-soft text-warning' :
+                        m.movementType === 'RETURN_FROM_WIP' ? 'bg-primary-soft text-primary' :
+                        m.movementType === 'ADJUSTMENT' ? 'bg-primary-soft text-primary' :
+                        'bg-surface-muted text-muted'
                       }`}>
                         {m.movementType}
                       </span>
                     </td>
                     <td className="p-3">
-                      <div className="font-medium text-white">{m.itemCode}</div>
+                      <div className="font-medium text-ink">{m.itemCode}</div>
                       <div className="text-xs text-muted">{m.itemName}</div>
                     </td>
                     <td className="p-3">
@@ -160,7 +157,7 @@ export function StockMovementsView() {
                         <span className="text-muted italic">—</span>
                       )}
                     </td>
-                    <td className="p-3 text-right font-mono font-bold text-white">
+                    <td className="p-3 text-right font-mono font-bold text-ink">
                       {formatQuantity(m.atoms)}
                     </td>
                     <td className="p-3 text-xs">
@@ -201,15 +198,15 @@ export function StockMovementsView() {
 
       {/* Reversal Confirmation Modal */}
       {selectedMovementId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="card max-w-md w-full p-6 space-y-4">
-            <h3 className="text-lg font-bold">Reverse Stock Movement</h3>
+        <Dialog isOpen onClose={() => setSelectedMovementId(null)} title="Reverse stock movement" size="md" pending={reverseMutation.isPending}>
+          
+            
             <p className="text-sm text-muted">
-              Reversing movement <span className="font-mono text-white">{selectedMovementId.slice(0, 8)}</span> will post a compensating double-entry adjustment and retain the original record in the ledger.
+              Reversing movement <span className="font-mono text-ink">{selectedMovementId.slice(0, 8)}</span> will post a compensating double-entry adjustment and retain the original record in the ledger.
             </p>
 
             {reversalError && (
-              <div className="p-3 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+              <div className="p-3 rounded bg-danger-soft border border-danger/20 text-danger text-xs">
                 {reversalError}
               </div>
             )}
@@ -218,15 +215,15 @@ export function StockMovementsView() {
               <div>
                 <label className="block text-xs font-semibold uppercase text-muted mb-1">
                   Reason for Reversal *
-                </label>
-                <input
+                
+                <Input
                   type="text"
                   required
                   placeholder="e.g. Inbound record had wrong lot entered"
                   className="input w-full"
                   value={reversalReason}
                   onChange={(e) => setReversalReason(e.target.value)}
-                />
+                /></label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -248,8 +245,8 @@ export function StockMovementsView() {
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
+          
+        </Dialog>
       )}
     </div>
   );

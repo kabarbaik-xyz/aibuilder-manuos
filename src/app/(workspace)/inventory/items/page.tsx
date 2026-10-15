@@ -1,5 +1,8 @@
 'use client';
 
+import { PageHeader } from '@/components/ui/page-header';
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useItems } from '@/features/masters/hooks';
@@ -8,7 +11,7 @@ import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
-import { CreateItemDrawer } from '@/features/masters/components/resource-forms';
+import { CreateItemModal } from '@/features/masters/components/resource-forms';
 
 export default function ItemsPage() {
   const router = useRouter();
@@ -26,12 +29,12 @@ export default function ItemsPage() {
     {
       key: 'code',
       header: 'Part / Item Code',
-      render: (i) => <span className="font-mono font-semibold text-blue-400">{i.code}</span>,
+      render: (i) => <span className="font-mono font-semibold text-primary">{i.code}</span>,
     },
     {
       key: 'name',
       header: 'Item Name',
-      render: (i) => <span className="font-medium text-neutral-100">{i.name}</span>,
+      render: (i) => <span className="font-medium text-ink">{i.name}</span>,
     },
     {
       key: 'type',
@@ -45,13 +48,13 @@ export default function ItemsPage() {
     {
       key: 'baseUom',
       header: 'Base UOM',
-      render: (i) => <span className="font-mono text-neutral-300">{i.baseUom?.code || '—'}</span>,
+      render: (i) => <span className="font-mono text-ink">{i.baseUom?.code || '—'}</span>,
     },
     {
       key: 'tracking',
       header: 'Tracking',
       render: (i) => (
-        <span className="text-xs text-neutral-400">
+        <span className="text-xs text-muted">
           {i.isLotTracked ? 'Lot' : ''}
           {i.isLotTracked && i.isSerialTracked ? ' + ' : ''}
           {i.isSerialTracked ? 'Serial' : ''}
@@ -72,30 +75,24 @@ export default function ItemsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-100">Item Master</h1>
-          <p className="text-sm text-neutral-400">Manage parts catalog, raw materials, assemblies and unit definitions</p>
-        </div>
-        <Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
+      <PageHeader title="Item Master" description="Manage parts catalog, raw materials, assemblies and unit definitions" actions={<><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Item
-        </Button>
-      </div>
+        </Button></>} />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <input
+          <Input
             type="text"
             placeholder="Search code or description..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-md border border-neutral-800 bg-neutral-900/80 px-3 py-1.5 text-sm text-neutral-200 placeholder-neutral-500 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-muted focus:border-primary/20 focus:outline-none"
           />
         </div>
-        <select
+        <Select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-md border border-neutral-800 bg-neutral-900/80 px-3 py-1.5 text-sm text-neutral-200 focus:border-blue-500 focus:outline-none"
+          className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-primary/20 focus:outline-none"
         >
           <option value="">All Item Types</option>
           <option value="RAW_MATERIAL">Raw Material</option>
@@ -103,7 +100,7 @@ export default function ItemsPage() {
           <option value="SUBASSEMBLY">Subassembly</option>
           <option value="FINISHED_GOOD">Finished Good</option>
           <option value="CONSUMABLE">Consumable</option>
-        </select>
+        </Select>
       </div>
 
       {error ? (
@@ -115,11 +112,11 @@ export default function ItemsPage() {
           isLoading={isLoading}
           emptyTitle="No items in catalog"
           emptyDescription="Create raw materials or finished assemblies to begin inventory tracking."
-          onRowClick={(i) => router.push(`/inventory/items/${i.id}`)}
+          getRowHref={(i) => `/inventory/items/${i.id}`}
         />
       )}
 
-      <CreateItemDrawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateItemModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
     </div>
   );
 }

@@ -14,18 +14,18 @@ export default function EngineeringHubPage() {
   if (error) return <ErrorState title="Failed to load engineering orders" onRetry={() => refetch()} />;
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="border-b pb-4">
-        <h1 className="text-2xl font-bold text-slate-900">Engineering Hub</h1>
-        <p className="text-sm text-slate-500">
+    <div className="space-y-6">
+      <div className="border-b pb-4 border-line">
+        <h1 className="text-2xl font-bold text-ink">Engineering Hub</h1>
+        <p className="text-sm text-muted">
           Engineering review queue, drawing specs, BOM calculation, and process routing approvals.
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border bg-white shadow-sm border-line">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b bg-slate-50 text-slate-600 font-semibold text-xs">
+            <tr className="border-b bg-surface-muted text-muted font-semibold text-xs border-line">
               <th className="p-3">Order Number</th>
               <th className="p-3">Customer</th>
               <th className="p-3">Target Item</th>
@@ -37,7 +37,7 @@ export default function EngineeringHubPage() {
           <tbody>
             {orders.length === 0 ? (
               <tr>
-                <td colSpan={6} className="p-6 text-center text-slate-400">
+                <td colSpan={6} className="text-center text-muted">
                   No orders in engineering review queue.
                 </td>
               </tr>
@@ -46,8 +46,8 @@ export default function EngineeringHubPage() {
                 const latestEng = o.engineeringRevisions?.[0];
                 const openQuestionsCount = o.questions?.filter((q) => q.status === 'OPEN').length || 0;
                 return (
-                  <tr key={o.id} className="border-b hover:bg-slate-50">
-                    <td className="p-3 font-mono font-bold text-blue-600">{o.orderNumber}</td>
+                  <tr key={o.id} className="border-b hover:bg-surface-muted border-line">
+                    <td className="p-3 font-mono font-bold text-primary">{o.orderNumber}</td>
                     <td className="p-3">{o.customer?.name}</td>
                     <td className="p-3">{o.item?.name}</td>
                     <td className="p-3">
@@ -65,19 +65,17 @@ export default function EngineeringHubPage() {
                     </td>
                     <td className="p-3">
                       {openQuestionsCount > 0 ? (
-                        <span className="text-xs font-bold text-rose-600">
+                        <span className="text-xs font-bold text-danger">
                           {openQuestionsCount} blocking question(s)
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-400">None</span>
+                        <span className="text-xs text-muted">None</span>
                       )}
                     </td>
                     <td className="p-3 text-right">
-                      <Link href={`/engineering/orders/${o.id}`}>
-                        <Button variant="default" size="small">
+                      <Link href={`/engineering/orders/${o.id}`} className="btn  ">
                           Review Specs & BOM
-                        </Button>
-                      </Link>
+                        </Link>
                     </td>
                   </tr>
                 );

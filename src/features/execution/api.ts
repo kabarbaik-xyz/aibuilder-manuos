@@ -1,4 +1,9 @@
-import { apiRequest } from '@/lib/api/client';
+import { apiRequest as request } from '@/lib/api/client';
+import { hydrateAtomFields, stringifyQuantities } from '@/lib/api/quantities';
+async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
+  return hydrateAtomFields(await request<T>(url, options));
+}
+
 import {
   MyTaskSummaryDTO,
   TaskExecutionDetailDTO,

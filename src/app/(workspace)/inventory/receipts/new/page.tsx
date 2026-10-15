@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AppShell } from '@/components/app-shell';
 import { useSupplyOrders } from '@/features/supply/hooks';
 import { SupplyReceiptModal } from '@/features/supply/components/supply-receipt-modal';
 import { Button } from '@/components/ui/button';
@@ -18,18 +17,7 @@ export default function NewReceiptPage() {
   );
 
   return (
-    <AppShell
-      breadcrumb={
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span>Operations</span>
-          <span>/</span>
-          <Link href="/inventory/receipts" className="hover:underline">Inbound Receipts</Link>
-          <span>/</span>
-          <span className="text-white">Receive Goods</span>
-        </div>
-      }
-      activeTitle="Receive Inbound Goods"
-    >
+    <div className="page-stack">
       <div className="space-y-6 max-w-4xl mx-auto">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Receive Inbound Goods</h1>
@@ -39,8 +27,8 @@ export default function NewReceiptPage() {
         </div>
 
         <div className="card p-0 overflow-hidden">
-          <div className="p-4 border-b border-border bg-muted/5">
-            <h2 className="text-sm font-semibold uppercase text-muted">Approved Purchase Orders Awaiting Delivery</h2>
+          <div className="p-4 border-b border-line bg-surface-muted">
+            <h2 className="text-sm font-semibold uppercase text-ink">Approved Purchase Orders Awaiting Delivery</h2>
           </div>
 
           {isLoading ? (
@@ -48,25 +36,23 @@ export default function NewReceiptPage() {
           ) : eligibleOrders.length === 0 ? (
             <div className="p-12 text-center text-muted text-sm space-y-2">
               <p>No approved purchase orders currently pending receipt.</p>
-              <Link href="/supply-orders">
-                <Button variant="default" size="small" className="mt-2">
+              <Link href="/supply-orders" className="btn  mt-2">
                   View All Purchase Orders
-                </Button>
-              </Link>
+                </Link>
             </div>
           ) : (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-line">
               {eligibleOrders.map((order) => (
-                <div key={order.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-muted/5 transition">
+                <div key={order.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-surface-muted transition">
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
-                      <span className="font-mono font-bold text-base text-white">{order.orderNumber}</span>
-                      <span className="text-xs px-2 py-0.5 rounded font-mono font-semibold bg-emerald-500/10 text-emerald-400">
+                      <span className="font-mono font-bold text-base text-ink">{order.orderNumber}</span>
+                      <span className="text-xs px-2 py-0.5 rounded font-mono font-semibold bg-success-soft text-success">
                         {order.status}
                       </span>
                     </div>
                     <p className="text-xs text-muted">
-                      Supplier: <span className="text-white font-medium">{order.supplierName}</span> · Lines: {order.lines.length} · Expected Date: {new Date(order.expectedDate).toLocaleDateString()}
+                      Supplier: <span className="text-ink font-medium">{order.supplierName}</span> · Lines: {order.lines.length} · Expected Date: {new Date(order.expectedDate).toLocaleDateString()}
                     </p>
                   </div>
 
@@ -94,6 +80,6 @@ export default function NewReceiptPage() {
           />
         )}
       </div>
-    </AppShell>
+    </div>
   );
 }

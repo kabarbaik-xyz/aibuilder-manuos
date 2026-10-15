@@ -1,5 +1,8 @@
 'use client';
 
+import { Dialog } from '@/components/ui/dialog';
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { SupplyOrderDTO } from '@/server/modules/supply/contracts';
 import { useReceiveSupply } from '../hooks';
@@ -109,29 +112,21 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-surface border border-border rounded-xl shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-border pb-3">
-          <div>
-            <h3 className="text-lg font-semibold">Receive Inbound Shipment</h3>
-            <p className="text-xs text-muted">Purchase Order: {order.orderNumber} ({order.supplierName})</p>
-          </div>
-          <button type="button" onClick={onClose} className="text-muted hover:text-white">
-            ✕
-          </button>
-        </div>
+    <Dialog isOpen onClose={onClose} title="Receive inbound shipment" size="lg" pending={receiveSupply.isPending}>
+      
+        
 
         {errorMsg && <FormErrorSummary message={errorMsg} />}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-muted uppercase tracking-wider mb-1">
-              Receiving Storage Location <span className="text-red-500">*</span>
-            </label>
-            <select
+              Receiving Storage Location <span className="text-danger">*</span>
+            
+            <Select
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
-              className="w-full rounded border border-border bg-surface px-3 py-2 text-sm"
+              className="w-full rounded border border-line bg-surface px-3 py-2 text-sm"
               required
             >
               <option value="">-- Select receiving location --</option>
@@ -140,11 +135,11 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                   {loc.name} ({loc.code}) [{loc.type}]
                 </option>
               ))}
-            </select>
+            </Select></label>
           </div>
 
           <div className="space-y-3">
-            <h4 className="text-sm font-medium border-b border-border pb-1">Line Items to Receive</h4>
+            <h4 className="text-sm font-medium border-b border-line pb-1">Line Items to Receive</h4>
             {order.lines.map((line) => {
               const entry = lineReceipts[line.id];
               const openQtyNum = Number(line.openAtoms) / 1_000_000;
@@ -154,14 +149,14 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                 <div
                   key={line.id}
                   className={`p-3 rounded border ${
-                    isClosed ? 'opacity-50 bg-muted/10 border-border' : 'bg-muted/20 border-border'
+                    isClosed ? 'opacity-50 bg-surface-muted border-line' : 'bg-surface-muted border-line'
                   } space-y-2`}
                 >
                   <div className="flex justify-between items-center text-sm font-medium">
                     <span>
                       {line.itemCode} - {line.itemName}
                     </span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-muted/40">
+                    <span className="text-xs px-2 py-0.5 rounded bg-surface-muted">
                       Open: {openQtyNum} units
                     </span>
                   </div>
@@ -169,8 +164,8 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                   {!isClosed && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                       <div>
-                        <label className="block text-muted mb-0.5">Quantity to Receive</label>
-                        <input
+                        <label className="block text-muted mb-0.5">Quantity to Receive
+                        <Input
                           type="number"
                           min="1"
                           max={openQtyNum}
@@ -184,15 +179,15 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                               },
                             })
                           }
-                          className="w-full rounded border border-border bg-surface px-2 py-1"
+                          className="w-full rounded border border-line bg-surface px-2 py-1"
                           required
-                        />
+                        /></label>
                       </div>
 
                       {line.tracking === 'LOT' && (
                         <div>
-                          <label className="block text-muted mb-0.5">Assigned Lot #</label>
-                          <input
+                          <label className="block text-muted mb-0.5">Assigned Lot #
+                          <Input
                             type="text"
                             value={entry?.lotNumber ?? ''}
                             onChange={(e) =>
@@ -204,16 +199,16 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                                 },
                               })
                             }
-                            className="w-full rounded border border-border bg-surface px-2 py-1"
+                            className="w-full rounded border border-line bg-surface px-2 py-1"
                             required
-                          />
+                          /></label>
                         </div>
                       )}
 
                       {line.tracking === 'LOT' && (
                         <div>
-                          <label className="block text-muted mb-0.5">Supplier Mill Heat #</label>
-                          <input
+                          <label className="block text-muted mb-0.5">Supplier Mill Heat #
+                          <Input
                             type="text"
                             placeholder="e.g. HEAT-99824"
                             value={entry?.supplierLotNumber ?? ''}
@@ -226,15 +221,15 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                                 },
                               })
                             }
-                            className="w-full rounded border border-border bg-surface px-2 py-1"
-                          />
+                            className="w-full rounded border border-line bg-surface px-2 py-1"
+                          /></label>
                         </div>
                       )}
 
                       {line.tracking === 'LOT' && (
                         <div>
-                          <label className="block text-muted mb-0.5">Expiration Date</label>
-                          <input
+                          <label className="block text-muted mb-0.5">Expiration Date
+                          <Input
                             type="date"
                             value={entry?.expirationDate ?? ''}
                             onChange={(e) =>
@@ -246,8 +241,8 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                                 },
                               })
                             }
-                            className="w-full rounded border border-border bg-surface px-2 py-1"
-                          />
+                            className="w-full rounded border border-line bg-surface px-2 py-1"
+                          /></label>
                         </div>
                       )}
                     </div>
@@ -260,17 +255,17 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
           <div>
             <label className="block text-xs font-medium text-muted uppercase tracking-wider mb-1">
               Receipt Notes / Bill of Lading
-            </label>
-            <input
+            
+            <Input
               type="text"
               value={receiptNotes}
               onChange={(e) => setReceiptNotes(e.target.value)}
               placeholder="e.g. BOL-88421, Delivered via DHL Freight in good condition"
-              className="w-full rounded border border-border bg-surface px-3 py-2 text-sm"
-            />
+              className="w-full rounded border border-line bg-surface px-3 py-2 text-sm"
+            /></label>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-line">
             <Button type="button" variant="default" onClick={onClose}>
               Cancel
             </Button>
@@ -279,7 +274,7 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      
+    </Dialog>
   );
 }

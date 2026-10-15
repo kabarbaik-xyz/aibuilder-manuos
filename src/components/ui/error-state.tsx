@@ -13,7 +13,7 @@ export function ErrorState({
   onRetry,
 }: ErrorStateProps) {
   return (
-    <div className="p-4 rounded-xl border border-[#f5c2c7] bg-[#fff5f5] text-danger my-3">
+    <div className="p-4 rounded-xl border border-[#f5c2c7] bg-[#fff5f5] text-danger my-3 border-line">
       <div className="flex items-center gap-2 mb-1">
         <Icon name="alert" className="w-4 h-4 text-danger" />
         <strong className="text-xs font-semibold">{title}</strong>

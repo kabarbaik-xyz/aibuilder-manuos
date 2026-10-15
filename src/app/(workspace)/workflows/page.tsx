@@ -1,5 +1,6 @@
 'use client';
 
+import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
 import { useWorkflowTemplates } from '@/features/workflows/hooks';
@@ -14,19 +15,8 @@ export default function WorkflowsPage() {
   if (error) return <ErrorState title="Failed to load workflows" onRetry={() => refetch()} />;
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Workflow Studio</h1>
-          <p className="text-sm text-slate-500">
-            Define process DAG routings, operation dependencies, skill requirements, and inspection gates.
-          </p>
-        </div>
-
-        <Link href="/workflows/new">
-          <Button variant="primary">Create New Workflow</Button>
-        </Link>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Workflow Studio" description="Define process DAG routings, operation dependencies, skill requirements, and inspection gates." actions={<><Link href="/workflows/new" className="btn primary ">Create New Workflow</Link></>} />
 
       {templates.length === 0 ? (
         <EmptyState
@@ -40,11 +30,11 @@ export default function WorkflowsPage() {
           {templates.map((tpl) => {
             const latestVersion = tpl.versions?.[0];
             return (
-              <div key={tpl.id} className="rounded-lg border bg-white p-5 shadow-sm space-y-3">
+              <div key={tpl.id} className="rounded-lg border bg-white p-5 shadow-sm space-y-3 border-line">
                 <div className="flex items-start justify-between">
                   <div>
-                    <span className="font-mono text-xs font-bold text-blue-600">{tpl.code}</span>
-                    <h2 className="text-base font-bold text-slate-900 mt-0.5">{tpl.name}</h2>
+                    <span className="font-mono text-xs font-bold text-primary">{tpl.code}</span>
+                    <h2 className="text-base font-bold text-ink mt-0.5">{tpl.name}</h2>
                   </div>
                   {latestVersion && (
                     <Badge variant={latestVersion.status === 'PUBLISHED' ? 'success' : 'default'}>
@@ -53,21 +43,19 @@ export default function WorkflowsPage() {
                   )}
                 </div>
 
-                <p className="text-xs text-slate-500 line-clamp-2">
+                <p className="text-xs text-muted line-clamp-2">
                   {tpl.description || 'No description provided.'}
                 </p>
 
-                <div className="text-xs text-slate-400 border-t pt-2">
+                <div className="text-xs text-muted border-t pt-2 border-line">
                   Order Type: <strong>{tpl.orderType?.name}</strong>
                 </div>
 
                 {latestVersion && (
                   <div className="pt-2">
-                    <Link href={`/workflows/${tpl.id}/versions/${latestVersion.id}`}>
-                      <Button variant="default" className="w-full">
+                    <Link href={`/workflows/${tpl.id}/versions/${latestVersion.id}`} className="btn  w-full">
                         Open Routing Editor
-                      </Button>
-                    </Link>
+                      </Link>
                   </div>
                 )}
               </div>

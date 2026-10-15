@@ -1,33 +1,35 @@
+import type { IconName } from '@/components/icons';
 export interface MasterNavItem {
   title: string;
   href: string;
+  icon: IconName;
   permissions: readonly string[];
 }
 
 export const MASTER_NAV_ITEMS: readonly MasterNavItem[] = [
-  { title: 'Customers', href: '/settings/customers', permissions: ['customer.read', 'customer.manage'] },
-  { title: 'Suppliers', href: '/settings/suppliers', permissions: ['supplier.read', 'supplier.manage'] },
-  { title: 'Items & materials', href: '/inventory/items', permissions: ['inventory.read', 'item.manage'] },
-  { title: 'Units of measure', href: '/settings/units', permissions: ['item.manage'] },
-  { title: 'Locations', href: '/settings/locations', permissions: ['inventory.read', 'location.manage'] },
-  { title: 'Departments', href: '/settings/departments', permissions: ['resource.manage'] },
-  { title: 'Machines', href: '/settings/machines', permissions: ['planning.read', 'resource.manage'] },
-  { title: 'Technicians', href: '/settings/technicians', permissions: ['planning.read', 'resource.manage'] },
-  { title: 'Calendars', href: '/settings/calendars', permissions: ['planning.read', 'resource.manage'] },
-  { title: 'Skills & certifications', href: '/settings/skills-certifications', permissions: ['resource.manage'] },
-  { title: 'Order types', href: '/settings/order-types', permissions: ['order.read', 'workflow.author'] },
-  { title: 'QC checklists', href: '/settings/qc-checklists', permissions: ['quality.read', 'quality.configure'] },
+  { title: 'Customers', href: '/settings/customers', icon: 'customers', permissions: ['customer.read', 'customer.manage'] },
+  { title: 'Suppliers', href: '/settings/suppliers', icon: 'supplier', permissions: ['supplier.read', 'supplier.manage'] },
+  { title: 'Items & materials', href: '/inventory/items', icon: 'item', permissions: ['inventory.read', 'item.manage'] },
+  { title: 'Units of measure', href: '/settings/units', icon: 'ruler', permissions: ['item.manage'] },
+  { title: 'Locations', href: '/settings/locations', icon: 'location', permissions: ['inventory.read', 'location.manage'] },
+  { title: 'Departments', href: '/settings/departments', icon: 'department', permissions: ['resource.manage'] },
+  { title: 'Machines', href: '/settings/machines', icon: 'machine', permissions: ['planning.read', 'resource.manage'] },
+  { title: 'Technicians', href: '/settings/technicians', icon: 'technician', permissions: ['planning.read', 'resource.manage'] },
+  { title: 'Calendars', href: '/settings/calendars', icon: 'calendar', permissions: ['planning.read', 'resource.manage'] },
+  { title: 'Skills & certifications', href: '/settings/skills-certifications', icon: 'certificate', permissions: ['resource.manage'] },
+  { title: 'Order types', href: '/settings/order-types', icon: 'order-type', permissions: ['order.read', 'workflow.author'] },
+  { title: 'QC checklists', href: '/settings/qc-checklists', icon: 'checklist', permissions: ['quality.read', 'quality.configure'] },
 ];
 
 export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
-  { title: 'Order Hub', href: '/orders', permissions: ['order.read', 'order.create'] },
-  { title: 'Engineering Hub', href: '/engineering', permissions: ['engineering.read', 'engineering.write'] },
-  { title: 'Workflow Studio', href: '/workflows', permissions: ['workflow.read', 'workflow.author'] },
-  { title: 'Supply Orders', href: '/supply-orders', permissions: ['supply.read', 'supply.create'] },
-  { title: 'Inbound Receipts', href: '/inventory/receipts', permissions: ['inventory.read', 'inventory.receive'] },
-  { title: 'Inventory Ledger', href: '/inventory', permissions: ['inventory.read'] },
-  { title: 'Production Planning', href: '/planning', permissions: ['planning.read', 'task.assign'] },
-  { title: 'Shop Floor Workstation', href: '/shop-floor', permissions: ['task.read_assigned', 'task.execute_assigned', 'planning.read'] },
+  { title: 'Order Hub', href: '/orders', icon: 'order', permissions: ['order.read', 'order.create'] },
+  { title: 'Engineering Hub', href: '/engineering', icon: 'engineering', permissions: ['engineering.read', 'engineering.write'] },
+  { title: 'Workflow Studio', href: '/workflows', icon: 'graph', permissions: ['workflow.read', 'workflow.author'] },
+  { title: 'Supply Orders', href: '/supply-orders', icon: 'supply', permissions: ['supply.read', 'supply.create'] },
+  { title: 'Inbound Receipts', href: '/inventory/receipts', icon: 'receipt', permissions: ['inventory.read', 'inventory.receive'] },
+  { title: 'Inventory', href: '/inventory', icon: 'inventory', permissions: ['inventory.read'] },
+  { title: 'Planning', href: '/planning', icon: 'calendar', permissions: ['planning.read', 'task.assign'] },
+  { title: 'My Work', href: '/shop-floor', icon: 'work', permissions: ['task.read_assigned', 'task.execute_assigned', 'planning.read'] },
 ];
 
 export function getWorkflowNavigation(permissions: readonly string[]) {

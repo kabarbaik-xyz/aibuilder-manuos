@@ -1,4 +1,9 @@
-import { apiRequest } from '@/lib/api/client';
+import { apiRequest as request } from '@/lib/api/client';
+import { hydrateAtomFields, stringifyQuantities } from '@/lib/api/quantities';
+async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
+  return hydrateAtomFields(await request<T>(url, options));
+}
+
 import {
   StockBalanceDTO,
   StockMovementDTO,
@@ -59,7 +64,7 @@ export async function createStockCount(
   return apiRequest<Committed<StockCountDTO>>('/api/inventory/counts', {
     method: 'POST',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(input),
+    body: stringifyQuantities(input),
   });
 }
 
@@ -80,7 +85,7 @@ export async function transferStock(
   return apiRequest<Committed<StockMovementDTO>>('/api/inventory/transfers', {
     method: 'POST',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(input),
+    body: stringifyQuantities(input),
   });
 }
 
@@ -91,7 +96,7 @@ export async function issueToProduction(
   return apiRequest<Committed<StockMovementDTO>>('/api/inventory/issues', {
     method: 'POST',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(input),
+    body: stringifyQuantities(input),
   });
 }
 
@@ -102,7 +107,7 @@ export async function returnUnusedMaterial(
   return apiRequest<Committed<StockMovementDTO>>('/api/inventory/returns', {
     method: 'POST',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(input),
+    body: stringifyQuantities(input),
   });
 }
 
@@ -113,7 +118,7 @@ export async function reverseMovement(
   return apiRequest<Committed<StockMovementDTO>>('/api/inventory/reversals', {
     method: 'POST',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(input),
+    body: stringifyQuantities(input),
   });
 }
 

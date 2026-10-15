@@ -128,15 +128,15 @@ export function AccountMenu() {
             <span className="avatar text-base font-bold">{initials}</span>
             <div>
               <strong className="text-base font-semibold">{name}</strong>
-              <p className="text-xs text-neutral-400">{principal?.email}</p>
+              <p className="text-xs text-muted">{principal?.email}</p>
             </div>
           </div>
           <div className="spec-row">
             <span>Workspace</span>
-            <strong>{principal?.workspaceId ? 'Precision Works' : 'Default'}</strong>
+            <strong>{principal?.workspaceName || 'Workspace'}</strong>
           </div>
           <div className="spec-row">
-            <span>Granted Roles</span>
+            <span>Roles</span>
             <strong>{rolesLabel}</strong>
           </div>
           {principal?.customerId && (
@@ -157,16 +157,16 @@ export function AccountMenu() {
       {panel === 'settings' && (
         <Dialog isOpen onClose={() => setPanel(null)} title="Workspace Settings" type="modal">
           <div className="account-settings space-y-3">
-            <p className="text-sm text-neutral-300">
-              Your session is authenticated against the server. Normal mode derives capabilities strictly from server-assigned roles.
+            <p className="text-sm text-ink">
+              Your workspace administrator manages your roles and access.
             </p>
             <div className="spec-row">
-              <span>User ID</span>
-              <code className="text-xs font-mono">{principal?.userId}</code>
+              <span>Email</span>
+              <code className="text-xs font-mono">{principal?.email}</code>
             </div>
             <div className="spec-row">
-              <span>Membership ID</span>
-              <code className="text-xs font-mono">{principal?.membershipId}</code>
+              <span>Roles</span>
+              <code className="text-xs font-mono">{rolesLabel}</code>
             </div>
           </div>
         </Dialog>
@@ -187,7 +187,7 @@ export function AccountMenu() {
             </>
           }
         >
-          <p className="text-sm text-neutral-300">
+          <p className="text-sm text-ink">
             You will be signed out of this session. You can sign in again using your email and password.
           </p>
         </Dialog>

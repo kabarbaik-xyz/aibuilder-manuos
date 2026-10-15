@@ -352,7 +352,7 @@ export function WorkstationView() {
               </div>
             </div>
             <div className="panel-body">
-              <div className="flex">
+              <div className="inline-cluster">
                 <span className="activity-symbol">
                   <Icon name="shield" />
                 </span>

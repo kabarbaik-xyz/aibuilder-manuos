@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
+import { useSidebarAccessibility } from './use-sidebar-accessibility';
 import { useGraphStore } from '../store/graph-store';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
@@ -19,6 +20,7 @@ export function AuthenticatedShell({
   breadcrumb,
   activeTitle,
 }: AuthenticatedShellProps) {
+  useSidebarAccessibility();
   const {
     toastMessage,
     openModal,
@@ -32,6 +34,7 @@ export function AuthenticatedShell({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
+        closeNavMenu();
         openModal('search');
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
@@ -40,6 +43,7 @@ export function AuthenticatedShell({
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault();
+        closeNavMenu();
         openModal('brain');
       }
       if (e.key === 'Escape' && isNavMenuOpen) {
@@ -66,8 +70,8 @@ export function AuthenticatedShell({
           {children}
         </main>
         <footer className="workspace-footer">
-          <span>ManuOS manufacturing prototype</span>
-          <span>Durable SQLite · Active Session</span>
+          <span>ManuOS · Manufacturing operations</span>
+          
         </footer>
       </div>
 

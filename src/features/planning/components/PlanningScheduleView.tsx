@@ -1,6 +1,13 @@
 'use client';
 
+import { PageHeader } from '@/components/ui/page-header';
+import { Button } from '@/components/ui/button';
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { Dialog } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import React, { useState } from 'react';
+import { useTechnicians, useMachines } from '@/features/masters/hooks';
 import { useSchedule, useAssignTask } from '../hooks';
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +16,8 @@ import Link from 'next/link';
 export function PlanningScheduleView() {
   const { data: schedule, isLoading, error, refetch } = useSchedule();
   const assignMutation = useAssignTask();
+  const techniciansQuery = useTechnicians();
+  const machinesQuery = useMachines();
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [technicianId, setTechnicianId] = useState('');
@@ -17,22 +26,22 @@ export function PlanningScheduleView() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-slate-400">
-        <Icon name="clock" className="w-8 h-8 animate-spin mb-3 text-sky-400" />
-        <p className="text-sm">Calculating deterministic production schedule & critical path...</p>
+      <div className="flex flex-col items-center justify-center p-12 text-muted">
+        <Icon name="clock" className="w-8 h-8 animate-spin mb-3 text-primary" />
+        <p className="text-sm">Loading production schedule…</p>
       </div>
     );
   }
 
   if (error || !schedule) {
     return (
-      <div className="p-8 text-center bg-rose-950/20 border border-rose-900/30 rounded-xl my-6">
-        <p className="text-rose-400 font-medium mb-2">Unable to load production schedule</p>
-        <p className="text-xs text-slate-400 mb-4">{error?.message || 'Unknown error'}</p>
+      <div className="p-8 text-center bg-danger-soft border border-line rounded-xl my-6">
+        <p className="text-danger font-medium mb-2">Unable to load production schedule</p>
+        <p className="text-xs text-muted mb-4">{error?.message || 'Unknown error'}</p>
         <button
           type="button"
           onClick={() => refetch()}
-          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition"
+          className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded-lg transition"
         >
           Retry Calculation
         </button>
@@ -61,84 +70,78 @@ export function PlanningScheduleView() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="page-stack">
+      <PageHeader title="Planning" description="Review the production schedule, critical work and resource assignments." actions={<Button onClick={() => refetch()} icon="reset">Recalculate</Button>} />
       {/* Top Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-xl backdrop-blur-md">
-          <span className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Projected Makespan</span>
-          <div className="text-2xl font-bold text-slate-100 mt-1">
+      <div className="planning-metrics">
+        <div className="planning-metric">
+          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Scheduled duration</span>
+          <div className="text-2xl font-bold text-ink mt-1">
             {Math.floor(schedule.makespanMinutes / 60)}h {schedule.makespanMinutes % 60}m
           </div>
-          <p className="text-xs text-slate-400 mt-1">Total active working duration</p>
+          <p className="text-xs text-muted mt-1">Total active working duration</p>
         </div>
 
-        <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-xl backdrop-blur-md">
-          <span className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Projected Finish</span>
-          <div className="text-lg font-bold text-emerald-400 mt-1 truncate">
-            {schedule.projectedEndAt ? new Date(schedule.projectedEndAt).toLocaleString() : 'N/A'}
+        <div className="planning-metric">
+          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Expected finish</span>
+          <div className="text-lg font-bold text-success mt-1 truncate">
+            {schedule.scheduledTasks.length && schedule.projectedEndAt ? new Date(schedule.projectedEndAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not scheduled'}
           </div>
-          <p className="text-xs text-slate-400 mt-1">Taking shifts & weekends into account</p>
+          <p className="text-xs text-muted mt-1">Taking shifts & weekends into account</p>
         </div>
 
-        <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-xl backdrop-blur-md">
-          <span className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Critical Path</span>
-          <div className="text-2xl font-bold text-amber-400 mt-1">
+        <div className="planning-metric">
+          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Critical Path</span>
+          <div className="text-2xl font-bold text-warning mt-1">
             {schedule.criticalPath.length} Tasks
           </div>
-          <p className="text-xs text-slate-400 mt-1">Zero slack activities</p>
+          <p className="text-xs text-muted mt-1">Zero slack activities</p>
         </div>
 
-        <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-xl backdrop-blur-md">
-          <span className="text-xs font-semibold text-slate-400 tracking-wider uppercase">Total Tasks</span>
-          <div className="text-2xl font-bold text-sky-400 mt-1">
+        <div className="planning-metric">
+          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Scheduled tasks</span>
+          <div className="text-2xl font-bold text-primary mt-1">
             {schedule.scheduledTasks.length}
           </div>
-          <p className="text-xs text-slate-400 mt-1">Sequenced in routing network</p>
+          <p className="text-xs text-muted mt-1">Sequenced in routing network</p>
         </div>
       </div>
 
       {/* Schedule Table */}
-      <div className="bg-slate-900/70 border border-slate-800/80 rounded-xl overflow-hidden shadow-xl backdrop-blur-md">
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
+      <div className="bg-surface border border-line rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-line flex justify-between items-center bg-surface">
           <div>
-            <h2 className="text-base font-semibold text-slate-200">Production Routing & Critical Path Schedule</h2>
-            <p className="text-xs text-slate-400">Timezone-aware scheduling engine with shift calendars and slack calculation</p>
+            <h2 className="text-base font-semibold text-ink">Production schedule</h2>
+            <p className="text-xs text-muted">Scheduled stages, material readiness and available time before a delay affects delivery.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition flex items-center gap-1.5"
-          >
-            <Icon name="reset" className="w-3.5 h-3.5" />
-            Recalculate
-          </button>
+
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+        {schedule.scheduledTasks.length === 0 ? <div className="resource-state"><span className="state-icon"><Icon name="calendar" /></span><h3>No production work scheduled</h3><p>Release an order with an approved workflow to see its stages and delivery schedule here.</p><Link className="btn" href="/orders">View orders</Link></div> : <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs border-line">
             <thead>
-              <tr className="border-b border-slate-800/80 bg-slate-950/50 text-slate-400 uppercase tracking-wider font-semibold">
+              <tr className="border-b border-line bg-surface text-muted uppercase tracking-wider font-semibold">
                 <th className="py-3 px-4">Task ID</th>
                 <th className="py-3 px-4">Path Type</th>
                 <th className="py-3 px-4">Earliest Start</th>
-                <th className="py-3 px-4">Projected Finish</th>
+                <th className="py-3 px-4">Expected finish</th>
                 <th className="py-3 px-4">Slack</th>
                 <th className="py-3 px-4">Material Wait</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/50 text-slate-300">
+            <tbody className="divide-y divide-line text-ink">
               {schedule.scheduledTasks.map((task) => (
                 <tr
                   key={task.taskId}
-                  className={`hover:bg-slate-800/40 transition-colors ${
-                    task.isCriticalPath ? 'bg-amber-950/10' : ''
+                  className={`hover:bg-surface transition-colors ${
+                    task.isCriticalPath ? 'bg-warning-soft' : ''
                   }`}
                 >
-                  <td className="py-3 px-4 font-mono font-medium text-slate-200">
+                  <td className="py-3 px-4 font-mono font-medium text-ink">
                     <Link
                       href={`/planning/tasks/${task.taskId}`}
-                      className="hover:text-sky-400 underline underline-offset-2 decoration-slate-700 hover:decoration-sky-400 transition"
+                      className="hover:text-primary underline underline-offset-2 decoration-line hover:decoration-sky-400 transition"
                     >
                       {task.taskId.slice(0, 12)}...
                     </Link>
@@ -150,7 +153,7 @@ export function PlanningScheduleView() {
                       <Badge variant="default">Flexible</Badge>
                     )}
                   </td>
-                  <td className="py-3 px-4 text-slate-300">
+                  <td className="py-3 px-4 text-ink">
                     {new Date(task.startAt).toLocaleString(undefined, {
                       month: 'short',
                       day: 'numeric',
@@ -158,7 +161,7 @@ export function PlanningScheduleView() {
                       minute: '2-digit',
                     })}
                   </td>
-                  <td className="py-3 px-4 text-slate-300">
+                  <td className="py-3 px-4 text-ink">
                     {new Date(task.endAt).toLocaleString(undefined, {
                       month: 'short',
                       day: 'numeric',
@@ -168,117 +171,90 @@ export function PlanningScheduleView() {
                   </td>
                   <td className="py-3 px-4">
                     {task.slackMinutes === 0 ? (
-                      <span className="text-amber-400 font-mono font-semibold">0m</span>
+                      <span className="text-warning font-mono font-semibold">0m</span>
                     ) : (
-                      <span className="text-slate-400 font-mono">
+                      <span className="text-muted font-mono">
                         {Math.floor(task.slackMinutes / 60)}h {task.slackMinutes % 60}m
                       </span>
                     )}
                   </td>
                   <td className="py-3 px-4">
                     {task.materialWaitMinutes > 0 ? (
-                      <span className="text-rose-400 font-semibold font-mono">
+                      <span className="text-danger font-semibold font-mono">
                         +{Math.floor(task.materialWaitMinutes / 60)}h wait
                       </span>
                     ) : (
-                      <span className="text-emerald-400 font-medium">Ready</span>
+                      <span className="text-success font-medium">Ready</span>
                     )}
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedTaskId(task.taskId)}
-                      className="px-2.5 py-1 bg-sky-950/60 hover:bg-sky-900 border border-sky-800 text-sky-200 text-xs rounded transition"
-                    >
-                      Assign Resource
-                    </button>
+                    <PermissionGate permission={['task.assign', 'planning.write', 'resource.manage']}><Button size="small" onClick={() => { setAssignError(null); setSelectedTaskId(task.taskId); }}>Assign resources</Button></PermissionGate>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
 
       {/* Resource Assignment Modal */}
       {selectedTaskId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-base font-semibold text-slate-100">Assign Resources</h3>
-              <button
-                type="button"
-                onClick={() => setSelectedTaskId(null)}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                ✕
-              </button>
-            </div>
+        <Dialog isOpen onClose={() => setSelectedTaskId(null)} title="Assign resources" size="md" pending={assignMutation.isPending}>
+          
+            
 
             <form onSubmit={handleAssignSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">
+                <label className="block text-xs font-medium text-muted mb-1">
                   Task ID
-                </label>
-                <input
+                
+                <Input
                   type="text"
                   disabled
                   value={selectedTaskId}
-                  className="w-full bg-slate-950/50 border border-slate-800 rounded px-3 py-2 text-xs text-slate-400 font-mono"
-                />
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-muted font-mono"
+                /></label>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Technician ID
-                </label>
-                <input
-                  type="text"
-                  value={technicianId}
-                  onChange={(e) => setTechnicianId(e.target.value)}
-                  placeholder="e.g. UUID of assigned technician"
-                  className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
-                />
+                <label className="block text-xs font-medium text-ink mb-1">
+                  Technician
+                
+                <Select value={technicianId} onChange={e => setTechnicianId(e.target.value)} disabled={techniciansQuery.isPending || !!techniciansQuery.error}><option value="">No technician assigned</option>{techniciansQuery.data?.data.map(resource => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</Select></label>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Machine ID
-                </label>
-                <input
-                  type="text"
-                  value={machineId}
-                  onChange={(e) => setMachineId(e.target.value)}
-                  placeholder="e.g. UUID of assigned CNC/Machine"
-                  className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
-                />
+                <label className="block text-xs font-medium text-ink mb-1">
+                  Machine
+                
+                <Select value={machineId} onChange={e => setMachineId(e.target.value)} disabled={machinesQuery.isPending || !!machinesQuery.error}><option value="">No machine assigned</option>{machinesQuery.data?.data.map(resource => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</Select></label>
               </div>
 
               {assignError && (
-                <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded text-xs text-rose-300 whitespace-pre-wrap">
+                <div className="p-3 bg-danger-soft border border-line rounded text-xs text-danger whitespace-pre-wrap">
                   {assignError}
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <div className="flex justify-end gap-2 pt-2 border-t border-line">
                 <button
                   type="button"
                   onClick={() => setSelectedTaskId(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded transition"
+                  className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={assignMutation.isPending}
-                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs rounded transition disabled:opacity-50"
+                  className="btn primary"
                 >
                   {assignMutation.isPending ? 'Verifying & Assigning...' : 'Confirm Assignment'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          
+        </Dialog>
       )}
     </div>
   );

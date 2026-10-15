@@ -1,5 +1,9 @@
 'use client';
 
+import { PageHeader } from '@/components/ui/page-header';
+import { Textarea } from '@/components/ui/textarea';
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCreateWorkflowTemplate } from '@/features/workflows/hooks';
@@ -47,23 +51,18 @@ export default function NewWorkflowPage() {
   };
 
   return (
-    <div className="max-w-2xl p-6 space-y-6">
-      <div className="border-b pb-4">
-        <h1 className="text-xl font-bold text-slate-900">New Workflow Routing</h1>
-        <p className="text-sm text-slate-500">
-          Create a new production routing template associated with an order type.
-        </p>
-      </div>
+    <div className="page-stack order-intake">
+      <PageHeader title="New workflow" description="Define a reusable production routing, then add its stages and dependencies in the editor." />
 
       {errorMsg && <FormErrorSummary message={errorMsg} />}
 
-      <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border bg-white p-6 shadow-sm">
+      <form onSubmit={handleSubmit} className="form-section space-y-6">
         <div>
-          <label className="text-xs font-medium text-slate-700">Order Type *</label>
-          <select
+          <label className="block text-sm font-medium text-ink">Order Type *
+          <Select
             value={orderTypeId}
             onChange={(e) => setOrderTypeId(e.target.value)}
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
+            className="w-full rounded border px-3 py-2 text-sm mt-1 border-line"
             required
           >
             <option value="">Select Order Type…</option>
@@ -72,50 +71,50 @@ export default function NewWorkflowPage() {
                 {ot.code} - {ot.name}
               </option>
             ))}
-          </select>
+          </Select></label>
         </div>
 
         <div>
-          <label className="text-xs font-medium text-slate-700">Template Code * (e.g. WF-TURNING-01)</label>
-          <input
+          <label className="block text-sm font-medium text-ink">Template Code * (e.g. WF-TURNING-01)
+          <Input
             type="text"
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="WF-TURNING-01"
-            className="w-full rounded border px-3 py-2 text-sm mt-1 uppercase font-mono"
+            className="w-full rounded border px-3 py-2 text-sm mt-1 uppercase font-mono border-line"
             required
-          />
+          /></label>
         </div>
 
         <div>
-          <label className="text-xs font-medium text-slate-700">Workflow Name *</label>
-          <input
+          <label className="block text-sm font-medium text-ink">Workflow Name *
+          <Input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Precision Turning & Milling Process"
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
+            className="w-full rounded border px-3 py-2 text-sm mt-1 border-line"
             required
-          />
+          /></label>
         </div>
 
         <div>
-          <label className="text-xs font-medium text-slate-700">Description</label>
-          <textarea
+          <label className="block text-sm font-medium text-ink">Description
+          <Textarea
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Detailed description of process stages and equipment requirements…"
-            className="w-full rounded border px-3 py-2 text-sm mt-1"
-          />
+            className="w-full rounded border px-3 py-2 text-sm mt-1 border-line"
+          /></label>
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t">
+        <div className="form-page-actions border-t border-line pt-5">
           <Button type="button" variant="default" onClick={() => router.back()}>
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={createTemplate.isPending}>
-            {createTemplate.isPending ? 'Creating…' : 'Initialize Workflow & Open Editor'}
+            {createTemplate.isPending ? 'Creating…' : 'Create workflow'}
           </Button>
         </div>
       </form>

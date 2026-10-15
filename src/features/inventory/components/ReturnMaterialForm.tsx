@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocations } from '@/features/masters/hooks';
@@ -56,7 +58,7 @@ export function ReturnMaterialForm() {
       </div>
 
       {errorMsg && (
-        <div className="p-4 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
+        <div className="p-4 rounded bg-danger-soft border border-danger/20 text-danger text-sm">
           {errorMsg}
         </div>
       )}
@@ -65,23 +67,23 @@ export function ReturnMaterialForm() {
         <div>
           <label className="block text-xs font-semibold uppercase text-muted mb-1">
             Material Demand ID *
-          </label>
-          <input
+          
+          <Input
             type="text"
             required
             placeholder="UUID of MaterialDemand from order"
             className="input w-full font-mono text-sm"
             value={demandId}
             onChange={(e) => setDemandId(e.target.value)}
-          />
+          /></label>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               Source WIP Location *
-            </label>
-            <select
+            
+            <Select
               required
               className="input w-full"
               value={wipLocationId}
@@ -93,14 +95,14 @@ export function ReturnMaterialForm() {
                   {loc.code} — {loc.name}
                 </option>
               ))}
-            </select>
+            </Select></label>
           </div>
 
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               Destination Storage Location *
-            </label>
-            <select
+            
+            <Select
               required
               className="input w-full"
               value={destinationLocationId}
@@ -112,7 +114,7 @@ export function ReturnMaterialForm() {
                   {loc.code} — {loc.name}
                 </option>
               ))}
-            </select>
+            </Select></label>
           </div>
         </div>
 
@@ -120,21 +122,21 @@ export function ReturnMaterialForm() {
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               Lot ID (Optional / If LOT tracked)
-            </label>
-            <input
+            
+            <Input
               type="text"
               placeholder="UUID of Lot"
               className="input w-full font-mono text-sm"
               value={lotId}
               onChange={(e) => setLotId(e.target.value)}
-            />
+            /></label>
           </div>
 
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               Quantity to Return *
-            </label>
-            <input
+            
+            <Input
               type="number"
               step="any"
               min="0.000001"
@@ -143,22 +145,22 @@ export function ReturnMaterialForm() {
               className="input w-full font-mono font-bold"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-            />
+            /></label>
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase text-muted mb-1">Reason / Notes</label>
-          <input
+          <label className="block text-xs font-semibold uppercase text-muted mb-1">Reason / Notes
+          <Input
             type="text"
             className="input w-full"
             placeholder="e.g. Unused rod ends returned to stock"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-          />
+          /></label>
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
+        <div className="flex justify-end gap-3 pt-4 border-t border-line">
           <Button type="button" variant="default" size="small" onClick={() => router.back()}>
             Cancel
           </Button>

@@ -1,5 +1,7 @@
 'use client';
 
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { PageHeader } from '@/components/ui/page-header';
 import React, { useState } from 'react';
 import { useOrderTypes } from '@/features/masters/hooks';
 import { OrderType } from '@/features/masters/api';
@@ -7,7 +9,7 @@ import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
-import { CreateOrderTypeDrawer } from '@/features/masters/components/resource-forms';
+import { CreateOrderTypeModal } from '@/features/masters/components/resource-forms';
 
 export default function OrderTypesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -19,12 +21,12 @@ export default function OrderTypesPage() {
     {
       key: 'code',
       header: 'Type Code',
-      render: (o) => <span className="font-mono font-semibold text-blue-400">{o.code}</span>,
+      render: (o) => <span className="font-mono font-semibold text-primary">{o.code}</span>,
     },
     {
       key: 'name',
       header: 'Order Type Name',
-      render: (o) => <span className="font-medium text-neutral-100">{o.name}</span>,
+      render: (o) => <span className="font-medium text-ink">{o.name}</span>,
     },
     {
       key: 'status',
@@ -39,15 +41,9 @@ export default function OrderTypesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-100">Order Types</h1>
-          <p className="text-sm text-neutral-400">Classify order categories, manufacturing lifecycles and default routing templates</p>
-        </div>
-        <Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
+      <PageHeader title="Order Types" description="Classify order categories, manufacturing lifecycles and default routing templates" actions={<><PermissionGate permission="workflow.author"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Order Type
-        </Button>
-      </div>
+        </Button></PermissionGate></>} />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load order types'} onRetry={() => refetch()} />
@@ -61,7 +57,7 @@ export default function OrderTypesPage() {
         />
       )}
 
-      <CreateOrderTypeDrawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateOrderTypeModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
     </div>
   );
 }

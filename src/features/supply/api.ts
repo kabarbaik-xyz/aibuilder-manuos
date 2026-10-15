@@ -1,4 +1,9 @@
-import { apiRequest } from '@/lib/api/client';
+import { apiRequest as request } from '@/lib/api/client';
+import { hydrateAtomFields, stringifyQuantities } from '@/lib/api/quantities';
+async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
+  return hydrateAtomFields(await request<T>(url, options));
+}
+
 import {
   SupplyOrderDTO,
   SupplyReceiptDTO,
@@ -32,7 +37,7 @@ export async function createSupplyOrder(
   return apiRequest<Committed<SupplyOrderDTO>>('/api/supply-orders', {
     method: 'POST',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(input),
+    body: stringifyQuantities(input),
   });
 }
 
@@ -54,7 +59,7 @@ export async function changeSupplyEta(
   return apiRequest<Committed<SupplyOrderDTO>>(`/api/supply-orders/${id}/eta`, {
     method: 'PUT',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(input),
+    body: stringifyQuantities(input),
   });
 }
 
@@ -65,7 +70,7 @@ export async function receiveSupply(
   return apiRequest<Committed<SupplyReceiptDTO>>('/api/inventory/receipts', {
     method: 'POST',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(input),
+    body: stringifyQuantities(input),
   });
 }
 

@@ -50,3 +50,11 @@ next-env.d.ts
 *.sqlite-shm
 data/
 tests/temp/
+
+# Local UI review captures
+artifacts/ui-restoration/
+
+# Isolated UI browser server
+.next-ui/
+
+.next-ui-build/

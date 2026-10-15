@@ -244,7 +244,7 @@ export function BrainDrawer() {
 
               {/* Grounded Evidence Chips */}
               {m.evidenceRefs && m.evidenceRefs.length > 0 && (
-                <div className="brain-evidence-section mt-2 pt-2 border-t border-(--line)">
+                <div className="brain-evidence-section mt-2 pt-2 border-t border-(--line) border-line">
                   <span className="small muted block mb-1">
                     Grounded Evidence:
                   </span>

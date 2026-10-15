@@ -1,5 +1,8 @@
 'use client';
 
+import { Dialog } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Select } from '@/components/ui/select';
 import React, { useState, useEffect } from 'react';
 import {
   useTaskExecutionDetail,
@@ -52,8 +55,8 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-16 text-slate-400">
-        <Icon name="clock" className="w-10 h-10 animate-spin mb-4 text-sky-400" />
+      <div className="flex flex-col items-center justify-center p-16 text-muted">
+        <Icon name="clock" className="w-10 h-10 animate-spin mb-4 text-primary" />
         <p className="text-sm">Loading workstation telemetry & material custody...</p>
       </div>
     );
@@ -61,12 +64,12 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
   if (error || !task) {
     return (
-      <div className="p-8 text-center bg-rose-950/20 border border-rose-900/30 rounded-xl my-6">
-        <p className="text-rose-400 font-medium mb-2">Unable to load workstation task</p>
-        <p className="text-xs text-slate-400 mb-4">{error?.message || 'Task not found'}</p>
+      <div className="p-8 text-center bg-danger-soft border border-line rounded-xl my-6">
+        <p className="text-danger font-medium mb-2">Unable to load workstation task</p>
+        <p className="text-xs text-muted mb-4">{error?.message || 'Task not found'}</p>
         <Link
           href="/shop-floor"
-          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition"
+          className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded-lg transition"
         >
           Return to Shop Floor Tasks
         </Link>
@@ -122,17 +125,17 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   return (
     <div className="space-y-6">
       {/* Workstation Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl backdrop-blur-md">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-surface border border-line p-6 rounded-2xl">
         <div>
           <div className="flex items-center gap-3 mb-2">
             <Link
               href="/shop-floor"
-              className="text-xs text-sky-400 hover:underline flex items-center gap-1"
+              className="text-xs text-primary hover:underline flex items-center gap-1"
             >
               ← Back to My Tasks
             </Link>
-            <span className="text-slate-600">·</span>
-            <span className="px-2 py-0.5 text-xs font-mono font-bold bg-slate-800 text-slate-300 rounded">
+            <span className="text-muted">·</span>
+            <span className="px-2 py-0.5 text-xs font-mono font-bold bg-surface text-ink rounded">
               {task.nodeKey}
             </span>
             {isRunning ? (
@@ -143,33 +146,33 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <Badge variant="default">{task.status}</Badge>
             )}
           </div>
-          <h1 className="text-2xl font-bold text-slate-100">{task.nodeName}</h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Order <strong className="text-slate-200">{task.order.orderNumber}</strong> · Customer:{' '}
-            <strong className="text-slate-200">{task.order.customerName}</strong> · Instruction Rev:{' '}
-            <strong className="text-slate-200">v{task.instructionRevision}</strong>
+          <h1 className="text-2xl font-bold text-ink">{task.nodeName}</h1>
+          <p className="text-xs text-muted mt-1">
+            Order <strong className="text-ink">{task.order.orderNumber}</strong> · Customer:{' '}
+            <strong className="text-ink">{task.order.customerName}</strong> · Instruction Rev:{' '}
+            <strong className="text-ink">v{task.instructionRevision}</strong>
           </p>
         </div>
 
         {/* Live Telemetry Display */}
-        <div className="flex items-center gap-6 bg-slate-950/60 border border-slate-800/80 p-4 rounded-xl">
+        <div className="flex items-center gap-6 bg-surface border border-line p-4 rounded-xl">
           <div>
-            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+            <div className="text-xs font-medium text-muted uppercase tracking-wider">
               Elapsed Time
             </div>
             <div
               className={`text-2xl font-mono font-bold tracking-tight mt-0.5 ${
-                isRunning ? 'text-emerald-400' : 'text-slate-200'
+                isRunning ? 'text-success' : 'text-ink'
               }`}
             >
               {formattedLiveTimer}
             </div>
-            <div className="text-[10px] text-slate-400">
+            <div className="text-xs text-muted">
               Target: {task.plannedDurationMinutes}m
             </div>
           </div>
 
-          <div className="h-10 w-px bg-slate-800" />
+          <div className="h-10 w-px bg-surface" />
 
           {/* Action buttons */}
           <div className="flex items-center gap-2">
@@ -178,7 +181,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 type="button"
                 onClick={handleStart}
                 disabled={startMutation.isPending}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-950/50 transition flex items-center gap-2"
+                className="px-5 py-2.5 bg-success-soft hover:bg-success-soft text-ink font-semibold text-xs rounded-xl transition flex items-center gap-2"
               >
                 <Icon name="bolt" className="w-4 h-4" />
                 {startMutation.isPending ? 'Starting...' : 'Start Operation'}
@@ -190,7 +193,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 type="button"
                 onClick={() => setShowPauseModal(true)}
                 disabled={pauseMutation.isPending}
-                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-amber-950/50 transition flex items-center gap-2"
+                className="px-4 py-2.5 bg-warning-soft hover:bg-warning-soft text-ink font-semibold text-xs rounded-xl shadow-amber-950/50 transition flex items-center gap-2"
               >
                 <Icon name="clock" className="w-4 h-4" />
                 Pause Work
@@ -202,7 +205,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 type="button"
                 onClick={handleResume}
                 disabled={resumeMutation.isPending}
-                className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-sky-950/50 transition flex items-center gap-2"
+                className="px-5 py-2.5 bg-primary hover:bg-primary-soft text-white font-semibold text-xs rounded-xl transition flex items-center gap-2"
               >
                 <Icon name="reset" className="w-4 h-4" />
                 {resumeMutation.isPending ? 'Resuming...' : 'Resume Operation'}
@@ -213,7 +216,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
       </div>
 
       {actionError && (
-        <div className="p-4 bg-rose-950/40 border border-rose-800 rounded-xl text-xs text-rose-300">
+        <div className="p-4 bg-danger-soft border border-line rounded-xl text-xs text-danger">
           <strong>Action Blocked:</strong> {actionError}
         </div>
       )}
@@ -223,13 +226,13 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         {/* Left 2 Columns: Material Readiness & Predecessor Guard */}
         <div className="lg:col-span-2 space-y-6">
           {/* Material Readiness Guard */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-lg backdrop-blur-md">
+          <div className="bg-surface border border-line rounded-xl p-5">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="text-sm font-semibold text-slate-200">
+                <h3 className="text-sm font-semibold text-ink">
                   Material Custody & Allocation
                 </h3>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-muted">
                   Live verification of shop-floor WIP vs raw warehouse balances
                 </p>
               </div>
@@ -243,9 +246,9 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse border-line">
                 <thead>
-                  <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
+                  <tr className="border-b border-line text-muted font-semibold uppercase tracking-wider">
                     <th className="py-2.5 px-3">Item</th>
                     <th className="py-2.5 px-3">Required</th>
                     <th className="py-2.5 px-3">WIP Issued</th>
@@ -253,31 +256,31 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                     <th className="py-2.5 px-3">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                <tbody className="divide-y divide-line text-ink">
                   {task.materialReadiness.demands.map((demand) => (
                     <tr key={demand.demandId}>
-                      <td className="py-2.5 px-3 font-medium text-slate-200">
+                      <td className="py-2.5 px-3 font-medium text-ink">
                         {demand.itemCode}
-                        <span className="block text-[10px] text-slate-400 font-normal">
+                        <span className="block text-xs text-muted font-normal">
                           {demand.itemName}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 font-mono font-medium">
                         {formatQuantity(demand.requiredAtoms)}
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-emerald-400 font-semibold">
+                      <td className="py-2.5 px-3 font-mono text-success font-semibold">
                         {formatQuantity(demand.issuedAtoms)}
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-slate-400">
+                      <td className="py-2.5 px-3 font-mono text-muted">
                         {formatQuantity(demand.availableInWarehouseAtoms)}
                       </td>
                       <td className="py-2.5 px-3">
                         {demand.issuedAtoms >= demand.requiredAtoms ? (
-                          <span className="text-emerald-400 font-medium">✓ Ready in WIP</span>
+                          <span className="text-success font-medium">✓ Ready in WIP</span>
                         ) : demand.reservedAtoms >= demand.requiredAtoms ? (
-                          <span className="text-sky-400 font-medium">Reserved</span>
+                          <span className="text-primary font-medium">Reserved</span>
                         ) : (
-                          <span className="text-amber-400 font-medium">Shortage</span>
+                          <span className="text-warning font-medium">Shortage</span>
                         )}
                       </td>
                     </tr>
@@ -288,16 +291,16 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           </div>
 
           {/* Predecessor Tasks Guard */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-lg backdrop-blur-md">
-            <h3 className="text-sm font-semibold text-slate-200 mb-1">
+          <div className="bg-surface border border-line rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-ink mb-1">
               Predecessor Operations Guard
             </h3>
-            <p className="text-xs text-slate-400 mb-4">
+            <p className="text-xs text-muted mb-4">
               All predecessor tasks must be marked COMPLETED before operation starts.
             </p>
 
             {task.predecessors.length === 0 ? (
-              <p className="text-xs text-emerald-400">
+              <p className="text-xs text-success">
                 ✓ Root task: No predecessor dependencies required.
               </p>
             ) : (
@@ -305,17 +308,17 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 {task.predecessors.map((p) => (
                   <div
                     key={p.taskId}
-                    className="flex justify-between items-center p-3 rounded-lg bg-slate-950/40 border border-slate-800 text-xs"
+                    className="flex justify-between items-center p-3 rounded-lg bg-surface border border-line text-xs"
                   >
-                    <span className="font-mono font-bold text-slate-300">
+                    <span className="font-mono font-bold text-ink">
                       {p.nodeKey}
                     </span>
                     {p.isCompleted ? (
-                      <span className="text-emerald-400 font-medium flex items-center gap-1">
+                      <span className="text-success font-medium flex items-center gap-1">
                         ✓ Completed
                       </span>
                     ) : (
-                      <span className="text-amber-400 font-medium flex items-center gap-1">
+                      <span className="text-warning font-medium flex items-center gap-1">
                         ⏳ Incomplete ({p.status})
                       </span>
                     )}
@@ -328,43 +331,43 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
         {/* Right Column: Work Sessions Telemetry & History */}
         <div className="space-y-6">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-lg backdrop-blur-md">
-            <h3 className="text-sm font-semibold text-slate-200 mb-1">
+          <div className="bg-surface border border-line rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-ink mb-1">
               Work Sessions Log
             </h3>
-            <p className="text-xs text-slate-400 mb-4">
+            <p className="text-xs text-muted mb-4">
               Immutable server records of start, pause, and resume events
             </p>
 
             {task.sessions.length === 0 ? (
-              <p className="text-xs text-slate-500">No work sessions started yet.</p>
+              <p className="text-xs text-muted">No work sessions started yet.</p>
             ) : (
               <div className="space-y-3">
                 {task.sessions.map((sess) => (
                   <div
                     key={sess.id}
-                    className="p-3 bg-slate-950/50 border border-slate-800 rounded-lg text-xs space-y-1"
+                    className="p-3 bg-surface border border-line rounded-lg text-xs space-y-1"
                   >
                     <div className="flex justify-between items-center">
                       <span
                         className={`font-semibold ${
-                          sess.sessionType === 'RUNNING' ? 'text-emerald-400' : 'text-amber-400'
+                          sess.sessionType === 'RUNNING' ? 'text-success' : 'text-warning'
                         }`}
                       >
                         {sess.sessionType}
                       </span>
-                      <span className="text-slate-400 font-mono">
+                      <span className="text-muted font-mono">
                         {sess.durationMinutes !== null
                           ? `${sess.durationMinutes}m`
                           : 'Active live'}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-400">
+                    <div className="text-xs text-muted">
                       Started: {new Date(sess.startedAt).toLocaleTimeString()}
                       {sess.endedAt && ` → ${new Date(sess.endedAt).toLocaleTimeString()}`}
                     </div>
                     {sess.notes && (
-                      <div className="text-[11px] text-slate-400 italic">
+                      <div className="text-xs text-muted italic">
                         &ldquo;{sess.notes}&rdquo;
                       </div>
                     )}
@@ -378,28 +381,19 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
       {/* Pause Reason Modal */}
       {showPauseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-base font-semibold text-slate-100">Pause Work Session</h3>
-              <button
-                type="button"
-                onClick={() => setShowPauseModal(false)}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                ✕
-              </button>
-            </div>
+        <Dialog isOpen onClose={() => setShowPauseModal(false)} title="Pause work session" size="md" pending={pauseMutation.isPending}>
+          
+            
 
             <form onSubmit={handlePauseSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-ink mb-1">
                   Reason for Pause
-                </label>
-                <select
+                
+                <Select
                   value={pauseReason}
                   onChange={(e) => setPauseReason(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-warning/20"
                 >
                   <option value="BREAK">Shift Break / Meal</option>
                   <option value="TOOLING">Tooling Adjustment / Calibration</option>
@@ -407,41 +401,41 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                   <option value="WAITING_QC">Waiting for In-Process QC</option>
                   <option value="MACHINE_MAINTENANCE">Machine Issue / Maintenance</option>
                   <option value="OTHER">Other Reason</option>
-                </select>
+                </Select></label>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-ink mb-1">
                   Additional Notes
-                </label>
-                <textarea
+                
+                <Textarea
                   value={pauseNotes}
                   onChange={(e) => setPauseNotes(e.target.value)}
                   placeholder="Optional details regarding pause..."
                   rows={3}
-                  className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
-                />
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-warning/20"
+                /></label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <div className="flex justify-end gap-2 pt-2 border-t border-line">
                 <button
                   type="button"
                   onClick={() => setShowPauseModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded transition"
+                  className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={pauseMutation.isPending}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded transition"
+                  className="px-4 py-2 bg-warning-soft hover:bg-warning-soft text-ink font-medium text-xs rounded transition"
                 >
                   {pauseMutation.isPending ? 'Pausing...' : 'Confirm Pause'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          
+        </Dialog>
       )}
     </div>
   );

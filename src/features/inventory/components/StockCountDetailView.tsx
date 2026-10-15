@@ -1,5 +1,7 @@
 'use client';
 
+import { ErrorState } from '@/components/ui/resource-state';
+import { PageHeader } from '@/components/ui/page-header';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useStockCount, useApproveStockCount } from '../hooks';
@@ -7,7 +9,7 @@ import { formatQuantity } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
 
 export function StockCountDetailView({ countId }: { countId: string }) {
-  const { data: count, isLoading, refetch } = useStockCount(countId);
+  const { data: count, isLoading, refetch, error: queryError } = useStockCount(countId);
   const approveMutation = useApproveStockCount();
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -31,12 +33,12 @@ export function StockCountDetailView({ countId }: { countId: string }) {
   }
 
   if (!count) {
-    return (
+    if (queryError) return <div className="page-stack"><PageHeader title="Stock count"/><ErrorState message={queryError.message} onRetry={()=>refetch()}/></div>;
+
+  return (
       <div className="card p-8 text-center space-y-4">
         <p className="text-muted">Stock count not found.</p>
-        <Link href="/inventory/counts">
-          <Button variant="default" size="small">Back to Counts Queue</Button>
-        </Link>
+        <Link href="/inventory/counts" className="btn  ">Back to Counts Queue</Link>
       </div>
     );
   }
@@ -48,22 +50,20 @@ export function StockCountDetailView({ countId }: { countId: string }) {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold font-mono tracking-tight">{count.countNumber}</h1>
             <span className={`text-xs px-2.5 py-1 rounded font-mono font-semibold ${
-              count.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-              count.status === 'SUBMITTED' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-              'bg-muted/20 text-muted'
+              count.status === 'APPROVED' ? 'bg-success-soft text-success border border-success/20' :
+              count.status === 'SUBMITTED' ? 'bg-warning-soft text-warning border border-warning/20' :
+              'bg-surface-muted text-muted'
             }`}>
               {count.status}
             </span>
           </div>
           <p className="text-sm text-muted mt-1">
-            Created on {new Date(count.createdAt).toLocaleString()} by <span className="text-white">{count.countedByName}</span>
+            Created on {new Date(count.createdAt).toLocaleString()} by <span className="text-ink">{count.countedByName}</span>
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <Link href="/inventory/counts">
-            <Button variant="default" size="small">Back to Counts</Button>
-          </Link>
+          <Link href="/inventory/counts" className="btn  ">Back to Counts</Link>
           {count.status === 'SUBMITTED' && (
             <Button
               variant="primary"
@@ -78,13 +78,13 @@ export function StockCountDetailView({ countId }: { countId: string }) {
       </div>
 
       {successMsg && (
-        <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+        <div className="p-4 rounded-lg bg-success-soft border border-success/20 text-success text-sm">
           {successMsg}
         </div>
       )}
 
       {errorMsg && (
-        <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
+        <div className="p-4 rounded-lg bg-danger-soft border border-danger/20 text-danger text-sm">
           <p className="font-semibold">Approval Blocked:</p>
           <p className="mt-1">{errorMsg}</p>
         </div>
@@ -94,21 +94,21 @@ export function StockCountDetailView({ countId }: { countId: string }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="card p-4">
           <p className="text-xs text-muted uppercase font-semibold">Location</p>
-          <p className="text-sm font-medium text-white mt-1">
+          <p className="text-sm font-medium text-ink mt-1">
             {count.locationCode ? `${count.locationCode} (${count.locationName})` : 'All Locations'}
           </p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-muted uppercase font-semibold">Reason</p>
-          <p className="text-sm font-medium text-white mt-1">{count.reason || 'Cycle Count'}</p>
+          <p className="text-sm font-medium text-ink mt-1">{count.reason || 'Cycle Count'}</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-muted uppercase font-semibold">Approver</p>
-          <p className="text-sm font-medium text-white mt-1">{count.approvedByName || 'Pending Owner Review'}</p>
+          <p className="text-sm font-medium text-ink mt-1">{count.approvedByName || 'Pending Owner Review'}</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-muted uppercase font-semibold">Approved At</p>
-          <p className="text-sm font-medium text-white mt-1">
+          <p className="text-sm font-medium text-ink mt-1">
             {count.approvedAt ? new Date(count.approvedAt).toLocaleString() : '—'}
           </p>
         </div>
@@ -116,14 +116,14 @@ export function StockCountDetailView({ countId }: { countId: string }) {
 
       {/* Count Lines Table */}
       <div className="card p-0 overflow-hidden">
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-line">
           <h2 className="text-base font-semibold">Counted Items & Book Snapshots</h2>
           <p className="text-xs text-muted">Comparison of captured book snapshot against physically counted quantities.</p>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-muted/10 border-b border-border text-xs text-muted uppercase font-semibold">
+            <thead className="bg-surface-muted border-b border-line text-xs text-muted uppercase font-semibold">
               <tr>
                 <th className="p-3">Item</th>
                 <th className="p-3">Location</th>
@@ -134,11 +134,11 @@ export function StockCountDetailView({ countId }: { countId: string }) {
                 <th className="p-3">Adjustment Movement</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-line">
               {count.lines.map((l) => (
-                <tr key={l.id} className="hover:bg-muted/5 transition">
+                <tr key={l.id} className="hover:bg-surface-muted transition">
                   <td className="p-3">
-                    <div className="font-medium text-white">{l.itemCode}</div>
+                    <div className="font-medium text-ink">{l.itemCode}</div>
                     <div className="text-xs text-muted">{l.itemName}</div>
                   </td>
                   <td className="p-3 font-mono text-xs">{l.locationCode}</td>
@@ -148,19 +148,19 @@ export function StockCountDetailView({ countId }: { countId: string }) {
                   <td className="p-3 text-right font-mono text-muted">
                     {formatQuantity(l.snapshotAtoms)}
                   </td>
-                  <td className="p-3 text-right font-mono font-bold text-white">
+                  <td className="p-3 text-right font-mono font-bold text-ink">
                     {formatQuantity(l.countedAtoms)}
                   </td>
                   <td className={`p-3 text-right font-mono font-bold ${
-                    l.discrepancyAtoms > 0n ? 'text-emerald-400' :
-                    l.discrepancyAtoms < 0n ? 'text-rose-400' :
+                    l.discrepancyAtoms > 0n ? 'text-success' :
+                    l.discrepancyAtoms < 0n ? 'text-danger' :
                     'text-muted'
                   }`}>
-                    {l.discrepancyAtoms > 0n ? `+${formatQuantity(l.discrepancyAtoms)}` : formatQuantity(l.discrepancyAtoms)}
+                    {l.discrepancyAtoms > 0n ? `+${`${l.discrepancyAtoms < 0n ? '−' : ''}${formatQuantity(l.discrepancyAtoms < 0n ? -l.discrepancyAtoms : l.discrepancyAtoms)}`}` : `${l.discrepancyAtoms < 0n ? '−' : ''}${formatQuantity(l.discrepancyAtoms < 0n ? -l.discrepancyAtoms : l.discrepancyAtoms)}`}
                   </td>
                   <td className="p-3 text-xs font-mono">
                     {l.movementId ? (
-                      <span className="text-sky-400">
+                      <span className="text-primary">
                         MOV-{l.movementId.slice(0, 8)}
                       </span>
                     ) : (

@@ -1,6 +1,14 @@
 import React from 'react';
+import { FileCog, ShoppingCart, PackageCheck, Boxes, Users, Truck, Package, Ruler, MapPin, Network, Cog, UserRoundCog, Award, Tags, ClipboardCheck, Brain, Route, ArrowLeft } from 'lucide-react';
+const symbols = {
+ 'arrow-left': ArrowLeft,
+ engineering: FileCog, supply: ShoppingCart, receipt: PackageCheck, inventory: Boxes,
+ customers: Users, supplier: Truck, item: Package, ruler: Ruler, location: MapPin,
+ department: Network, machine: Cog, technician: UserRoundCog, certificate: Award,
+ 'order-type': Tags, checklist: ClipboardCheck, users: Users, brain: Brain, route: Route, box: Package,
+};
 
-const paths: Record<string, React.ReactNode> = {
+const paths = {
   settings: <><path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3Z" /><circle cx="12" cy="12" r="3" /></>,
   logout: <><path d="M9 4H4v16h5M10 12h11m-4-4 4 4-4 4" /></>,
   grid: (
@@ -136,14 +144,20 @@ const paths: Record<string, React.ReactNode> = {
   ),
 };
 
+export type IconName = keyof typeof paths | keyof typeof symbols;
+
 export interface IconProps {
-  name: string;
+  name: IconName;
   className?: string;
   style?: React.CSSProperties;
 }
 
 export function Icon({ name, className = '', style }: IconProps) {
-  const content = paths[name] || paths.order;
+  if (name in symbols) {
+    const Symbol = symbols[name as keyof typeof symbols];
+    return <Symbol className={`icon ${className}`} style={style} strokeWidth={1.7} aria-hidden="true" />;
+  }
+  const content = paths[name as keyof typeof paths];
   return (
     <svg
       className={`icon ${className}`}

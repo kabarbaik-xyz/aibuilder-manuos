@@ -72,7 +72,7 @@ export function CustomerPortalView() {
       <section className="panel order-summary">
         <div className="portal-summary-top">
           <div>
-            <div className="flex">
+            <div className="inline-cluster">
               <strong className="small text-primary">#CO-2026-1042</strong>
               <Badge
                 variant={
@@ -286,7 +286,7 @@ export function CustomerPortalView() {
               </div>
             </div>
             <div className="panel-body">
-              <div className="flex">
+              <div className="inline-cluster">
                 <span className="avatar">MR</span>
                 <div>
                   <strong className="small">Marco Rossi</strong>

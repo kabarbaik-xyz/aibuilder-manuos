@@ -1,5 +1,8 @@
 'use client';
 
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { PageHeader } from '@/components/ui/page-header';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSuppliers } from '@/features/masters/hooks';
@@ -8,7 +11,7 @@ import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
-import { CreateSupplierDrawer } from '@/features/masters/components/resource-forms';
+import { CreateSupplierModal } from '@/features/masters/components/resource-forms';
 
 export default function SuppliersPage() {
   const router = useRouter();
@@ -22,22 +25,22 @@ export default function SuppliersPage() {
     {
       key: 'code',
       header: 'Code',
-      render: (s) => <span className="font-mono font-semibold text-blue-400">{s.code}</span>,
+      render: (s) => <span className="font-mono font-semibold text-primary">{s.code}</span>,
     },
     {
       key: 'name',
       header: 'Supplier Name',
-      render: (s) => <span className="font-medium text-neutral-100">{s.name}</span>,
+      render: (s) => <span className="font-medium text-ink">{s.name}</span>,
     },
     {
       key: 'currency',
       header: 'Currency',
-      render: (s) => <span className="font-mono text-neutral-400">{s.currency}</span>,
+      render: (s) => <span className="font-mono text-muted">{s.currency}</span>,
     },
     {
       key: 'leadTimeDays',
       header: 'Lead Time',
-      render: (s) => <span className="text-neutral-300">{s.leadTimeDays} days</span>,
+      render: (s) => <span className="text-ink">{s.leadTimeDays} days</span>,
     },
     {
       key: 'status',
@@ -52,24 +55,18 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-100">Suppliers</h1>
-          <p className="text-sm text-neutral-400">Manage material vendors, service suppliers and procurement parameters</p>
-        </div>
-        <Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
+      <PageHeader title="Suppliers" description="Manage material vendors, service suppliers and procurement parameters" actions={<><PermissionGate permission="supplier.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Supplier
-        </Button>
-      </div>
+        </Button></PermissionGate></>} />
 
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <input
+          <Input
             type="text"
             placeholder="Search code or name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-md border border-neutral-800 bg-neutral-900/80 px-3 py-1.5 text-sm text-neutral-200 placeholder-neutral-500 focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-muted focus:border-primary/20 focus:outline-none"
           />
         </div>
       </div>
@@ -83,11 +80,11 @@ export default function SuppliersPage() {
           isLoading={isLoading}
           emptyTitle="No suppliers registered"
           emptyDescription="Register your supply chain vendors to enable purchase orders and raw material tracking."
-          onRowClick={(s) => router.push(`/settings/suppliers/${s.id}`)}
+          getRowHref={(s) => `/settings/suppliers/${s.id}`}
         />
       )}
 
-      <CreateSupplierDrawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateSupplierModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
     </div>
   );
 }

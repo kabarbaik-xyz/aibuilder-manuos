@@ -37,7 +37,7 @@ export default function OrderEngineeringReviewPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="">
       <ReviewEditor orderId={orderId} revision={revision} />
     </div>
   );

@@ -1,5 +1,6 @@
 'use client';
 
+import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
 import { useOrders } from '@/features/orders/hooks';
@@ -14,19 +15,8 @@ export default function OrdersPage() {
   if (error) return <ErrorState title="Failed to load orders" onRetry={() => refetch()} />;
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Order Hub</h1>
-          <p className="text-sm text-slate-500">
-            Commercial order drafts, engineering prerequisites, material demand, and production release.
-          </p>
-        </div>
-
-        <Link href="/orders/new">
-          <Button variant="primary">New Order Intake</Button>
-        </Link>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Order Hub" description="Commercial order drafts, engineering prerequisites, material demand, and production release." actions={<><Link href="/orders/new" className="btn primary ">New Order Intake</Link></>} />
 
       {orders.length === 0 ? (
         <EmptyState
@@ -36,10 +26,10 @@ export default function OrdersPage() {
           onAction={() => window.location.assign('/orders/new')}
         />
       ) : (
-        <div className="overflow-x-auto rounded-lg border bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-lg border bg-white shadow-sm border-line">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b bg-slate-50 text-slate-600 font-semibold text-xs">
+              <tr className="border-b bg-surface-muted text-muted font-semibold text-xs border-line">
                 <th className="p-3">Order Number</th>
                 <th className="p-3">Customer</th>
                 <th className="p-3">Item</th>
@@ -53,18 +43,18 @@ export default function OrdersPage() {
               {orders.map((o) => {
                 const qty = Number(o.orderedAtoms) / 1_000_000;
                 return (
-                  <tr key={o.id} className="border-b hover:bg-slate-50">
-                    <td className="p-3 font-mono font-bold text-blue-600">
+                  <tr key={o.id} className="border-b hover:bg-surface-muted border-line">
+                    <td className="p-3 font-mono font-bold text-primary">
                       <Link href={`/orders/${o.id}`} className="hover:underline">
                         {o.orderNumber}
                       </Link>
                     </td>
-                    <td className="p-3 font-medium text-slate-800">{o.customer?.name}</td>
+                    <td className="p-3 font-medium text-muted">{o.customer?.name}</td>
                     <td className="p-3">{o.item?.name}</td>
                     <td className="p-3">
                       {qty} {o.item?.baseUom?.code || 'pcs'}
                     </td>
-                    <td className="p-3 text-slate-500">
+                    <td className="p-3 text-muted">
                       {new Date(o.requestedDate).toLocaleDateString()}
                     </td>
                     <td className="p-3">
@@ -81,11 +71,9 @@ export default function OrdersPage() {
                       </Badge>
                     </td>
                     <td className="p-3 text-right">
-                      <Link href={`/orders/${o.id}`}>
-                        <Button variant="default" size="small">
+                      <Link href={`/orders/${o.id}`} className="btn  ">
                           View Order
-                        </Button>
-                      </Link>
+                        </Link>
                     </td>
                   </tr>
                 );

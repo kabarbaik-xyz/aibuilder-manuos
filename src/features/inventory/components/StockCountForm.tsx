@@ -1,5 +1,8 @@
 'use client';
 
+import { Textarea } from '@/components/ui/textarea';
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useItems, useLocations } from '@/features/masters/hooks';
@@ -97,7 +100,7 @@ export function StockCountForm() {
       </div>
 
       {errorMsg && (
-        <div className="p-4 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
+        <div className="p-4 rounded bg-danger-soft border border-danger/20 text-danger text-sm">
           {errorMsg}
         </div>
       )}
@@ -107,8 +110,8 @@ export function StockCountForm() {
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               Target Location (Optional)
-            </label>
-            <select
+            
+            <Select
               className="input w-full"
               value={locationId}
               onChange={(e) => {
@@ -123,37 +126,37 @@ export function StockCountForm() {
                   {loc.code} — {loc.name} ({loc.kind})
                 </option>
               ))}
-            </select>
+            </Select></label>
           </div>
 
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               Reason / Cycle Count Code *
-            </label>
-            <input
+            
+            <Input
               type="text"
               required
               className="input w-full"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-            />
+            /></label>
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase text-muted mb-1">Notes</label>
-          <textarea
+          <label className="block text-xs font-semibold uppercase text-muted mb-1">Notes
+          <Textarea
             className="input w-full h-16 py-2"
             placeholder="Optional context about this stock count..."
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-          />
+          /></label>
         </div>
 
         {/* Lines */}
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <h2 className="text-sm font-semibold uppercase text-muted">Count Lines ({lines.length})</h2>
+            <h2 className="text-sm font-semibold uppercase text-ink">Count Lines ({lines.length})</h2>
             <Button type="button" variant="default" size="small" onClick={handleAddLine}>
               + Add Item Line
             </Button>
@@ -161,10 +164,10 @@ export function StockCountForm() {
 
           <div className="space-y-3">
             {lines.map((line, idx) => (
-              <div key={idx} className="p-3 card bg-muted/5 border border-border flex flex-col md:flex-row gap-3 items-end">
+              <div key={idx} className="p-3 card bg-surface-muted border border-line flex flex-col md:flex-row gap-3 items-end">
                 <div className="flex-1 w-full">
-                  <label className="block text-xs text-muted mb-1">Item *</label>
-                  <select
+                  <label className="block text-xs text-muted mb-1">Item *
+                  <Select
                     required
                     className="input w-full text-sm"
                     value={line.itemId}
@@ -176,12 +179,12 @@ export function StockCountForm() {
                         {item.code} — {item.name}
                       </option>
                     ))}
-                  </select>
+                  </Select></label>
                 </div>
 
                 <div className="flex-1 w-full">
-                  <label className="block text-xs text-muted mb-1">Location *</label>
-                  <select
+                  <label className="block text-xs text-muted mb-1">Location *
+                  <Select
                     required
                     className="input w-full text-sm"
                     value={line.locationId}
@@ -193,12 +196,12 @@ export function StockCountForm() {
                         {loc.code} ({loc.kind})
                       </option>
                     ))}
-                  </select>
+                  </Select></label>
                 </div>
 
                 <div className="w-full md:w-36">
-                  <label className="block text-xs text-muted mb-1">Counted Qty *</label>
-                  <input
+                  <label className="block text-xs text-muted mb-1">Counted Qty *
+                  <Input
                     type="number"
                     step="any"
                     min="0"
@@ -206,7 +209,7 @@ export function StockCountForm() {
                     className="input w-full font-mono font-bold"
                     value={line.countedQuantity}
                     onChange={(e) => handleLineChange(idx, 'countedQuantity', e.target.value)}
-                  />
+                  /></label>
                 </div>
 
                 {lines.length > 1 && (
@@ -224,7 +227,7 @@ export function StockCountForm() {
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
+        <div className="flex justify-end gap-3 pt-4 border-t border-line">
           <Button type="button" variant="default" size="small" onClick={() => router.back()}>
             Cancel
           </Button>

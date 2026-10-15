@@ -19,11 +19,11 @@ export function FormErrorSummary({
   return (
     <div
       role="alert"
-      className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300 space-y-1"
+      className="rounded-lg border border-danger/20 bg-danger-soft p-4 text-sm text-danger space-y-1"
     >
       {displayMessage && <div className="font-medium">{displayMessage}</div>}
       {displayFields && Object.keys(displayFields).length > 0 && (
-        <ul className="list-disc pl-5 text-xs text-red-400 space-y-0.5">
+        <ul className="list-disc pl-5 text-xs text-danger space-y-0.5">
           {Object.entries(displayFields).map(([field, err]) => (
             <li key={field}>
               <span className="font-semibold">{field}:</span> {String(err)}
@@ -50,5 +50,5 @@ export function FieldError({
     text = error.fieldErrors[field];
   }
   if (!text) return null;
-  return <p className="mt-1 text-xs text-red-400">{text}</p>;
+  return <p className="mt-1 text-xs text-danger">{text}</p>;
 }

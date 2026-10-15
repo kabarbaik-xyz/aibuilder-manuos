@@ -1,12 +1,14 @@
 'use client';
 
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { PageHeader } from '@/components/ui/page-header';
 import React, { useState } from 'react';
 import { useSkills } from '@/features/masters/hooks';
 import { Skill } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
-import { CreateSkillDrawer } from '@/features/masters/components/resource-forms';
+import { CreateSkillModal } from '@/features/masters/components/resource-forms';
 
 export default function SkillsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -18,31 +20,25 @@ export default function SkillsPage() {
     {
       key: 'code',
       header: 'Skill Code',
-      render: (s) => <span className="font-mono font-semibold text-blue-400">{s.code}</span>,
+      render: (s) => <span className="font-mono font-semibold text-primary">{s.code}</span>,
     },
     {
       key: 'name',
       header: 'Skill Name',
-      render: (s) => <span className="font-medium text-neutral-100">{s.name}</span>,
+      render: (s) => <span className="font-medium text-ink">{s.name}</span>,
     },
     {
       key: 'category',
       header: 'Category',
-      render: (s) => <span className="font-mono text-xs text-neutral-300">{s.category}</span>,
+      render: (s) => <span className="font-mono text-xs text-ink">{s.category}</span>,
     },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-100">Skills & Certifications</h1>
-          <p className="text-sm text-neutral-400">Manage technical competency standards, operator qualifications and licensing</p>
-        </div>
-        <Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
+      <PageHeader title="Skills & Certifications" description="Manage technical competency standards, operator qualifications and licensing" actions={<><PermissionGate permission="resource.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Skill
-        </Button>
-      </div>
+        </Button></PermissionGate></>} />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load skills'} onRetry={() => refetch()} />
@@ -56,7 +52,7 @@ export default function SkillsPage() {
         />
       )}
 
-      <CreateSkillDrawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateSkillModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
     </div>
   );
 }

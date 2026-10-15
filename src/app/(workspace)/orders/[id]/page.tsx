@@ -23,7 +23,7 @@ export default function OrderDetailPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="">
       <OrderDetail order={order} />
     </div>
   );

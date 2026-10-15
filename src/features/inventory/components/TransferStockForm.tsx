@@ -1,5 +1,7 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useItems, useLocations } from '@/features/masters/hooks';
@@ -63,7 +65,7 @@ export function TransferStockForm() {
       </div>
 
       {errorMsg && (
-        <div className="p-4 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
+        <div className="p-4 rounded bg-danger-soft border border-danger/20 text-danger text-sm">
           {errorMsg}
         </div>
       )}
@@ -72,8 +74,8 @@ export function TransferStockForm() {
         <div>
           <label className="block text-xs font-semibold uppercase text-muted mb-1">
             Item *
-          </label>
-          <select
+          
+          <Select
             required
             className="input w-full"
             value={itemId}
@@ -85,15 +87,15 @@ export function TransferStockForm() {
                 {item.code} — {item.name} ({item.itemType})
               </option>
             ))}
-          </select>
+          </Select></label>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               From Location (Source) *
-            </label>
-            <select
+            
+            <Select
               required
               className="input w-full"
               value={sourceLocationId}
@@ -105,14 +107,14 @@ export function TransferStockForm() {
                   {loc.code} — {loc.name} ({loc.kind})
                 </option>
               ))}
-            </select>
+            </Select></label>
           </div>
 
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               To Location (Destination) *
-            </label>
-            <select
+            
+            <Select
               required
               className="input w-full"
               value={destinationLocationId}
@@ -124,7 +126,7 @@ export function TransferStockForm() {
                   {loc.code} — {loc.name} ({loc.kind})
                 </option>
               ))}
-            </select>
+            </Select></label>
           </div>
         </div>
 
@@ -132,21 +134,21 @@ export function TransferStockForm() {
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               Lot ID (Optional / If LOT tracked)
-            </label>
-            <input
+            
+            <Input
               type="text"
               placeholder="UUID of Lot"
               className="input w-full font-mono text-sm"
               value={sourceLotId}
               onChange={(e) => setSourceLotId(e.target.value)}
-            />
+            /></label>
           </div>
 
           <div>
             <label className="block text-xs font-semibold uppercase text-muted mb-1">
               Quantity to Transfer *
-            </label>
-            <input
+            
+            <Input
               type="number"
               step="any"
               min="0.000001"
@@ -155,22 +157,22 @@ export function TransferStockForm() {
               className="input w-full font-mono font-bold"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-            />
+            /></label>
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase text-muted mb-1">Notes</label>
-          <input
+          <label className="block text-xs font-semibold uppercase text-muted mb-1">Notes
+          <Input
             type="text"
             className="input w-full"
             placeholder="e.g. Move from Quarantine to Main Raw Rack"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-          />
+          /></label>
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
+        <div className="flex justify-end gap-3 pt-4 border-t border-line">
           <Button type="button" variant="default" size="small" onClick={() => router.back()}>
             Cancel
           </Button>

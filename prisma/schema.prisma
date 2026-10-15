@@ -1020,6 +1020,8 @@ model Task {
   reservations           StockReservation[]
   resourceBookings       ResourceBooking[]
   workSessions           WorkSession[]
+  productionOutputs      ProductionOutput[]
+  reworkAttempts         ReworkAttempt[]
 
   @@unique([instanceId, nodeKey, attemptNumber])
   @@unique([workspaceId, id])
@@ -1114,6 +1116,7 @@ model Lot {
   destMovements     StockMovement[]    @relation("DestLot")
   supplyReceiptLines SupplyReceiptLine[]
   stockCountLines   StockCountLine[]
+  productionOutputs ProductionOutput[]
 
   @@unique([workspaceId, itemId, lotNumber])
   @@unique([workspaceId, id])
@@ -1420,4 +1423,123 @@ model WorkSession {
   @@unique([workspaceId, id])
   @@index([workspaceId, taskId])
   @@map("work_sessions")
+}
+
+// -------------------------------------------------------------
+// Production Output & Quality Management (Milestone M3 - O06)
+// -------------------------------------------------------------
+
+model ProductionOutput {
+  id                    String       @id @default(uuid())
+  workspaceId           String       @map("workspace_id")
+  taskId                String       @map("task_id")
+  attemptNumber         Int          @default(1) @map("attempt_number")
+  itemId                String       @map("item_id")
+  lotId                 String?      @map("lot_id")
+  serialId              String?      @map("serial_id")
+  outputAtoms           BigInt       @map("output_atoms")
+  destinationLocationId String       @map("destination_location_id")
+  movementId            String?      @map("movement_id")
+  isFinal               Boolean      @default(false) @map("is_final")
+  status                String       @default("RECORDED") // RECORDED | INSPECTED | REJECTED
+  operatorUserId        String       @map("operator_user_id")
+  commandId             String?      @map("command_id")
+  notes                 String?
+  version               Int          @default(1)
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+
+  workspace             Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task                  Task         @relation(fields: [workspaceId, taskId], references: [workspaceId, id], onDelete: Cascade)
+  item                  Item         @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  lot                   Lot?         @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+  destinationLocation   Location     @relation(fields: [workspaceId, destinationLocationId], references: [workspaceId, id])
+  operatorUser          User         @relation(fields: [operatorUserId], references: [id])
+  inspections           Inspection[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, taskId])
+  @@index([workspaceId, itemId])
+  @@map("production_outputs")
+}
+
+model Inspection {
+  id                 String             @id @default(uuid())
+  workspaceId        String             @map("workspace_id")
+  sourceType         String             @map("source_type") // PRODUCTION_OUTPUT | GOODS_RECEIPT
+  productionOutputId String?            @map("production_output_id")
+  supplyReceiptId    String?            @map("supply_receipt_id")
+  qcChecklistId      String?            @map("qc_checklist_id")
+  checklistRevision  Int                @default(1) @map("checklist_revision")
+  inspectedAtoms     BigInt             @map("inspected_atoms")
+  passedAtoms        BigInt             @default(0) @map("passed_atoms")
+  reworkAtoms        BigInt             @default(0) @map("rework_atoms")
+  scrappedAtoms      BigInt             @default(0) @map("scrapped_atoms")
+  status             String             @default("DRAFT") // DRAFT | FINALIZED
+  disposition        String?            // PASSED | REWORK | SCRAPPED | PARTIAL
+  inspectorUserId    String             @map("inspector_user_id")
+  reinspectionOfId   String?            @map("reinspection_of_id")
+  notes              String?
+  version            Int                @default(1)
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  workspace          Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  productionOutput   ProductionOutput?  @relation(fields: [workspaceId, productionOutputId], references: [workspaceId, id], onDelete: Cascade)
+  qcChecklist        QcChecklist?       @relation(fields: [workspaceId, qcChecklistId], references: [workspaceId, id])
+  inspectorUser      User               @relation(fields: [inspectorUserId], references: [id])
+  reinspectionOf     Inspection?        @relation("Reinspections", fields: [workspaceId, reinspectionOfId], references: [workspaceId, id])
+  reinspections      Inspection[]       @relation("Reinspections")
+  results            InspectionResult[]
+  reworkAttempts     ReworkAttempt[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, productionOutputId])
+  @@map("inspections")
+}
+
+model InspectionResult {
+  id               String     @id @default(uuid())
+  workspaceId      String     @map("workspace_id")
+  inspectionId     String     @map("inspection_id")
+  checkCode        String     @map("check_code")
+  checkDescription String     @map("check_description")
+  checkMethod      String     @map("check_method")
+  measuredValue    String?    @map("measured_value")
+  isPassed         Boolean    @map("is_passed")
+  defectReason     String?    @map("defect_reason")
+  notes            String?
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  workspace        Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inspection       Inspection @relation(fields: [workspaceId, inspectionId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, inspectionId])
+  @@map("inspection_results")
+}
+
+model ReworkAttempt {
+  id             String     @id @default(uuid())
+  workspaceId    String     @map("workspace_id")
+  inspectionId   String     @map("inspection_id")
+  taskId         String     @map("task_id")
+  attemptNumber  Int        @map("attempt_number")
+  targetAtoms    BigInt     @map("target_atoms")
+  instruction    String
+  status         String     @default("PENDING") // PENDING | IN_PROGRESS | COMPLETED | CANCELLED
+  authorizedById String     @map("authorized_by_id")
+  authorizedAt   DateTime   @default(now()) @map("authorized_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  workspace      Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inspection     Inspection @relation(fields: [workspaceId, inspectionId], references: [workspaceId, id], onDelete: Cascade)
+  task           Task       @relation(fields: [workspaceId, taskId], references: [workspaceId, id], onDelete: Cascade)
+  authorizedBy   User       @relation(fields: [authorizedById], references: [id])
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, taskId])
+  @@map("rework_attempts")
 }

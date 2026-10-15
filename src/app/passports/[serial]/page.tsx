@@ -30,9 +30,9 @@ export default function PassportPage() {
             <div className="flex items-center gap-2">
               <h1>Unit digital passport</h1>
               <Badge variant="blue">{decodedSerial}</Badge>
-              <Badge variant="success">QC Verified</Badge>
+              <Badge variant="default">Demo preview</Badge>
             </div>
-            <p>ISO 9001 Compliant Traceability Record · Cryptographically anchored in ManuOS Operational Graph.</p>
+            <p>Illustrative passport preview. All records below are sample data, not verification of this serial number.</p>
           </div>
           <div className="actions">
             <Link href="/" className="btn">
@@ -72,7 +72,7 @@ export default function PassportPage() {
                 </div>
                 <div className="spec-row">
                   <span>Cryptographic Hash</span>
-                  <code className="bg-[var(--surface-muted)] px-1.5 py-0.5 rounded text-[11px] border border-[var(--line)]">
+                  <code className="bg-[var(--surface-muted)] px-1.5 py-0.5 rounded text-xs border border-[var(--line)] border-line">
                     sha256:7f9a8b1c4d2e99a3...
                   </code>
                 </div>
@@ -136,12 +136,12 @@ export default function PassportPage() {
               </div>
               <div className="panel-body">
                 <div className="qr-wrap">
-                  <div className="qr border border-[var(--line)] rounded-lg p-2 bg-white flex items-center justify-center">
+                  <div className="qr border border-[var(--line)] rounded-lg p-2 bg-white flex items-center justify-center border-line">
                     <Icon name="shield" className="w-12 h-12 text-[var(--primary)]" />
                   </div>
                   <div>
-                    <strong>Immutable Audit Anchor</strong>
-                    <p>Verified on Precision Works edge ledger node.</p>
+                    <strong>Sample audit anchor</strong>
+                    <p>Illustration only; no authenticity verification is connected.</p>
                   </div>
                 </div>
               </div>
@@ -166,7 +166,7 @@ export default function PassportPage() {
                     className="btn full"
                   >
                     <Icon name="file" />
-                    Print Certificate
+                    Print demo preview
                   </button>
                 </div>
               </div>

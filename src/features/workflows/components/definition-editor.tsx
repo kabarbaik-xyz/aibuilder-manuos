@@ -1,5 +1,7 @@
 "use client";
 
+import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { WorkflowVersionDto, WorkflowTemplateDto } from "../api";
@@ -147,7 +149,7 @@ export function DefinitionEditor({
   return (
     <div className="space-y-6">
       {/* Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4 border-line">
         <div>
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold">{template.name}</h2>
@@ -157,7 +159,7 @@ export function DefinitionEditor({
               v{version.versionNumber} · {version.status}
             </Badge>
           </div>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             Order Type: {template.orderType?.name} · Code: {template.code}
           </p>
         </div>
@@ -222,7 +224,7 @@ export function DefinitionEditor({
 
       {/* Validation Banner */}
       {!validationResult.isValid && (
-        <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="rounded-md border border-danger/20 bg-danger-soft p-4 text-sm text-danger">
           <strong>Workflow validation issues:</strong>
           <ul className="mt-2 list-inside list-disc">
             {validationResult.errors.map((err, i) => (
@@ -233,20 +235,20 @@ export function DefinitionEditor({
       )}
 
       {isReadOnly && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="rounded-md border border-warning/20 bg-warning-soft p-4 text-sm text-warning">
           This workflow version is <strong>{version.status}</strong> and
           immutable. Fork a new version to modify operations or routing.
         </div>
       )}
 
       {/* Graph Visual / Flow Preview */}
-      <div className="rounded-lg border bg-slate-50 p-6">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500">
+      <div className="rounded-lg border bg-surface-muted p-6 border-line">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-ink">
           Execution DAG Topology
         </h3>
 
         {definition.nodes.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-muted">
             No nodes defined in this workflow.
           </p>
         ) : (
@@ -257,29 +259,29 @@ export function DefinitionEditor({
               );
               return (
                 <React.Fragment key={n.key}>
-                  <div className="flex flex-col rounded-md border bg-white p-3 shadow-sm min-w-37.5">
+                  <div className="flex flex-col rounded-md border bg-white p-3 shadow-sm min-w-37.5 border-line">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold text-blue-600">
+                      <span className="font-mono text-xs font-bold text-primary">
                         {n.key}
                       </span>
-                      <span className="text-xs text-slate-400">{n.type}</span>
+                      <span className="text-xs text-muted">{n.type}</span>
                     </div>
                     <strong className="text-sm mt-1">{n.name}</strong>
-                    <span className="text-xs text-slate-500 mt-1">
+                    <span className="text-xs text-muted mt-1">
                       {n.plannedDurationMinutes} mins
                     </span>
                     {!isReadOnly && (
                       <button
                         type="button"
                         onClick={() => handleRemoveNode(n.key)}
-                        className="mt-2 text-xs text-rose-500 hover:underline text-left"
+                        className="mt-2 text-xs text-danger hover:underline text-left"
                       >
                         Remove
                       </button>
                     )}
                   </div>
                   {idx < definition.nodes.length - 1 && (
-                    <span className="text-slate-400 font-bold">→</span>
+                    <span className="text-muted font-bold">→</span>
                   )}
                 </React.Fragment>
               );
@@ -292,76 +294,76 @@ export function DefinitionEditor({
       {!isReadOnly && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Add Node Card */}
-          <div className="rounded-lg border bg-white p-5">
+          <div className="rounded-lg border bg-white p-5 border-line">
             <h4 className="font-semibold text-sm mb-3">
               Add Operation / Inspection Node
             </h4>
             <form onSubmit={handleAddNode} className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs font-medium text-slate-600">
+                  <label className="text-xs font-medium text-muted">
                     Key (e.g. OP-10)
-                  </label>
-                  <input
+                  
+                  <Input
                     type="text"
                     value={newNodeKey}
                     onChange={(e) => setNewNodeKey(e.target.value)}
-                    className="w-full rounded border px-3 py-1.5 text-sm"
+                    className="w-full rounded border px-3 py-1.5 text-sm border-line"
                     placeholder="OP-10"
                     required
-                  />
+                  /></label>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-600">
+                  <label className="text-xs font-medium text-muted">
                     Type
-                  </label>
-                  <select
+                  
+                  <Select
                     value={newNodeType}
                     onChange={(e) => setNewNodeType(e.target.value as any)}
-                    className="w-full rounded border px-3 py-1.5 text-sm"
+                    className="w-full rounded border px-3 py-1.5 text-sm border-line"
                   >
                     <option value="OPERATION">Operation</option>
                     <option value="INSPECTION">Inspection</option>
                     <option value="APPROVAL">Approval</option>
-                  </select>
+                  </Select></label>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-medium text-muted">
                   Operation Name
-                </label>
-                <input
+                
+                <Input
                   type="text"
                   value={newNodeName}
                   onChange={(e) => setNewNodeName(e.target.value)}
-                  className="w-full rounded border px-3 py-1.5 text-sm"
+                  className="w-full rounded border px-3 py-1.5 text-sm border-line"
                   placeholder="CNC Milling Pass 1"
                   required
-                />
+                /></label>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs font-medium text-slate-600">
+                  <label className="text-xs font-medium text-muted">
                     Planned Duration (mins)
-                  </label>
-                  <input
+                  
+                  <Input
                     type="number"
                     value={newNodeDuration}
                     onChange={(e) => setNewNodeDuration(Number(e.target.value))}
-                    className="w-full rounded border px-3 py-1.5 text-sm"
+                    className="w-full rounded border px-3 py-1.5 text-sm border-line"
                     min="1"
-                  />
+                  /></label>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-600">
+                  <label className="text-xs font-medium text-muted">
                     Department
-                  </label>
-                  <select
+                  
+                  <Select
                     value={newNodeDept}
                     onChange={(e) => setNewNodeDept(e.target.value)}
-                    className="w-full rounded border px-3 py-1.5 text-sm"
+                    className="w-full rounded border px-3 py-1.5 text-sm border-line"
                   >
                     <option value="">None (General)</option>
                     {catalog?.departments?.map((d) => (
@@ -369,7 +371,7 @@ export function DefinitionEditor({
                         {d.name}
                       </option>
                     ))}
-                  </select>
+                  </Select></label>
                 </div>
               </div>
 
@@ -380,19 +382,19 @@ export function DefinitionEditor({
           </div>
 
           {/* Add Dependency Edge Card */}
-          <div className="rounded-lg border bg-white p-5">
+          <div className="rounded-lg border bg-white p-5 border-line">
             <h4 className="font-semibold text-sm mb-3">
               Add Dependency Link (AND Join)
             </h4>
             <form onSubmit={handleAddEdge} className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-medium text-muted">
                   Predecessor (From)
-                </label>
-                <select
+                
+                <Select
                   value={fromNode}
                   onChange={(e) => setFromNode(e.target.value)}
-                  className="w-full rounded border px-3 py-1.5 text-sm"
+                  className="w-full rounded border px-3 py-1.5 text-sm border-line"
                 >
                   <option value="">Select node…</option>
                   {definition.nodes.map((n) => (
@@ -400,17 +402,17 @@ export function DefinitionEditor({
                       {n.key} - {n.name}
                     </option>
                   ))}
-                </select>
+                </Select></label>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-medium text-muted">
                   Successor (To)
-                </label>
-                <select
+                
+                <Select
                   value={toNode}
                   onChange={(e) => setToNode(e.target.value)}
-                  className="w-full rounded border px-3 py-1.5 text-sm"
+                  className="w-full rounded border px-3 py-1.5 text-sm border-line"
                 >
                   <option value="">Select node…</option>
                   {definition.nodes.map((n) => (
@@ -418,7 +420,7 @@ export function DefinitionEditor({
                       {n.key} - {n.name}
                     </option>
                   ))}
-                </select>
+                </Select></label>
               </div>
 
               <Button type="submit" variant="soft" className="w-full">
@@ -426,15 +428,15 @@ export function DefinitionEditor({
               </Button>
             </form>
 
-            <div className="mt-4 border-t pt-3">
-              <span className="text-xs font-semibold text-slate-500">
+            <div className="mt-4 border-t pt-3 border-line">
+              <span className="text-xs font-semibold text-muted">
                 Declared Links:
               </span>
               <ul className="mt-2 space-y-1 text-xs">
                 {definition.edges.map((e) => (
                   <li
                     key={`${e.fromNodeKey}->${e.toNodeKey}`}
-                    className="flex items-center justify-between text-slate-600"
+                    className="flex items-center justify-between text-muted"
                   >
                     <span>
                       <strong>{e.fromNodeKey}</strong> →{" "}
@@ -445,7 +447,7 @@ export function DefinitionEditor({
                       onClick={() =>
                         handleRemoveEdge(e.fromNodeKey, e.toNodeKey)
                       }
-                      className="text-rose-500 hover:underline"
+                      className="text-danger hover:underline"
                     >
                       Delete
                     </button>

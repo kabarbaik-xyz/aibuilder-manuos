@@ -1,5 +1,4 @@
 import React from 'react';
-import { AppShell } from '@/components/app-shell';
 import { ShopFloorWorkstationView } from '@/features/execution/components/ShopFloorWorkstationView';
 
 export const metadata = {
@@ -15,21 +14,10 @@ export default async function ShopFloorTaskPage({
   const { id } = await params;
 
   return (
-    <AppShell
-      breadcrumb={
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span>Operations</span>
-          <span>/</span>
-          <span>Shop Floor</span>
-          <span>/</span>
-          <span className="text-slate-100 font-medium font-mono">{id.slice(0, 8)}</span>
-        </div>
-      }
-      activeTitle="Operator Workstation"
-    >
-      <div className="p-6 max-w-7xl mx-auto">
+    <div className="page-stack">
+      <div className="max-w-7xl mx-auto">
         <ShopFloorWorkstationView taskId={id} />
       </div>
-    </AppShell>
+    </div>
   );
 }

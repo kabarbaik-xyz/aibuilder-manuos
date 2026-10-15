@@ -3,6 +3,7 @@ export interface Principal {
   email: string;
   name: string;
   workspaceId: string;
+  workspaceName?: string;
   membershipId: string;
   permissions: ReadonlySet<string>;
   roles: string[];
@@ -15,6 +16,7 @@ export interface PrincipalJson {
   email: string;
   name: string;
   workspaceId: string;
+  workspaceName?: string;
   membershipId: string;
   permissions: string[];
   roles: string[];
