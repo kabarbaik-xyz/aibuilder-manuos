@@ -18,4 +18,19 @@ describe('Factory Memory Similarity Engine', () => {
     expect(stats.meanOverrunPct).toBe(18.0);
     expect(stats.recommendationTitle).toContain('Use routing rev 2');
   });
+
+  it('returns insufficient historical evidence when query matches zero records', () => {
+    const stats = queryFactoryMemoryStats(
+      {
+        partFamily: 'nonexistent-family',
+        operationType: 'Laser Sintering',
+      },
+      seedHistory
+    );
+
+    expect(stats.sampleCount).toBe(0);
+    expect(stats.meanOverrunPct).toBe(0);
+    expect(stats.runs.length).toBe(0);
+    expect(stats.recommendationTitle).toBe('Insufficient historical evidence');
+  });
 });

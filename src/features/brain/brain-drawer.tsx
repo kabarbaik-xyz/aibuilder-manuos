@@ -51,7 +51,7 @@ export function BrainDrawer() {
   const [canScrollRight, setCanScrollRight] = useState(true);
   const [isWrapView, setIsWrapView] = useState(false);
 
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
     requestAnimationFrame(() => {
       if (messagesListRef.current) {
         messagesListRef.current.scrollTo({
@@ -71,17 +71,17 @@ export function BrainDrawer() {
 
   useEffect(() => {
     updateScrollState();
-    window.addEventListener('resize', updateScrollState);
-    return () => window.removeEventListener('resize', updateScrollState);
+    window.addEventListener("resize", updateScrollState);
+    return () => window.removeEventListener("resize", updateScrollState);
   }, []);
 
-  const handleScrollCarousel = (direction: 'left' | 'right') => {
+  const handleScrollCarousel = (direction: "left" | "right") => {
     const el = suggestionsRef.current;
     if (!el) return;
     const distance = 260;
     el.scrollBy({
-      left: direction === 'left' ? -distance : distance,
-      behavior: 'smooth',
+      left: direction === "left" ? -distance : distance,
+      behavior: "smooth",
     });
   };
 
@@ -95,7 +95,7 @@ export function BrainDrawer() {
 
   useEffect(() => {
     const isInitial = messages.length <= 1;
-    scrollToBottom(isInitial ? 'auto' : 'smooth');
+    scrollToBottom(isInitial ? "auto" : "smooth");
   }, [messages, loading]);
 
   const handleSend = async (queryText?: string) => {
@@ -136,13 +136,14 @@ export function BrainDrawer() {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.aiResult?.answer) {
+        const payload = data.data || data.aiResult;
+        if (payload?.answer) {
           const aiMessage: ChatMessage = {
             id: `ai-${Date.now()}`,
             sender: "assistant",
-            text: data.aiResult.answer,
-            evidenceRefs: data.aiResult.evidenceRefs || [],
-            linkToScreen: data.aiResult.linkToScreen,
+            text: payload.answer,
+            evidenceRefs: payload.evidenceRefs || [],
+            linkToScreen: payload.linkToScreen,
             timestamp: new Date().toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
@@ -244,7 +245,7 @@ export function BrainDrawer() {
 
               {/* Grounded Evidence Chips */}
               {m.evidenceRefs && m.evidenceRefs.length > 0 && (
-                <div className="brain-evidence-section mt-2 pt-2 border-t border-(--line) border-line">
+                <div className="brain-evidence-section mt-2 pt-2 border-t border-line">
                   <span className="small muted block mb-1">
                     Grounded Evidence:
                   </span>
@@ -308,14 +309,12 @@ export function BrainDrawer() {
       {/* Suggested Starter Prompts */}
       <div className="brain-suggestions-wrap">
         <div className="between mb-1.5">
-          <span className="small muted font-semibold">
-            Suggested Questions
-          </span>
+          <span className="small muted font-semibold">Suggested Questions</span>
           <div className="flex items-center gap-1">
             <button
               type="button"
               className="carousel-nav-btn"
-              onClick={() => handleScrollCarousel('left')}
+              onClick={() => handleScrollCarousel("left")}
               disabled={!canScrollLeft || isWrapView}
               aria-label="Scroll left"
               title="Previous questions"
@@ -325,31 +324,38 @@ export function BrainDrawer() {
             <button
               type="button"
               className="carousel-nav-btn"
-              onClick={() => handleScrollCarousel('right')}
+              onClick={() => handleScrollCarousel("right")}
               disabled={!canScrollRight || isWrapView}
               aria-label="Scroll right"
               title="More questions"
             >
               <Icon name="arrow" className="w-3 h-3" />
             </button>
-            <span className="topbar-rule" style={{ height: 12, margin: '0 4px' }} />
+            <span
+              className="topbar-rule"
+              style={{ height: 12, margin: "0 4px" }}
+            />
             <button
               type="button"
               className="text-btn small"
               onClick={() => setIsWrapView((v) => !v)}
-              title={isWrapView ? 'Switch to carousel view' : 'Wrap all questions'}
+              title={
+                isWrapView ? "Switch to carousel view" : "Wrap all questions"
+              }
             >
-              {isWrapView ? 'Carousel' : 'Wrap all'}
+              {isWrapView ? "Carousel" : "Wrap all"}
             </button>
           </div>
         </div>
 
         <div className="brain-suggestions-track-container">
-          {canScrollLeft && !isWrapView && <div className="brain-fade-edge left" />}
+          {canScrollLeft && !isWrapView && (
+            <div className="brain-fade-edge left" />
+          )}
 
           <div
             ref={suggestionsRef}
-            className={`brain-suggestions-scroll ${isWrapView ? 'wrap-mode' : ''}`}
+            className={`brain-suggestions-scroll ${isWrapView ? "wrap-mode" : ""}`}
             onScroll={updateScrollState}
           >
             {STARTER_PROMPTS.map((prompt, i) => (
@@ -366,7 +372,9 @@ export function BrainDrawer() {
             ))}
           </div>
 
-          {canScrollRight && !isWrapView && <div className="brain-fade-edge right" />}
+          {canScrollRight && !isWrapView && (
+            <div className="brain-fade-edge right" />
+          )}
         </div>
       </div>
 
@@ -379,7 +387,7 @@ export function BrainDrawer() {
             value={inputQuery}
             onChange={(e) => setInputQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 e.stopPropagation();
                 handleSend();

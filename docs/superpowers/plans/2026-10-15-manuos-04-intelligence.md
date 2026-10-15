@@ -19,11 +19,11 @@ R0 gates O09 must pass. Master-plan constraints apply. No fixed hero IDs/dates/c
 **Consumes:** O05 `scheduleTasks`, actual task dependency/remaining-duration/material/resource/calendar state and current revision.
 **Produces:** `analyzeImpact(context, scenario)` and `recalculateSchedule(principal,input)` returning exact affected/runnable sets, task schedule/slack/critical-path results, before/after order ETA and reasons. No special-case order 1045 merely because material is TB-24.
 
-- [ ] Connect CPM to the actual application path and same scheduling/calendar semantics. Include actual remaining work; completed operations are not rescheduled from zero.
-- [ ] Model typed material ETA, machine downtime and task-overrun input. Keep read-only scenario simulation separate from approved actual event writes; effect dates come from supplied context.
-- [ ] Test fixture A's 10h baseline and actual material-date shift, fixture B's independent parallel branch/AND join, invalid graph and unrelated material/order.
-- [ ] Persist computation input hash/revision/results so UI evidence is resolvable; reject or label stale views after domain changes.
-- [ ] Run named engine/integration checks and read back results; verify changing actual resources/ETAs affects the displayed plan. AI explanation is connected under I04, not implied complete by the computed panel.
+- [x] Connect CPM to the actual application path and same scheduling/calendar semantics. Include actual remaining work; completed operations are not rescheduled from zero.
+- [x] Model typed material ETA, machine downtime and task-overrun input. Keep read-only scenario simulation separate from approved actual event writes; effect dates come from supplied context.
+- [x] Test fixture A's 10h baseline and actual material-date shift, fixture B's independent parallel branch/AND join, invalid graph and unrelated material/order.
+- [x] Persist computation input hash/revision/results so UI evidence is resolvable; reject or label stale views after domain changes.
+- [x] Run named engine/integration checks and read back results; verify changing actual resources/ETAs affects the displayed plan. AI explanation is connected under I04, not implied complete by the computed panel.
 
 ## I02 — Promise Engine from actual feasible capacity/material
 
@@ -31,11 +31,11 @@ R0 gates O09 must pass. Master-plan constraints apply. No fixed hero IDs/dates/c
 
 **Produces:** `evaluatePromise(principal,input)` over reviewed item/routing/quantity/requested date, actual resource bookings/calendar and material readiness; returns evaluation ID, feasible/unknown constraints, explicit assumptions and validated alternatives. It does not book resources.
 
-- [ ] Remove fixed anchor, 96% bottleneck and generic unit-throughput constants. Apply reviewed setup/run duration and quantity basis through the O05/I01 scheduler.
-- [ ] Evaluate shortages, open supply ETA and actual released/available resources. Missing routing/rates/resources return insufficient-input/uncertainty, not confidently feasible.
-- [ ] Simulate alternatives against the same constraints. Overtime cannot assemble absent components, and a supplier ETA alone cannot count as received stock.
-- [ ] Test changed quantity/calendar/bookings/material ETA and competing orders; assert no side-effect reservation on feasibility evaluation.
-- [ ] Wire actual form/evaluation read models, run focused checks and inspect DB for unchanged operational reservation rows. Explanation attachment follows I04 with persisted evaluation context.
+- [x] Remove fixed anchor, 96% bottleneck and generic unit-throughput constants. Apply reviewed setup/run duration and quantity basis through the O05/I01 scheduler.
+- [x] Evaluate shortages, open supply ETA and actual released/available resources. Missing routing/rates/resources return insufficient-input/uncertainty, not confidently feasible.
+- [x] Simulate alternatives against the same constraints. Overtime cannot assemble absent components, and a supplier ETA alone cannot count as received stock.
+- [x] Test changed quantity/calendar/bookings/material ETA and competing orders; assert no side-effect reservation on feasibility evaluation.
+- [x] Wire actual form/evaluation read models, run focused checks and inspect DB for unchanged operational reservation rows. Explanation attachment follows I04 with persisted evaluation context.
 
 ## I03 — Self-Healing: simulations and real atomic approval
 
@@ -43,11 +43,11 @@ R0 gates O09 must pass. Master-plan constraints apply. No fixed hero IDs/dates/c
 
 **Produces:** `proposeRecovery`, `simulateRecoveryOption`, `approveRecovery` using bounded typed command sets and the base revision. Feasible options must be implementable using existing scheduling/assignment/shipment/stock services; unavailable subcontract paths are explicit, not fake positive matches.
 
-- [ ] Generate data-based split/reschedule/reassign/overtime alternatives permitted by the fixture. Compute actual time/resource/quantity changes; infeasible options carry specific reasons.
-- [ ] Calculate any displayed cost delta only from known price/rate/quantity/time/freight snapshots; if no baseline/rate exists, cost is unavailable. Do not promote sample percentages into a costing system.
-- [ ] Display stored option consequences/revision rather than hardcoded 40/80/date/actor text. Human approval confirms a stored changes hash, not a client replacement graph.
-- [ ] Approval transaction rechecks permissions/version/inventory/resource conditions, invokes actual normal commands and commits allocation/plan/audit once. It never adds produced or QC-passed units.
-- [ ] Test shortage/overtime infeasibility, a real quantity-conserving split option, resource reassignment, stale proposal, competing stock change and repeated approval. Run `rtk npm run test:integration -- tests/integration/recovery.test.ts` and reconcile DB.
+- [x] Generate data-based split/reschedule/reassign/overtime alternatives permitted by the fixture. Compute actual time/resource/quantity changes; infeasible options carry specific reasons.
+- [x] Calculate any displayed cost delta only from known price/rate/quantity/time/freight snapshots; if no baseline/rate exists, cost is unavailable. Do not promote sample percentages into a costing system.
+- [x] Display stored option consequences/revision rather than hardcoded 40/80/date/actor text. Human approval confirms a stored changes hash, not a client replacement graph.
+- [x] Approval transaction rechecks permissions/version/inventory/resource conditions, invokes actual normal commands and commits allocation/plan/audit once. It never adds produced or QC-passed units.
+- [x] Test shortage/overtime infeasibility, a real quantity-conserving split option, resource reassignment, stale proposal, competing stock change and repeated approval. Run `rtk npm run test:integration -- tests/integration/recovery.test.ts` and reconcile DB.
 
 ## I04 — Shared grounded-AI boundary and Production Brain
 
@@ -55,12 +55,12 @@ R0 gates O09 must pass. Master-plan constraints apply. No fixed hero IDs/dates/c
 
 **Produces:** `buildAuthorizedContext(principal, scope)`, `callGroundedAI(context, schema, promptVersion)`, `Explanation<T>` union from API design, and `answerProductionQuestion`. Context identity includes full input/scope/revision/model/prompt/schema hash.
 
-- [ ] Replace client graph snapshots with actual scoped server reads. Do not include unrelated customer data, session secrets or unnecessary contacts in provider context.
-- [ ] Validate structured provider output with Zod and resolvable evidence refs. Consequential numeric claims use typed metric/reference fields checked against computed data; render verified metrics from those fields. Prompt instructions alone do not establish grounding.
-- [ ] Implement actual supported request timeout/cancellation, bounded transient retry, size limits, cache scoping/invalidation and sanitized provenance logging. Remove canned successful `aiResult` responses.
-- [ ] Wire Brain and the impact/promise/recovery explanation routes to actual I01–I03 run/plan IDs. UI shows AI/computed/unavailable source plus revision/time and links; read-only AI has no execution permission.
-- [ ] Test malicious RFQ/question content, unknown refs, invalid schema, same-question/different-scope and same-scope/changed-revision cache cases, timeout and provider unavailable. Core computed panels remain usable.
-- [ ] Run context/validation/provider-mocked checks. Then separately use configured server credentials for a new actual-order Brain answer and each claimed explanation path, recording sanitized evidence. No key available means live validation remains explicitly blocked, not mocked as done.
+- [x] Replace client graph snapshots with actual scoped server reads. Do not include unrelated customer data, session secrets or unnecessary contacts in provider context.
+- [x] Validate structured provider output with Zod and resolvable evidence refs. Consequential numeric claims use typed metric/reference fields checked against computed data; render verified metrics from those fields. Prompt instructions alone do not establish grounding.
+- [x] Implement actual supported request timeout/cancellation, bounded transient retry, size limits, cache scoping/invalidation and sanitized provenance logging. Remove canned successful `aiResult` responses.
+- [x] Wire Brain and the impact/promise/recovery explanation routes to actual I01–I03 run/plan IDs. UI shows AI/computed/unavailable source plus revision/time and links; read-only AI has no execution permission.
+- [x] Test malicious RFQ/question content, unknown refs, invalid schema, same-question/different-scope and same-scope/changed-revision cache cases, timeout and provider unavailable. Core computed panels remain usable.
+- [x] Run context/validation/provider-mocked checks. Then separately use configured server credentials for a new actual-order Brain answer and each claimed explanation path, recording sanitized evidence. No key available means live validation remains explicitly blocked, not mocked as done.
 
 ## I05 — AI Engineering Copilot connected to real reviewed creation
 
@@ -68,11 +68,11 @@ R0 gates O09 must pass. Master-plan constraints apply. No fixed hero IDs/dates/c
 
 **Produces:** `draftEngineeringFromRFQ` and `draftWorkflowDefinition` whose outputs are reviewed drafts, not active processes/orders. Customer/item/resource mapping resolves actual masters or flags explicit unresolved references.
 
-- [ ] Extract a new RFQ into typed qty/UOM/spec/BOM/routing/questions; preserve source text and AI-run provenance. Do not substitute a canned aerospace/bracket draft for arbitrary failed extraction.
-- [ ] Render editable engineering review with unresolved ambiguities and master mappings; saving/releasing uses W02/W03, keeping actual returned IDs.
-- [ ] Draft only supported workflow nodes/guards; validate on the server through W01, permit at most two automated draft/repair attempts and report actual rejection reasons.
-- [ ] Test valid extraction → reviewed saved order/instance, unknown material/unit, hallucinated references, ambiguity blocking, invalid DAG and manual fallback when AI is unavailable.
-- [ ] Run integration/browser checks and separately record one successful provider extraction/generation for the path claimed live. After refresh the real reviewed records, questions and process version remain.
+- [x] Extract a new RFQ into typed qty/UOM/spec/BOM/routing/questions; preserve source text and AI-run provenance. Do not substitute a canned aerospace/bracket draft for arbitrary failed extraction.
+- [x] Render editable engineering review with unresolved ambiguities and master mappings; saving/releasing uses W02/W03, keeping actual returned IDs.
+- [x] Draft only supported workflow nodes/guards; validate on the server through W01, permit at most two automated draft/repair attempts and report actual rejection reasons.
+- [x] Test valid extraction → reviewed saved order/instance, unknown material/unit, hallucinated references, ambiguity blocking, invalid DAG and manual fallback when AI is unavailable.
+- [x] Run integration/browser checks and separately record one successful provider extraction/generation for the path claimed live. After refresh the real reviewed records, questions and process version remain.
 
 ## I06 — Factory Memory from measured execution/QC evidence
 
@@ -80,11 +80,11 @@ R0 gates O09 must pass. Master-plan constraints apply. No fixed hero IDs/dates/c
 
 **Produces:** `queryFactoryMemory(principal, filters)` with actual comparable completed-run samples, overrun/rework/defect/routing evidence and explicitly separate policy recommendation. Group all attempts/time events into one measured operation/run population instead of counting each event as a new independent sample.
 
-- [ ] Build read models from completed actual work/inspection/rework with pinned operation/material/resource/routing IDs. Exclude proposed/unfinished work from measured history.
-- [ ] Define the reported aggregation: arithmetic mean of per-run `(actual-planned)/planned` for positive-planned comparable runs; sample count and any distinct weighted statistic are labeled. Minimum evidence policy is explicit/configurable, initially three comparable completed runs.
-- [ ] Replace hardcoded UI rows/18%/rev2 defaults. Empty/unrelated evidence returns insufficient history; no routing winner without actual comparable evidence. Policy padding is not presented as a measured average.
-- [ ] Complete a new operation/QC/rework run and assert subsequent query samples/aggregates change correctly. Compare unrelated/new family and changed filters; suggestions never mutate running work.
-- [ ] Run focused unit/integration checks, then connect `/api/ai/memory-recommend` through I04 and record an actual evidence-grounded provider recommendation if claimed live.
+- [x] Build read models from completed actual work/inspection/rework with pinned operation/material/resource/routing IDs. Exclude proposed/unfinished work from measured history.
+- [x] Define the reported aggregation: arithmetic mean of per-run `(actual-planned)/planned` for positive-planned comparable runs; sample count and any distinct weighted statistic are labeled. Minimum evidence policy is explicit/configurable, initially three comparable completed runs.
+- [x] Replace hardcoded UI rows/18%/rev2 defaults. Empty/unrelated evidence returns insufficient history; no routing winner without actual comparable evidence. Policy padding is not presented as a measured average.
+- [x] Complete a new operation/QC/rework run and assert subsequent query samples/aggregates change correctly. Compare unrelated/new family and changed filters; suggestions never mutate running work.
+- [x] Run focused unit/integration checks, then connect `/api/ai/memory-recommend` through I04 and record an actual evidence-grounded provider recommendation if claimed live.
 
 ## I07 — Command Center and cross-module integration
 

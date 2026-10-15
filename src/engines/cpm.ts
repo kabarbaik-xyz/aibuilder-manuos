@@ -3,12 +3,15 @@ import { CalendarConfig, DEFAULT_CALENDAR, addWorkingHours } from './calendar';
 export interface CPMTaskInput {
   id: string;
   durationHours: number;
+  remainingDurationHours?: number;
   dependsOn: string[];
+  earliestStartHours?: number;
 }
 
 export interface CPMTaskOutput {
   id: string;
   durationHours: number;
+  remainingDurationHours: number;
   earlyStart: number;
   earlyFinish: number;
   lateStart: number;
@@ -83,13 +86,14 @@ export function calculateCPM(
   for (const id of topoOrder) {
     const t = taskMap.get(id);
     if (!t) continue;
-    let maxPredEf = 0;
+    let maxPredEf = t.earliestStartHours ?? 0;
     for (const depId of t.dependsOn) {
       const predEf = ef.get(depId) || 0;
       if (predEf > maxPredEf) maxPredEf = predEf;
     }
+    const effectiveDuration = t.remainingDurationHours !== undefined ? t.remainingDurationHours : t.durationHours;
     es.set(id, maxPredEf);
-    ef.set(id, maxPredEf + t.durationHours);
+    ef.set(id, maxPredEf + effectiveDuration);
   }
 
   // Project Duration
@@ -117,8 +121,9 @@ export function calculateCPM(
       }
       lf.set(id, minSuccLs === Infinity ? projectDurationHours : minSuccLs);
     }
+    const effectiveDuration = t.remainingDurationHours !== undefined ? t.remainingDurationHours : t.durationHours;
     const myLf = lf.get(id)!;
-    ls.set(id, myLf - t.durationHours);
+    ls.set(id, myLf - effectiveDuration);
   }
 
   // 4. Slack and Critical Path calculation
@@ -155,6 +160,7 @@ export function calculateCPM(
     taskOutputs[id] = {
       id,
       durationHours: taskInput.durationHours,
+      remainingDurationHours: taskInput.remainingDurationHours ?? taskInput.durationHours,
       earlyStart: earlyS,
       earlyFinish: earlyF,
       lateStart: lateS,

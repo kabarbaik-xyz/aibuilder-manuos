@@ -31,4 +31,23 @@ describe('CPM Engine', () => {
     expect(result.tasks['T2_parallel'].totalSlack).toBe(2); // 4 - 2 = 2
     expect(result.tasks['T2_parallel'].isCritical).toBe(false);
   });
+
+  it('respects remaining work for partially completed operations and earliest start offsets', () => {
+    const tasks: CPMTaskInput[] = [
+      { id: 'T1_partially_done', durationHours: 10, remainingDurationHours: 2, dependsOn: [] },
+      { id: 'T2_delayed_material', durationHours: 4, dependsOn: [], earliestStartHours: 8 },
+      { id: 'T3_final', durationHours: 6, dependsOn: ['T1_partially_done', 'T2_delayed_material'] },
+    ];
+
+    const result = calculateCPM(tasks, '2026-11-24');
+    // T1 finish is 0 + 2 = 2h
+    // T2 finish is 8 + 4 = 12h
+    // T3 early start is max(2, 12) = 12h, finish = 12 + 6 = 18h
+    expect(result.projectDurationHours).toBe(18);
+    expect(result.tasks['T1_partially_done'].earlyFinish).toBe(2);
+    expect(result.tasks['T2_delayed_material'].earlyStart).toBe(8);
+    expect(result.tasks['T2_delayed_material'].earlyFinish).toBe(12);
+    expect(result.tasks['T3_final'].earlyStart).toBe(12);
+    expect(result.criticalPath).toEqual(['T2_delayed_material', 'T3_final']);
+  });
 });

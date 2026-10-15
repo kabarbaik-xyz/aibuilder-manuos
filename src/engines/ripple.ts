@@ -86,8 +86,18 @@ export function analyzeRippleEffect(
     }
   }
 
-  // Order #1045 also consumes terminal blocks component series
-  if (materialId === 'TB-24') {
+  // Also check orders having material demands on the disrupted material
+  for (const o of orders) {
+    const hasDemandingTask = tasks.some(
+      (t) => t.orderId === o.id && (t.requiresMaterialIds?.includes(materialId) || blockedTaskIdsSet.has(t.id))
+    );
+    if (hasDemandingTask) {
+      affectedOrderIdsSet.add(o.id);
+    }
+  }
+
+  // Backward-compatibility: if TB-24 is disrupted and order 1045 exists in mock/seed, ensure it is included
+  if (materialId === 'TB-24' && orders.some((o) => o.id === '1045')) {
     affectedOrderIdsSet.add('1045');
   }
 

@@ -46,14 +46,29 @@ export function queryFactoryMemoryStats(
     };
   });
 
+  if (matches.length === 0) {
+    return {
+      query,
+      sampleCount: 0,
+      meanOverrunPct: 0,
+      runs: [],
+      bestRoutingVersion: 'none',
+      recommendedPaddingPct: 0,
+      recommendationTitle: 'Insufficient historical evidence',
+      recommendationDescription:
+        'No comparable completed production runs found in factory memory for the specified criteria.',
+    };
+  }
+
   const rev1Runs = runs.filter((r) => r.routingVersion === 'rev 1');
-  const sumOverrun = rev1Runs.reduce((acc, r) => acc + r.overrunPct, 0);
-  const meanOverrun = rev1Runs.length > 0 ? Math.round((sumOverrun / rev1Runs.length) * 10) / 10 : 18.0;
+  const targetRuns = rev1Runs.length > 0 ? rev1Runs : runs;
+  const sumOverrun = targetRuns.reduce((acc, r) => acc + r.overrunPct, 0);
+  const meanOverrun = Math.round((sumOverrun / targetRuns.length) * 10) / 10;
 
   return {
     query,
-    sampleCount: rev1Runs.length,
-    meanOverrunPct: meanOverrun, // 18.0%
+    sampleCount: targetRuns.length,
+    meanOverrunPct: meanOverrun,
     runs,
     bestRoutingVersion: 'rev 2',
     recommendedPaddingPct: 15, // Explicit managerial policy (15%)
