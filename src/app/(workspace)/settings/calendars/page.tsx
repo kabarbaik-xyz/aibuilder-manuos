@@ -3,6 +3,7 @@
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import React, { useState } from 'react';
 import { useCalendars, useAddCalendarException } from '@/features/masters/hooks';
 import { Calendar } from '@/features/masters/api';
@@ -104,13 +105,7 @@ export default function CalendarsPage() {
           <FormErrorSummary error={exceptionError} />
           <div>
             <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Date (YYYY-MM-DD) *
-            <Input
-              type="date"
-              required
-              value={exceptionDate}
-              onChange={(e) => setExceptionDate(e.target.value)}
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-primary/20 focus:outline-none"
-            /></label>
+            <DatePicker value={exceptionDate} onChange={setExceptionDate} required /></label>
           </div>
           <div>
             <label className="flex items-center gap-2 text-sm text-ink">

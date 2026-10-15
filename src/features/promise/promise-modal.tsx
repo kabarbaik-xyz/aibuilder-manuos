@@ -8,6 +8,8 @@ import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { AIContent } from '../../components/ui/ai-content';
+import { DatePicker } from '@/components/ui/date-picker';
+import { Select } from '@/components/ui/select';
 
 export function PromiseModal() {
   const { machines } = useGraphStore();
@@ -65,7 +67,7 @@ export function PromiseModal() {
       <form onSubmit={handleCheck}>
         <div className="field">
           <label htmlFor="family-select">Part family</label>
-          <select
+          <Select
             id="family-select"
             value={family}
             onChange={(e) => setFamily(e.target.value)}
@@ -73,7 +75,7 @@ export function PromiseModal() {
             <option value="Control panel">Control panel</option>
             <option value="Chassis bracket">Chassis bracket</option>
             <option value="Mounting plate">Mounting plate</option>
-          </select>
+          </Select>
         </div>
 
         <div className="form-grid">
@@ -91,13 +93,7 @@ export function PromiseModal() {
           </div>
           <div className="field">
             <label htmlFor="promise-date">Requested delivery</label>
-            <input
-              id="promise-date"
-              type="date"
-              value={reqDate}
-              onChange={(e) => setReqDate(e.target.value)}
-              required
-            />
+            <DatePicker id="promise-date" value={reqDate} onChange={setReqDate} required />
           </div>
         </div>
 

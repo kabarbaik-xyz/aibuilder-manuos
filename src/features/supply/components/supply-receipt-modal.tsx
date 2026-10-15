@@ -3,6 +3,7 @@
 import { Dialog } from '@/components/ui/dialog';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import React, { useState } from 'react';
 import { SupplyOrderDTO } from '@/server/modules/supply/contracts';
 import { useReceiveSupply } from '../hooks';
@@ -229,19 +230,13 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                       {line.tracking === 'LOT' && (
                         <div>
                           <label className="block text-muted mb-0.5">Expiration Date
-                          <Input
-                            type="date"
+                          <DatePicker
                             value={entry?.expirationDate ?? ''}
-                            onChange={(e) =>
-                              setLineReceipts({
-                                ...lineReceipts,
-                                [line.id]: {
-                                  ...entry,
-                                  expirationDate: e.target.value,
-                                },
-                              })
-                            }
-                            className="w-full rounded border border-line bg-surface px-2 py-1"
+                            onChange={date => setLineReceipts({
+                              ...lineReceipts,
+                              [line.id]: { ...entry, expirationDate: date },
+                            })}
+                            clearable
                           /></label>
                         </div>
                       )}

@@ -1,6 +1,7 @@
 'use client';
 
 import { Textarea } from '@/components/ui/textarea';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
@@ -56,6 +57,7 @@ export function SupplyOrderForm() {
     if (createOrder.isPending) return;
     setErrorMsg(null);
 
+    if (!expectedDate) { setErrorMsg('Please select an expected delivery date'); return; }
     if (!supplierId) {
       setErrorMsg('Please select a supplier');
       return;
@@ -119,13 +121,7 @@ export function SupplyOrderForm() {
             <label className="block block text-sm font-medium text-ink mb-2">
               Expected Delivery Date <span className="text-danger">*</span>
             
-            <Input
-              type="date"
-              value={expectedDate}
-              onChange={(e) => setExpectedDate(e.target.value)}
-              className="w-full rounded border border-line bg-surface px-3 py-2 text-sm"
-              required
-            /></label>
+            <DatePicker value={expectedDate} onChange={setExpectedDate} required /></label>
           </div>
 
           <div className="md:col-span-2">

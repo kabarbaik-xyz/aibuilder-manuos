@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { FormErrorSummary } from '@/components/ui/form-errors';
@@ -43,6 +44,7 @@ export function OrderForm() {
     event.preventDefault();
     if (pending || !ready) return;
     setError(null);
+    if (!requestedDate) { setError(new Error('Choose the requested delivery date.')); return; }
     createOrder.mutate({ customerId, orderTypeId, itemId, orderedQuantity: Number(quantity), requestedDate: new Date(requestedDate).toISOString(), promisedDate: promisedDate ? new Date(promisedDate).toISOString() : null, rfqText, rfqSourceType }, {
       onSuccess: response => router.push(`/orders/${response.data.id}`),
       onError: err => setError(err),
@@ -61,8 +63,8 @@ export function OrderForm() {
         <FormField id={`${prefix}-quantity`} label="Ordered quantity" required><Input type="number" min="0.000001" step="any" value={quantity} onChange={e => setQuantity(e.target.value)} disabled={pending} placeholder="Enter quantity" /></FormField>
       </div></section>
       <section className="form-section page-stack"><div><h2>Delivery dates</h2><p className="field-help">Keep the customer's request separate from an agreed delivery commitment.</p></div><div className="form-grid">
-        <FormField id={`${prefix}-requested`} label="Requested delivery date" required><Input type="date" value={requestedDate} onChange={e => setRequestedDate(e.target.value)} disabled={pending} /></FormField>
-        <FormField id={`${prefix}-promised`} label="Committed delivery date" help="Optional. Set only when a delivery date has been agreed."><Input type="date" value={promisedDate} onChange={e => setPromisedDate(e.target.value)} disabled={pending} /></FormField>
+        <FormField id={`${prefix}-requested`} label="Requested delivery date" required><DatePicker value={requestedDate} onChange={setRequestedDate} required disabled={pending} /></FormField>
+        <FormField id={`${prefix}-promised`} label="Committed delivery date" help="Optional. Set only when a delivery date has been agreed."><DatePicker value={promisedDate} onChange={setPromisedDate} clearable disabled={pending} /></FormField>
       </div></section>
       <section className="form-section page-stack"><h2>Customer request</h2><FormField id={`${prefix}-source`} label="Request source"><Select value={rfqSourceType} onChange={e => setRfqSourceType(e.target.value as typeof rfqSourceType)} disabled={pending}><option value="MANUAL">Manual entry</option><option value="EMAIL">Email</option></Select></FormField><FormField id={`${prefix}-notes`} label="RFQ context and notes" help="Include specifications, drawing references and questions that engineering needs to review."><Textarea value={rfqText} onChange={e => setRfqText(e.target.value)} disabled={pending} placeholder="Describe the customer request…" /></FormField></section>
       <div className="form-page-actions"><Link href="/orders" className="btn">Cancel</Link><Button type="submit" variant="primary" disabled={!ready || pending}>{pending ? 'Creating draft…' : 'Create order draft'}</Button></div>

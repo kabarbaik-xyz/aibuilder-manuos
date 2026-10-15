@@ -2,6 +2,7 @@
 
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import React, { useState } from 'react';
 import { SupplyOrderDTO } from '@/server/modules/supply/contracts';
 import { useApproveSupplyOrder, useChangeSupplyEta, useSupplyReceipts } from '../hooks';
@@ -152,13 +153,7 @@ export function SupplyOrderDetail({ order }: SupplyOrderDetailProps) {
             <form onSubmit={handleChangeEta} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-muted uppercase mb-1">New Expected Date
-                <Input
-                  type="date"
-                  value={newEta}
-                  onChange={(e) => setNewEta(e.target.value)}
-                  className="w-full rounded border border-line bg-surface px-3 py-2 text-sm"
-                  required
-                /></label>
+                <DatePicker value={newEta} onChange={setNewEta} required /></label>
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted uppercase mb-1">Reason for Adjustment

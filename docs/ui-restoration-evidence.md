@@ -51,3 +51,8 @@ Route render coverage is complete; exhaustive create/edit/archive and every role
 Machine creation cannot invent a machine-class UUID: the existing API has no class catalog endpoint, so the form uses actual known classes and explains missing setup. Unsupported shelf-life, financial terms and hourly costing are not represented as successfully persisted values. Dynamic form builder, React Flow authoring, connected production AI and verified digital passports remain separate roadmap work. The UI repair does not implement those backend capabilities.
 
 Impeccable layout-transition finding: removed workspace margin animation; mobile navigation uses transform. No rule/file/value suppressions added. No remaining width/height/padding/margin transitions found in globals.css.
+
+
+## Date picker follow-up
+
+All six native date inputs were replaced by the shared `DatePicker`, backed by `react-day-picker` 10.0.2: order requested/committed dates, supply expected date and ETA, receipt lot expiration, promise feasibility date, and working-calendar exception date. The picker displays a localized English date while preserving `YYYY-MM-DD` in form state and API conversion. It supports keyboard calendar navigation, Escape/outside dismissal, disabled/required states, and clearing optional dates. No `type="date"` inputs remain under `src/`. `npm run typecheck` passed after this follow-up.
