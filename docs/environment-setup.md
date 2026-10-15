@@ -24,6 +24,9 @@ This document specifies the validated runtime versions, dependencies, provider S
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "@prisma/client": "^6.4.1",
+    "better-auth": "^1.7.8",
+    "@tanstack/react-query": "^5.104.2",
     "zustand": "^5.0.2",
     "zod": "^3.24.1",
     "@google/genai": "^0.1.1",
@@ -33,6 +36,8 @@ This document specifies the validated runtime versions, dependencies, provider S
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
+    "prisma": "^6.4.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.6.3",
     "@types/node": "^20.17.10",
     "@types/react": "^19.0.2",
@@ -45,6 +50,14 @@ This document specifies the validated runtime versions, dependencies, provider S
   }
 }
 ```
+
+### Database & Storage
+- **Database Engine:** SQLite 3 with WAL mode (`PRAGMA journal_mode = WAL;`)
+- **Foreign Key Enforcement:** Enabled on every connection (`PRAGMA foreign_keys = ON;`)
+- **Lock Concurrency:** Busy timeout set to 5000ms (`PRAGMA busy_timeout = 5000;`)
+- **Quantity Scale:** BigInt fixed-point atoms (`1 unit = 1,000,000 atoms`, exact 6 decimal scale)
+- **Security:** In-memory / isolated temporary SQLite databases for all unit, integration, and E2E test runs.
+
 
 ---
 

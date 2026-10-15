@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { Providers } from '@/components/providers';
+
 export default function RootLayout({
   children,
 }: {
@@ -23,7 +25,7 @@ export default function RootLayout({
         <a className="skip-link" href="#main">
           Skip to content
         </a>
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

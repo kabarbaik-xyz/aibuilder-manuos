@@ -1,0 +1,663 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// Identity & Better Auth models (DB Section 3)
+// -------------------------------------------------------------
+
+model User {
+  id            String       @id @default(uuid())
+  name          String
+  email         String       @unique
+  emailVerified Boolean      @default(false) @map("email_verified")
+  image         String?
+  banned        Boolean?     @default(false)
+  banReason     String?      @map("ban_reason")
+  banExpires    DateTime?    @map("ban_expires")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  sessions      Session[]
+  accounts      Account[]
+  memberships   Membership[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  userId                String    @map("user_id")
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([identifier, value])
+  @@map("verifications")
+}
+
+// -------------------------------------------------------------
+// Workspace & Membership RBAC (DB Section 3)
+// -------------------------------------------------------------
+
+model Workspace {
+  id          String       @id @default(uuid())
+  code        String       @unique
+  name        String
+  timezone    String       @default("Asia/Jakarta")
+  currency    String       @default("IDR")
+  revision    Int          @default(1)
+  isDemo      Boolean      @default(false) @map("is_demo")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  memberships       Membership[]
+  roles             Role[]
+  numberSequences   NumberSequence[]
+  commandReceipts   CommandReceipt[]
+  auditEvents       AuditEvent[]
+  customers         Customer[]
+  suppliers         Supplier[]
+  uoms              Uom[]
+  items             Item[]
+  locations         Location[]
+  departments       Department[]
+  workCalendars     WorkCalendar[]
+  machineClasses    MachineClass[]
+  machines          Machine[]
+  technicians       Technician[]
+  skills            Skill[]
+  certifications    Certification[]
+  orderTypes        OrderType[]
+  qcChecklists      QcChecklist[]
+
+  @@map("workspaces")
+}
+
+model Membership {
+  id           String           @id @default(uuid())
+  workspaceId  String           @map("workspace_id")
+  userId       String           @map("user_id")
+  status       String           @default("ACTIVE") // ACTIVE | DISABLED
+  customerId   String?          @map("customer_id")
+  technicianId String?          @map("technician_id")
+  version      Int              @default(1)
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customer     Customer?        @relation(fields: [workspaceId, customerId], references: [workspaceId, id])
+  roles        MembershipRole[]
+
+  @@unique([workspaceId, userId])
+  @@unique([workspaceId, id])
+  @@map("memberships")
+}
+
+model Permission {
+  code            String           @id
+  description     String
+  resource        String
+  action          String
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  workspaceId String           @map("workspace_id")
+  code        String
+  name        String
+  isSystem    Boolean          @default(false) @map("is_system")
+  isActive    Boolean          @default(true) @map("is_active")
+  version     Int              @default(1)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  memberships MembershipRole[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("roles")
+}
+
+model RolePermission {
+  id             String     @id @default(uuid())
+  workspaceId    String     @map("workspace_id")
+  roleId         String     @map("role_id")
+  permissionCode String     @map("permission_code")
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  role           Role       @relation(fields: [workspaceId, roleId], references: [workspaceId, id], onDelete: Cascade)
+  permission     Permission @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
+
+  @@unique([roleId, permissionCode])
+  @@map("role_permissions")
+}
+
+model MembershipRole {
+  id           String     @id @default(uuid())
+  workspaceId  String     @map("workspace_id")
+  membershipId String     @map("membership_id")
+  roleId       String     @map("role_id")
+  grantedBy    String?    @map("granted_by")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  membership   Membership @relation(fields: [workspaceId, membershipId], references: [workspaceId, id], onDelete: Cascade)
+  role         Role       @relation(fields: [workspaceId, roleId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([membershipId, roleId])
+  @@map("membership_roles")
+}
+
+model NumberSequence {
+  id          String    @id @default(uuid())
+  workspaceId String    @map("workspace_id")
+  kind        String    // e.g. "ORDER", "RECEIPT", "SHIPMENT"
+  year        Int
+  nextValue   Int       @default(1) @map("next_value")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, kind, year])
+  @@map("number_sequences")
+}
+
+model CommandReceipt {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  principalId  String    @map("principal_id")
+  key          String
+  requestHash  String    @map("request_hash")
+  commandType  String    @map("command_type")
+  resourceId   String?   @map("resource_id")
+  resultJson   String    @map("result_json")
+  committedAt  DateTime  @default(now()) @map("committed_at")
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, principalId, key])
+  @@map("command_receipts")
+}
+
+model AuditEvent {
+  id             String    @id @default(uuid())
+  workspaceId    String    @map("workspace_id")
+  actorUserId    String    @map("actor_user_id")
+  commandId      String?   @map("command_id")
+  aggregateType  String    @map("aggregate_type")
+  aggregateId    String    @map("aggregate_id")
+  action         String
+  beforeRevision Int?      @map("before_revision")
+  afterRevision  Int?      @map("after_revision")
+  detailJson     String    @map("detail_json")
+  occurredAt     DateTime  @default(now()) @map("occurred_at")
+
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, aggregateType, aggregateId])
+  @@index([workspaceId, occurredAt])
+  @@map("audit_events")
+}
+
+// -------------------------------------------------------------
+// Commercial & Item Masters (M01–M08, DB Section 4)
+// -------------------------------------------------------------
+
+model Customer {
+  id          String            @id @default(uuid())
+  workspaceId String            @map("workspace_id")
+  code        String
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  isActive    Boolean           @default(true) @map("is_active")
+  version     Int               @default(1)
+  archivedAt  DateTime?         @map("archived_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts    CustomerContact[]
+  memberships Membership[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("customers")
+}
+
+model CustomerContact {
+  id          String    @id @default(uuid())
+  workspaceId String    @map("workspace_id")
+  customerId  String    @map("customer_id")
+  name        String
+  email       String?
+  phone       String?
+  role        String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  customer    Customer  @relation(fields: [workspaceId, customerId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@map("customer_contacts")
+}
+
+model Supplier {
+  id            String    @id @default(uuid())
+  workspaceId   String    @map("workspace_id")
+  code          String
+  name          String
+  contactName   String?   @map("contact_name")
+  contactEmail  String?   @map("contact_email")
+  contactPhone  String?   @map("contact_phone")
+  address       String?
+  leadTimeDays  Int       @default(7) @map("lead_time_days")
+  isActive      Boolean   @default(true) @map("is_active")
+  version       Int       @default(1)
+  archivedAt    DateTime? @map("archived_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("suppliers")
+}
+
+model Uom {
+  id          String              @id @default(uuid())
+  workspaceId String              @map("workspace_id")
+  code        String
+  name        String
+  dimension   String              @default("PIECE") // PIECE | WEIGHT | VOLUME | LENGTH | AREA
+  precision   Int                 @default(0)       // 0–6
+  isActive    Boolean             @default(true) @map("is_active")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  baseItems   Item[]              @relation("BaseUomRelation")
+  conversions ItemUomConversion[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("uoms")
+}
+
+model Item {
+  id          String              @id @default(uuid())
+  workspaceId String              @map("workspace_id")
+  code        String
+  name        String
+  description String?
+  itemType    String              @map("item_type") // RAW | COMPONENT | WIP | FINISHED
+  baseUomId   String              @map("base_uom_id")
+  tracking    String              @default("NONE")  // NONE | LOT | SERIAL
+  isActive    Boolean             @default(true) @map("is_active")
+  version     Int                 @default(1)
+  archivedAt  DateTime?           @map("archived_at")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  baseUom     Uom                 @relation("BaseUomRelation", fields: [workspaceId, baseUomId], references: [workspaceId, id])
+  conversions ItemUomConversion[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("items")
+}
+
+model ItemUomConversion {
+  id               String   @id @default(uuid())
+  workspaceId      String   @map("workspace_id")
+  itemId           String   @map("item_id")
+  inputUomId       String   @map("input_uom_id")
+  ratioNumerator   Int      @map("ratio_numerator")   // positive integer
+  ratioDenominator Int      @map("ratio_denominator") // positive integer
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  item             Item     @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  inputUom         Uom      @relation(fields: [workspaceId, inputUomId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, itemId, inputUomId])
+  @@map("item_uom_conversions")
+}
+
+model Location {
+  id             String    @id @default(uuid())
+  workspaceId    String    @map("workspace_id")
+  code           String
+  name           String
+  warehouseGroup String    @default("DEFAULT") @map("warehouse_group")
+  kind           String    // RAW | WIP | QUARANTINE | FG | EXTERNAL | CONSUMED | SCRAP | CUSTOMER
+  isActive       Boolean   @default(true) @map("is_active")
+  version        Int       @default(1)
+  archivedAt     DateTime? @map("archived_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("locations")
+}
+
+// -------------------------------------------------------------
+// Organization & Resource Masters (M09–M15, DB Section 4)
+// -------------------------------------------------------------
+
+model Department {
+  id          String       @id @default(uuid())
+  workspaceId String       @map("workspace_id")
+  code        String
+  name        String
+  isActive    Boolean      @default(true) @map("is_active")
+  version     Int          @default(1)
+  archivedAt  DateTime?    @map("archived_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  machines    Machine[]
+  technicians Technician[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("departments")
+}
+
+model WorkCalendar {
+  id                String              @id @default(uuid())
+  workspaceId       String              @map("workspace_id")
+  code              String
+  name              String
+  timezone          String              @default("Asia/Jakarta")
+  weeklyShiftsJson  String              @default("[]") @map("weekly_shifts_json")
+  version           Int                 @default(1)
+  archivedAt        DateTime?           @map("archived_at")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  workspace         Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  exceptions        CalendarException[]
+  machines          Machine[]
+  technicians       Technician[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("work_calendars")
+}
+
+model CalendarException {
+  id                   String       @id @default(uuid())
+  workspaceId          String       @map("workspace_id")
+  calendarId           String       @map("calendar_id")
+  date                 String       // YYYY-MM-DD
+  workingIntervalsJson String       @default("[]") @map("working_intervals_json")
+  reason               String?
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  calendar             WorkCalendar @relation(fields: [workspaceId, calendarId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, calendarId, date])
+  @@map("calendar_exceptions")
+}
+
+model MachineClass {
+  id               String    @id @default(uuid())
+  workspaceId      String    @map("workspace_id")
+  code             String
+  name             String
+  capabilitiesJson String    @default("[]") @map("capabilities_json")
+  isActive         Boolean   @default(true) @map("is_active")
+  version          Int       @default(1)
+  archivedAt       DateTime? @map("archived_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  machines         Machine[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("machine_classes")
+}
+
+model Machine {
+  id             String        @id @default(uuid())
+  workspaceId    String        @map("workspace_id")
+  code           String
+  name           String
+  machineClassId String        @map("machine_class_id")
+  departmentId   String?       @map("department_id")
+  calendarId     String?       @map("calendar_id")
+  status         String        @default("AVAILABLE") // AVAILABLE | MAINTENANCE | OFFLINE
+  version        Int           @default(1)
+  archivedAt     DateTime?     @map("archived_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  machineClass   MachineClass  @relation(fields: [workspaceId, machineClassId], references: [workspaceId, id])
+  department     Department?   @relation(fields: [workspaceId, departmentId], references: [workspaceId, id])
+  calendar       WorkCalendar? @relation(fields: [workspaceId, calendarId], references: [workspaceId, id])
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("machines")
+}
+
+model Technician {
+  id               String                     @id @default(uuid())
+  workspaceId      String                     @map("workspace_id")
+  membershipId     String?                    @unique @map("membership_id")
+  code             String
+  name             String
+  departmentId     String?                    @map("department_id")
+  calendarId       String?                    @map("calendar_id")
+  maxWeeklyMinutes Int                        @default(2400) @map("max_weekly_minutes") // 40h standard
+  isActive         Boolean                    @default(true) @map("is_active")
+  version          Int                        @default(1)
+  archivedAt       DateTime?                  @map("archived_at")
+  createdAt        DateTime                   @default(now()) @map("created_at")
+  updatedAt        DateTime                   @updatedAt @map("updated_at")
+
+  workspace        Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  department       Department?                @relation(fields: [workspaceId, departmentId], references: [workspaceId, id])
+  calendar         WorkCalendar?              @relation(fields: [workspaceId, calendarId], references: [workspaceId, id])
+  skills           TechnicianSkill[]
+  certifications   TechnicianCertification[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("technicians")
+}
+
+model Skill {
+  id          String            @id @default(uuid())
+  workspaceId String            @map("workspace_id")
+  code        String
+  name        String
+  scaleMax    Int               @default(5) @map("scale_max")
+  isActive    Boolean           @default(true) @map("is_active")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  technicians TechnicianSkill[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("skills")
+}
+
+model TechnicianSkill {
+  id           String     @id @default(uuid())
+  workspaceId  String     @map("workspace_id")
+  technicianId String     @map("technician_id")
+  skillId      String     @map("skill_id")
+  level        Int        // 1..scaleMax
+  assessedAt   DateTime   @default(now()) @map("assessed_at")
+  assessedBy   String?    @map("assessed_by")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  technician   Technician @relation(fields: [workspaceId, technicianId], references: [workspaceId, id], onDelete: Cascade)
+  skill        Skill      @relation(fields: [workspaceId, skillId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([technicianId, skillId])
+  @@map("technician_skills")
+}
+
+model Certification {
+  id          String                    @id @default(uuid())
+  workspaceId String                    @map("workspace_id")
+  code        String
+  name        String
+  issuer      String?
+  isActive    Boolean                   @default(true) @map("is_active")
+  createdAt   DateTime                  @default(now()) @map("created_at")
+  updatedAt   DateTime                  @updatedAt @map("updated_at")
+
+  workspace   Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  holders     TechnicianCertification[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("certifications")
+}
+
+model TechnicianCertification {
+  id                String        @id @default(uuid())
+  workspaceId       String        @map("workspace_id")
+  technicianId      String        @map("technician_id")
+  certificationId   String        @map("certification_id")
+  certificateNumber String?       @map("certificate_number")
+  issuedDate        String        @map("issued_date") // YYYY-MM-DD
+  validUntil        String        @map("valid_until") // YYYY-MM-DD
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  technician        Technician    @relation(fields: [workspaceId, technicianId], references: [workspaceId, id], onDelete: Cascade)
+  certification     Certification @relation(fields: [workspaceId, certificationId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([technicianId, certificationId])
+  @@map("technician_certifications")
+}
+
+model OrderType {
+  id                 String    @id @default(uuid())
+  workspaceId        String    @map("workspace_id")
+  code               String
+  name               String
+  description        String?
+  defaultTemplateId  String?   @map("default_template_id")
+  isActive           Boolean   @default(true) @map("is_active")
+  version            Int       @default(1)
+  archivedAt         DateTime? @map("archived_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("order_types")
+}
+
+model QcChecklist {
+  id          String              @id @default(uuid())
+  workspaceId String              @map("workspace_id")
+  code        String
+  name        String
+  revision    Int                 @default(1)
+  isPublished Boolean             @default(false) @map("is_published")
+  version     Int                 @default(1)
+  archivedAt  DateTime?           @map("archived_at")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  checks      QcChecklistCheck[]
+
+  @@unique([workspaceId, code, revision])
+  @@unique([workspaceId, id])
+  @@map("qc_checklists")
+}
+
+model QcChecklistCheck {
+  id          String      @id @default(uuid())
+  workspaceId String      @map("workspace_id")
+  checklistId String      @map("checklist_id")
+  code        String
+  description String
+  method      String      // VISUAL | MEASUREMENT | FUNCTIONAL | GAUGE
+  unit        String?
+  limitsJson  String      @default("{}") @map("limits_json")
+  isRequired  Boolean     @default(true) @map("is_required")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  checklist   QcChecklist @relation(fields: [workspaceId, checklistId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([checklistId, code])
+  @@map("qc_checklist_checks")
+}

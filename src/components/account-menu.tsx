@@ -1,18 +1,51 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { PERSONA_PROFILES, PersonaType } from '../lib/navigation';
-import { useGraphStore } from '../store/graph-store';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { queryKeys } from '@/lib/api/query-keys';
+import { apiRequest } from '@/lib/api/client';
 import { Icon } from './icons';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
+import { useGraphStore } from '../store/graph-store';
+
+interface PrincipalData {
+  userId: string;
+  email: string;
+  name: string;
+  workspaceId: string;
+  workspaceName?: string;
+  membershipId: string;
+  permissions: string[];
+  roles: string[];
+  customerId: string | null;
+  technicianId: string | null;
+}
 
 export function AccountMenu() {
-  const { currentPersona, setPersona, closeNavMenu, closeModal } = useGraphStore();
-  const profile = PERSONA_PROFILES[currentPersona];
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { closeNavMenu, closeModal } = useGraphStore();
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [panel, setPanel] = useState<'profile' | 'settings' | 'logout' | null>(null);
-  const [sessionEnded, setSessionEnded] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const { data: meResponse } = useQuery<{ data: PrincipalData }>({
+    queryKey: queryKeys.me(),
+    queryFn: () => apiRequest<{ data: PrincipalData }>('/api/me'),
+    retry: false,
+  });
+
+  const principal = meResponse?.data;
+  const name = principal?.name || 'Operator';
+  const initials = name
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  const rolesLabel = principal?.roles?.join(', ') || 'Staff';
 
   useEffect(() => {
     const dismiss = (event: PointerEvent) => {
@@ -40,66 +73,123 @@ export function AccountMenu() {
     setPanel(next);
   };
 
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await fetch('/api/auth/sign-out', {
+        method: 'POST',
+      });
+      queryClient.clear();
+      closeNavMenu();
+      closeModal();
+      setPanel(null);
+      router.push('/login');
+      router.refresh();
+    } catch {
+      router.push('/login');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
   return (
     <>
       <details className="account-menu" ref={menuRef}>
-        <summary className="account-trigger" aria-label={`Account menu for ${profile.name}`}>
-          <span className="avatar">{profile.avatar}</span>
-          <span className="account-trigger-name">{profile.name}</span>
+        <summary className="account-trigger" aria-label={`Account menu for ${name}`}>
+          <span className="avatar">{initials}</span>
+          <span className="account-trigger-name">{name}</span>
           <Icon name="down" />
         </summary>
         <div className="account-popover">
           <div className="account-identity">
-            <strong>{profile.name}</strong>
-            <span>{currentPersona} · Precision Works</span>
+            <strong>{name}</strong>
+            <span>{rolesLabel} · {principal?.email || 'Active session'}</span>
           </div>
           <nav aria-label="Account">
-            <button type="button" onClick={() => openPanel('profile')}><Icon name="user" />Profile</button>
-            <button type="button" onClick={() => openPanel('settings')}><Icon name="settings" />Settings</button>
-            <button type="button" className="account-logout" onClick={() => openPanel('logout')}><Icon name="logout" />Logout</button>
+            <button type="button" onClick={() => openPanel('profile')}>
+              <Icon name="user" />
+              Profile
+            </button>
+            <button type="button" onClick={() => openPanel('settings')}>
+              <Icon name="settings" />
+              Settings
+            </button>
+            <button type="button" className="account-logout" onClick={() => openPanel('logout')}>
+              <Icon name="logout" />
+              Sign out
+            </button>
           </nav>
         </div>
       </details>
 
       {panel === 'profile' && (
-        <Dialog isOpen onClose={() => setPanel(null)} title="Profile" type="modal">
-          <div className="account-profile-heading">
-            <span className="avatar">{profile.avatar}</span>
-            <div><strong>{profile.name}</strong><p>{profile.role}</p></div>
+        <Dialog isOpen onClose={() => setPanel(null)} title="Account Profile" type="modal">
+          <div className="account-profile-heading mb-4 flex items-center gap-3">
+            <span className="avatar text-base font-bold">{initials}</span>
+            <div>
+              <strong className="text-base font-semibold">{name}</strong>
+              <p className="text-xs text-neutral-400">{principal?.email}</p>
+            </div>
           </div>
-          <div className="spec-row"><span>Workspace</span><strong>Precision Works</strong></div>
-          <div className="spec-row"><span>Persona</span><strong>{currentPersona}</strong></div>
+          <div className="spec-row">
+            <span>Workspace</span>
+            <strong>{principal?.workspaceId ? 'Precision Works' : 'Default'}</strong>
+          </div>
+          <div className="spec-row">
+            <span>Granted Roles</span>
+            <strong>{rolesLabel}</strong>
+          </div>
+          {principal?.customerId && (
+            <div className="spec-row">
+              <span>Customer Scope</span>
+              <strong>{principal.customerId}</strong>
+            </div>
+          )}
+          {principal?.technicianId && (
+            <div className="spec-row">
+              <span>Technician Scope</span>
+              <strong>{principal.technicianId}</strong>
+            </div>
+          )}
         </Dialog>
       )}
 
       {panel === 'settings' && (
-        <Dialog isOpen onClose={() => setPanel(null)} title="Settings" type="modal">
-          <div className="account-settings">
-            <label htmlFor="account-persona">Demo persona</label>
-            <p>Switch the role used to explore this workspace.</p>
-            <select id="account-persona" value={currentPersona} onChange={(event) => setPersona(event.target.value as PersonaType)}>
-              {Object.keys(PERSONA_PROFILES).map((persona) => <option key={persona} value={persona}>{persona}</option>)}
-            </select>
+        <Dialog isOpen onClose={() => setPanel(null)} title="Workspace Settings" type="modal">
+          <div className="account-settings space-y-3">
+            <p className="text-sm text-neutral-300">
+              Your session is authenticated against the server. Normal mode derives capabilities strictly from server-assigned roles.
+            </p>
+            <div className="spec-row">
+              <span>User ID</span>
+              <code className="text-xs font-mono">{principal?.userId}</code>
+            </div>
+            <div className="spec-row">
+              <span>Membership ID</span>
+              <code className="text-xs font-mono">{principal?.membershipId}</code>
+            </div>
           </div>
         </Dialog>
       )}
 
       {panel === 'logout' && (
-        <Dialog isOpen onClose={() => setPanel(null)} title="End demo session?" type="modal"
-          footer={<><Button onClick={() => setPanel(null)}>Cancel</Button><Button variant="primary" onClick={() => {
-            closeNavMenu();
-            closeModal();
-            setPanel(null);
-            setSessionEnded(true);
-          }}>End demo session</Button></>}>
-          <p>This workspace uses a demo session. You can return to the demo at any time.</p>
-        </Dialog>
-      )}
-
-      {sessionEnded && (
-        <Dialog isOpen onClose={() => setSessionEnded(false)} title="Demo session ended" type="modal"
-          footer={<Button variant="primary" onClick={() => setSessionEnded(false)}>Return to demo</Button>}>
-          <p>Your demo workspace is ready whenever you want to continue.</p>
+        <Dialog
+          isOpen
+          onClose={() => setPanel(null)}
+          title="Sign out of ManuOS?"
+          type="modal"
+          footer={
+            <>
+              <Button onClick={() => setPanel(null)}>Cancel</Button>
+              <Button variant="primary" onClick={handleLogout} disabled={isLoggingOut}>
+                {isLoggingOut ? 'Signing out...' : 'Sign out'}
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-neutral-300">
+            You will be signed out of this session. You can sign in again using your email and password.
+          </p>
         </Dialog>
       )}
     </>

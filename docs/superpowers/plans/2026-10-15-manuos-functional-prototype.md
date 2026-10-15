@@ -38,6 +38,8 @@ Execute the following subsystem plans in order. They are bounded implementation 
 3. [Inventory through customer evidence](2026-10-15-manuos-03-operations.md): O01–O09, M3–M4.
 4. [Intelligence and verification](2026-10-15-manuos-04-intelligence.md): I01–I08, M5–M6.
 
+**Queued follow-up, after all four plans finish:** [Dynamic forms and AI-assisted workflow builder](2026-10-15-manuos-05-dynamic-forms.md), DF01–DF06 and WB01–WB03. Adds versioned order/task/QC forms, React Flow drag-and-drop workflow editing, and AI draft generation for both builders with mandatory preview and human validation before publication. It does not expand or interrupt the current execution. Existing form/guard JSON is not proof of a complete dynamic form engine.
+
 ## Milestone review gates
 
 | Gate | Reviewable product result | What must not be claimed yet |

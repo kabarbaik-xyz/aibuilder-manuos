@@ -128,3 +128,26 @@ For Hero Order `#CO-2026-1042`:
   - `GEMINI_API_KEY` is strictly accessed in server API routes (`/api/ai/*`).
   - Browser bundles never include `@google/genai` or API keys.
   - Response caching: 5-minute memory cache keyed by SHA-256 of function name and context payload.
+
+---
+
+## 10. Foundation Runtime & Package Pinning (F01–F07)
+
+- **Node.js Runtime:** `v20.19.2` (Docker base `node:20-alpine`)
+- **Package Manager:** `npm` (v10.8.2)
+- **Database Engine:** SQLite (single file with WAL mode, foreign keys enabled on all connections)
+- **ORM & Migrations:**
+  - `prisma@6.4.1`
+  - `@prisma/client@6.4.1`
+  - Generator: `prisma-client-js`
+  - Datasource: `sqlite`
+- **Authentication:**
+  - `better-auth@1.7.8` with Prisma adapter for SQLite
+  - Persisted server-side sessions, password hashing via scrypt/argon2 (handled by better-auth), session cookie management
+- **Client Query Layer:**
+  - `@tanstack/react-query@5.104.2`
+- **Scripting & Test Runner:**
+  - `tsx@4.23.15`
+  - `vitest@2.1.8`
+- **TypeScript Target:**
+  - Target: `ES2022`, ModuleResolution: `bundler`, BigInt native support for quantities (1 base unit = 1,000,000 atoms).

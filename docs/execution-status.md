@@ -17,27 +17,24 @@
 > delivery baseline, stock reconciliation fixture, and full end-to-end completion
 > gates. Inventory is currently material counters, not a transaction subsystem.
 
-**Last Updated:** 2026-10-14  
-**Current Phase:** P9 — Final Verification, Demo Assets & Submission Pack  
-**Current Task:** Completed — Prototype fully operational and demo-ready  
+**Last Updated:** 2026-10-15  
+**Current Phase:** Foundation & Master Data (M0–M1: F01–F07)  
+**Current Task:** Completed — Foundation operational, fully verified with 60 automated tests  
 
 ---
 
 ## Progress Overview
 
-| Phase | Description | Status | Completed Checks |
-|---|---|---|---|
-| **P0** | Discovery, decisions & contracts | **100% COMPLETE** | P0-01 to P0-06 exit checks verified. Decisions, engine contracts, fixture spec, OpenAPI 3.0 spec. |
-| **P1** | Scaffold & UI foundation | **100% COMPLETE** | Next.js 15, React 19, Tailwind v4.3.3 (`@tailwindcss/postcss`), Plus Jakarta Sans self-hosted fonts, light professional theme, UI primitives, `/api/health`. |
-| **P2** | Manufacturing Graph, seed & store actions | **100% COMPLETE** | Graph state models, seed data (4 factories, 6 orders, 8 machines, 10 materials, 6 technicians, 3 history runs, 4 passports), Zustand 5 store with immutable action transitions. |
-| **P3** | Deterministic engines | **100% COMPLETE** | 8 pure TypeScript engines (`calendar`, `cpm`, `ripple`, `capacity`, `recovery`, `dispatch`, `similarity`, `network`, `workflow-validate`). 16 automated Vitest tests passing. |
-| **P4** | Disruption → recovery → customer flow | **100% COMPLETE** | S1 Command Center (65% real progress invariant), S2 Orchestrator critical path, S6 Recovery Studio (40/80 split batch approval), S4 Customer Portal verified in live browser walkthrough. |
-| **P5** | Factory Memory, Skill Dispatch, Factory Network | **100% COMPLETE** | S3 Workstation with WABO cert hard-gates, F7 Factory Memory (15% padding / rev 2 routing), S5 Factory Network bilateral capacity/supply matching with privacy consent gates. |
-| **P6** | Gemini service & grounded AI | **100% COMPLETE** | Server-only `@google/genai` (2.29.1) integration with 5-min caching, schema validation, grounded prompts, and deterministic fallbacks across all 9 AI routes. |
-| **P7** | Supporting flows & operational projections | **100% COMPLETE** | F5/F13 Intake Drawer (RFQ text extraction & DAG synthesis), F1 Operational Brain Drawer with deep linking, F2 Promise Modal, S7 Immutable Activity Log, `/passports/[serial]` direct shareable route. |
-| **P8** | Hardening, container & Cloud Run readiness | **100% COMPLETE** | Next.js `output: 'standalone'`, multi-stage `Dockerfile` (Node 20 Alpine, port 8080), `.dockerignore`, `npm run build` static output verified, `npm run test` 100% pass. |
-| **P9** | Final verification, demo assets & submission pack | **100% COMPLETE** | Browser subagent validation video, `docs/demo-runbook.md`, updated requirements matrix, demo execution report. |
-| **P-10** | Production Transition & Operations Blueprint | **100% COMPLETE** | Cloud Run operations runbook (`deployment-runbook.md`), 3-min English video cue sheet (`demo-script-en.md`), executive pitch deck (`PROPOSAL_DECK_MANUOS.md`), enterprise scaling roadmap (`ROADMAP_SCALING.md`). |
+| Phase | Milestone | Description | Status | Verification & Evidence |
+|---|---|---|---|---|
+| **M0** | F01 | SQLite Persistence & DB Bootstrap | **100% COMPLETE** | WAL mode, FK enforcement, busy timeout, append-only audit trigger. `tests/integration/database.test.ts` (6 tests). |
+| **M0** | F02 | Real Auth, RBAC & Policies | **100% COMPLETE** | Better Auth sessions, 42 permissions, 10 system roles, customer isolation, revoke sessions. `tests/integration/access.test.ts` (11 tests). |
+| **M0** | F03 | Atomic Commands, Idempotency & Revision | **100% COMPLETE** | `executeCommand`, SHA-256 payload hashing, replay cache, rollback on throw, BigInt atom scale. `tests/integration/commands.test.ts` (5 tests), `domain/quantity.test.ts` (6 tests). |
+| **M0** | F04 | Authenticated Shell & Shared States | **100% COMPLETE** | TanStack Query provider, `apiRequest<T>`, scoped layouts, login redirect, profile/logout. `tests/e2e/access-shell.spec.ts` (3 tests). |
+| **M1** | F05 | Customers, Suppliers, Items & Locations | **100% COMPLETE** | CRUD, versioning, duplicate rejection, UOM conversions, pages M01–M08. `tests/integration/masters.test.ts` (5 tests). |
+| **M1** | F06 | Organization, Resources & QC Catalogs | **100% COMPLETE** | Departments, calendars/exceptions, machines, technician skills/certs, order types, QC checklists, pages M09–M15. `tests/integration/resources.test.ts` (4 tests). |
+| **M1** | F07 | M0/M1 Review & Reusable Factory Fixture | **100% COMPLETE** | `tests/fixtures/factory.ts` multi-tenant fixture, `tests/e2e/master-setup.spec.ts` (4 tests). 60 total tests passing across 17 test files. |
+
 
 ---
 

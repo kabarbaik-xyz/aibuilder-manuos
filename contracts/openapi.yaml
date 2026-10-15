@@ -411,3 +411,198 @@ paths:
                   reason:
                     type: string
                     nullable: true
+
+  /api/me:
+    get:
+      summary: Get current authenticated principal and membership
+      description: Returns the authenticated user profile, active workspace, granted permissions, and linked customer/technician scope.
+      responses:
+        '200':
+          description: Active principal identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrincipalResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/users:
+    get:
+      summary: List workspace users and memberships
+      description: Requires access.manage permission.
+      responses:
+        '200':
+          description: List of memberships
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MembershipItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      summary: Provision a new user and workspace membership
+      description: Requires access.manage permission.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, roleCodes]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+                roleCodes:
+                  type: array
+                  items:
+                    type: string
+                customerId:
+                  type: string
+                  nullable: true
+                technicianId:
+                  type: string
+                  nullable: true
+      responses:
+        '201':
+          description: User and membership created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/roles:
+    get:
+      summary: List workspace roles and their granted permissions
+      responses:
+        '200':
+          description: Workspace roles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        code:
+                          type: string
+                        name:
+                          type: string
+                        permissions:
+                          type: array
+                          items:
+                            type: string
+
+components:
+  responses:
+    Unauthorized:
+      description: Missing or expired session
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Permission or ownership policy denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: Malformed or invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error, requestId]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            fieldErrors:
+              type: object
+              additionalProperties:
+                type: string
+        requestId:
+          type: string
+        retryable:
+          type: boolean
+    PrincipalResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [userId, email, name, workspaceId, workspaceName, membershipId, permissions]
+          properties:
+            userId:
+              type: string
+            email:
+              type: string
+            name:
+              type: string
+            workspaceId:
+              type: string
+            workspaceName:
+              type: string
+            membershipId:
+              type: string
+            permissions:
+              type: array
+              items:
+                type: string
+            customerId:
+              type: string
+              nullable: true
+            technicianId:
+              type: string
+              nullable: true
+            roles:
+              type: array
+              items:
+                type: string
+    MembershipItem:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        customerId:
+          type: string
+          nullable: true
+        technicianId:
+          type: string
+          nullable: true

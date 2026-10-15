@@ -7,10 +7,21 @@
     "build": "next build",
     "start": "next start -p 8080",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run",
+    "test:e2e": "vitest run",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "auth:bootstrap": "tsx scripts/bootstrap-admin.ts",
+    "db:reconcile": "tsx scripts/reconcile.ts",
+    "db:backup": "tsx scripts/backup.ts",
+    "db:restore": "tsx scripts/restore.ts"
   },
   "dependencies": {
     "@google/genai": "^2.29.1",
+    "@prisma/client": "6.4.1",
+    "@tanstack/react-query": "5.104.2",
+    "better-auth": "1.7.8",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
     "next": "^15.1.0",
@@ -22,13 +33,15 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^20.17.10",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "@tailwindcss/postcss": "^4.0.0",
     "postcss": "^8.4.49",
+    "prisma": "6.4.1",
     "tailwindcss": "^4.0.0",
+    "tsx": "4.23.15",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }
