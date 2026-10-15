@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -17,7 +18,8 @@ import { FormErrorSummary } from '@/components/ui/form-errors';
 import { ApiError } from '@/lib/api/client';
 
 export default function TechniciansPage() {
-  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Technician>('technicians', {});
+  const { search, setSearch, query } = useListSearch();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Technician>('technicians', { search: query || undefined });
   const { data: skillsData } = useSkills();
   const skills = skillsData?.data || [];
 
@@ -101,6 +103,8 @@ export default function TechniciansPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Shop Floor Technicians" description="Manage qualified machine operators, skill ratings and certifications" />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search technician, code or email…" label="Search technicians" />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load technicians'} onRetry={() => refetch()} />

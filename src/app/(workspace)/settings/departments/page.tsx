@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -14,7 +15,8 @@ import { CreateDepartmentModal } from '@/features/masters/components/resource-fo
 
 export default function DepartmentsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Department>('departments', {});
+  const { search, setSearch, query } = useListSearch();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Department>('departments', { search: query || undefined });
 
   const departments = data?.data || [];
 
@@ -45,6 +47,8 @@ export default function DepartmentsPage() {
       <PageHeader title="Departments" description="Manage manufacturing work centers, functional areas and resource groups" actions={<><PermissionGate permission="resource.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Department
         </Button></PermissionGate></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search department code or name…" label="Search departments" />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load departments'} onRetry={() => refetch()} />

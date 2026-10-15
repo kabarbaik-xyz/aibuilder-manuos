@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -13,7 +14,8 @@ import { CreateUomModal } from '@/features/masters/components/resource-forms';
 
 export default function UnitsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch, pagination } = usePaginatedList<UnitOfMeasure>('uoms', {});
+  const { search, setSearch, query } = useListSearch();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<UnitOfMeasure>('uoms', { search: query || undefined });
 
   const uoms = data?.data || [];
 
@@ -45,6 +47,8 @@ export default function UnitsPage() {
       <PageHeader title="Units of Measure" description="Manage standard measurement units, dimensions and fixed decimal precisions" actions={<><PermissionGate permission="item.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Unit
         </Button></PermissionGate></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search unit code or name…" label="Search units of measure" />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load units of measure'} onRetry={() => refetch()} />

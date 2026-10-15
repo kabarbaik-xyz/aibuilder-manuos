@@ -1,7 +1,8 @@
 'use client';
 
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { OrderDto } from '@/features/orders/api';
 
 import React from 'react';
@@ -12,7 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingState, ErrorState } from '@/components/ui/resource-state';
 
 export default function EngineeringHubPage() {
-  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<OrderDto>('engineering');
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<OrderDto>('engineering', { search: query || undefined });
   const orders = pageData?.data || [];
 
   if (isPending) return <LoadingState message="Loading engineering review queue…" />;
@@ -26,6 +28,8 @@ export default function EngineeringHubPage() {
           Engineering review queue, drawing specs, BOM calculation, and process routing approvals.
         </p>
       </div>
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search order, customer or item…" label="Search engineering orders" />
 
       <div className="overflow-x-auto rounded-lg border bg-white shadow-sm border-line">
         <table className="w-full text-left text-sm">

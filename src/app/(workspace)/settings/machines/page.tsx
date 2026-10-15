@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -14,7 +15,8 @@ import { CreateMachineModal } from '@/features/masters/components/resource-forms
 
 export default function MachinesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Machine>('machines', {});
+  const { search, setSearch, query } = useListSearch();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Machine>('machines', { search: query || undefined });
 
   const machines = data?.data || [];
 
@@ -55,6 +57,8 @@ export default function MachinesPage() {
       <PageHeader title="Machines & Equipment" description="Manage manufacturing equipment, machine rates, calendar links and capacity" actions={<><PermissionGate permission="resource.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Machine
         </Button></PermissionGate></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search machine code, name or class…" label="Search machines" />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load machines'} onRetry={() => refetch()} />

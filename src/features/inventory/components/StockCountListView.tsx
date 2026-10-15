@@ -1,6 +1,7 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { StockCountDTO } from '@/server/modules/inventory/contracts';
 
 import { ErrorState } from '@/components/ui/resource-state';
@@ -11,7 +12,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
 export function StockCountListView() {
-  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<StockCountDTO>('stock-counts');
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<StockCountDTO>('stock-counts', { search: query || undefined });
   const counts = pageData?.data || [];
 
   if (queryError) return <div className="page-stack"><PageHeader title="Stock counts"/><ErrorState message={queryError.message} onRetry={()=>refetch()}/></div>;
@@ -22,6 +24,8 @@ export function StockCountListView() {
           <Link href="/inventory/counts/new" className="btn primary ">Record New Count</Link>
           <Button variant="default" size="small" onClick={() => refetch()}>Refresh</Button>
         </div></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search count, location or counter…" label="Search stock counts" />
 
       <div className="card p-0 overflow-hidden">
         {isLoading ? (

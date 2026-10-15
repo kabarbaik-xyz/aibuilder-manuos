@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -16,8 +17,10 @@ import { CreateLocationModal } from '@/features/masters/components/resource-form
 export default function LocationsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Location>('locations', {
     type: typeFilter || undefined,
+    search: query || undefined,
   });
 
   const locations = data?.data || [];
@@ -72,6 +75,7 @@ export default function LocationsPage() {
         </Button></PermissionGate></>} />
 
       <div className="flex items-center gap-3">
+        <ListSearch value={search} onChange={setSearch} placeholder="Search location code or name…" label="Search locations" />
         <Select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}

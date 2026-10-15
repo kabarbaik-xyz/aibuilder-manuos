@@ -1,7 +1,8 @@
 'use client';
 
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { InspectionDTO } from '@/features/quality/api';
 
 import React, { useState } from 'react';
@@ -16,7 +17,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 
 export function InspectionListView() {
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const { data: pageData, isLoading, error, pagination } = usePaginatedList<InspectionDTO>('inspections', { status: statusFilter });
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isLoading, error, pagination } = usePaginatedList<InspectionDTO>('inspections', { status: statusFilter, search: query || undefined });
   const inspections = pageData?.data || [];
 
   return (
@@ -50,6 +52,8 @@ export function InspectionListView() {
           Finalized & Released
         </button>
       </div>
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search item, order, lot or inspection…" label="Search inspections" />
 
       <Panel>
         {isLoading ? (

@@ -1,7 +1,8 @@
 'use client';
 
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { OrderDto } from '@/features/orders/api';
 
 import { PageHeader } from '@/components/ui/page-header';
@@ -13,7 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/resource-state';
 
 export default function OrdersPage() {
-  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<OrderDto>('orders');
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<OrderDto>('orders', { search: query || undefined });
   const orders = pageData?.data || [];
 
   if (isPending) return <LoadingState message="Loading orders…" />;
@@ -22,6 +24,8 @@ export default function OrdersPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Order Hub" description="Commercial order drafts, engineering prerequisites, material demand, and production release." actions={<><Link href="/orders/new" className="btn primary ">New Order Intake</Link></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search order, customer or item…" label="Search orders" />
 
       {orders.length === 0 ? (
         <EmptyState

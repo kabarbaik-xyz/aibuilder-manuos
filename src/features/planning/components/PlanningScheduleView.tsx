@@ -1,6 +1,7 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { ScheduledTaskResult } from '@/engines/schedule';
 
 import { PageHeader } from '@/components/ui/page-header';
@@ -17,7 +18,8 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 
 export function PlanningScheduleView() {
-  const { data: pageData, isLoading, error, refetch, pagination } = usePaginatedList<ScheduledTaskResult, { makespanMinutes: number; projectedEndAt: string; criticalPathCount: number; scheduledTaskCount: number }>('planning');
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isLoading, error, refetch, pagination } = usePaginatedList<ScheduledTaskResult, { makespanMinutes: number; projectedEndAt: string; criticalPathCount: number; scheduledTaskCount: number }>('planning', { search: query || undefined });
   const schedule = pageData?.summary ? { ...pageData.summary, scheduledTasks: pageData.data } : undefined;
   const assignMutation = useAssignTask();
   const techniciansQuery = useTechnicians();
@@ -89,7 +91,7 @@ export function PlanningScheduleView() {
         <div className="planning-metric">
           <span className="text-xs font-semibold text-muted tracking-wider uppercase">Expected finish</span>
           <div className="text-lg font-bold text-success mt-1 truncate">
-            {schedule.scheduledTasks.length && schedule.projectedEndAt ? new Date(schedule.projectedEndAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not scheduled'}
+            {schedule.scheduledTaskCount && schedule.projectedEndAt ? new Date(schedule.projectedEndAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not scheduled'}
           </div>
           <p className="text-xs text-muted mt-1">Taking shifts & weekends into account</p>
         </div>
@@ -112,6 +114,7 @@ export function PlanningScheduleView() {
       </div>
 
       {/* Schedule Table */}
+      <ListSearch value={search} onChange={setSearch} placeholder="Search order, item or operation…" label="Search production schedule" />
       <div className="bg-surface border border-line rounded-xl overflow-hidden">
         <div className="p-4 border-b border-line flex justify-between items-center bg-surface">
           <div>

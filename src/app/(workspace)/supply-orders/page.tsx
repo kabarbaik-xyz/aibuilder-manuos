@@ -1,7 +1,8 @@
 'use client';
 
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { SupplyOrderDTO } from '@/server/modules/supply/contracts';
 
 import { ErrorState } from '@/components/ui/resource-state';
@@ -13,7 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 export default function SupplyOrdersPage() {
-  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<SupplyOrderDTO>('supply-orders');
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<SupplyOrderDTO>('supply-orders', { search: query || undefined });
   const orders = pageData?.data || [];
 
   const getStatusBadgeVariant = (status: string) => {
@@ -37,6 +39,8 @@ export default function SupplyOrdersPage() {
     <div className="page-stack">
       <div className="space-y-6">
         <PageHeader title="Purchase Orders" description="Manage external procurement, vendor POs, expected lead times, and inbound shipments." actions={<><Link href="/supply-orders/new" className="btn primary ">+ New Purchase Order</Link></>} />
+
+        <ListSearch value={search} onChange={setSearch} placeholder="Search PO number or supplier…" label="Search purchase orders" />
 
         <div className="card p-0 overflow-hidden">
           {isLoading ? (

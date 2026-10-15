@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -13,7 +14,8 @@ import { CreateSkillModal } from '@/features/masters/components/resource-forms';
 
 export default function SkillsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Skill>('skills', {});
+  const { search, setSearch, query } = useListSearch();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Skill>('skills', { search: query || undefined });
 
   const skills = data?.data || [];
 
@@ -40,6 +42,8 @@ export default function SkillsPage() {
       <PageHeader title="Skills & Certifications" description="Manage technical competency standards, operator qualifications and licensing" actions={<><PermissionGate permission="resource.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Skill
         </Button></PermissionGate></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search skill code or name…" label="Search skills and certifications" />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load skills'} onRetry={() => refetch()} />

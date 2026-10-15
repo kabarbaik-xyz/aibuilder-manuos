@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -24,7 +25,8 @@ export default function CalendarsPage() {
   const [exceptionReason, setExceptionReason] = useState('');
   const [exceptionError, setExceptionError] = useState<ApiError | null>(null);
 
-  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Calendar>('calendars', {});
+  const { search, setSearch, query } = useListSearch();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Calendar>('calendars', { search: query || undefined });
   const addException = useAddCalendarException(exceptionCalendar?.id ?? '');
 
   const calendars = data?.data || [];
@@ -80,6 +82,8 @@ export default function CalendarsPage() {
       <PageHeader title="Working Calendars" description="Configure standard operating hours, weekly shifts and holiday exceptions" actions={<><PermissionGate permission="resource.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Calendar
         </Button></PermissionGate></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search calendar code or name…" label="Search calendars" />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load calendars'} onRetry={() => refetch()} />

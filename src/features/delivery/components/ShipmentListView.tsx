@@ -1,7 +1,8 @@
 "use client";
 
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { ShipmentDTO } from '@/features/delivery/api';
 
 import React, { useState } from "react";
@@ -19,8 +20,9 @@ import { ShipmentCreateModal } from "./ShipmentCreateModal";
 export function ShipmentListView() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const { search, setSearch, query } = useListSearch();
 
-  const { data: pageData, isLoading, error, refetch, pagination } = usePaginatedList<ShipmentDTO>('shipments', { status: statusFilter });
+  const { data: pageData, isLoading, error, refetch, pagination } = usePaginatedList<ShipmentDTO>('shipments', { status: statusFilter, search: query || undefined });
   const shipments = pageData?.data || [];
 
   return (
@@ -69,6 +71,8 @@ export function ShipmentListView() {
           Delivered
         </button>
       </div>
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search shipment, order, customer or tracking…" label="Search shipments" />
 
       <Panel>
         {isLoading ? (

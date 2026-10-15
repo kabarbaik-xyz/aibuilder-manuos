@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from './client';
 import { hydrateAtomFields } from './quantities';
@@ -9,6 +9,16 @@ import type { PaginationMeta, PaginationProps } from '@/components/ui/pagination
 
 const masterResources = new Set(['customers', 'suppliers', 'items', 'locations', 'uoms', 'departments', 'calendars', 'machines', 'technicians', 'skills', 'order-types', 'qc-checklists']);
 const cachePrefixes: Record<string, readonly string[]> = { 'supply-orders': ['supply', 'orders'], receipts: ['supply', 'receipts'], shipments: ['delivery', 'shipments'], inspections: ['quality', 'inspections'], 'my-work': ['execution', 'my-tasks'], engineering: ['orders'], forms: ['forms', 'templates'], planning: ['planning', 'schedule'], 'portal-orders': ['portal', 'orders'] };
+export function useListSearch(delay = 250) {
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setQuery(search.trim()), delay);
+    return () => window.clearTimeout(timeout);
+  }, [search, delay]);
+  return { search, setSearch, query };
+}
+
 export function usePaginatedList<T, Summary = Record<string, unknown>>(resource: string, filters: Record<string, string | undefined> = {}, enabled = true) {
   const { principal } = useWorkspaceNavigation();
   const filterKey = JSON.stringify(filters);

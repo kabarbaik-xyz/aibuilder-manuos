@@ -16,13 +16,16 @@ export class PortalRepository {
   async listCustomerOrders(
     workspaceId: string,
     customerId: string,
-    pagination?: { skip: number; take: number }
+    pagination?: { skip: number; take: number; search?: string }
   ): Promise<CustomerOrderSummaryDTO[]> {
+    const search = pagination?.search?.trim();
     const orders = await this.prisma.order.findMany({
-      ...(pagination || {}),
+      skip: pagination?.skip,
+      take: pagination?.take,
       where: {
         workspaceId,
         customerId,
+        ...(search ? { OR: [{ orderNumber: { contains: search } }, { item: { name: { contains: search } } }, { item: { code: { contains: search } } }] } : {}),
       },
       include: {
         item: true,

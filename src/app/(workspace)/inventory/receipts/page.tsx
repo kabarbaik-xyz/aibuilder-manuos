@@ -1,7 +1,8 @@
 'use client';
 
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { SupplyReceiptDTO } from '@/server/modules/supply/contracts';
 
 import { ErrorState } from '@/components/ui/resource-state';
@@ -12,7 +13,8 @@ import Link from 'next/link';
 import { formatQuantity } from '@/domain/quantity';
 
 export default function InventoryReceiptsPage() {
-  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<SupplyReceiptDTO>('receipts');
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<SupplyReceiptDTO>('receipts', { search: query || undefined });
   const receipts = pageData?.data || [];
 
   if (queryError) return <div className="page-stack"><PageHeader title="Inbound receipts"/><ErrorState message={queryError.message} onRetry={()=>refetch()}/></div>;
@@ -23,6 +25,8 @@ export default function InventoryReceiptsPage() {
         <PageHeader title="Inbound Receipts" description="Chronological log of verified incoming shipments posted into inventory balances." actions={<><Link href="/supply-orders">
             <button className="btn btn-outline text-sm">View Purchase Orders</button>
           </Link></>} />
+
+        <ListSearch value={search} onChange={setSearch} placeholder="Search receipt, PO, supplier or item…" label="Search inbound receipts" />
 
         <div className="card p-0 overflow-hidden">
           {isLoading ? (

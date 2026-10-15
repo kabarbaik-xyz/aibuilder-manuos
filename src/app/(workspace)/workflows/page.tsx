@@ -1,6 +1,7 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { WorkflowTemplateDto } from '@/features/workflows/api';
 
 import { PageHeader } from '@/components/ui/page-header';
@@ -12,7 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/resource-state';
 
 export default function WorkflowsPage() {
-  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<WorkflowTemplateDto>('workflows');
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<WorkflowTemplateDto>('workflows', { search: query || undefined });
   const templates = pageData?.data || [];
 
   if (isPending) return <LoadingState message="Loading workflows…" />;
@@ -21,6 +23,8 @@ export default function WorkflowsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Workflow Studio" description="Define process DAG routings, operation dependencies, skill requirements, and inspection gates." actions={<><Link href="/workflows/new" className="btn primary ">Create New Workflow</Link></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search workflow code or name…" label="Search workflows" />
 
       {templates.length === 0 ? (
         <EmptyState

@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -14,7 +15,8 @@ import { CreateQcChecklistModal } from '@/features/masters/components/resource-f
 
 export default function QcChecklistsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch, pagination } = usePaginatedList<QcChecklist>('qc-checklists', {});
+  const { search, setSearch, query } = useListSearch();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<QcChecklist>('qc-checklists', { search: query || undefined });
 
   const checklists = data?.data || [];
 
@@ -55,6 +57,8 @@ export default function QcChecklistsPage() {
       <PageHeader title="Quality Checklists" description="Configure standardized quality inspections, measurement tolerances and test points" actions={<><PermissionGate permission="quality.configure"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Checklist
         </Button></PermissionGate></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search checklist code or name…" label="Search quality checklists" />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load checklists'} onRetry={() => refetch()} />

@@ -1,6 +1,7 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
+import { ListSearch } from '@/components/ui/list-search';
 import type { CustomerOrderSummaryDTO } from '@/features/portal/api';
 
 import React from "react";
@@ -14,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export function PortalOrderListView() {
-  const { data: pageData, isLoading: loading, error: queryError, refetch: refresh, pagination } = usePaginatedList<CustomerOrderSummaryDTO>('portal-orders');
+  const { search, setSearch, query } = useListSearch();
+  const { data: pageData, isLoading: loading, error: queryError, refetch: refresh, pagination } = usePaginatedList<CustomerOrderSummaryDTO>('portal-orders', { search: query || undefined });
   const orders = pageData?.data || [];
   const error = queryError?.message;
 
@@ -24,6 +26,8 @@ export function PortalOrderListView() {
         title="Your Production Orders"
         description="Track verified shop-floor progress, inspected quality milestones, and active deliveries."
       />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search order number or item…" label="Search production orders" />
 
       {loading ? (
         <Panel className="p-8 text-center text-xs text-muted">

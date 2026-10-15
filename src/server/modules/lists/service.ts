@@ -71,13 +71,13 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       }
       case 'machines': {
         requireAnyPermission(principal, ['resource.manage', 'planning.read']);
-        const where: Prisma.MachineWhereInput = { workspaceId, archivedAt: null, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }] } : {}) };
+        const where: Prisma.MachineWhereInput = { workspaceId, archivedAt: null, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }, { machineClass: { code: { contains: search } } }, { machineClass: { name: { contains: search } } }] } : {}) };
         if (params.get('departmentId')) where.departmentId = params.get('departmentId')!;
         return page(() => tx.machine.count({ where }), (skip, take) => tx.machine.findMany({ where, skip, take, orderBy: [{ code: 'asc' }, { id: 'asc' }], include: { machineClass: true, department: true } }));
       }
       case 'technicians': {
         requireAnyPermission(principal, ['resource.manage', 'planning.read']);
-        const where: Prisma.TechnicianWhereInput = { workspaceId, archivedAt: null, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }] } : {}) };
+        const where: Prisma.TechnicianWhereInput = { workspaceId, archivedAt: null, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }, { skills: { some: { skill: { OR: [{ code: { contains: search } }, { name: { contains: search } }] } } } }] } : {}) };
         return page(() => tx.technician.count({ where }), (skip, take) => tx.technician.findMany({ where, skip, take, orderBy: [{ code: 'asc' }, { id: 'asc' }], include: { skills: { include: { skill: true } }, certifications: { include: { certification: true } } } }));
       }
       case 'skills': {
@@ -87,12 +87,12 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       }
       case 'order-types': {
         requireAnyPermission(principal, ['workflow.read', 'workflow.author', 'order.read']);
-        const where: Prisma.OrderTypeWhereInput = { workspaceId, archivedAt: null, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }] } : {}) };
+        const where: Prisma.OrderTypeWhereInput = { workspaceId, archivedAt: null, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }, { description: { contains: search } }] } : {}) };
         return page(() => tx.orderType.count({ where }), (skip, take) => tx.orderType.findMany({ where, skip, take, orderBy: [{ code: 'asc' }, { id: 'asc' }] }));
       }
       case 'qc-checklists': {
         requireAnyPermission(principal, ['quality.read', 'quality.configure']);
-        const where: Prisma.QcChecklistWhereInput = { workspaceId, archivedAt: null, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }] } : {}) };
+        const where: Prisma.QcChecklistWhereInput = { workspaceId, archivedAt: null, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }, { checks: { some: { OR: [{ code: { contains: search } }, { description: { contains: search } }] } } }] } : {}) };
         return page(() => tx.qcChecklist.count({ where }), (skip, take) => tx.qcChecklist.findMany({ where, skip, take, orderBy: [{ code: 'asc' }, { id: 'asc' }], include: { checks: true } }));
       }
       case 'orders':
@@ -103,22 +103,43 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       }
       case 'supply-orders': {
         requireAnyPermission(principal, ['supply.read']);
-        const where: Prisma.SupplyOrderWhereInput = { workspaceId, ...(status ? { status } : {}), ...(search ? { OR: [{ orderNumber: { contains: search } }, { supplier: { name: { contains: search } } }] } : {}) };
+        const where: Prisma.SupplyOrderWhereInput = { workspaceId, ...(status ? { status } : {}), ...(search ? { OR: [{ orderNumber: { contains: search } }, { supplier: { name: { contains: search } } }, { supplier: { code: { contains: search } } }, { lines: { some: { item: { OR: [{ code: { contains: search } }, { name: { contains: search } }] } } } }] } : {}) };
         return page(() => tx.supplyOrder.count({ where }), (skip, take) => tx.supplyOrder.findMany({ where, skip, take, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: { supplier: true, lines: { include: { item: true } } } }), row => ({ ...row, supplierName: row.supplier.name, supplierCode: row.supplier.code, lines: row.lines.map(line => ({ ...line, itemCode: line.item.code, itemName: line.item.name, openAtoms: line.orderedAtoms - line.receivedAtoms })) }));
       }
       case 'receipts': {
         requireAnyPermission(principal, ['inventory.read']);
-        const where: Prisma.SupplyReceiptWhereInput = { workspaceId, ...(search ? { receiptNumber: { contains: search } } : {}) };
+        const where: Prisma.SupplyReceiptWhereInput = { workspaceId, ...(search ? { OR: [{ receiptNumber: { contains: search } }, { notes: { contains: search } }, { supplyOrder: { orderNumber: { contains: search } } }, { supplier: { name: { contains: search } } }, { lines: { some: { item: { OR: [{ code: { contains: search } }, { name: { contains: search } }] } } } }] } : {}) };
         return page(() => tx.supplyReceipt.count({ where }), (skip, take) => tx.supplyReceipt.findMany({ where, skip, take, orderBy: [{ receivedDate: 'desc' }, { id: 'desc' }], include: { supplyOrder: true, supplier: true, receivedBy: { select: { name: true } }, lines: { include: { item: true, location: true, lot: true } } } }), row => ({ ...row, orderNumber: row.supplyOrder.orderNumber, supplierName: row.supplier.name, receivedByName: row.receivedBy.name, lines: row.lines.map(line => ({ ...line, itemCode: line.item.code, itemName: line.item.name, locationCode: line.location.code, lotNumber: line.lot?.lotNumber })) }));
       }
       case 'inspections': {
         requireAnyPermission(principal, ['quality.read', 'quality.inspect']);
-        const where: Prisma.InspectionWhereInput = { workspaceId, ...(status ? { status } : {}) };
+        const where: Prisma.InspectionWhereInput = {
+          workspaceId,
+          ...(status ? { status } : {}),
+          ...(search ? {
+            OR: [
+              { id: { contains: search } },
+              { sourceType: { contains: search } },
+              { disposition: { contains: search } },
+              { productionOutput: { item: { name: { contains: search } } } },
+              { productionOutput: { lot: { lotNumber: { contains: search } } } },
+              {
+                productionOutput: {
+                  task: {
+                    instance: {
+                      order: { orderNumber: { contains: search } },
+                    },
+                  },
+                },
+              },
+            ],
+          } : {}),
+        };
         return page(() => tx.inspection.count({ where }), (skip, take) => tx.inspection.findMany({ where, skip, take, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: { productionOutput: { include: { item: true, lot: true, task: { include: { instance: { include: { order: true } } } } } } } }));
       }
       case 'shipments': {
         requireAnyPermission(principal, ['delivery.read', 'order.read']);
-        const where: Prisma.ShipmentWhereInput = { workspaceId, ...(principal.customerId ? { customerId: principal.customerId } : {}), ...(status ? { status } : {}) };
+        const where: Prisma.ShipmentWhereInput = { workspaceId, ...(principal.customerId ? { customerId: principal.customerId } : {}), ...(status ? { status } : {}), ...(search ? { OR: [{ shipmentNumber: { contains: search } }, { carrierName: { contains: search } }, { trackingNumber: { contains: search } }, { customer: { name: { contains: search } } }, { order: { orderNumber: { contains: search } } }, { order: { item: { name: { contains: search } } } }] } : {}) };
         return page(() => tx.shipment.count({ where }), (skip, take) => tx.shipment.findMany({ where, skip, take, orderBy: [{ allocatedAt: 'desc' }, { id: 'desc' }], include: { customer: true, order: { include: { item: true } }, lines: true } }));
       }
       case 'stock-balances': {
@@ -135,7 +156,7 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       }
       case 'stock-counts': {
         requireAnyPermission(principal, ['inventory.read']);
-        const where = { workspaceId };
+        const where: Prisma.StockCountWhereInput = { workspaceId, ...(search ? { OR: [{ countNumber: { contains: search } }, { reason: { contains: search } }, { status: { contains: search } }, { countedBy: { name: { contains: search } } }, { location: { is: { OR: [{ code: { contains: search } }, { name: { contains: search } }] } } }] } : {}) };
         return page(() => tx.stockCount.count({ where }), (skip, take) => tx.stockCount.findMany({ where, skip, take, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: { location: true, lines: true, countedBy: { select: { name: true } }, approvedBy: { select: { name: true } } } }), row => ({ ...row, locationCode: row.location?.code, locationName: row.location?.name, countedByName: row.countedBy.name, approvedByName: row.approvedBy?.name }));
       }
       case 'users': {
@@ -169,7 +190,7 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
         return { ...result, summary: { statusCounts: Object.fromEntries(groups.map(group => [group.status, group._count])) } };
       }
       case 'planning': {
-        const where: Prisma.TaskWhereInput = { workspaceId, id: { in: schedule!.scheduledTasks.map(task => task.taskId) }, status: { notIn: ['COMPLETED', 'CANCELLED'] } };
+        const where: Prisma.TaskWhereInput = { workspaceId, id: { in: schedule!.scheduledTasks.map(task => task.taskId) }, status: { notIn: ['COMPLETED', 'CANCELLED'] }, ...(search ? { OR: [{ nodeKey: { contains: search } }, { instance: { order: { orderNumber: { contains: search } } } }, { instance: { order: { item: { name: { contains: search } } } } }, { instance: { order: { customer: { name: { contains: search } } } } }] } : {}) };
         const byId = new Map(schedule!.scheduledTasks.map(task => [task.taskId, task]));
         const result = await page(() => tx.task.count({ where }), (skip, take) => tx.task.findMany({ where, skip, take, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true } }), row => byId.get(row.id));
         return { ...result, summary: { makespanMinutes: schedule!.makespanMinutes, projectedEndAt: schedule!.projectedEndAt, criticalPathCount: schedule!.criticalPath.length, scheduledTaskCount: schedule!.scheduledTasks.length } };
@@ -188,9 +209,9 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       case 'portal-orders': {
         requireAnyPermission(principal, ['customer_order.read_own']);
         if (!principal.customerId) throw new ForbiddenError('A customer account is required');
-        const where = { workspaceId, customerId: principal.customerId };
+        const where: Prisma.OrderWhereInput = { workspaceId, customerId: principal.customerId, ...(search ? { OR: [{ orderNumber: { contains: search } }, { item: { name: { contains: search } } }, { item: { code: { contains: search } } }] } : {}) };
         const repository = new PortalRepository(tx);
-        return page(() => tx.order.count({ where }), (skip, take) => repository.listCustomerOrders(workspaceId, principal.customerId!, { skip, take }));
+        return page(() => tx.order.count({ where }), (skip, take) => repository.listCustomerOrders(workspaceId, principal.customerId!, { skip, take, search }));
       }
       default: throw new NotFoundError('Unknown paginated list');
     }

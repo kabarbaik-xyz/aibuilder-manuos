@@ -2,6 +2,22 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import {
+  ArrowLeft,
+  Boxes,
+  CheckCircle2,
+  Clock,
+  Truck,
+  Package,
+  MapPin,
+  Building2,
+  Printer,
+  Copy,
+  Check,
+  ExternalLink,
+  ShieldCheck,
+  FileText,
+} from 'lucide-react';
 import { useShipment, useDispatchShipment, useConfirmDelivery } from '../hooks';
 import { Button } from '@/components/ui/button';
 import { ButtonLink } from '@/components/ui/button-link';
@@ -9,6 +25,9 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Panel } from '@/components/ui/panel';
 import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { formatQuantity } from '@/domain/quantity';
 
 export interface ShipmentDetailViewProps {
@@ -31,18 +50,33 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
   const [proofOfDelivery, setProofOfDelivery] = useState('');
   const [confirmNotes, setConfirmNotes] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
   if (isLoading) {
-    return <div className="p-12 text-center text-xs text-muted">Loading shipment details...</div>;
+    return (
+      <div className="p-16 text-center text-xs text-muted flex flex-col items-center justify-center gap-2">
+        <Clock className="w-5 h-5 animate-spin text-primary" />
+        <span>Loading shipment details...</span>
+      </div>
+    );
   }
 
   if (error || !shipment) {
     return (
-      <div className="p-8 text-center bg-danger-soft border border-line rounded-xl my-6">
-        <p className="text-danger font-medium mb-2">Shipment not found</p>
-        <Link href="/delivery/shipments" className="text-xs text-primary underline">
+      <div className="p-8 text-center bg-danger-soft border border-line rounded-xl my-6 max-w-lg mx-auto">
+        <p className="text-danger font-semibold mb-2">Shipment Not Found</p>
+        <p className="text-xs text-muted mb-4">
+          The requested shipment record could not be loaded or may have been archived.
+        </p>
+        <ButtonLink href="/delivery/shipments">
           Back to Shipments
-        </Link>
+        </ButtonLink>
       </div>
     );
   }
@@ -82,17 +116,72 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
   };
 
   const totalAllocatedAtoms = shipment.lines.reduce((acc, l) => acc + l.allocatedAtoms, 0n);
+  const totalDispatchedAtoms = shipment.lines.reduce((acc, l) => acc + l.dispatchedAtoms, 0n);
+  const totalDeliveredAtoms = shipment.lines.reduce((acc, l) => acc + l.deliveredAtoms, 0n);
+
+  const orderTotalAtoms = shipment.order?.orderedAtoms || 0n;
+  const fulfillmentPct = orderTotalAtoms > 0n
+    ? Number((totalAllocatedAtoms * 100n) / orderTotalAtoms)
+    : 100;
+
+  // Determine current lifecycle step index (0: Allocated, 1: Dispatched, 2: Delivered)
+  const isDelivered = shipment.status === 'DELIVERED';
+  const isDispatched = shipment.status === 'DISPATCHED' || isDelivered;
+  const isAllocated = true; // All existing shipments are at least allocated
+
+  const formatTimestamp = (dateStr?: string | null) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    return d.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
 
   return (
     <div className="page-stack">
+      {/* Page Header */}
       <PageHeader
         title={`Shipment ${shipment.shipmentNumber}`}
-        description={`Order #${shipment.order?.orderNumber} · Customer: ${shipment.customer?.name}`}
+        description={
+          <div className="flex flex-wrap items-center gap-2.5 mt-0.5">
+            <span>
+              Originating Order #{shipment.order?.orderNumber || '—'} · Customer:{' '}
+              <strong className="text-ink">{shipment.customer?.name || '—'}</strong>
+            </span>
+            {shipment.status === 'ALLOCATED' && (
+              <Badge variant="warning">Allocated (Reserved)</Badge>
+            )}
+            {shipment.status === 'DISPATCHED' && (
+              <Badge variant="blue">Dispatched (In Transit)</Badge>
+            )}
+            {shipment.status === 'DELIVERED' && (
+              <Badge variant="success">Delivered</Badge>
+            )}
+          </div>
+        }
         actions={
           <div className="flex items-center gap-2">
             <ButtonLink href="/delivery/shipments">
-              Back to Shipments
+              <span className="inline-flex items-center gap-1.5">
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to Shipments
+              </span>
             </ButtonLink>
+
+            <Button
+              type="button"
+              onClick={() => window.print()}
+              title="Print Delivery Order / Packing Slip"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Printer className="w-3.5 h-3.5" />
+                Print Slip
+              </span>
+            </Button>
 
             {shipment.status === 'ALLOCATED' && (
               <Button
@@ -100,19 +189,31 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
                 onClick={() => {
                   setCarrierName(shipment.carrierName || '');
                   setTrackingNumber(shipment.trackingNumber || '');
+                  setDispatchNotes(shipment.notes || '');
                   setShowDispatchModal(true);
                 }}
               >
-                Dispatch Stock
+                <span className="inline-flex items-center gap-1.5">
+                  <Truck className="w-4 h-4" />
+                  Dispatch Stock
+                </span>
               </Button>
             )}
 
             {shipment.status === 'DISPATCHED' && (
               <Button
                 variant="primary"
-                onClick={() => setShowConfirmModal(true)}
+                onClick={() => {
+                  setReceivedBy(shipment.receivedBy || '');
+                  setProofOfDelivery(shipment.proofOfDelivery || '');
+                  setConfirmNotes(shipment.notes || '');
+                  setShowConfirmModal(true);
+                }}
               >
-                Confirm Customer Delivery
+                <span className="inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Confirm Customer Delivery
+                </span>
               </Button>
             )}
           </div>
@@ -120,119 +221,649 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
       />
 
       {actionError && (
-        <div className="p-3 bg-danger-soft border border-line rounded text-xs text-danger">
-          <strong>Action Blocked:</strong> {actionError}
+        <div className="p-3 bg-danger-soft border border-line rounded-lg text-xs text-danger flex items-center justify-between">
+          <div>
+            <strong>Action Blocked:</strong> {actionError}
+          </div>
+          <button
+            type="button"
+            className="text-xs text-danger hover:underline ml-2"
+            onClick={() => setActionError(null)}
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Panel>
-          <div className="text-xs text-muted uppercase font-medium">Shipment Status</div>
-          <div className="mt-2">
-            {shipment.status === 'ALLOCATED' ? (
-              <Badge variant="warning">ALLOCATED (RESERVED)</Badge>
-            ) : shipment.status === 'DISPATCHED' ? (
-              <Badge variant="blue">DISPATCHED (IN TRANSIT)</Badge>
-            ) : shipment.status === 'DELIVERED' ? (
-              <Badge variant="success">DELIVERED</Badge>
-            ) : (
-              <Badge variant="default">{shipment.status}</Badge>
+      {/* Contextual Attention Band */}
+      {shipment.status === 'DELIVERED' && (
+        <div className="attention-band success-band mb-0">
+          <div className="attention-icon">
+            <CheckCircle2 className="w-5 h-5 text-success" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-success">
+              Delivery Complete & Chain of Custody Verified
+            </h3>
+            <p className="text-xs text-muted mt-0.5">
+              Goods physically received by{' '}
+              <strong className="text-ink">
+                {shipment.receivedBy || 'Customer Receiving Team'}
+              </strong>{' '}
+              {shipment.deliveredAt && `on ${formatTimestamp(shipment.deliveredAt)}`}.
+              All reservations and physical ledger balances closed.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {shipment.status === 'DISPATCHED' && (
+        <div className="attention-band mb-0">
+          <div className="attention-icon">
+            <Truck className="w-5 h-5 text-warning" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-warning">
+              Consignment In Transit to Customer
+            </h3>
+            <p className="text-xs text-muted mt-0.5">
+              Dispatched via{' '}
+              <strong className="text-ink">
+                {shipment.carrierName || 'Freight Carrier'}
+              </strong>{' '}
+              {shipment.trackingNumber && (
+                <>
+                  (Tracking:{' '}
+                  <code className="px-1.5 py-0.5 bg-surface rounded border border-line text-[11px] font-mono">
+                    {shipment.trackingNumber}
+                  </code>
+                  )
+                </>
+              )}
+              . Awaiting customer receipt verification to close tranche.
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setReceivedBy(shipment.receivedBy || '');
+              setProofOfDelivery(shipment.proofOfDelivery || '');
+              setConfirmNotes(shipment.notes || '');
+              setShowConfirmModal(true);
+            }}
+          >
+            Record Delivery Receipt
+          </Button>
+        </div>
+      )}
+
+      {shipment.status === 'ALLOCATED' && (
+        <div className="attention-band mb-0">
+          <div className="attention-icon">
+            <Clock className="w-5 h-5 text-warning" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-warning">
+              Stock Reserved · Ready for Physical Dispatch
+            </h3>
+            <p className="text-xs text-muted mt-0.5">
+              Finished goods are hard-reserved in the warehouse. Posting dispatch will
+              decrement physical warehouse stock balances and generate shipping documents.
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setCarrierName(shipment.carrierName || '');
+              setTrackingNumber(shipment.trackingNumber || '');
+              setDispatchNotes(shipment.notes || '');
+              setShowDispatchModal(true);
+            }}
+          >
+            Dispatch Consignment
+          </Button>
+        </div>
+      )}
+
+      {/* Metric Strip (ManuOS Design System Rule) */}
+      <div className="metric-strip">
+        <div className="metric">
+          <div className="metric-label">
+            <Package className="w-3.5 h-3.5" />
+            Shipment Status
+          </div>
+          <div className="metric-value flex items-baseline gap-2">
+            {shipment.status === 'ALLOCATED' && (
+              <span className="text-warning text-2xl font-bold tracking-tight">
+                Allocated
+              </span>
+            )}
+            {shipment.status === 'DISPATCHED' && (
+              <span className="text-primary text-2xl font-bold tracking-tight">
+                In Transit
+              </span>
+            )}
+            {shipment.status === 'DELIVERED' && (
+              <span className="text-success text-2xl font-bold tracking-tight">
+                Delivered
+              </span>
             )}
           </div>
-        </Panel>
-
-        <Panel>
-          <div className="text-xs text-muted uppercase font-medium">Quantity Shipped</div>
-          <div className="text-2xl font-mono font-bold text-ink mt-1">
-            {formatQuantity(totalAllocatedAtoms)} units
+          <div className="metric-caption">
+            {isDelivered
+              ? 'Final milestone completed'
+              : isDispatched
+              ? 'Awaiting customer sign-off'
+              : 'Warehouse stock allocated'}
           </div>
-          <div className="text-[11px] text-muted">
-            Order Total: {shipment.order ? formatQuantity(shipment.order.orderedAtoms) : '—'} units
-          </div>
-        </Panel>
+        </div>
 
-        <Panel>
-          <div className="text-xs text-muted uppercase font-medium">Carrier & Waybill</div>
-          <div className="text-sm font-semibold text-ink mt-2">
+        <div className="metric">
+          <div className="metric-label">
+            <Boxes className="w-3.5 h-3.5" />
+            Quantity Shipped
+          </div>
+          <div className="metric-value numeric">
+            {formatQuantity(totalAllocatedAtoms)}
+            <span className="unit">units</span>
+          </div>
+          <div className="metric-caption">
+            Order Total: {orderTotalAtoms > 0n ? formatQuantity(orderTotalAtoms) : '—'} units
+            ({fulfillmentPct}% fulfilled)
+          </div>
+        </div>
+
+        <div className="metric">
+          <div className="metric-label">
+            <Truck className="w-3.5 h-3.5" />
+            Carrier & Waybill
+          </div>
+          <div className="text-lg font-bold text-ink truncate mt-0.5">
             {shipment.carrierName || 'Direct Delivery'}
           </div>
-          <div className="text-[11px] font-mono text-muted">
-            {shipment.trackingNumber || 'No tracking number'}
+          <div className="metric-caption flex items-center gap-1.5 font-mono">
+            <span>{shipment.trackingNumber || 'No tracking #'}</span>
+            {shipment.trackingNumber && (
+              <button
+                type="button"
+                onClick={() => handleCopy(shipment.trackingNumber!, 'tracking')}
+                className="text-muted hover:text-ink transition-colors p-0.5"
+                title="Copy tracking number"
+              >
+                {copiedKey === 'tracking' ? (
+                  <Check className="w-3 h-3 text-success" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
+              </button>
+            )}
           </div>
-        </Panel>
+        </div>
 
-        <Panel>
-          <div className="text-xs text-muted uppercase font-medium">Destination</div>
-          <div className="text-xs font-medium text-ink mt-2">
+        <div className="metric">
+          <div className="metric-label">
+            <MapPin className="w-3.5 h-3.5" />
+            Destination
+          </div>
+          <div className="text-sm font-semibold text-ink truncate mt-1">
             {shipment.destinationAddress || 'Customer Facility'}
           </div>
-        </Panel>
+          <div className="metric-caption truncate">
+            {shipment.customer?.name || 'Authorized Recipient'}
+          </div>
+        </div>
       </div>
 
-      {/* Shipment Lines Table */}
-      <Panel>
-        <h3 className="text-sm font-semibold text-ink mb-3">Allocated Line Items</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-line text-muted font-semibold uppercase tracking-wider">
-                <th className="py-2.5 px-3">Item</th>
-                <th className="py-2.5 px-3">Lot / Batch</th>
-                <th className="py-2.5 px-3">Source Location</th>
-                <th className="py-2.5 px-3">Allocated Qty</th>
-                <th className="py-2.5 px-3">Dispatched Qty</th>
-                <th className="py-2.5 px-3">Delivered Qty</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line text-ink">
-              {shipment.lines.map((line) => (
-                <tr key={line.id}>
-                  <td className="py-2.5 px-3">
-                    <div className="font-semibold">{line.item?.name || 'Item'}</div>
-                    <div className="text-[11px] text-muted font-mono">{line.item?.code}</div>
-                  </td>
-                  <td className="py-2.5 px-3 font-mono">
-                    {line.lot?.lotNumber || 'NO-LOT'}
-                  </td>
-                  <td className="py-2.5 px-3">
-                    {line.sourceLocation?.name || 'Finished Goods'}
-                  </td>
-                  <td className="py-2.5 px-3 font-mono font-semibold">
-                    {formatQuantity(line.allocatedAtoms)}
-                  </td>
-                  <td className="py-2.5 px-3 font-mono text-primary">
-                    {formatQuantity(line.dispatchedAtoms)}
-                  </td>
-                  <td className="py-2.5 px-3 font-mono text-success">
-                    {formatQuantity(line.deliveredAtoms)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Shipment Lifecycle Stepper */}
+      <Panel className="p-4 bg-surface-muted/60">
+        <div className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">
+          Shipment Lifecycle & Custody Trail
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative">
+          {/* Step 1: Allocated */}
+          <div
+            className={`p-3 rounded-lg border transition-all ${
+              isAllocated
+                ? 'bg-surface border-line shadow-xs'
+                : 'bg-surface-muted/30 border-transparent text-muted'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-bold flex items-center gap-1.5 text-ink">
+                <span className="w-5 h-5 rounded-full bg-primary-soft text-primary flex items-center justify-center text-[11px] font-bold">
+                  1
+                </span>
+                Stock Allocated
+              </span>
+              <Badge variant={isAllocated ? 'success' : 'default'}>
+                {isAllocated ? 'Complete' : 'Pending'}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-muted">
+              {formatTimestamp(shipment.allocatedAt) || 'Initial allocation'}
+            </p>
+            <p className="text-[11px] text-muted mt-1">
+              Hard reservation placed on Finished Goods stock.
+            </p>
+          </div>
+
+          {/* Step 2: Dispatched */}
+          <div
+            className={`p-3 rounded-lg border transition-all ${
+              isDispatched
+                ? 'bg-surface border-line shadow-xs'
+                : 'bg-surface-muted/30 border-dashed border-line text-muted'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span
+                className={`text-xs font-bold flex items-center gap-1.5 ${
+                  isDispatched ? 'text-ink' : 'text-muted'
+                }`}
+              >
+                <span
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                    isDispatched
+                      ? 'bg-primary-soft text-primary'
+                      : 'bg-surface-muted text-muted'
+                  }`}
+                >
+                  2
+                </span>
+                Carrier Dispatch
+              </span>
+              <Badge variant={isDispatched ? 'success' : 'default'}>
+                {isDispatched ? 'Dispatched' : 'Awaiting'}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-muted">
+              {formatTimestamp(shipment.dispatchedAt) || 'Pending dispatch execution'}
+            </p>
+            <p className="text-[11px] text-muted mt-1">
+              {shipment.carrierName
+                ? `Picked up by ${shipment.carrierName}`
+                : 'Transferred to carrier logistics'}
+            </p>
+          </div>
+
+          {/* Step 3: Delivered */}
+          <div
+            className={`p-3 rounded-lg border transition-all ${
+              isDelivered
+                ? 'bg-surface border-line shadow-xs'
+                : 'bg-surface-muted/30 border-dashed border-line text-muted'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <span
+                className={`text-xs font-bold flex items-center gap-1.5 ${
+                  isDelivered ? 'text-ink' : 'text-muted'
+                }`}
+              >
+                <span
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                    isDelivered
+                      ? 'bg-success-soft text-success'
+                      : 'bg-surface-muted text-muted'
+                  }`}
+                >
+                  3
+                </span>
+                Customer Acceptance
+              </span>
+              <Badge variant={isDelivered ? 'success' : 'default'}>
+                {isDelivered ? 'Delivered' : 'In Transit'}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-muted">
+              {formatTimestamp(shipment.deliveredAt) || 'Awaiting receiving confirmation'}
+            </p>
+            <p className="text-[11px] text-muted mt-1">
+              {shipment.receivedBy
+                ? `Signed by ${shipment.receivedBy}`
+                : 'Proof of Delivery required'}
+            </p>
+          </div>
         </div>
       </Panel>
 
-      {/* Delivery Evidence if delivered */}
-      {shipment.status === 'DELIVERED' && (
-        <Panel>
-          <h3 className="text-sm font-semibold text-ink mb-2">Proof of Delivery (POD)</h3>
-          <div className="p-4 bg-success-soft/20 border border-line rounded-xl text-xs space-y-1">
-            <div>
-              <strong>Received By:</strong> {shipment.receivedBy || 'Authorized Customer Representative'}
-            </div>
-            <div>
-              <strong>Delivery Timestamp:</strong> {shipment.deliveredAt ? new Date(shipment.deliveredAt).toLocaleString() : '—'}
-            </div>
-            {shipment.proofOfDelivery && (
+      {/* Main Content Grid (Two Columns: 65% Main, 35% Context Sidebar) */}
+      <div className="content-grid">
+        {/* Left Column: Lines Table and POD details */}
+        <div className="space-y-6">
+          {/* Allocated Line Items Panel */}
+          <div className="panel">
+            <div className="panel-head">
               <div>
-                <strong>Evidence / Reference:</strong> {shipment.proofOfDelivery}
+                <h3 className="text-sm font-semibold text-ink">Allocated Line Items</h3>
+                <p className="text-xs text-muted">
+                  Physical stock lines reserved and released from finished goods inventory
+                </p>
               </div>
-            )}
+              <Badge variant="default">
+                {shipment.lines.length} Line Item{shipment.lines.length !== 1 ? 's' : ''}
+              </Badge>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-y border-line text-muted font-semibold uppercase tracking-wider bg-surface-muted/40">
+                    <th className="py-2.5 px-4">Item & Code</th>
+                    <th className="py-2.5 px-4">Lot / Batch</th>
+                    <th className="py-2.5 px-4">Source Location</th>
+                    <th className="py-2.5 px-4 text-right">Allocated</th>
+                    <th className="py-2.5 px-4 text-right">Dispatched</th>
+                    <th className="py-2.5 px-4 text-right">Delivered</th>
+                    <th className="py-2.5 px-4 text-center">Fulfillment</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line text-ink">
+                  {shipment.lines.map((line) => {
+                    const isFullyDelivered =
+                      line.deliveredAtoms > 0n &&
+                      line.deliveredAtoms >= line.allocatedAtoms;
+                    return (
+                      <tr key={line.id} className="hover:bg-surface-muted/30 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-ink">
+                            {line.item?.name || 'Manufactured Item'}
+                          </div>
+                          <div className="text-[11px] font-mono text-muted mt-0.5">
+                            {line.item?.code || '—'}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 font-mono text-xs px-2 py-0.5 rounded bg-surface-muted border border-line text-ink">
+                            {line.lot?.lotNumber || 'NO-LOT'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="inline-flex items-center gap-1.5 text-xs text-ink">
+                            <MapPin className="w-3.5 h-3.5 text-muted" />
+                            <span>{line.sourceLocation?.name || 'Finished Goods Area'}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right font-medium numeric">
+                          {formatQuantity(line.allocatedAtoms)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-medium text-primary numeric">
+                          {formatQuantity(line.dispatchedAtoms)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-medium text-success numeric">
+                          {formatQuantity(line.deliveredAtoms)}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {isFullyDelivered ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-success bg-success-soft px-2 py-0.5 rounded-full">
+                              <Check className="w-3 h-3" /> 100%
+                            </span>
+                          ) : line.dispatchedAtoms > 0n ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary-soft px-2 py-0.5 rounded-full">
+                              In Transit
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-medium text-muted bg-surface-muted px-2 py-0.5 rounded-full border border-line">
+                              Reserved
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="panel-footer bg-surface-muted/20">
+              <span className="font-medium">Total Consignment Summary</span>
+              <div className="flex items-center gap-6 font-semibold numeric">
+                <span>Allocated: {formatQuantity(totalAllocatedAtoms)}</span>
+                <span className="text-primary">
+                  Dispatched: {formatQuantity(totalDispatchedAtoms)}
+                </span>
+                <span className="text-success">
+                  Delivered: {formatQuantity(totalDeliveredAtoms)}
+                </span>
+              </div>
+            </div>
           </div>
-        </Panel>
-      )}
+
+          {/* Proof of Delivery (POD) Panel */}
+          {shipment.status === 'DELIVERED' ? (
+            <div className="panel">
+              <div className="panel-head">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-success-soft text-success flex items-center justify-center">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-ink">
+                      Proof of Delivery (POD) & Verification
+                    </h3>
+                    <p className="text-xs text-muted">
+                      Certified customer receiving record and legal chain-of-custody acceptance
+                    </p>
+                  </div>
+                </div>
+                <Badge variant="success">Factual Acceptance</Badge>
+              </div>
+
+              <div className="panel-body">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-success-soft/30 border border-[#cde6d9] mb-4">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">
+                      Authorized Receiving Party
+                    </div>
+                    <div className="text-sm font-bold text-ink">
+                      {shipment.receivedBy || 'Authorized Customer Representative'}
+                    </div>
+                    <div className="text-xs text-muted mt-0.5">
+                      Destination Facility: {shipment.destinationAddress || 'Customer Receiving Dock'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-1">
+                      Delivery Timestamp
+                    </div>
+                    <div className="text-sm font-bold text-ink">
+                      {formatTimestamp(shipment.deliveredAt) || '—'}
+                    </div>
+                    <div className="text-xs text-muted mt-0.5">
+                      Synchronized to double-entry ledger
+                    </div>
+                  </div>
+                </div>
+
+                <div className="spec-row">
+                  <span>Evidence Document / DO #</span>
+                  <div className="flex items-center gap-2">
+                    <strong className="font-mono text-xs">
+                      {shipment.proofOfDelivery || 'POD-DEFAULT-RECORD'}
+                    </strong>
+                    {shipment.proofOfDelivery && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(shipment.proofOfDelivery!, 'pod')}
+                        className="text-muted hover:text-ink transition-colors"
+                        title="Copy DO reference"
+                      >
+                        {copiedKey === 'pod' ? (
+                          <Check className="w-3.5 h-3.5 text-success" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="spec-row">
+                  <span>Receiving Remarks / Notes</span>
+                  <span>{shipment.notes || 'Package intact, passed visual inspection.'}</span>
+                </div>
+
+                <div className="spec-row">
+                  <span>Ledger Impact</span>
+                  <span className="text-success font-medium">
+                    Inventory movement finalized · Reservation cleared
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="panel p-6 bg-surface-muted/30 border-dashed text-center">
+              <FileText className="w-8 h-8 text-muted mx-auto mb-2 opacity-60" />
+              <h4 className="text-xs font-bold text-ink">Proof of Delivery Pending</h4>
+              <p className="text-xs text-muted max-w-md mx-auto mt-1">
+                {shipment.status === 'DISPATCHED'
+                  ? 'Once physical delivery is confirmed with the customer, record the receiving officer name and signed Delivery Order number.'
+                  : 'Dispatch the shipment first to generate carrier transit paperwork and initiate customer delivery tracking.'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Context & Metadata */}
+        <div className="space-y-6">
+          {/* Order & Customer Context */}
+          <div className="panel">
+            <div className="panel-head">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-muted" />
+                <h3 className="text-sm font-semibold text-ink">Order & Customer</h3>
+              </div>
+            </div>
+
+            <div className="panel-body">
+              <div className="spec-row">
+                <span>Customer</span>
+                <div>
+                  <strong>{shipment.customer?.name || '—'}</strong>
+                  {shipment.customer?.code && (
+                    <span className="block text-[11px] text-muted font-mono">
+                      {shipment.customer.code}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="spec-row">
+                <span>Sales Order</span>
+                <Link
+                  href="/orders"
+                  className="font-bold inline-flex items-center gap-1 text-primary hover:underline"
+                >
+                  #{shipment.order?.orderNumber || '—'}
+                  <ExternalLink className="w-3 h-3" />
+                </Link>
+              </div>
+
+              <div className="spec-row">
+                <span>Order Status</span>
+                <Badge variant="default">
+                  {shipment.order?.status || 'ACTIVE'}
+                </Badge>
+              </div>
+
+              <div className="spec-row">
+                <span>Delivery Address</span>
+                <span className="text-right">
+                  {shipment.destinationAddress || 'Customer Warehouse'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Carrier & Logistics Details */}
+          <div className="panel">
+            <div className="panel-head">
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4 text-muted" />
+                <h3 className="text-sm font-semibold text-ink">Transport & Logistics</h3>
+              </div>
+            </div>
+
+            <div className="panel-body">
+              <div className="spec-row">
+                <span>Carrier Service</span>
+                <strong>{shipment.carrierName || 'Internal Transport'}</strong>
+              </div>
+
+              <div className="spec-row">
+                <span>Waybill / Tracking</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-xs">
+                    {shipment.trackingNumber || 'DIRECT-ROAD'}
+                  </span>
+                  {shipment.trackingNumber && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(shipment.trackingNumber!, 'tracking-side')}
+                      className="text-muted hover:text-ink transition-colors"
+                      title="Copy tracking"
+                    >
+                      {copiedKey === 'tracking-side' ? (
+                        <Check className="w-3 h-3 text-success" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="spec-row">
+                <span>Dispatch Timestamp</span>
+                <span>{formatTimestamp(shipment.dispatchedAt) || 'Pending'}</span>
+              </div>
+
+              {shipment.notes && (
+                <div className="spec-row">
+                  <span>Logistics Notes</span>
+                  <span>{shipment.notes}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Actions & Navigation */}
+          <div className="panel">
+            <div className="panel-head">
+              <h3 className="text-sm font-semibold text-ink">Operational Shortcuts</h3>
+            </div>
+            <div className="panel-body space-y-2">
+              <Button
+                variant="default"
+                className="w-full justify-start text-xs"
+                onClick={() => window.print()}
+              >
+                <Printer className="w-3.5 h-3.5 mr-2 text-muted" />
+                Print Delivery Order / Packing Note
+              </Button>
+
+              <ButtonLink
+                href="/orders"
+                variant="default"
+                className="w-full justify-start text-xs"
+              >
+                <Package className="w-3.5 h-3.5 mr-2 text-muted" />
+                Inspect Sales Order Record
+              </ButtonLink>
+
+              <ButtonLink
+                href="/inventory/items"
+                variant="default"
+                className="w-full justify-start text-xs"
+              >
+                <Boxes className="w-3.5 h-3.5 mr-2 text-muted" />
+                Check Warehouse Finished Goods Stock
+              </ButtonLink>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Dispatch Modal */}
       {showDispatchModal && (
@@ -240,50 +871,45 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
           isOpen
           onClose={() => setShowDispatchModal(false)}
           title="Dispatch Physical Stock"
+          subtitle="Record carrier handover and post inventory movement"
           size="md"
           pending={dispatchMutation.isPending}
         >
           <form onSubmit={handleDispatch} className="space-y-4">
             <p className="text-xs text-muted">
-              Dispatching will post inventory movements (decrementing Finished Goods warehouse stock) and release the hard reservation.
+              Dispatching will immediately post authoritative inventory movements (decrementing Finished Goods warehouse stock) and update carrier tracking records.
             </p>
 
-            <div>
-              <label className="block text-xs font-medium text-ink mb-1">Carrier Name</label>
-              <input
-                type="text"
+            <FormField id="carrierName" label="Carrier / Logistics Provider">
+              <Input
                 value={carrierName}
                 onChange={(e) => setCarrierName(e.target.value)}
-                placeholder="e.g. DHL Express, Internal Transport"
-                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                placeholder="e.g. Precision Transport, DHL Express, Internal Fleet"
               />
-            </div>
+            </FormField>
 
-            <div>
-              <label className="block text-xs font-medium text-ink mb-1">Tracking Number</label>
-              <input
-                type="text"
+            <FormField id="trackingNumber" label="Waybill / Tracking Number">
+              <Input
                 value={trackingNumber}
                 onChange={(e) => setTrackingNumber(e.target.value)}
-                placeholder="e.g. TRK-9902148"
-                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                placeholder="e.g. TRK-2026-9901"
               />
-            </div>
+            </FormField>
 
-            <div>
-              <label className="block text-xs font-medium text-ink mb-1">Dispatch Notes</label>
-              <textarea
+            <FormField id="dispatchNotes" label="Dispatch Notes / Vehicle Reference">
+              <Textarea
                 rows={2}
                 value={dispatchNotes}
                 onChange={(e) => setDispatchNotes(e.target.value)}
-                placeholder="Driver name, bill of lading, vehicle license..."
-                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                placeholder="Driver identity, container number, or bill of lading notes..."
               />
-            </div>
+            </FormField>
 
             <div className="dialog-actions">
               <Button
+                type="button"
                 onClick={() => setShowDispatchModal(false)}
+                disabled={dispatchMutation.isPending}
               >
                 Cancel
               </Button>
@@ -305,51 +931,46 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
           isOpen
           onClose={() => setShowConfirmModal(false)}
           title="Confirm Delivery Receipt"
+          subtitle="Record customer physical acceptance and close shipment tranche"
           size="md"
           pending={confirmMutation.isPending}
         >
           <form onSubmit={handleConfirm} className="space-y-4">
             <p className="text-xs text-muted">
-              Record receipt verification from the customer to close this shipment tranche.
+              Record customer sign-off to verify delivery completion and close all remaining hard reservations on this order.
             </p>
 
-            <div>
-              <label className="block text-xs font-medium text-ink mb-1">Received By (Name / Title)</label>
-              <input
-                type="text"
+            <FormField id="receivedBy" label="Received By (Full Name / Title)" required>
+              <Input
                 required
                 value={receivedBy}
                 onChange={(e) => setReceivedBy(e.target.value)}
-                placeholder="Customer receiver name"
-                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                placeholder="e.g. John Doe (Inbound Receiving Manager)"
               />
-            </div>
+            </FormField>
 
-            <div>
-              <label className="block text-xs font-medium text-ink mb-1">Proof of Delivery / Signed DO #</label>
-              <input
-                type="text"
+            <FormField id="proofOfDelivery" label="Proof of Delivery / Signed DO #">
+              <Input
                 value={proofOfDelivery}
                 onChange={(e) => setProofOfDelivery(e.target.value)}
-                placeholder="e.g. POD-2026-1049, Signed physical delivery note"
-                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                placeholder="e.g. POD-2026-0042, DO-VERTEX-998"
               />
-            </div>
+            </FormField>
 
-            <div>
-              <label className="block text-xs font-medium text-ink mb-1">Receiving Remarks</label>
-              <textarea
+            <FormField id="confirmNotes" label="Receiving Remarks / Condition">
+              <Textarea
                 rows={2}
                 value={confirmNotes}
                 onChange={(e) => setConfirmNotes(e.target.value)}
-                placeholder="Notes on packaging condition, inspection acceptance..."
-                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                placeholder="Packaging condition, dock inspection notes, receiving acceptance..."
               />
-            </div>
+            </FormField>
 
             <div className="dialog-actions">
               <Button
+                type="button"
                 onClick={() => setShowConfirmModal(false)}
+                disabled={confirmMutation.isPending}
               >
                 Cancel
               </Button>
@@ -358,7 +979,7 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
                 variant="primary"
                 disabled={confirmMutation.isPending}
               >
-                {confirmMutation.isPending ? 'Confirming...' : 'Record Delivery'}
+                {confirmMutation.isPending ? 'Confirming...' : 'Record Verified Delivery'}
               </Button>
             </div>
           </form>
@@ -367,3 +988,4 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
     </div>
   );
 }
+

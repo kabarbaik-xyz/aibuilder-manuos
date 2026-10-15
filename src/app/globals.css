@@ -2151,6 +2151,10 @@ input[type="checkbox"]:disabled:checked { border-color: var(--muted); background
 input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { margin: 0; appearance: none; -webkit-appearance: none; }
 .form-control[aria-invalid="true"] { border-color: var(--danger); }
 .form-control:disabled { background: var(--surface-muted); color: var(--muted); cursor: not-allowed; }
+
+.list-search { position: relative; display: block; width: min(100%, 440px); }
+.list-search .form-control { padding-left: 38px; }
+.list-search-icon { position: absolute; z-index: 1; left: 12px; top: 50%; width: 16px; height: 16px; color: var(--muted); transform: translateY(-50%); pointer-events: none; }
 .form-textarea { min-height: 120px; resize: vertical; }
 .field-help { color: var(--muted); font-size: 12px; }
 .field-error { color: var(--danger); font-size: 12px; }

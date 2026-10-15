@@ -1,5 +1,6 @@
 'use client';
-import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
+import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
@@ -14,7 +15,8 @@ import { CreateOrderTypeModal } from '@/features/masters/components/resource-for
 
 export default function OrderTypesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch, pagination } = usePaginatedList<OrderType>('order-types', {});
+  const { search, setSearch, query } = useListSearch();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<OrderType>('order-types', { search: query || undefined });
 
   const orderTypes = data?.data || [];
 
@@ -45,6 +47,8 @@ export default function OrderTypesPage() {
       <PageHeader title="Order Types" description="Classify order categories, manufacturing lifecycles and default routing templates" actions={<><PermissionGate permission="workflow.author"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Order Type
         </Button></PermissionGate></>} />
+
+      <ListSearch value={search} onChange={setSearch} placeholder="Search order type code or name…" label="Search order types" />
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load order types'} onRetry={() => refetch()} />
