@@ -18,8 +18,8 @@
 > gates. Inventory is currently material counters, not a transaction subsystem.
 
 **Last Updated:** 2026-10-15  
-**Current Phase:** Foundation & Master Data (M0–M1: F01–F07)  
-**Current Task:** Completed — Foundation operational, fully verified with 60 automated tests  
+**Current Phase:** Workflows, Orders & Production Instantiation (Milestone M2: W01–W06)  
+**Current Task:** Completed — Workflows, Orders & Engineering Hub operational, fully verified with 91 automated tests across 25 test files  
 
 ---
 
@@ -34,14 +34,18 @@
 | **M1** | F05 | Customers, Suppliers, Items & Locations | **100% COMPLETE** | CRUD, versioning, duplicate rejection, UOM conversions, pages M01–M08. `tests/integration/masters.test.ts` (5 tests). |
 | **M1** | F06 | Organization, Resources & QC Catalogs | **100% COMPLETE** | Departments, calendars/exceptions, machines, technician skills/certs, order types, QC checklists, pages M09–M15. `tests/integration/resources.test.ts` (4 tests). |
 | **M1** | F07 | M0/M1 Review & Reusable Factory Fixture | **100% COMPLETE** | `tests/fixtures/factory.ts` multi-tenant fixture, `tests/e2e/master-setup.spec.ts` (4 tests). 60 total tests passing across 17 test files. |
-
+| **M2** | W01 | Typed Definitions, Validation & Published Versions | **100% COMPLETE** | Migration `20261015020000_m2_workflows_and_orders`, DAG cycle/reachability validation, publish immutability. `src/domain/workflow-definition.test.ts` (5 tests), `tests/integration/workflow-versions.test.ts` (6 tests). |
+| **M2** | W02 | Real Order Drafts & Reviewed Engineering Revisions | **100% COMPLETE** | Typed order intake, RFQ source preservation, customer questions, reviewed BOM with base UOM conversions. `tests/integration/order-drafts.test.ts` (4 tests). |
+| **M2** | W03 | Release & Process Instantiation Transaction | **100% COMPLETE** | Atomic instantiation of MO, jobsheet, task DAG, dependency links, and material demand. Version pinning. `tests/integration/order-release.test.ts` (3 tests). |
+| **M2** | W04 | Bounded Workflow Transition & Guard Engine | **100% COMPLETE** | Finite action transition evaluator, AND-join resolution, skill/cert requirements, material coverage gate, QC checklist guard. `src/domain/workflow-runtime.test.ts` (8 tests). |
+| **M2** | W05 | Workflow Studio, Order Hub & Engineering Hub UI | **100% COMPLETE** | App router pages (`/workflows`, `/orders`, `/engineering`), interactive definition editor, review editor, order intake form. `tests/e2e/order-engineering-workflow.spec.ts` (1 test). |
+| **M2** | W06 | M2 Acceptance & Second-Type Proof | **100% COMPLETE** | Materially different Diamond DAG (PCBA) with parallel branches and AND-join, multi-type coexistence, version pinning, simulated restart persistence. `tests/integration/workflow-independence.test.ts` (1 test). |
 
 ---
 
 ## Verification Evidence Summary
 
-1. **Tailwind v4 Setup:** `package.json` contains `tailwindcss: "^4.0.0"` and `@tailwindcss/postcss: "^4.0.0"`. PostCSS is configured with `@tailwindcss/postcss`. `globals.css` uses `@import "tailwindcss";` and `@theme` tokens.
-2. **Deterministic Invariant Preservation:** Real progress remains strictly at 65.0% (78 QC-passed / 120 ordered). Split batch recovery conserves total units (40 + 80 = 120).
-3. **Automated Test Suite:** 16 tests passing across 9 test files via Vitest (`cpm`, `ripple`, `capacity`, `recovery`, `dispatch`, `similarity`, `network`, `workflow-validate`, `gemini-client`).
-4. **Build Output:** `npm run build` succeeds cleanly with 14 static and dynamic routes and standalone server bundle.
-5. **Browser Subagent Walkthrough:** Fully executed and recorded video demo artifact (`manuos_demo_run_1791987320658.webp`).
+1. **Deterministic Invariant Preservation:** Real progress remains strictly tied to confirmed physical completions. Split batch recovery conserves total units.
+2. **Automated Test Suite:** 91 tests passing across 25 test files via Vitest without mocks or stubs (`npm test`).
+3. **TypeScript Typecheck:** Clean typecheck (`npm run typecheck`) with 0 errors across all UI features, API routes, domain engines, and test suites.
+4. **Durable Persistence:** SQLite in WAL mode with strict foreign keys, command idempotency, append-only auditing, and BigInt atomic precision.

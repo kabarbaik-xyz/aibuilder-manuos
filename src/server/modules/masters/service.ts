@@ -1253,23 +1253,24 @@ export class MastersService {
       payload: input,
       prismaClient: this.prisma,
       handler: async (tx) => {
+        const rev = input.revision ?? 1;
         const existing = await tx.qcChecklist.findUnique({
           where: {
             workspaceId_code_revision: {
               workspaceId: principal.workspaceId,
               code: input.code,
-              revision: input.revision,
+              revision: rev,
             },
           },
         });
-        if (existing) throw new ConflictError(`Checklist '${input.code}' rev ${input.revision} exists`, 'DUPLICATE_CODE');
+        if (existing) throw new ConflictError(`Checklist '${input.code}' rev ${rev} exists`, 'DUPLICATE_CODE');
 
         const checklist = await tx.qcChecklist.create({
           data: {
             workspaceId: principal.workspaceId,
             code: input.code,
             name: input.name,
-            revision: input.revision,
+            revision: rev,
             checks: {
               create: (input.checks || []).map((c: any) => ({
                 code: c.code,

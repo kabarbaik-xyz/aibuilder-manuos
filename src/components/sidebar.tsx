@@ -6,6 +6,7 @@ import { useGraphStore } from '../store/graph-store';
 import { SCREENS, ScreenType } from '../lib/navigation';
 import { Icon } from './icons';
 import { Badge } from './ui/badge';
+import { MasterNavigation } from './master-navigation';
 
 export function Sidebar() {
   const router = useRouter();
@@ -78,7 +79,9 @@ export function Sidebar() {
         <Icon name="down" className="ml-auto w-3" />
       </button>
 
-      <div className="nav-group-label">Workspace</div>
+      <MasterNavigation />
+
+      <div className="nav-group-label">Demo workspace</div>
       <nav className="nav-list">
         {SCREENS.map((s) => {
           const isActive = pathname === '/' && currentScreen === s.id;

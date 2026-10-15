@@ -26,6 +26,7 @@ model User {
   sessions      Session[]
   accounts      Account[]
   memberships   Membership[]
+  stockMovements StockMovement[]
 
   @@map("users")
 }
@@ -112,6 +113,17 @@ model Workspace {
   certifications    Certification[]
   orderTypes        OrderType[]
   qcChecklists      QcChecklist[]
+  workflowTemplates WorkflowTemplate[]
+  workflowVersions  WorkflowVersion[]
+  workflowInstances WorkflowInstance[]
+  orders            Order[]
+  manufacturingOrders ManufacturingOrder[]
+  materialDemands   MaterialDemand[]
+  lots              Lot[]
+  serials           Serial[]
+  stockBalances     StockBalance[]
+  stockReservations StockReservation[]
+  stockMovements    StockMovement[]
 
   @@map("workspaces")
 }
@@ -272,6 +284,7 @@ model Customer {
   workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   contacts    CustomerContact[]
   memberships Membership[]
+  orders      Order[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -332,6 +345,7 @@ model Uom {
   workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   baseItems   Item[]              @relation("BaseUomRelation")
   conversions ItemUomConversion[]
+  bomLines    BomLine[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -356,6 +370,14 @@ model Item {
   workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   baseUom     Uom                 @relation("BaseUomRelation", fields: [workspaceId, baseUomId], references: [workspaceId, id])
   conversions ItemUomConversion[]
+  orders      Order[]
+  bomLines    BomLine[]
+  demands     MaterialDemand[]
+  lots              Lot[]
+  serials           Serial[]
+  stockBalances     StockBalance[]
+  stockReservations StockReservation[]
+  stockMovements    StockMovement[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -393,6 +415,10 @@ model Location {
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stockBalances     StockBalance[]
+  stockReservations StockReservation[]
+  sourceMovements   StockMovement[] @relation("SourceLocation")
+  destMovements     StockMovement[] @relation("DestLocation")
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -415,8 +441,9 @@ model Department {
   updatedAt   DateTime     @updatedAt @map("updated_at")
 
   workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  machines    Machine[]
-  technicians Technician[]
+  machines            Machine[]
+  technicians         Technician[]
+  manufacturingOrders ManufacturingOrder[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -499,6 +526,7 @@ model Machine {
   machineClass   MachineClass  @relation(fields: [workspaceId, machineClassId], references: [workspaceId, id])
   department     Department?   @relation(fields: [workspaceId, departmentId], references: [workspaceId, id])
   calendar       WorkCalendar? @relation(fields: [workspaceId, calendarId], references: [workspaceId, id])
+  tasks          Task[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -525,6 +553,7 @@ model Technician {
   calendar         WorkCalendar?              @relation(fields: [workspaceId, calendarId], references: [workspaceId, id])
   skills           TechnicianSkill[]
   certifications   TechnicianCertification[]
+  tasks            Task[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -616,7 +645,9 @@ model OrderType {
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace          Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workflowTemplates  WorkflowTemplate[]
+  orders             Order[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -661,3 +692,500 @@ model QcChecklistCheck {
   @@unique([checklistId, code])
   @@map("qc_checklist_checks")
 }
+
+// -------------------------------------------------------------
+// Engineering, Orders & Workflows (M2, DB Section 5)
+// -------------------------------------------------------------
+
+model WorkflowTemplate {
+  id          String            @id @default(uuid())
+  workspaceId String            @map("workspace_id")
+  orderTypeId String            @map("order_type_id")
+  code        String
+  name        String
+  description String?
+  isArchived  Boolean           @default(false) @map("is_archived")
+  version     Int               @default(1)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  orderType   OrderType         @relation(fields: [workspaceId, orderTypeId], references: [workspaceId, id])
+  versions    WorkflowVersion[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("workflow_templates")
+}
+
+model WorkflowVersion {
+  id             String             @id @default(uuid())
+  workspaceId    String             @map("workspace_id")
+  templateId     String             @map("template_id")
+  versionNumber  Int                @default(1) @map("version_number")
+  status         String             @default("DRAFT") // DRAFT | REVIEW | PUBLISHED | RETIRED
+  schemaVersion  Int                @default(1) @map("schema_version")
+  definitionJson String             @default("{}") @map("definition_json")
+  definitionHash String?            @map("definition_hash")
+  publishedById  String?            @map("published_by_id")
+  publishedAt    DateTime?          @map("published_at")
+  version        Int                @default(1)
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  workspace      Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  template       WorkflowTemplate   @relation(fields: [workspaceId, templateId], references: [workspaceId, id], onDelete: Cascade)
+  nodes          WorkflowNode[]
+  edges          WorkflowEdge[]
+  instances      WorkflowInstance[]
+
+  @@unique([templateId, versionNumber])
+  @@unique([workspaceId, id])
+  @@map("workflow_versions")
+}
+
+model WorkflowNode {
+  id                     String          @id @default(uuid())
+  workspaceId            String          @map("workspace_id")
+  versionId              String          @map("version_id")
+  key                    String          // e.g. OP-10, QC-FINAL
+  name                   String
+  type                   String          @default("OPERATION") // OPERATION | INSPECTION | APPROVAL
+  departmentId           String?         @map("department_id")
+  requiredPermission     String?         @map("required_permission")
+  plannedDurationMinutes Int             @default(60) @map("planned_duration_minutes")
+  requirementsJson       String          @default("{}") @map("requirements_json")
+  formGuardJson          String          @default("{}") @map("form_guard_json")
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+
+  version                WorkflowVersion @relation(fields: [workspaceId, versionId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([versionId, key])
+  @@unique([workspaceId, id])
+  @@map("workflow_nodes")
+}
+
+model WorkflowEdge {
+  id                  String          @id @default(uuid())
+  workspaceId         String          @map("workspace_id")
+  versionId           String          @map("version_id")
+  fromNodeKey         String          @map("from_node_key")
+  toNodeKey           String          @map("to_node_key")
+  joinPolicy          String          @default("AND") @map("join_policy")
+  conditionCode       String?         @map("condition_code")
+  conditionParamsJson String          @default("{}") @map("condition_params_json")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  version             WorkflowVersion @relation(fields: [workspaceId, versionId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([versionId, fromNodeKey, toNodeKey])
+  @@map("workflow_edges")
+}
+
+model Order {
+  id                   String                @id @default(uuid())
+  workspaceId          String                @map("workspace_id")
+  orderNumber          String                @map("order_number")
+  customerId           String                @map("customer_id")
+  orderTypeId          String                @map("order_type_id")
+  itemId               String                @map("item_id")
+  orderedAtoms         BigInt                @map("ordered_atoms")
+  requestedDate        DateTime              @map("requested_date")
+  promisedDate         DateTime?             @map("promised_date")
+  status               String                @default("DRAFT") // DRAFT | REVIEW | READY | RELEASED | IN_PRODUCTION | PARTIALLY_DELIVERED | DELIVERED | CANCELLED
+  version              Int                   @default(1)
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+
+  workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  customer             Customer              @relation(fields: [workspaceId, customerId], references: [workspaceId, id])
+  orderType            OrderType             @relation(fields: [workspaceId, orderTypeId], references: [workspaceId, id])
+  item                 Item                  @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
+  questions            CustomerQuestion[]
+  rfqDrafts            RfqDraft[]
+  engineeringRevisions EngineeringRevision[]
+  instances            WorkflowInstance[]
+  manufacturingOrders  ManufacturingOrder[]
+  demands              MaterialDemand[]
+  reservations         StockReservation[]
+
+  @@unique([workspaceId, orderNumber])
+  @@unique([workspaceId, id])
+  @@map("orders")
+}
+
+model RfqDraft {
+  id                  String    @id @default(uuid())
+  workspaceId         String    @map("workspace_id")
+  orderId             String?   @map("order_id")
+  rawText             String    @map("raw_text")
+  sourceType          String    @default("MANUAL") @map("source_type") // MANUAL | EMAIL | UPLOAD
+  extractedFieldsJson String    @default("{}") @map("extracted_fields_json")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  order               Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@map("rfq_drafts")
+}
+
+model CustomerQuestion {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  orderId      String    @map("order_id")
+  question     String
+  answer       String?
+  status       String    @default("OPEN") // OPEN | ANSWERED | WAIVED
+  resolvedById String?   @map("resolved_by_id")
+  resolvedAt   DateTime? @map("resolved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  order        Order     @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@map("customer_questions")
+}
+
+model EngineeringRevision {
+  id                String             @id @default(uuid())
+  workspaceId       String             @map("workspace_id")
+  orderId           String             @map("order_id")
+  revisionNumber    Int                @default(1) @map("revision_number")
+  status            String             @default("DRAFT") // DRAFT | REVIEW | APPROVED | SUPERSEDED
+  specsJson         String             @default("{}") @map("specs_json")
+  workflowVersionId String?            @map("workflow_version_id")
+  outputBasisAtoms  BigInt             @default(1000000) @map("output_basis_atoms")
+  approvedById      String?            @map("approved_by_id")
+  approvedAt        DateTime?          @map("approved_at")
+  version           Int                @default(1)
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  order             Order              @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  bomLines          BomLine[]
+  instances         WorkflowInstance[]
+
+  @@unique([orderId, revisionNumber])
+  @@unique([workspaceId, id])
+  @@map("engineering_revisions")
+}
+
+model BomLine {
+  id                    String              @id @default(uuid())
+  workspaceId           String              @map("workspace_id")
+  engineeringRevisionId String              @map("engineering_revision_id")
+  operationNodeKey      String              @map("operation_node_key")
+  itemId                String              @map("item_id")
+  inputUomId            String              @map("input_uom_id")
+  requirementAtoms      BigInt              @map("requirement_atoms")
+  outputBasisAtoms      BigInt              @default(1000000) @map("output_basis_atoms")
+  allowancePercent      Float               @default(0.0) @map("allowance_percent")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  revision              EngineeringRevision @relation(fields: [workspaceId, engineeringRevisionId], references: [workspaceId, id], onDelete: Cascade)
+  item                  Item                @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
+  inputUom              Uom                 @relation(fields: [workspaceId, inputUomId], references: [workspaceId, id])
+  demands               MaterialDemand[]
+
+  @@unique([engineeringRevisionId, operationNodeKey, itemId])
+  @@unique([workspaceId, id])
+  @@map("bom_lines")
+}
+
+model WorkflowInstance {
+  id                    String              @id @default(uuid())
+  workspaceId           String              @map("workspace_id")
+  orderId               String              @map("order_id")
+  workflowVersionId     String              @map("workflow_version_id")
+  engineeringRevisionId String              @map("engineering_revision_id")
+  status                String              @default("ACTIVE") // ACTIVE | COMPLETED | CANCELLED
+  startedAt             DateTime?           @map("started_at")
+  completedAt           DateTime?           @map("completed_at")
+  version               Int                 @default(1)
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  workspace             Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order                 Order               @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  workflowVersion       WorkflowVersion     @relation(fields: [workspaceId, workflowVersionId], references: [workspaceId, id])
+  engineeringRevision   EngineeringRevision @relation(fields: [workspaceId, engineeringRevisionId], references: [workspaceId, id])
+  tasks                 Task[]
+  events                WorkflowEvent[]
+
+  @@unique([workspaceId, id])
+  @@map("workflow_instances")
+}
+
+model ManufacturingOrder {
+  id           String      @id @default(uuid())
+  workspaceId  String      @map("workspace_id")
+  orderId      String      @map("order_id")
+  moNumber     String      @map("mo_number")
+  departmentId String?     @map("department_id")
+  status       String      @default("RELEASED") // RELEASED | IN_PROGRESS | COMPLETED | CANCELLED
+  targetAtoms  BigInt      @map("target_atoms")
+  version      Int         @default(1)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order        Order       @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  department   Department? @relation(fields: [workspaceId, departmentId], references: [workspaceId, id])
+  jobsheets    Jobsheet[]
+
+  @@unique([workspaceId, moNumber])
+  @@unique([workspaceId, id])
+  @@map("manufacturing_orders")
+}
+
+model Jobsheet {
+  id                   String             @id @default(uuid())
+  workspaceId          String             @map("workspace_id")
+  manufacturingOrderId String             @map("manufacturing_order_id")
+  orderId              String             @map("order_id")
+  name                 String
+  departmentId         String?            @map("department_id")
+  instructionRevision  Int                @default(1) @map("instruction_revision")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  manufacturingOrder   ManufacturingOrder @relation(fields: [workspaceId, manufacturingOrderId], references: [workspaceId, id], onDelete: Cascade)
+  tasks                Task[]
+
+  @@unique([workspaceId, id])
+  @@map("jobsheets")
+}
+
+model Task {
+  id                     String           @id @default(uuid())
+  workspaceId            String           @map("workspace_id")
+  instanceId             String           @map("instance_id")
+  nodeKey                String           @map("node_key")
+  jobsheetId             String?          @map("jobsheet_id")
+  attemptNumber          Int              @default(1) @map("attempt_number")
+  status                 String           @default("PENDING") // PENDING | READY | ASSIGNED | RUNNING | PAUSED | WAITING_QC | COMPLETED | BLOCKED | CANCELLED
+  plannedDurationMinutes Int              @default(60) @map("planned_duration_minutes")
+  actualDurationMinutes  Int              @default(0) @map("actual_duration_minutes")
+  targetItemId           String?          @map("target_item_id")
+  targetAtoms            BigInt           @default(0) @map("target_atoms")
+  assignedTechnicianId   String?          @map("assigned_technician_id")
+  assignedMachineId      String?          @map("assigned_machine_id")
+  startedAt              DateTime?        @map("started_at")
+  completedAt            DateTime?        @map("completed_at")
+  version                Int              @default(1)
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @updatedAt @map("updated_at")
+
+  instance               WorkflowInstance @relation(fields: [workspaceId, instanceId], references: [workspaceId, id], onDelete: Cascade)
+  jobsheet               Jobsheet?        @relation(fields: [workspaceId, jobsheetId], references: [workspaceId, id])
+  assignedTechnician     Technician?      @relation(fields: [workspaceId, assignedTechnicianId], references: [workspaceId, id])
+  assignedMachine        Machine?         @relation(fields: [workspaceId, assignedMachineId], references: [workspaceId, id])
+  predecessorDeps        TaskDependency[] @relation("SuccessorTasks")
+  successorDeps          TaskDependency[] @relation("PredecessorTasks")
+  demands                MaterialDemand[]
+  events                 WorkflowEvent[]
+  reservations           StockReservation[]
+
+  @@unique([instanceId, nodeKey, attemptNumber])
+  @@unique([workspaceId, id])
+  @@map("tasks")
+}
+
+model TaskDependency {
+  id                String   @id @default(uuid())
+  workspaceId       String   @map("workspace_id")
+  instanceId        String   @map("instance_id")
+  predecessorTaskId String   @map("predecessor_task_id")
+  successorTaskId   String   @map("successor_task_id")
+  policy            String   @default("FINISH_TO_START")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  predecessor       Task     @relation("PredecessorTasks", fields: [workspaceId, predecessorTaskId], references: [workspaceId, id], onDelete: Cascade)
+  successor         Task     @relation("SuccessorTasks", fields: [workspaceId, successorTaskId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([predecessorTaskId, successorTaskId])
+  @@map("task_dependencies")
+}
+
+model MaterialDemand {
+  id            String    @id @default(uuid())
+  workspaceId   String    @map("workspace_id")
+  orderId       String    @map("order_id")
+  taskId        String?   @map("task_id")
+  bomLineId     String?   @map("bom_line_id")
+  itemId        String    @map("item_id")
+  requiredAtoms BigInt    @map("required_atoms")
+  needByDate    DateTime? @map("need_by_date")
+  status        String    @default("OPEN") // OPEN | ALLOCATED | ISSUED | CLOSED
+  version       Int       @default(1)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order         Order     @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  task          Task?     @relation(fields: [workspaceId, taskId], references: [workspaceId, id])
+  bomLine       BomLine?  @relation(fields: [workspaceId, bomLineId], references: [workspaceId, id])
+  item          Item      @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
+  reservations  StockReservation[]
+
+  @@unique([workspaceId, id])
+  @@map("material_demands")
+}
+
+model WorkflowEvent {
+  id            String           @id @default(uuid())
+  workspaceId   String           @map("workspace_id")
+  instanceId    String           @map("instance_id")
+  taskId        String?          @map("task_id")
+  fromStatus    String?          @map("from_status")
+  toStatus      String           @map("to_status")
+  action        String
+  actorUserId   String           @map("actor_user_id")
+  commandId     String?          @map("command_id")
+  attemptNumber Int              @default(1) @map("attempt_number")
+  detailJson    String           @default("{}") @map("detail_json")
+  occurredAt    DateTime         @default(now()) @map("occurred_at")
+
+  instance      WorkflowInstance @relation(fields: [workspaceId, instanceId], references: [workspaceId, id], onDelete: Cascade)
+  task          Task?            @relation(fields: [workspaceId, taskId], references: [workspaceId, id])
+
+  @@index([workspaceId, instanceId])
+  @@index([workspaceId, occurredAt])
+  @@map("workflow_events")
+}
+
+// -------------------------------------------------------------
+// Inventory, Stock Ledger & Lots (Milestone M3 - O01)
+// -------------------------------------------------------------
+
+model Lot {
+  id                String             @id @default(uuid())
+  workspaceId       String             @map("workspace_id")
+  itemId            String             @map("item_id")
+  lotNumber         String             @map("lot_number")
+  supplierLotNumber String?            @map("supplier_lot_number")
+  expirationDate    DateTime?          @map("expiration_date")
+  receivedAt        DateTime           @default(now()) @map("received_at")
+  notes             String?
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  item              Item               @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  serials           Serial[]
+  stockBalances     StockBalance[]
+  stockReservations StockReservation[]
+  sourceMovements   StockMovement[]    @relation("SourceLot")
+  destMovements     StockMovement[]    @relation("DestLot")
+
+  @@unique([workspaceId, itemId, lotNumber])
+  @@unique([workspaceId, id])
+  @@map("lots")
+}
+
+model Serial {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  itemId       String    @map("item_id")
+  lotId        String?   @map("lot_id")
+  serialNumber String    @map("serial_number")
+  status       String    @default("AVAILABLE") // AVAILABLE | IN_USE | CONSUMED | SHIPPED | SCRAPPED
+  notes        String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  item         Item      @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  lot          Lot?      @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+
+  @@unique([workspaceId, itemId, serialNumber])
+  @@unique([workspaceId, id])
+  @@map("serials")
+}
+
+model StockBalance {
+  id            String    @id @default(uuid())
+  workspaceId   String    @map("workspace_id")
+  itemId        String    @map("item_id")
+  locationId    String    @map("location_id")
+  lotId         String?   @map("lot_id")
+  bucketKey     String    @map("bucket_key") // ${itemId}:${locationId}:${lotId ?? '__NO_LOT__'}
+  onHandAtoms   BigInt    @default(0) @map("on_hand_atoms")
+  reservedAtoms BigInt    @default(0) @map("reserved_atoms")
+  version       Int       @default(1)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  item          Item      @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  location      Location  @relation(fields: [workspaceId, locationId], references: [workspaceId, id], onDelete: Cascade)
+  lot           Lot?      @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+
+  @@unique([workspaceId, bucketKey])
+  @@unique([workspaceId, id])
+  @@map("stock_balances")
+}
+
+model StockReservation {
+  id            String          @id @default(uuid())
+  workspaceId   String          @map("workspace_id")
+  demandId      String?         @map("demand_id")
+  orderId       String?         @map("order_id")
+  taskId        String?         @map("task_id")
+  itemId        String          @map("item_id")
+  locationId    String          @map("location_id")
+  lotId         String?         @map("lot_id")
+  reservedAtoms BigInt          @map("reserved_atoms")
+  status        String          @default("ACTIVE") // ACTIVE | CONSUMED | RELEASED
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  demand        MaterialDemand? @relation(fields: [workspaceId, demandId], references: [workspaceId, id])
+  order         Order?          @relation(fields: [workspaceId, orderId], references: [workspaceId, id])
+  task          Task?           @relation(fields: [workspaceId, taskId], references: [workspaceId, id])
+  item          Item            @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  location      Location        @relation(fields: [workspaceId, locationId], references: [workspaceId, id], onDelete: Cascade)
+  lot           Lot?            @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+
+  @@unique([workspaceId, id])
+  @@map("stock_reservations")
+}
+
+model StockMovement {
+  id                    String    @id @default(uuid())
+  workspaceId           String    @map("workspace_id")
+  movementType          String    @map("movement_type") // OPENING_BALANCE | PURCHASE_RECEIPT | TRANSFER | ISSUE_TO_WIP | RETURN_FROM_WIP | PRODUCTION_CONSUME | PRODUCTION_OUTPUT | QC_DISPOSITION | SHIPMENT | ADJUSTMENT
+  itemId                String    @map("item_id")
+  sourceLocationId      String?   @map("source_location_id")
+  destinationLocationId String?   @map("destination_location_id")
+  sourceLotId           String?   @map("source_lot_id")
+  destinationLotId      String?   @map("destination_lot_id")
+  atoms                 BigInt
+  referenceType         String?   @map("reference_type") // OPENING | SUPPLY_ORDER | ORDER | TASK | QC_INSPECTION | SHIPMENT | COUNT | MANUAL
+  referenceId           String?   @map("reference_id")
+  actorUserId           String    @map("actor_user_id")
+  commandId             String?   @map("command_id")
+  notes                 String?
+  occurredAt            DateTime  @default(now()) @map("occurred_at")
+
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  item                  Item      @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  sourceLocation        Location? @relation("SourceLocation", fields: [workspaceId, sourceLocationId], references: [workspaceId, id])
+  destinationLocation   Location? @relation("DestLocation", fields: [workspaceId, destinationLocationId], references: [workspaceId, id])
+  sourceLot             Lot?      @relation("SourceLot", fields: [workspaceId, sourceLotId], references: [workspaceId, id])
+  destinationLot        Lot?      @relation("DestLot", fields: [workspaceId, destinationLotId], references: [workspaceId, id])
+  actorUser             User      @relation(fields: [actorUserId], references: [id])
+
+  @@index([workspaceId, itemId])
+  @@index([workspaceId, occurredAt])
+  @@index([workspaceId, referenceType, referenceId])
+  @@unique([workspaceId, id])
+  @@map("stock_movements")
+}
+
+

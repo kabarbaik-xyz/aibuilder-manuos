@@ -5,7 +5,14 @@ import { Principal } from '../auth/principal';
 import { Committed } from '@/domain/commands';
 import { ConflictError } from '@/domain/errors';
 
+export function serializeJson(data: any): string {
+  return JSON.stringify(data, (_, v) => (typeof v === 'bigint' ? v.toString() : v));
+}
+
 export function canonicalJson(obj: any): string {
+  if (typeof obj === 'bigint') {
+    return JSON.stringify(obj.toString());
+  }
   if (obj === null || typeof obj !== 'object') {
     return JSON.stringify(obj);
   }
@@ -138,7 +145,7 @@ export async function executeCommand<TInput, TOutput>(
         action: commandType,
         beforeRevision: expectedVersion ?? null,
         afterRevision: result.resourceVersion,
-        detailJson: JSON.stringify(result.auditDetails || {}),
+        detailJson: serializeJson(result.auditDetails || {}),
       },
     });
 
@@ -151,7 +158,7 @@ export async function executeCommand<TInput, TOutput>(
         requestHash,
         commandType,
         resourceId: result.aggregateId,
-        resultJson: JSON.stringify(result.data),
+        resultJson: serializeJson(result.data),
       },
     });
 

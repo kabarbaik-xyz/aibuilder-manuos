@@ -19,11 +19,11 @@ Master-plan constraints apply. Normal operations never branch on order 1042 or a
 **Consumes:** actual order-type/department/permission/resource/QC catalogs; F03 commands and F02 Principal.
 **Produces:** `WorkflowDefinition` with schema version, typed node/edge/guard registry and completion policy; `validateWorkflowDefinition(definition, catalog)` returns errors with node/field refs; `publishWorkflowVersion(principal,input)` commits immutable definition/version/hash/approver.
 
-- [ ] Define Zod schemas for OPERATION, INSPECTION and APPROVAL nodes, explicit duration/requirements, AND joins, supported condition codes/params and terminal completion policy. Reject arbitrary scripts/free-text conditions.
-- [ ] Extend graph validation for endpoints/cycles, required role/resource references, node reachability/completion, incompatible guard config and missing QC definitions. Distinguish intentional declared parallel paths from accidental orphan nodes.
-- [ ] Implement draft → review → publish → retire with authorization/version conflicts. Published node/edge content cannot be changed; editing forks a new version.
-- [ ] Write actual DB tests for two different definitions, cycle/missing-ref rejection, unauthorized publication and immutable published versions.
-- [ ] Run `rtk npm test -- src/domain/workflow-definition.test.ts` and `rtk npm run test:integration -- tests/integration/workflow-versions.test.ts`; expected: validation and lifecycle rules hold on persisted versions.
+- [x] Define Zod schemas for OPERATION, INSPECTION and APPROVAL nodes, explicit duration/requirements, AND joins, supported condition codes/params and terminal completion policy. Reject arbitrary scripts/free-text conditions.
+- [x] Extend graph validation for endpoints/cycles, required role/resource references, node reachability/completion, incompatible guard config and missing QC definitions. Distinguish intentional declared parallel paths from accidental orphan nodes.
+- [x] Implement draft → review → publish → retire with authorization/version conflicts. Published node/edge content cannot be changed; editing forks a new version.
+- [x] Write actual DB tests for two different definitions, cycle/missing-ref rejection, unauthorized publication and immutable published versions.
+- [x] Run `rtk npm test -- src/domain/workflow-definition.test.ts` and `rtk npm run test:integration -- tests/integration/workflow-versions.test.ts`; expected: validation and lifecycle rules hold on persisted versions.
 
 ## W02 — Real order drafts and reviewed engineering revisions
 
@@ -31,11 +31,11 @@ Master-plan constraints apply. Normal operations never branch on order 1042 or a
 
 **Produces:** `createOrderDraft(principal,input): Promise<Committed<OrderDetail>>`, `saveEngineeringDraft`, `submitEngineeringReview`, `approveEngineeringRevision`. `OrderDetail` includes IDs/versions and distinct ordered/completed/accepted/allocated/shipped quantities; empty computed amounts start at zero, not the hero fixture.
 
-- [ ] Define actual typed create/edit/review contracts from customer/type/item/quantity/date. Keep raw RFQ and customer questions with their source; do not lose draft context when leaving the page.
-- [ ] Store reviewed BOM quantities/base-UOM conversions and output basis, routing/process version, spec/document revision and checklist requirements. Validate inactive/mismatched master refs and unresolved critical questions.
-- [ ] Save/submit/approve under version and permission guards; approved revisions are immutable, customer/date commitments remain distinguishable from requested dates.
-- [ ] Test same-key create returns one order, code allocation is transaction-safe, wrong customer/workspace is denied, and an actual draft survives reconnect.
-- [ ] Run `rtk npm run test:integration -- tests/integration/order-drafts.test.ts`; verify real order and engineering readback before UI success claims.
+- [x] Define actual typed create/edit/review contracts from customer/type/item/quantity/date. Keep raw RFQ and customer questions with their source; do not lose draft context when leaving the page.
+- [x] Store reviewed BOM quantities/base-UOM conversions and output basis, routing/process version, spec/document revision and checklist requirements. Validate inactive/mismatched master refs and unresolved critical questions.
+- [x] Save/submit/approve under version and permission guards; approved revisions are immutable, customer/date commitments remain distinguishable from requested dates.
+- [x] Test same-key create returns one order, code allocation is transaction-safe, wrong customer/workspace is denied, and an actual draft survives reconnect.
+- [x] Run `rtk npm run test:integration -- tests/integration/order-drafts.test.ts`; verify real order and engineering readback before UI success claims.
 
 ## W03 — Release and process instantiation transaction
 
@@ -43,11 +43,11 @@ Master-plan constraints apply. Normal operations never branch on order 1042 or a
 
 **Produces:** `releaseOrder(principal,input)` and `instantiateWorkflow(tx, order, publishedVersion, engineeringRevision)` returning canonical instance/work IDs. Instance/tasks pin process and engineering versions. No client-provided task graph is accepted.
 
-- [ ] Write the release test first: use reviewed order A and workflow A; release produces exact task dependencies/BOM demand and pinned IDs once. Repeating the command returns those IDs.
-- [ ] Recheck approved spec/published workflow/customer/item/calendar/master status inside the transaction. Create production grouping, task instances/attempt 1, dependency links, actual material demand and audit atomically.
-- [ ] Test injected failure after task insertion: no partial instance/demand/release status or success receipt persists.
-- [ ] Publish process version 2; assert existing order A remains on version 1 while new order B can pin version 2.
-- [ ] Run `rtk npm run test:integration -- tests/integration/order-release.test.ts`; expected: no toast-only order, no rebind or duplicate instantiation.
+- [x] Write the release test first: use reviewed order A and workflow A; release produces exact task dependencies/BOM demand and pinned IDs once. Repeating the command returns those IDs.
+- [x] Recheck approved spec/published workflow/customer/item/calendar/master status inside the transaction. Create production grouping, task instances/attempt 1, dependency links, actual material demand and audit atomically.
+- [x] Test injected failure after task insertion: no partial instance/demand/release status or success receipt persists.
+- [x] Publish process version 2; assert existing order A remains on version 1 while new order B can pin version 2.
+- [x] Run `rtk npm run test:integration -- tests/integration/order-release.test.ts`; expected: no toast-only order, no rebind or duplicate instantiation.
 
 Material shortage is visible demand, not fabricated stock; order release can create waiting work. Operator start routes are introduced only after O03/O05 provide actual readiness/posting behavior.
 
@@ -57,11 +57,11 @@ Material shortage is visible demand, not fabricated stock; order release can cre
 
 **Produces:** `evaluateTransition(input): TransitionDecision` over a server-built readiness snapshot. `TransitionDecision` is `{allowed:true,nextStatus}` or `{allowed:false,reasons:[{code,resourceId,message}]}`. Inputs include current node/attempt/state, granted action/assignment, predecessor completion, usable-material coverage, resource eligibility and required evidence. API callers cannot provide this snapshot directly.
 
-- [ ] Implement the finite action registry and legal state transitions specified in DB section 9. Preserve scheduled DAG versus explicit rework attempt semantics.
-- [ ] Write tests that one completed predecessor cannot release an AND join, unavailable material cannot be bypassed, an unassigned operator cannot execute, and inspection requires actual required results/authority.
-- [ ] Treat missing input/evidence as a denied/unknown-readiness reason, not an assumed green state. Do not expose fake successful start/finish APIs before O05 wires authoritative inputs.
-- [ ] Commit workflow events only through successful application commands; event records share actor/command/revision with actual domain writes.
-- [ ] Run `rtk npm test -- src/domain/workflow-runtime.test.ts`; verify exact allowed/denied transitions and bounded guard types.
+- [x] Implement the finite action registry and legal state transitions specified in DB section 9. Preserve scheduled DAG versus explicit rework attempt semantics.
+- [x] Write tests that one completed predecessor cannot release an AND join, unavailable material cannot be bypassed, an unassigned operator cannot execute, and inspection requires actual required results/authority.
+- [x] Treat missing input/evidence as a denied/unknown-readiness reason, not an assumed green state. Do not expose fake successful start/finish APIs before O05 wires authoritative inputs.
+- [x] Commit workflow events only through successful application commands; event records share actor/command/revision with actual domain writes.
+- [x] Run `rtk npm test -- src/domain/workflow-runtime.test.ts`; verify exact allowed/denied transitions and bounded guard types.
 
 ## W05 — Workflow Studio, Order Hub and Engineering Hub UI
 
@@ -69,17 +69,17 @@ Material shortage is visible demand, not fabricated stock; order release can cre
 
 **Consumes:** actual DTOs and lifecycle commands; **produces:** saved draft/review/version/release UI and direct links that reload correctly.
 
-- [ ] Build structured node/edge editing plus graph preview/inspector; represent actual validation errors and published read-only/fork state. Precision dragging is optional, not a runtime dependency.
-- [ ] Build order list/detail/new and engineering review forms with actual master selectors, BOM/question editing and role-aware next actions. Keep one intake editor shared by the page and any drawer entry.
-- [ ] Replace both existing confirmation handlers with `createOrderDraft`/save/release adapters. Navigate only after success with returned IDs; keep form/error state after failure.
-- [ ] Preserve tabs/deep links and pinned versions, show task/material/quality tabs as real empty/waiting states until downstream records exist. No static charts/quantities presented as actual order evidence.
-- [ ] Run `rtk npm run test:e2e -- tests/e2e/order-engineering-workflow.spec.ts`, typecheck and one batched responsive review. Expected: user-created customer/type/order flows through review/publish/release and survives refresh.
+- [x] Build structured node/edge editing plus graph preview/inspector; represent actual validation errors and published read-only/fork state. Precision dragging is optional, not a runtime dependency.
+- [x] Build order list/detail/new and engineering review forms with actual master selectors, BOM/question editing and role-aware next actions. Keep one intake editor shared by the page and any drawer entry.
+- [x] Replace both existing confirmation handlers with `createOrderDraft`/save/release adapters. Navigate only after success with returned IDs; keep form/error state after failure.
+- [x] Preserve tabs/deep links and pinned versions, show task/material/quality tabs as real empty/waiting states until downstream records exist. No static charts/quantities presented as actual order evidence.
+- [x] Run `rtk npm run test:e2e -- tests/e2e/order-engineering-workflow.spec.ts`, typecheck and one batched responsive review. Expected: user-created customer/type/order flows through review/publish/release and survives refresh.
 
 ## W06 — M2 acceptance and second-type proof
 
 **Files:** create `tests/integration/workflow-independence.test.ts`, extend `tests/fixtures/factory.ts`, update requirements/evidence docs.
 
-- [ ] Instantiate materially different workflow B with parallel branches and QC gate for a different customer/item. Confirm no seed ID/date/type check was added to runtime/release code.
-- [ ] Run denial/stale-version/rollback/version-pin tests together and read actual persisted instances/dependencies/demand.
-- [ ] Reconnect after a simulated process restart; show the same orders/process versions in UI, not reconstructed local React state.
-- [ ] Mark M2's exact gates, including actual schema/route tests and browser path. Operational execution remains pending O01–O09; proceed to stock/supply with explicit dependency references.
+- [x] Instantiate materially different workflow B with parallel branches and QC gate for a different customer/item. Confirm no seed ID/date/type check was added to runtime/release code.
+- [x] Run denial/stale-version/rollback/version-pin tests together and read actual persisted instances/dependencies/demand.
+- [x] Reconnect after a simulated process restart; show the same orders/process versions in UI, not reconstructed local React state.
+- [x] Mark M2's exact gates, including actual schema/route tests and browser path. Operational execution remains pending O01–O09; proceed to stock/supply with explicit dependency references.

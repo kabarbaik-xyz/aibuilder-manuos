@@ -49,6 +49,17 @@ export async function parseJsonBody<T = any>(req: NextRequest, schema: z.ZodType
   return result.data as T;
 }
 
+export function jsonResponse(data: any, init?: ResponseInit): NextResponse {
+  const body = JSON.stringify(data, (_, v) => (typeof v === 'bigint' ? v.toString() : v));
+  return new NextResponse(body, {
+    ...init,
+    headers: {
+      'content-type': 'application/json',
+      ...init?.headers,
+    },
+  });
+}
+
 export async function handleMutationRoute<TInput, TOutput>(
   req: NextRequest,
   schema: z.ZodType<TInput>,
@@ -80,7 +91,7 @@ export async function handleMutationRoute<TInput, TOutput>(
       expectedVersion,
     });
 
-    return NextResponse.json(result, {
+    return jsonResponse(result, {
       status: 200,
       headers: {
         'x-request-id': requestId,

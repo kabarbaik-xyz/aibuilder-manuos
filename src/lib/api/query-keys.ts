@@ -24,4 +24,12 @@ export const queryKeys = {
   certifications: () => ['certifications'] as const,
   orderTypes: () => ['order-types'] as const,
   qcChecklists: () => ['qc-checklists'] as const,
+
+  // Workflows, Orders & Engineering (M2)
+  workflows: (filters?: Record<string, any>) => ['workflows', filters] as const,
+  workflow: (id: string) => ['workflows', id] as const,
+  workflowVersion: (id: string, versionId: string) => ['workflows', id, 'versions', versionId] as const,
+  orders: (filters?: Record<string, any>) => ['orders', filters] as const,
+  order: (id: string) => ['orders', id] as const,
+  engineeringRevision: (id: string) => ['engineering', id] as const,
 };
