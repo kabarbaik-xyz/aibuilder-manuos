@@ -1,0 +1,413 @@
+openapi: 3.0.3
+info:
+  title: ManuOS API & AI Route Contracts
+  description: OpenAPI 3.0 specifications for ManuOS health and server-side Gemini endpoints.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+paths:
+  /api/health:
+    get:
+      summary: Health check endpoint
+      description: Returns service status without authentication or external API calls.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    example: '2026-11-24T09:00:00Z'
+
+  /api/ai/explain-impact:
+    post:
+      summary: Explain disruption impact and blast radius
+      description: Generates an AI explanation strictly grounded in deterministic ripple and CPM data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [disruption, affectedOrders, blockedTasks, runnableTasks]
+              properties:
+                disruption:
+                  type: object
+                affectedOrders:
+                  type: array
+                  items:
+                    type: object
+                blockedTasks:
+                  type: array
+                  items:
+                    type: object
+                runnableTasks:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Grounded impact analysis narrative
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      summary:
+                        type: string
+                      cause:
+                        type: string
+                      blastRadius:
+                        type: array
+                        items:
+                          type: string
+                      watchItems:
+                        type: array
+                        items:
+                          type: string
+                  reason:
+                    type: string
+                    nullable: true
+
+  /api/ai/recovery-options:
+    post:
+      summary: Generate and narrate recovery candidates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [disruption, constraints, capacity]
+              properties:
+                disruption:
+                  type: object
+                constraints:
+                  type: object
+                capacity:
+                  type: object
+      responses:
+        '200':
+          description: Recovery options narrative
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      options:
+                        type: array
+                        items:
+                          type: object
+                  reason:
+                    type: string
+                    nullable: true
+
+  /api/ai/memory-recommend:
+    post:
+      summary: Provide historical planning recommendation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, stats]
+              properties:
+                query:
+                  type: object
+                stats:
+                  type: object
+      responses:
+        '200':
+          description: Grounded memory recommendation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      recommendation:
+                        type: string
+                      rationale:
+                        type: string
+                      suggestedPaddingPct:
+                        type: number
+                  reason:
+                    type: string
+                    nullable: true
+
+  /api/ai/dispatch-rationale:
+    post:
+      summary: Generate technician ranking comparison rationale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task, rankedCandidates]
+              properties:
+                task:
+                  type: object
+                rankedCandidates:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Rationale explanation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      rationale:
+                        type: string
+                      gapFlag:
+                        type: boolean
+                  reason:
+                    type: string
+                    nullable: true
+
+  /api/ai/partner-fit:
+    post:
+      summary: Explain partner ecosystem fit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requirement, partnerMatches]
+              properties:
+                requirement:
+                  type: object
+                partnerMatches:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Partner fit narrative
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      narrative:
+                        type: string
+                      riskNotes:
+                        type: array
+                        items:
+                          type: string
+                  reason:
+                    type: string
+                    nullable: true
+
+  /api/ai/brain-qa:
+    post:
+      summary: Read-only factory operational brain Q&A
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question, snapshot]
+              properties:
+                question:
+                  type: string
+                snapshot:
+                  type: object
+      responses:
+        '200':
+          description: Grounded response with evidence links
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      answer:
+                        type: string
+                      evidenceRefs:
+                        type: array
+                        items:
+                          type: string
+                      linkToScreen:
+                        type: string
+                  reason:
+                    type: string
+                    nullable: true
+
+  /api/ai/extract-rfq:
+    post:
+      summary: Extract engineering requirements from customer RFQ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rfqText]
+              properties:
+                rfqText:
+                  type: string
+      responses:
+        '200':
+          description: Extracted structured RFQ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      customer:
+                        type: string
+                      partName:
+                        type: string
+                      qty:
+                        type: integer
+                      material:
+                        type: string
+                      tolerances:
+                        type: array
+                        items:
+                          type: string
+                      ambiguities:
+                        type: array
+                        items:
+                          type: string
+                      draftBOM:
+                        type: array
+                        items:
+                          type: object
+                      draftRouting:
+                        type: array
+                        items:
+                          type: object
+                      qcChecklist:
+                        type: array
+                        items:
+                          type: string
+                  reason:
+                    type: string
+                    nullable: true
+
+  /api/ai/generate-workflow:
+    post:
+      summary: Propose dynamic workflow DAG configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderTypeName, description]
+              properties:
+                orderTypeName:
+                  type: string
+                description:
+                  type: string
+                companyProfile:
+                  type: object
+      responses:
+        '200':
+          description: Proposed DAG
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      nodes:
+                        type: array
+                        items:
+                          type: object
+                      edges:
+                        type: array
+                        items:
+                          type: object
+                      transitionRules:
+                        type: array
+                        items:
+                          type: string
+                      warnings:
+                        type: array
+                        items:
+                          type: string
+                  reason:
+                    type: string
+                    nullable: true
+
+  /api/ai/promise-explain:
+    post:
+      summary: Explain feasible delivery date drivers and alternatives
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [request, feasibilityResult]
+              properties:
+                request:
+                  type: object
+                feasibilityResult:
+                  type: object
+      responses:
+        '200':
+          description: Feasible promise narrative
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aiResult:
+                    type: object
+                    nullable: true
+                    properties:
+                      summary:
+                        type: string
+                      bottleneckExplanation:
+                        type: string
+                      alternativesNarrative:
+                        type: string
+                  reason:
+                    type: string
+                    nullable: true

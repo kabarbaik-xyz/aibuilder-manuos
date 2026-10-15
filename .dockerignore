@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.agents
+scratch
+ui-prototype
+*.md
+docs
+.env*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
