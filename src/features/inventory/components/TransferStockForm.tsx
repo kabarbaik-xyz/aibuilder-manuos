@@ -1,13 +1,15 @@
 'use client';
 
-import { Select } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useItems, useLocations } from '@/features/masters/hooks';
 import { useStockTransfer } from '../hooks';
 import { parseQuantity } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
+import { Panel } from '@/components/ui/panel';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { ArrowRightLeft } from 'lucide-react';
 
 export function TransferStockForm() {
   const router = useRouter();
@@ -24,7 +26,7 @@ export function TransferStockForm() {
   const [notes, setNotes] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const items = itemsRes?.data || [];
+  const items = (itemsRes?.data || []).filter((i: any) => i.status === 'ACTIVE');
   const locations = locationsRes?.data || [];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,10 +44,10 @@ export function TransferStockForm() {
           itemId,
           sourceLocationId,
           destinationLocationId,
-          sourceLotId: sourceLotId || null,
-          destinationLotId: destinationLotId || sourceLotId || null,
+          sourceLotId: sourceLotId.trim() || null,
+          destinationLotId: destinationLotId.trim() || sourceLotId.trim() || null,
           atoms: parseQuantity(quantity, 0),
-          notes: notes || undefined,
+          notes: notes.trim() || undefined,
         },
       });
 
@@ -56,28 +58,21 @@ export function TransferStockForm() {
   };
 
   return (
-    <div className="card max-w-2xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold">Transfer Stock Between Locations</h1>
-        <p className="text-sm text-muted">
-          Internal warehouse relocation preserving global quantity conservation.
-        </p>
-      </div>
-
+    <Panel className="p-6 max-w-3xl mx-auto space-y-6">
       {errorMsg && (
-        <div className="p-4 rounded bg-danger-soft border border-danger/20 text-danger text-sm">
-          {errorMsg}
+        <div className="p-4 rounded-xl bg-danger-soft border border-line text-danger text-xs font-medium">
+          <strong>Action Blocked:</strong> {errorMsg}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="block text-xs font-semibold uppercase text-muted mb-1">
-            Item *
-          
+          <label className="block text-xs font-medium text-ink mb-1.5">
+            Material Item <span className="text-danger">*</span>
+          </label>
           <Select
             required
-            className="input w-full"
+            className="w-full text-xs"
             value={itemId}
             onChange={(e) => setItemId(e.target.value)}
           >
@@ -87,17 +82,20 @@ export function TransferStockForm() {
                 {item.code} — {item.name} ({item.itemType})
               </option>
             ))}
-          </Select></label>
+          </Select>
+          <p className="text-xs text-muted mt-1">
+            Physical stock item to be relocated in warehouse balances.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              From Location (Source) *
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              From Location (Source) <span className="text-danger">*</span>
+            </label>
             <Select
               required
-              className="input w-full"
+              className="w-full text-xs"
               value={sourceLocationId}
               onChange={(e) => setSourceLocationId(e.target.value)}
             >
@@ -107,16 +105,19 @@ export function TransferStockForm() {
                   {loc.code} — {loc.name} ({loc.kind})
                 </option>
               ))}
-            </Select></label>
+            </Select>
+            <p className="text-xs text-muted mt-1">
+              Current holding area where stock will be decremented.
+            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              To Location (Destination) *
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              To Location (Destination) <span className="text-danger">*</span>
+            </label>
             <Select
               required
-              className="input w-full"
+              className="w-full text-xs"
               value={destinationLocationId}
               onChange={(e) => setDestinationLocationId(e.target.value)}
             >
@@ -126,66 +127,79 @@ export function TransferStockForm() {
                   {loc.code} — {loc.name} ({loc.kind})
                 </option>
               ))}
-            </Select></label>
+            </Select>
+            <p className="text-xs text-muted mt-1">
+              Destination warehouse bin or rack where stock will be incremented.
+            </p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              Lot ID (Optional / If LOT tracked)
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Lot ID <span className="text-muted">(Optional / If Lot Tracked)</span>
+            </label>
             <Input
               type="text"
               placeholder="UUID of Lot"
-              className="input w-full font-mono text-sm"
+              className="w-full font-mono text-xs"
               value={sourceLotId}
               onChange={(e) => setSourceLotId(e.target.value)}
-            /></label>
+            />
+            <p className="text-xs text-muted mt-1">
+              Transfer specific lot bucket or leave blank for unassigned stock.
+            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              Quantity to Transfer *
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Quantity to Transfer <span className="text-danger">*</span>
+            </label>
             <Input
               type="number"
               step="any"
               min="0.000001"
               required
               placeholder="10"
-              className="input w-full font-mono font-bold"
+              className="w-full font-mono font-bold text-xs"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-            /></label>
+            />
+            <p className="text-xs text-muted mt-1">
+              Units to relocate under strict double-entry balance conservation.
+            </p>
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase text-muted mb-1">Notes
+          <label className="block text-xs font-medium text-ink mb-1.5">
+            Transfer Notes & Reason <span className="text-muted">(Optional)</span>
+          </label>
           <Input
             type="text"
-            className="input w-full"
-            placeholder="e.g. Move from Quarantine to Main Raw Rack"
+            className="w-full text-xs"
+            placeholder="e.g. Move from Quarantine to Main Raw Rack for production staging"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-          /></label>
+          />
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-line">
-          <Button type="button" variant="default" size="small" onClick={() => router.back()}>
+        <div className="flex justify-end items-center gap-3 pt-4 border-t border-line">
+          <Button type="button" variant="default" onClick={() => router.back()}>
             Cancel
           </Button>
           <Button
             type="submit"
             variant="primary"
-            size="small"
             disabled={transferMutation.isPending}
           >
-            {transferMutation.isPending ? 'Transferring...' : 'Execute Stock Transfer'}
+            <span className="inline-flex items-center gap-1.5">
+              <ArrowRightLeft className="w-4 h-4" />
+              {transferMutation.isPending ? 'Transferring...' : 'Execute Stock Transfer'}
+            </span>
           </Button>
         </div>
       </form>
-    </div>
+    </Panel>
   );
 }

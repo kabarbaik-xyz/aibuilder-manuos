@@ -513,7 +513,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
                 placeholder="e.g. 10"
               />
-              <span className="text-[11px] text-muted block mt-1">
+              <span className="text-xs text-muted block mt-1">
                 Quantity produced from this operation to be transferred into holding/quarantine.
               </span>
             </div>

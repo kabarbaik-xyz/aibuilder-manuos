@@ -12,9 +12,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateOrderTypeModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
+import { OrderTypeEditDialog } from '@/features/masters/components/order-type-edit-dialog';
 
 export default function OrderTypesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedOrderType, setSelectedOrderType] = useState<OrderType | null>(null);
+  const [orderTypeToArchive, setOrderTypeToArchive] = useState<OrderType | null>(null);
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<OrderType>('order-types', { search: query || undefined });
 
@@ -38,6 +42,18 @@ export default function OrderTypesPage() {
         <Badge variant={o.status === 'ACTIVE' ? 'success' : 'default'}>
           {o.status}
         </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (orderType) => (
+        <PermissionGate permission="workflow.author">
+          <MasterRowActions
+            onEdit={() => setSelectedOrderType(orderType)}
+            onArchive={() => setOrderTypeToArchive(orderType)}
+          />
+        </PermissionGate>
       ),
     },
   ];
@@ -64,6 +80,14 @@ export default function OrderTypesPage() {
       )}
 
       <CreateOrderTypeModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <OrderTypeEditDialog orderType={selectedOrderType} onClose={() => setSelectedOrderType(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!orderTypeToArchive}
+        onClose={() => setOrderTypeToArchive(null)}
+        endpoint={`/api/resources/order-types/${orderTypeToArchive?.id}`}
+        recordName={orderTypeToArchive?.name || 'order type'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

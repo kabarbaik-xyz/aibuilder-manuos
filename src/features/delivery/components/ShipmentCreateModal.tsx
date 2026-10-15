@@ -199,7 +199,7 @@ export function ShipmentCreateModal({
             className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
             placeholder="e.g. 10"
           />
-          <span className="text-[11px] text-muted block mt-1">
+          <span className="text-xs text-muted block mt-1">
             Hard-reserves this stock in Finished Goods so it cannot be double-allocated.
           </span>
         </div>

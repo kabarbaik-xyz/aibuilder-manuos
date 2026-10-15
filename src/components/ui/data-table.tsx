@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pagination, type PaginationProps } from './pagination';
 import Link from 'next/link';
-import { EmptyState, LoadingState } from './resource-state';
+import { EmptyState } from './resource-state';
 
 export interface Column<T> {
   key: string;
@@ -32,7 +32,34 @@ export function DataTable<T extends { id?: string }>({
   getRowHref,
 }: DataTableProps<T>) {
   if (isLoading) {
-    return <LoadingState />;
+    return (
+      <div className="data-table-loading" role="status" aria-busy="true">
+        <span className="sr-only">Loading records…</span>
+        <div className="data-table">
+          <table aria-hidden="true">
+            <thead>
+              <tr>
+                {columns.map(column => <th key={column.key}>{column.header}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 5 }, (_, row) => (
+                <tr key={row}>
+                  {columns.map((column, index) => (
+                    <td key={column.key}>
+                      <span
+                        className="table-skeleton-line"
+                        style={{ width: `${[68, 52, 76, 43, 61][index % 5]}%` }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
   }
 
   if (!data || data.length === 0) {

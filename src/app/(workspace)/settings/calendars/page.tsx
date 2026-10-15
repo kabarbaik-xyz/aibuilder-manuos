@@ -16,6 +16,8 @@ import { ErrorState } from '@/components/ui/resource-state';
 import { FormErrorSummary } from '@/components/ui/form-errors';
 import { CreateCalendarModal } from '@/features/masters/components/resource-forms';
 import { ApiError } from '@/lib/api/client';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
+import { CatalogNameEditDialog } from '@/features/masters/components/catalog-name-edit-dialog';
 
 export default function CalendarsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -24,6 +26,8 @@ export default function CalendarsPage() {
   const [isWorkingDay, setIsWorkingDay] = useState(false);
   const [exceptionReason, setExceptionReason] = useState('');
   const [exceptionError, setExceptionError] = useState<ApiError | null>(null);
+  const [selectedCalendar, setSelectedCalendar] = useState<Calendar | null>(null);
+  const [calendarToArchive, setCalendarToArchive] = useState<Calendar | null>(null);
 
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Calendar>('calendars', { search: query || undefined });
@@ -75,6 +79,15 @@ export default function CalendarsPage() {
         </Button></PermissionGate>
       ),
     },
+    {
+      key: 'manage',
+      header: 'Manage',
+      render: (calendar) => (
+        <PermissionGate permission="resource.manage">
+          <MasterRowActions onEdit={() => setSelectedCalendar(calendar)} onArchive={() => setCalendarToArchive(calendar)} />
+        </PermissionGate>
+      ),
+    },
   ];
 
   return (
@@ -99,6 +112,14 @@ export default function CalendarsPage() {
       )}
 
       <CreateCalendarModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CatalogNameEditDialog resource="calendars" record={selectedCalendar} onClose={() => setSelectedCalendar(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!calendarToArchive}
+        onClose={() => setCalendarToArchive(null)}
+        endpoint={`/api/resources/catalog/calendars/${calendarToArchive?.id}`}
+        recordName={calendarToArchive?.name || 'calendar'}
+        onArchived={refetch}
+      />
 
       {/* Exception Dialog */}
       <Dialog

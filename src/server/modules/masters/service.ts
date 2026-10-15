@@ -6,8 +6,204 @@ import { ConflictError, NotFoundError, BadRequestError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
 
+export type EditableCatalogResource =
+  | 'technicians'
+  | 'departments'
+  | 'calendars'
+  | 'machines'
+  | 'skills'
+  | 'uoms'
+  | 'qc-checklists';
+
+export type EditableCatalogInput = {
+  expectedVersion?: number;
+  name?: string;
+  timezone?: string;
+  weeklyShiftsJson?: string;
+  status?: 'AVAILABLE' | 'MAINTENANCE' | 'OFFLINE';
+  departmentId?: string | null;
+  calendarId?: string | null;
+  scaleMax?: number;
+  precision?: number;
+  maxWeeklyMinutes?: number;
+};
+
 export class MastersService {
   constructor(private readonly prisma: PrismaClient = defaultDb) {}
+
+  async updateCatalogRecord(
+    principal: Principal,
+    resource: EditableCatalogResource,
+    id: string,
+    input: EditableCatalogInput,
+    idempotencyKey: string
+  ) {
+    const permission = resource === 'qc-checklists' ? 'quality.configure' : 'resource.manage';
+    requirePermission(principal, permission);
+
+    switch (resource) {
+      case 'departments':
+        return executeCommand({
+          principal, commandType: 'department.update', idempotencyKey,
+          expectedVersion: input.expectedVersion, payload: input, prismaClient: this.prisma,
+          handler: async (tx) => {
+            const current = await tx.department.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+            if (!current) throw new NotFoundError(`Department '${id}' not found`);
+            const data = await tx.department.update({ where: { id }, data: { name: input.name ?? current.name, version: { increment: 1 } } });
+            return { data, aggregateType: 'DEPARTMENT', aggregateId: data.id, resourceVersion: data.version, previousVersion: current.version };
+          },
+        });
+      case 'calendars':
+        return executeCommand({
+          principal, commandType: 'calendar.update', idempotencyKey,
+          expectedVersion: input.expectedVersion, payload: input, prismaClient: this.prisma,
+          handler: async (tx) => {
+            const current = await tx.workCalendar.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+            if (!current) throw new NotFoundError(`Calendar '${id}' not found`);
+            const data = await tx.workCalendar.update({ where: { id }, data: {
+              name: input.name ?? current.name,
+              timezone: input.timezone ?? current.timezone,
+              weeklyShiftsJson: input.weeklyShiftsJson ?? current.weeklyShiftsJson,
+              version: { increment: 1 },
+            } });
+            return { data, aggregateType: 'WORK_CALENDAR', aggregateId: data.id, resourceVersion: data.version, previousVersion: current.version };
+          },
+        });
+      case 'machines':
+        return executeCommand({
+          principal, commandType: 'machine.update', idempotencyKey,
+          expectedVersion: input.expectedVersion, payload: input, prismaClient: this.prisma,
+          handler: async (tx) => {
+            const current = await tx.machine.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+            if (!current) throw new NotFoundError(`Machine '${id}' not found`);
+            const data = await tx.machine.update({ where: { id }, data: {
+              name: input.name ?? current.name,
+              status: input.status ?? current.status,
+              departmentId: input.departmentId !== undefined ? input.departmentId : current.departmentId,
+              calendarId: input.calendarId !== undefined ? input.calendarId : current.calendarId,
+              version: { increment: 1 },
+            } });
+            return { data, aggregateType: 'MACHINE', aggregateId: data.id, resourceVersion: data.version, previousVersion: current.version };
+          },
+        });
+      case 'technicians':
+        return executeCommand({
+          principal, commandType: 'technician.update', idempotencyKey,
+          expectedVersion: input.expectedVersion, payload: input, prismaClient: this.prisma,
+          handler: async (tx) => {
+            const current = await tx.technician.findFirst({ where: { id, workspaceId: principal.workspaceId, archivedAt: null } });
+            if (!current) throw new NotFoundError(`Technician '${id}' not found`);
+            const data = await tx.technician.update({ where: { id }, data: {
+              departmentId: input.departmentId !== undefined ? input.departmentId : current.departmentId,
+              calendarId: input.calendarId !== undefined ? input.calendarId : current.calendarId,
+              maxWeeklyMinutes: input.maxWeeklyMinutes ?? current.maxWeeklyMinutes,
+              version: { increment: 1 },
+            } });
+            return { data, aggregateType: 'TECHNICIAN', aggregateId: data.id, resourceVersion: data.version, previousVersion: current.version };
+          },
+        });
+      case 'skills':
+        return executeCommand({
+          principal, commandType: 'skill.update', idempotencyKey, payload: input, prismaClient: this.prisma,
+          handler: async (tx) => {
+            const current = await tx.skill.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+            if (!current) throw new NotFoundError(`Skill '${id}' not found`);
+            const data = await tx.skill.update({ where: { id }, data: {
+              name: input.name ?? current.name,
+              scaleMax: input.scaleMax ?? current.scaleMax,
+            } });
+            return { data, aggregateType: 'SKILL', aggregateId: data.id, resourceVersion: 1 };
+          },
+        });
+      case 'uoms':
+        return executeCommand({
+          principal, commandType: 'uom.update', idempotencyKey, payload: input, prismaClient: this.prisma,
+          handler: async (tx) => {
+            const current = await tx.uom.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+            if (!current) throw new NotFoundError(`Unit of measure '${id}' not found`);
+            const data = await tx.uom.update({ where: { id }, data: {
+              name: input.name ?? current.name,
+              precision: input.precision ?? current.precision,
+            } });
+            return { data, aggregateType: 'UOM', aggregateId: data.id, resourceVersion: 1 };
+          },
+        });
+      case 'qc-checklists':
+        return executeCommand({
+          principal, commandType: 'qc_checklist.update', idempotencyKey,
+          expectedVersion: input.expectedVersion, payload: input, prismaClient: this.prisma,
+          handler: async (tx) => {
+            const current = await tx.qcChecklist.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+            if (!current) throw new NotFoundError(`QC checklist '${id}' not found`);
+            if (current.isPublished) throw new BadRequestError('Published checklists cannot be edited. Create a new revision instead.');
+            const data = await tx.qcChecklist.update({ where: { id }, data: { name: input.name ?? current.name, version: { increment: 1 } } });
+            return { data, aggregateType: 'QC_CHECKLIST', aggregateId: data.id, resourceVersion: data.version, previousVersion: current.version };
+          },
+        });
+    }
+  }
+
+  async archiveCatalogRecord(
+    principal: Principal,
+    resource: EditableCatalogResource,
+    id: string,
+    idempotencyKey: string
+  ) {
+    const permission = resource === 'qc-checklists' ? 'quality.configure' : 'resource.manage';
+    requirePermission(principal, permission);
+
+    switch (resource) {
+      case 'departments':
+        return executeCommand({ principal, commandType: 'department.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.department.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+          if (!current) throw new NotFoundError(`Department '${id}' not found`);
+          const data = await tx.department.update({ where: { id }, data: { archivedAt: new Date(), isActive: false, version: { increment: 1 } } });
+          return { data, aggregateType: 'DEPARTMENT', aggregateId: data.id, resourceVersion: data.version };
+        } });
+      case 'calendars':
+        return executeCommand({ principal, commandType: 'calendar.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.workCalendar.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+          if (!current) throw new NotFoundError(`Calendar '${id}' not found`);
+          const data = await tx.workCalendar.update({ where: { id }, data: { archivedAt: new Date(), version: { increment: 1 } } });
+          return { data, aggregateType: 'WORK_CALENDAR', aggregateId: data.id, resourceVersion: data.version };
+        } });
+      case 'machines':
+        return executeCommand({ principal, commandType: 'machine.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.machine.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+          if (!current) throw new NotFoundError(`Machine '${id}' not found`);
+          const data = await tx.machine.update({ where: { id }, data: { archivedAt: new Date(), version: { increment: 1 } } });
+          return { data, aggregateType: 'MACHINE', aggregateId: data.id, resourceVersion: data.version };
+        } });
+      case 'technicians':
+        return executeCommand({ principal, commandType: 'technician.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.technician.findFirst({ where: { id, workspaceId: principal.workspaceId, archivedAt: null } });
+          if (!current) throw new NotFoundError(`Technician '${id}' not found`);
+          const data = await tx.technician.update({ where: { id }, data: { archivedAt: new Date(), isActive: false, version: { increment: 1 } } });
+          return { data, aggregateType: 'TECHNICIAN', aggregateId: data.id, resourceVersion: data.version };
+        } });
+      case 'skills':
+        return executeCommand({ principal, commandType: 'skill.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.skill.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+          if (!current) throw new NotFoundError(`Skill '${id}' not found`);
+          const data = await tx.skill.update({ where: { id }, data: { isActive: false } });
+          return { data, aggregateType: 'SKILL', aggregateId: data.id, resourceVersion: 1 };
+        } });
+      case 'uoms':
+        return executeCommand({ principal, commandType: 'uom.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.uom.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+          if (!current) throw new NotFoundError(`Unit of measure '${id}' not found`);
+          const data = await tx.uom.update({ where: { id }, data: { isActive: false } });
+          return { data, aggregateType: 'UOM', aggregateId: data.id, resourceVersion: 1 };
+        } });
+      case 'qc-checklists':
+        return executeCommand({ principal, commandType: 'qc_checklist.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.qcChecklist.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+          if (!current) throw new NotFoundError(`QC checklist '${id}' not found`);
+          const data = await tx.qcChecklist.update({ where: { id }, data: { archivedAt: new Date(), version: { increment: 1 } } });
+          return { data, aggregateType: 'QC_CHECKLIST', aggregateId: data.id, resourceVersion: data.version };
+        } });
+    }
+  }
 
   // -----------------------------------------------------------
   // Customers (M01, M02)
@@ -325,7 +521,7 @@ export class MastersService {
   // -----------------------------------------------------------
   async listUoms(principal: Principal) {
     return this.prisma.uom.findMany({
-      where: { workspaceId: principal.workspaceId },
+      where: { workspaceId: principal.workspaceId, isActive: true },
       orderBy: { code: 'asc' },
     });
   }
@@ -683,6 +879,46 @@ export class MastersService {
           aggregateType: 'LOCATION',
           aggregateId: archived.id,
           resourceVersion: archived.version,
+        };
+      },
+    });
+  }
+
+  async updateLocation(
+    principal: Principal,
+    id: string,
+    input: contracts.updateLocationSchema['_type'],
+    idempotencyKey: string
+  ) {
+    requirePermission(principal, 'location.manage');
+
+    return executeCommand({
+      principal,
+      commandType: 'location.update',
+      idempotencyKey,
+      expectedVersion: input.expectedVersion,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const location = await tx.location.findFirst({
+          where: { id, workspaceId: principal.workspaceId },
+        });
+        if (!location) throw new NotFoundError(`Location '${id}' not found`);
+        const updated = await tx.location.update({
+          where: { id },
+          data: {
+            name: input.name ?? location.name,
+            warehouseGroup: input.warehouseGroup ?? location.warehouseGroup,
+            isActive: input.isActive ?? location.isActive,
+            version: { increment: 1 },
+          },
+        });
+        return {
+          data: updated,
+          aggregateType: 'LOCATION',
+          aggregateId: updated.id,
+          resourceVersion: updated.version,
+          previousVersion: location.version,
         };
       },
     });
@@ -1098,7 +1334,7 @@ export class MastersService {
 
   async listSkills(principal: Principal) {
     return this.prisma.skill.findMany({
-      where: { workspaceId: principal.workspaceId },
+      where: { workspaceId: principal.workspaceId, isActive: true },
       orderBy: { code: 'asc' },
     });
   }
@@ -1226,6 +1462,83 @@ export class MastersService {
           aggregateType: 'ORDER_TYPE',
           aggregateId: ot.id,
           resourceVersion: ot.version,
+        };
+      },
+    });
+  }
+
+  async updateOrderType(
+    principal: Principal,
+    id: string,
+    input: contracts.updateOrderTypeSchema['_type'],
+    idempotencyKey: string
+  ) {
+    requirePermission(principal, 'workflow.author');
+
+    return executeCommand({
+      principal,
+      commandType: 'order_type.update',
+      idempotencyKey,
+      expectedVersion: input.expectedVersion,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const orderType = await tx.orderType.findFirst({
+          where: { id, workspaceId: principal.workspaceId },
+        });
+        if (!orderType) throw new NotFoundError(`Order type '${id}' not found`);
+
+        const updated = await tx.orderType.update({
+          where: { id },
+          data: {
+            name: input.name ?? orderType.name,
+            description: input.description !== undefined ? input.description : orderType.description,
+            defaultTemplateId: input.defaultTemplateId !== undefined ? input.defaultTemplateId : orderType.defaultTemplateId,
+            isActive: input.isActive ?? orderType.isActive,
+            version: { increment: 1 },
+          },
+        });
+
+        return {
+          data: updated,
+          aggregateType: 'ORDER_TYPE',
+          aggregateId: updated.id,
+          resourceVersion: updated.version,
+          previousVersion: orderType.version,
+        };
+      },
+    });
+  }
+
+  async archiveOrderType(principal: Principal, id: string, idempotencyKey: string) {
+    requirePermission(principal, 'workflow.author');
+
+    return executeCommand({
+      principal,
+      commandType: 'order_type.archive',
+      idempotencyKey,
+      payload: { id },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const orderType = await tx.orderType.findFirst({
+          where: { id, workspaceId: principal.workspaceId },
+        });
+        if (!orderType) throw new NotFoundError(`Order type '${id}' not found`);
+
+        const archived = await tx.orderType.update({
+          where: { id },
+          data: {
+            archivedAt: new Date(),
+            isActive: false,
+            version: { increment: 1 },
+          },
+        });
+
+        return {
+          data: archived,
+          aggregateType: 'ORDER_TYPE',
+          aggregateId: archived.id,
+          resourceVersion: archived.version,
         };
       },
     });

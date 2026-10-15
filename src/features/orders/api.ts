@@ -12,6 +12,8 @@ export interface OrderDto {
   requestedDate: string;
   promisedDate: string | null;
   status: string;
+  customerAcknowledged?: boolean;
+  customerAcknowledgedAt?: string | null;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -35,6 +37,7 @@ export interface OrderDto {
     id: string;
     revisionNumber: number;
     status: string;
+    outputBasisAtoms?: string | number | bigint;
     workflowVersionId: string | null;
     bomLines?: any[];
   }>;
@@ -42,6 +45,29 @@ export interface OrderDto {
     id: string;
     status: string;
     tasks?: any[];
+  }>;
+  demands?: Array<{
+    id: string;
+    itemId: string;
+    requiredAtoms: string | number | bigint;
+    needByDate: string | null;
+    status: string;
+    item?: { id: string; code: string; name: string; baseUom?: { code: string; name: string } };
+  }>;
+  shipments?: Array<{
+    id: string;
+    shipmentNumber: string;
+    status: string;
+    carrierName: string | null;
+    trackingNumber: string | null;
+    destinationAddress: string | null;
+    proofOfDelivery: string | null;
+    receivedBy: string | null;
+    allocatedAt: string | null;
+    dispatchedAt: string | null;
+    deliveredAt: string | null;
+    notes: string | null;
+    lines?: any[];
   }>;
 }
 

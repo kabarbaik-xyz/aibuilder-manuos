@@ -11,9 +11,13 @@ import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateSkillModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
+import { CatalogNameEditDialog } from '@/features/masters/components/catalog-name-edit-dialog';
 
 export default function SkillsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [skillToArchive, setSkillToArchive] = useState<Skill | null>(null);
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Skill>('skills', { search: query || undefined });
 
@@ -34,6 +38,15 @@ export default function SkillsPage() {
       key: 'category',
       header: 'Category',
       render: (s) => <span className="font-mono text-xs text-ink">{s.category}</span>,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (skill) => (
+        <PermissionGate permission="resource.manage">
+          <MasterRowActions onEdit={() => setSelectedSkill(skill)} onArchive={() => setSkillToArchive(skill)} />
+        </PermissionGate>
+      ),
     },
   ];
 
@@ -59,6 +72,14 @@ export default function SkillsPage() {
       )}
 
       <CreateSkillModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CatalogNameEditDialog resource="skills" record={selectedSkill} onClose={() => setSelectedSkill(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!skillToArchive}
+        onClose={() => setSkillToArchive(null)}
+        endpoint={`/api/resources/catalog/skills/${skillToArchive?.id}`}
+        recordName={skillToArchive?.name || 'skill'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

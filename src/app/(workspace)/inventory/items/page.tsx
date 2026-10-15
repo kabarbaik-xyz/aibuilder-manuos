@@ -13,12 +13,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateItemModal } from '@/features/masters/components/resource-forms';
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
 
 export default function ItemsPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Item>('items', {
     search: search || undefined,
     type: typeFilter || undefined,
@@ -72,13 +75,25 @@ export default function ItemsPage() {
         </Badge>
       ),
     },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (item) => (
+        <PermissionGate permission="item.manage">
+          <MasterRowActions
+            onEdit={() => router.push(`/inventory/items/${item.id}`)}
+            onArchive={() => setSelectedItem(item)}
+          />
+        </PermissionGate>
+      ),
+    },
   ];
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Item Master" description="Manage parts catalog, raw materials, assemblies and unit definitions" actions={<><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
+      <PageHeader title="Item Master" description="Manage parts catalog, raw materials, assemblies and unit definitions" actions={<><PermissionGate permission="item.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Item
-        </Button></>} />
+        </Button></PermissionGate></>} />
 
       <div className="item-filters">
         <div className="item-search">
@@ -119,6 +134,13 @@ export default function ItemsPage() {
       )}
 
       <CreateItemModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <ArchiveMasterDialog
+        isOpen={!!selectedItem}
+        onClose={() => setSelectedItem(null)}
+        endpoint={`/api/items/${selectedItem?.id}`}
+        recordName={selectedItem?.name || 'item'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

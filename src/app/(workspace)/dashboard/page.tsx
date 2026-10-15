@@ -15,6 +15,7 @@ import type { DashboardOverviewDTO } from "@/server/modules/intelligence/dashboa
 
 export default function DashboardPage() {
   const openModal = useGraphStore((s) => s.openModal);
+  const [showAllExceptions, setShowAllExceptions] = React.useState(false);
 
   const {
     data: overview,
@@ -57,6 +58,29 @@ export default function DashboardPage() {
   const exceptions = overview?.exceptions ?? [];
   const orders = overview?.orders ?? [];
 
+  const exceptionPriority: Record<string, number> = {
+    CRITICAL: 0,
+    WARNING: 1,
+    INFO: 2,
+  };
+  const prioritizedExceptions = [...exceptions].sort(
+    (left, right) =>
+      exceptionPriority[left.severity] - exceptionPriority[right.severity],
+  );
+  const visibleExceptions = showAllExceptions
+    ? prioritizedExceptions
+    : prioritizedExceptions.slice(0, 5);
+  const criticalCount = exceptions.filter(
+    (item) => item.severity === "CRITICAL",
+  ).length;
+  const warningCount = exceptions.filter(
+    (item) => item.severity === "WARNING",
+  ).length;
+  const infoCount = exceptions.filter(
+    (item) => item.severity === "INFO",
+  ).length;
+  const recentOrders = orders.slice(0, 5);
+
   const totalInspected = metrics.qcPassedUnits + metrics.reworkUnits;
   const yieldPct =
     totalInspected > 0
@@ -82,123 +106,95 @@ export default function DashboardPage() {
         }
       />
 
-      {/* Top Operational Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <Panel className="p-3.5 bg-surface border-line">
-          <div className="text-[11px] font-semibold text-muted uppercase tracking-wider">
-            Active Orders
+      {/* Factory snapshot */}
+      <Panel className="overflow-hidden bg-surface border-line">
+        <div className="border-b border-line px-5 py-3.5">
+          <h2 className="text-sm font-bold text-ink">Factory snapshot</h2>
+        </div>
+        <div className="grid grid-cols-2 divide-x divide-y divide-line md:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+          <div className="min-w-0 px-4 py-4 xl:px-4">
+            <div className="text-xs font-semibold text-muted">Active orders</div>
+            <div className="mt-1 tabular-nums text-2xl font-bold tracking-tight text-ink">
+              {metrics.activeOrdersCount}
+            </div>
+            <div className="mt-1 text-xs text-muted">
+              {metrics.ordersDueThisWeekCount} due this week
+            </div>
           </div>
-          <div className="mt-1 text-2xl font-bold text-ink">
-            {metrics.activeOrdersCount}
-          </div>
-          <div className="mt-1 text-[11px] text-muted">
-            <span className="font-medium text-ink">
-              {metrics.ordersDueThisWeekCount}
-            </span>{" "}
-            due this week
-          </div>
-        </Panel>
-
-        <Panel className="p-3.5 bg-surface border-line">
-          <div className="text-[11px] font-semibold text-muted uppercase tracking-wider">
-            At-Risk Orders
-          </div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span
-              className={`text-2xl font-bold ${metrics.atRiskOrdersCount > 0 ? "text-danger" : "text-ink"}`}
-            >
+          <div className="min-w-0 px-4 py-4 xl:px-4">
+            <div className="text-xs font-semibold text-muted">At risk</div>
+            <div className="mt-1 tabular-nums text-2xl font-bold tracking-tight text-ink">
               {metrics.atRiskOrdersCount}
-            </span>
-            {metrics.atRiskOrdersCount > 0 && (
-              <Badge variant="danger" className="text-[10px]">
-                Attention
-              </Badge>
-            )}
+            </div>
+            <div className="mt-1 text-xs text-muted">Lead time or shortages</div>
           </div>
-          <div className="mt-1 text-[11px] text-muted">
-            Lead time or shortages
+          <div className="min-w-0 px-4 py-4 xl:px-4">
+            <div className="text-xs font-semibold text-muted">First-pass yield</div>
+            <div className="mt-1 tabular-nums text-2xl font-bold tracking-tight text-ink">
+              {yieldPct}%
+            </div>
+            <div className="mt-1 text-xs text-muted">
+              {metrics.qcPassedUnits} passed · {metrics.reworkUnits} rework
+            </div>
           </div>
-        </Panel>
-
-        <Panel className="p-3.5 bg-surface border-line">
-          <div className="text-[11px] font-semibold text-muted uppercase tracking-wider">
-            First-Pass Yield
+          <div className="min-w-0 px-4 py-4 xl:px-4">
+            <div className="text-xs font-semibold text-muted">
+              Machine utilization
+            </div>
+            <div className="mt-1 tabular-nums text-2xl font-bold tracking-tight text-ink">
+              {metrics.machineUtilizationPct}%
+            </div>
+            <div className="mt-1 text-xs text-muted">
+              {metrics.activeMachinesCount} active units
+            </div>
           </div>
-          <div className="mt-1 text-2xl font-bold text-ink">{yieldPct}%</div>
-          <div className="mt-1 text-[11px] text-muted">
-            <span className="text-ink font-medium">
-              {metrics.qcPassedUnits}
-            </span>{" "}
-            passed ·{" "}
-            <span className="text-muted">{metrics.reworkUnits} rework</span>
-          </div>
-        </Panel>
-
-        <Panel className="p-3.5 bg-surface border-line">
-          <div className="text-[11px] font-semibold text-muted uppercase tracking-wider">
-            Machine Utilization
-          </div>
-          <div className="mt-1 text-2xl font-bold text-ink">
-            {metrics.machineUtilizationPct}%
-          </div>
-          <div className="mt-1 text-[11px] text-muted">
-            <span className="text-ink font-medium">
-              {metrics.activeMachinesCount}
-            </span>{" "}
-            active units
-          </div>
-        </Panel>
-
-        <Panel className="p-3.5 bg-surface border-line">
-          <div className="text-[11px] font-semibold text-muted uppercase tracking-wider">
-            Material Shortages
-          </div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span
-              className={`text-2xl font-bold ${metrics.materialShortagesCount > 0 ? "text-warning" : "text-ink"}`}
-            >
+          <div className="min-w-0 px-4 py-4 xl:px-4">
+            <div className="text-xs font-semibold text-muted">Material shortages</div>
+            <div className="mt-1 tabular-nums text-2xl font-bold tracking-tight text-ink">
               {metrics.materialShortagesCount}
-            </span>
-            {metrics.materialShortagesCount > 0 && (
-              <Badge variant="warning" className="text-[10px]">
-                Supply Gaps
-              </Badge>
-            )}
+            </div>
+            <div className="mt-1 text-xs text-muted">Awaiting PO arrival</div>
           </div>
-          <div className="mt-1 text-[11px] text-muted">Awaiting PO arrival</div>
-        </Panel>
-
-        <Panel className="p-3.5 bg-surface border-line">
-          <div className="text-[11px] font-semibold text-muted uppercase tracking-wider">
-            Pending Approvals
+          <div className="min-w-0 px-4 py-4 xl:px-4">
+            <div className="text-xs font-semibold text-muted">Pending approvals</div>
+            <div className="mt-1 tabular-nums text-2xl font-bold tracking-tight text-ink">
+              {metrics.pendingApprovalsCount}
+            </div>
+            <div className="mt-1 text-xs text-muted">Engineering &amp; release</div>
           </div>
-          <div className="mt-1 text-2xl font-bold text-ink">
-            {metrics.pendingApprovalsCount}
-          </div>
-          <div className="mt-1 text-[11px] text-muted">
-            Engineering & release
-          </div>
-        </Panel>
-      </div>
+        </div>
+      </Panel>
 
       {/* Attention & Exceptions Queue */}
-      <Panel className="p-4 bg-surface border-line space-y-3">
-        <div className="flex items-center justify-between border-b border-line pb-2.5">
-          <div className="flex items-center gap-2">
-            <Icon name="alert" className="text-primary" />
-            <h2 className="text-sm font-bold text-ink">
-              Operational Attention & Exceptions Queue
-            </h2>
+      <Panel className="overflow-hidden bg-surface border-line">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-muted text-primary">
+              <Icon name="alert" />
+            </span>
+            <div>
+              <h2 className="text-base font-bold text-ink">Needs attention</h2>
+              <p className="mt-0.5 text-xs text-muted">
+                Exceptions that need an operational review
+              </p>
+            </div>
           </div>
-          <span className="text-xs font-mono text-muted">
-            {exceptions.length === 0
-              ? "0 active alerts"
-              : `${exceptions.length} require action`}
-          </span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
+            <span className="tabular-nums text-ink">{exceptions.length} open</span>
+            {criticalCount > 0 && (
+              <span className="text-danger">{criticalCount} critical</span>
+            )}
+            {warningCount > 0 && (
+              <span className="text-warning">{warningCount} warning</span>
+            )}
+            {infoCount > 0 && (
+              <span className="text-muted">{infoCount} info</span>
+            )}
+          </div>
         </div>
 
         {exceptions.length === 0 ? (
-          <div className="py-4 text-center text-xs text-muted flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-2 px-5 py-8 text-sm text-muted">
             <Icon name="check" className="text-success" />
             <span>
               All production lines, quality gates, and deliveries are running
@@ -206,8 +202,8 @@ export default function DashboardPage() {
             </span>
           </div>
         ) : (
-          <div className="divide-y divide-line">
-            {exceptions.map((ex) => {
+          <div className="divide-y divide-line px-5">
+            {visibleExceptions.map((ex) => {
               const variant =
                 ex.severity === "CRITICAL"
                   ? "danger"
@@ -217,51 +213,65 @@ export default function DashboardPage() {
               return (
                 <div
                   key={ex.id}
-                  className="py-2.5 flex items-center justify-between gap-4"
+                  className="grid grid-cols-1 items-center gap-3 py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-6"
                 >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
+                  <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-1">
                       <Badge
                         variant={variant}
-                        className="text-[10px] font-bold uppercase"
+                        className="row-span-2 mt-0.5 shrink-0 text-xs font-bold uppercase"
                       >
                         {ex.severity}
                       </Badge>
-                      <span className="text-xs font-semibold text-ink">
+                    <span className="text-sm font-semibold text-ink">
                         {ex.title}
                       </span>
-                    </div>
-                    <p className="text-xs text-muted">{ex.description}</p>
+                    <p className="text-xs leading-5 text-muted">
+                      {ex.description}
+                    </p>
                   </div>
                   <Link
                     href={ex.actionScreen}
-                    className="btn soft text-xs shrink-0"
+                    className="btn soft min-h-9 w-fit shrink-0 text-xs"
                   >
-                    Resolve
+                    Review
                   </Link>
                 </div>
               );
             })}
           </div>
         )}
+        {exceptions.length > 5 && (
+          <div className="border-t border-line px-5 py-3">
+            <button
+              type="button"
+              className="text-sm font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+              onClick={() => setShowAllExceptions((visible) => !visible)}
+              aria-expanded={showAllExceptions}
+            >
+              {showAllExceptions
+                ? "Show priority exceptions"
+                : `View all ${exceptions.length} exceptions`}
+            </button>
+          </div>
+        )}
       </Panel>
 
       {/* Active Orders Live Progress */}
       <Panel className="p-4 bg-surface border-line space-y-3">
-        <div className="flex items-center justify-between border-b border-line pb-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-2.5">
           <div>
             <h2 className="text-sm font-bold text-ink">
-              Active Production Orders
+              Recent Production Orders
             </h2>
             <p className="text-xs text-muted">
-              Real-time status across released jobsheets and shop floor work.
+              Latest orders from the production pipeline.
             </p>
           </div>
           <Link
             href="/orders"
             className="text-xs text-primary hover:underline font-medium"
           >
-            View all orders →
+            Open Order Hub →
           </Link>
         </div>
 
@@ -285,7 +295,7 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {orders.map((ord) => (
+                {recentOrders.map((ord) => (
                   <tr key={ord.id} className="hover:bg-surface-muted/60">
                     <td className="p-2.5 font-mono font-bold text-primary">
                       <Link
@@ -302,13 +312,13 @@ export default function DashboardPage() {
                       <span className="text-ink font-medium">
                         {ord.itemName}
                       </span>{" "}
-                      <span className="text-[11px] font-mono">
+                      <span className="text-xs font-mono">
                         ({ord.itemCode})
                       </span>
                     </td>
                     <td className="p-2.5 min-w-35">
                       <div className="space-y-1">
-                        <div className="flex justify-between text-[11px]">
+                        <div className="flex justify-between text-xs">
                           <span className="text-muted">
                             {ord.completedQty} / {ord.orderedQty}
                           </span>

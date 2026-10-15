@@ -22,9 +22,5 @@ export default function OrderDetailPage() {
     );
   }
 
-  return (
-    <div className="">
-      <OrderDetail order={order} />
-    </div>
-  );
+  return <OrderDetail order={order} />;
 }

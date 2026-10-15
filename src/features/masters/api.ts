@@ -169,6 +169,8 @@ export interface Technician {
   workspaceId: string;
   membershipId: string;
   calendarId: string;
+  departmentId?: string | null;
+  maxWeeklyMinutes?: number;
   hourlyRateCents: number;
   status: 'ACTIVE' | 'ON_LEAVE' | 'INACTIVE';
   version: number;

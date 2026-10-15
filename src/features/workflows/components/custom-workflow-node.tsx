@@ -33,11 +33,11 @@ export const CustomWorkflowNode = memo(function CustomWorkflowNode({
       <div className="flex items-center justify-between gap-2 mb-2">
         <Badge
           variant={badgeVariant}
-          className="text-[10px] font-bold uppercase tracking-wider"
+          className="text-xs font-bold uppercase tracking-wider"
         >
           {data.type}
         </Badge>
-        <span className="text-[11px] font-mono text-muted">{data.key}</span>
+        <span className="text-xs font-mono text-muted">{data.key}</span>
       </div>
 
       <div
@@ -47,7 +47,7 @@ export const CustomWorkflowNode = memo(function CustomWorkflowNode({
         {data.name}
       </div>
 
-      <div className="flex items-center justify-between text-[11px] text-muted pt-2 border-t border-line">
+      <div className="flex items-center justify-between text-xs text-muted pt-2 border-t border-line">
         <span className="flex items-center gap-1">
           <Icon name="clock" className="h-3 w-3" />
           {data.plannedDurationMinutes}m

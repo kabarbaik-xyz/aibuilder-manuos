@@ -13,11 +13,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateCustomerModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
 
 export default function CustomersPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Customer>('customers', { search: search || undefined });
 
   const customers = data?.data || [];
@@ -50,6 +52,18 @@ export default function CustomersPage() {
         <Badge variant={c.status === 'ACTIVE' ? 'success' : c.status === 'SUSPENDED' ? 'warning' : 'default'}>
           {c.status}
         </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (customer) => (
+        <PermissionGate permission="customer.manage">
+          <MasterRowActions
+            onEdit={() => router.push(`/settings/customers/${customer.id}`)}
+            onArchive={() => setSelectedCustomer(customer)}
+          />
+        </PermissionGate>
       ),
     },
   ];
@@ -87,6 +101,13 @@ export default function CustomersPage() {
       )}
 
       <CreateCustomerModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <ArchiveMasterDialog
+        isOpen={!!selectedCustomer}
+        onClose={() => setSelectedCustomer(null)}
+        endpoint={`/api/customers/${selectedCustomer?.id}`}
+        recordName={selectedCustomer?.name || 'customer'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

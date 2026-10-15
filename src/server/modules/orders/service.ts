@@ -72,6 +72,21 @@ export class OrderService {
             },
           },
         },
+        demands: {
+          include: {
+            item: {
+              include: {
+                baseUom: true,
+              },
+            },
+          },
+        },
+        shipments: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            lines: true,
+          },
+        },
       },
     });
 

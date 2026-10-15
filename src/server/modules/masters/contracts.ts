@@ -94,11 +94,23 @@ export const createDepartmentSchema = z.object({
   name: z.string().min(1).max(100),
 });
 
+export const updateDepartmentSchema = z.object({
+  expectedVersion: z.number().int().min(1).optional(),
+  name: z.string().min(1).max(100).optional(),
+});
+
 export const createCalendarSchema = z.object({
   code: z.string().min(1).max(50),
   name: z.string().min(1).max(100),
   timezone: z.string().default('Asia/Jakarta'),
   weeklyShiftsJson: z.string().default('[]'),
+});
+
+export const updateCalendarSchema = z.object({
+  expectedVersion: z.number().int().min(1).optional(),
+  name: z.string().min(1).max(100).optional(),
+  timezone: z.string().min(1).optional(),
+  weeklyShiftsJson: z.string().optional(),
 });
 
 export const createCalendarExceptionSchema = z.object({
@@ -140,10 +152,32 @@ export const createTechnicianSchema = z.object({
   maxWeeklyMinutes: z.number().int().min(0).default(2400),
 });
 
+export const updateTechnicianSchema = z.object({
+  expectedVersion: z.number().int().min(1).optional(),
+  departmentId: z.string().nullable().optional(),
+  calendarId: z.string().nullable().optional(),
+  maxWeeklyMinutes: z.number().int().min(0).optional(),
+});
+
 export const createSkillSchema = z.object({
   code: z.string().min(1).max(50),
   name: z.string().min(1).max(100),
   scaleMax: z.number().int().min(1).max(10).default(5),
+});
+
+export const updateSkillSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  scaleMax: z.number().int().min(1).max(10).optional(),
+});
+
+export const updateUomSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  precision: z.number().int().min(0).max(6).optional(),
+});
+
+export const updateQcChecklistSchema = z.object({
+  expectedVersion: z.number().int().min(1).optional(),
+  name: z.string().min(1).max(100).optional(),
 });
 
 export const assignTechnicianSkillSchema = z.object({
@@ -169,6 +203,14 @@ export const createOrderTypeSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).nullable().optional(),
   defaultTemplateId: z.string().nullable().optional(),
+});
+
+export const updateOrderTypeSchema = z.object({
+  expectedVersion: z.number().int().min(1).optional(),
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).nullable().optional(),
+  defaultTemplateId: z.string().nullable().optional(),
+  isActive: z.boolean().optional(),
 });
 
 export const createQcChecklistSchema = z.object({
@@ -200,16 +242,23 @@ export type createLocationSchema = { _type: z.input<typeof createLocationSchema>
 export type updateLocationSchema = { _type: z.input<typeof updateLocationSchema> };
 
 export type createDepartmentSchema = { _type: z.input<typeof createDepartmentSchema> };
+export type updateDepartmentSchema = { _type: z.input<typeof updateDepartmentSchema> };
 export type createCalendarSchema = { _type: z.input<typeof createCalendarSchema> };
+export type updateCalendarSchema = { _type: z.input<typeof updateCalendarSchema> };
 export type createCalendarExceptionSchema = { _type: z.input<typeof createCalendarExceptionSchema> };
 export type createMachineClassSchema = { _type: z.input<typeof createMachineClassSchema> };
 export type createMachineSchema = { _type: z.input<typeof createMachineSchema> };
 export type updateMachineSchema = { _type: z.input<typeof updateMachineSchema> };
 export type createTechnicianSchema = { _type: z.input<typeof createTechnicianSchema> };
+export type updateTechnicianSchema = { _type: z.input<typeof updateTechnicianSchema> };
 export type createSkillSchema = { _type: z.input<typeof createSkillSchema> };
+export type updateSkillSchema = { _type: z.input<typeof updateSkillSchema> };
+export type updateUomSchema = { _type: z.input<typeof updateUomSchema> };
+export type updateQcChecklistSchema = { _type: z.input<typeof updateQcChecklistSchema> };
 export type assignTechnicianSkillSchema = { _type: z.input<typeof assignTechnicianSkillSchema> };
 export type createCertSchema = { _type: z.input<typeof createCertSchema> };
 export type assignTechnicianCertSchema = { _type: z.input<typeof assignTechnicianCertSchema> };
 export type createOrderTypeSchema = { _type: z.input<typeof createOrderTypeSchema> };
+export type updateOrderTypeSchema = { _type: z.input<typeof updateOrderTypeSchema> };
 export type createQcChecklistSchema = { _type: z.input<typeof createQcChecklistSchema> };
 

@@ -56,7 +56,7 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       }
       case 'uoms': {
         requireAnyPermission(principal, ['inventory.read', 'item.manage']);
-        const where: Prisma.UomWhereInput = { workspaceId, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }] } : {}) };
+        const where: Prisma.UomWhereInput = { workspaceId, isActive: true, ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }] } : {}) };
         return page(() => tx.uom.count({ where }), (skip, take) => tx.uom.findMany({ where, skip, take, orderBy: [{ code: 'asc' }, { id: 'asc' }] }));
       }
       case 'departments': {
@@ -82,7 +82,7 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       }
       case 'skills': {
         requireAnyPermission(principal, ['resource.manage']);
-        const where: Prisma.SkillWhereInput = { workspaceId,  ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }] } : {}) };
+        const where: Prisma.SkillWhereInput = { workspaceId, isActive: true,  ...(search ? { OR: [{ code: { contains: search } }, { name: { contains: search } }] } : {}) };
         return page(() => tx.skill.count({ where }), (skip, take) => tx.skill.findMany({ where, skip, take, orderBy: [{ code: 'asc' }, { id: 'asc' }] }));
       }
       case 'order-types': {

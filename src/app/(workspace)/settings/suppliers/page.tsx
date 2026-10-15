@@ -13,11 +13,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateSupplierModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
 
 export default function SuppliersPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Supplier>('suppliers', { search: search || undefined });
 
   const suppliers = data?.data || [];
@@ -50,6 +52,18 @@ export default function SuppliersPage() {
         <Badge variant={s.status === 'ACTIVE' ? 'success' : s.status === 'SUSPENDED' ? 'warning' : 'default'}>
           {s.status}
         </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (supplier) => (
+        <PermissionGate permission="supplier.manage">
+          <MasterRowActions
+            onEdit={() => router.push(`/settings/suppliers/${supplier.id}`)}
+            onArchive={() => setSelectedSupplier(supplier)}
+          />
+        </PermissionGate>
       ),
     },
   ];
@@ -87,6 +101,13 @@ export default function SuppliersPage() {
       )}
 
       <CreateSupplierModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <ArchiveMasterDialog
+        isOpen={!!selectedSupplier}
+        onClose={() => setSelectedSupplier(null)}
+        endpoint={`/api/suppliers/${selectedSupplier?.id}`}
+        recordName={selectedSupplier?.name || 'supplier'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

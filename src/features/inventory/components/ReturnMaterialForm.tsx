@@ -1,13 +1,15 @@
 'use client';
 
-import { Select } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocations } from '@/features/masters/hooks';
 import { useReturnUnusedMaterial } from '../hooks';
 import { parseQuantity } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
+import { Panel } from '@/components/ui/panel';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Undo2 } from 'lucide-react';
 
 export function ReturnMaterialForm() {
   const router = useRouter();
@@ -33,12 +35,12 @@ export function ReturnMaterialForm() {
     try {
       await returnMutation.mutateAsync({
         input: {
-          demandId,
+          demandId: demandId.trim(),
           wipLocationId,
           destinationLocationId,
-          lotId: lotId || null,
+          lotId: lotId.trim() || null,
           atoms: parseQuantity(quantity, 0),
-          notes: notes || undefined,
+          notes: notes.trim() || undefined,
         },
       });
 
@@ -49,62 +51,61 @@ export function ReturnMaterialForm() {
   };
 
   return (
-    <div className="card max-w-2xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold">Return Unused Material from WIP</h1>
-        <p className="text-sm text-muted">
-          Return leftover materials from workstation WIP back to warehouse storage without fabricating new supplier receipts.
-        </p>
-      </div>
-
+    <Panel className="p-6 max-w-3xl mx-auto space-y-6">
       {errorMsg && (
-        <div className="p-4 rounded bg-danger-soft border border-danger/20 text-danger text-sm">
-          {errorMsg}
+        <div className="p-4 rounded-xl bg-danger-soft border border-line text-danger text-xs font-medium">
+          <strong>Action Blocked:</strong> {errorMsg}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div>
-          <label className="block text-xs font-semibold uppercase text-muted mb-1">
-            Material Demand ID *
-          
+          <label className="block text-xs font-medium text-ink mb-1.5">
+            Material Demand ID <span className="text-danger">*</span>
+          </label>
           <Input
             type="text"
             required
             placeholder="UUID of MaterialDemand from order"
-            className="input w-full font-mono text-sm"
+            className="w-full font-mono text-xs"
             value={demandId}
             onChange={(e) => setDemandId(e.target.value)}
-          /></label>
+          />
+          <p className="text-xs text-muted mt-1">
+            Reference identifier of the work order material demand being credited.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              Source WIP Location *
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Source WIP Location <span className="text-danger">*</span>
+            </label>
             <Select
               required
-              className="input w-full"
+              className="w-full text-xs"
               value={wipLocationId}
               onChange={(e) => setWipLocationId(e.target.value)}
             >
-              <option value="">Select WIP Location...</option>
+              <option value="">Select Workstation WIP Location...</option>
               {wipLocations.map((loc: any) => (
                 <option key={loc.id} value={loc.id}>
                   {loc.code} — {loc.name}
                 </option>
               ))}
-            </Select></label>
+            </Select>
+            <p className="text-xs text-muted mt-1">
+              Shop floor cell or staging buffer releasing the stock.
+            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              Destination Storage Location *
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Destination Storage Location <span className="text-danger">*</span>
+            </label>
             <Select
               required
-              className="input w-full"
+              className="w-full text-xs"
               value={destinationLocationId}
               onChange={(e) => setDestinationLocationId(e.target.value)}
             >
@@ -114,66 +115,79 @@ export function ReturnMaterialForm() {
                   {loc.code} — {loc.name}
                 </option>
               ))}
-            </Select></label>
+            </Select>
+            <p className="text-xs text-muted mt-1">
+              Warehouse bin where the returned physical units will be restored.
+            </p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              Lot ID (Optional / If LOT tracked)
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Lot ID <span className="text-muted">(Optional / If Lot Tracked)</span>
+            </label>
             <Input
               type="text"
               placeholder="UUID of Lot"
-              className="input w-full font-mono text-sm"
+              className="w-full font-mono text-xs"
               value={lotId}
               onChange={(e) => setLotId(e.target.value)}
-            /></label>
+            />
+            <p className="text-xs text-muted mt-1">
+              Preserves batch trace if material belongs to a specific lot.
+            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              Quantity to Return *
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Quantity to Return <span className="text-danger">*</span>
+            </label>
             <Input
               type="number"
               step="any"
               min="0.000001"
               required
               placeholder="3"
-              className="input w-full font-mono font-bold"
+              className="w-full font-mono font-bold text-xs"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-            /></label>
+            />
+            <p className="text-xs text-muted mt-1">
+              Exact number of unused units returning to storage.
+            </p>
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase text-muted mb-1">Reason / Notes
+          <label className="block text-xs font-medium text-ink mb-1.5">
+            Reason / Return Notes <span className="text-muted">(Optional)</span>
+          </label>
           <Input
             type="text"
-            className="input w-full"
-            placeholder="e.g. Unused rod ends returned to stock"
+            className="w-full text-xs"
+            placeholder="e.g. Unused rod ends returned to stock after batch completion"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-          /></label>
+          />
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-line">
-          <Button type="button" variant="default" size="small" onClick={() => router.back()}>
+        <div className="flex justify-end items-center gap-3 pt-4 border-t border-line">
+          <Button type="button" variant="default" onClick={() => router.back()}>
             Cancel
           </Button>
           <Button
             type="submit"
             variant="primary"
-            size="small"
             disabled={returnMutation.isPending}
           >
-            {returnMutation.isPending ? 'Returning...' : 'Confirm Return to Storage'}
+            <span className="inline-flex items-center gap-1.5">
+              <Undo2 className="w-4 h-4" />
+              {returnMutation.isPending ? 'Returning...' : 'Confirm Return to Storage'}
+            </span>
           </Button>
         </div>
       </form>
-    </div>
+    </Panel>
   );
 }

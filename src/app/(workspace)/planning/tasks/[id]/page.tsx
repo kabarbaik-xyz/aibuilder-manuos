@@ -20,9 +20,7 @@ export default async function PlanningTaskDetailPage({
 }) {
   const { id } = await params;
   const h = await headers();
-  const mockReq = { headers: h } as any;
-
-  const principal = await requirePrincipal(mockReq);
+  const principal = await requirePrincipal(h);
   let task: any;
   try {
     task = await executionService.getTaskExecutionDetail(principal, id);

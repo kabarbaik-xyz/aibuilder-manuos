@@ -21,7 +21,7 @@ typography:
   heading:
     fontFamily: "Plus Jakarta Sans, system-ui, sans-serif"
     fontSize: "28px"
-    fontWeight: 800
+    fontWeight: 700
     lineHeight: 1.25
     letterSpacing: "-0.035em"
   body:
@@ -32,7 +32,9 @@ typography:
   label:
     fontFamily: "Plus Jakarta Sans, system-ui, sans-serif"
     fontSize: "12px"
-    fontWeight: 650
+    fontWeight: 600
+  scale: "12px, 13px, 14px, 16px, 18px, 20px, 24px; page title 28px desktop and 24px mobile"
+  weights: "500 body, 600 labels, 700 headings and strong emphasis"
 rounded:
   control: "8px"
   panel: "14px"
@@ -65,7 +67,7 @@ Blue identifies the primary action and current navigation. Green means verified 
 
 ## Typography
 
-Self-hosted Plus Jakarta Sans across all roles. Headings have deliberate scale; compact operational labels use the same family. Numeric values are tabular where they change. Supporting functional text has an 11px minimum in this artifact; product development should prefer 12–14px where density allows. English, sentence case, concise verbs.
+Self-hosted Plus Jakarta Sans across all roles. Use a fixed 12/13/14/16/18/20/24px scale, with 28px desktop and 24px mobile page titles. Use 500 for body copy, 600 for labels, and 700 for headings or strong emphasis. Avoid one-off font sizes and weights. Numeric values may use tabular figures without changing the typeface. Body copy uses ink or muted; primary blue is reserved for links and actions, while success, warning, and danger colors communicate status. English, sentence case, concise verbs.
 
 ## Layout
 

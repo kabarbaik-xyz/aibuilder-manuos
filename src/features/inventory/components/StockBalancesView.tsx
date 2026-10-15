@@ -63,28 +63,28 @@ export function StockBalancesView() {
         </div>
         <div className="card p-4">
           <p className="text-xs text-muted uppercase font-semibold">Reserved on this page</p>
-          <p className="text-xl font-bold font-mono text-warning mt-1">
+          <p className="text-xl font-bold font-mono text-ink mt-1">
             {filteredBalances.filter(b => b.reservedAtoms > 0n).length}
           </p>
           <p className="text-xs text-muted mt-1">Positions with reserved stock</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-muted uppercase font-semibold">Available on this page</p>
-          <p className="text-xl font-bold font-mono text-success mt-1">
+          <p className="text-xl font-bold font-mono text-ink mt-1">
             {filteredBalances.filter(b => b.availableAtoms > 0n).length}
           </p>
           <p className="text-xs text-muted mt-1">Positions with available stock</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-muted uppercase font-semibold">WIP on this page</p>
-          <p className="text-xl font-bold font-mono text-primary mt-1">
+          <p className="text-xl font-bold font-mono text-ink mt-1">
             {filteredBalances.filter(b => b.locationKind === 'WIP').length}
           </p>
           <p className="text-xs text-muted mt-1">Positions in production</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-muted uppercase font-semibold">Quarantine on this page</p>
-          <p className="text-xl font-bold font-mono text-danger mt-1">
+          <p className="text-xl font-bold font-mono text-ink mt-1">
             {filteredBalances.filter(b => b.locationKind === 'QUARANTINE').length}
           </p>
           <p className="text-xs text-muted mt-1">Awaiting inspection</p>

@@ -13,10 +13,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateLocationModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
+import { CatalogNameEditDialog } from '@/features/masters/components/catalog-name-edit-dialog';
 
 export default function LocationsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [locationToArchive, setLocationToArchive] = useState<Location | null>(null);
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Location>('locations', {
     type: typeFilter || undefined,
@@ -66,6 +70,15 @@ export default function LocationsPage() {
         </Badge>
       ),
     },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (location) => (
+        <PermissionGate permission="location.manage">
+          <MasterRowActions onEdit={() => setSelectedLocation(location)} onArchive={() => setLocationToArchive(location)} />
+        </PermissionGate>
+      ),
+    },
   ];
 
   return (
@@ -104,6 +117,14 @@ export default function LocationsPage() {
       )}
 
       <CreateLocationModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CatalogNameEditDialog resource="locations" record={selectedLocation} onClose={() => setSelectedLocation(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!locationToArchive}
+        onClose={() => setLocationToArchive(null)}
+        endpoint={`/api/locations/${locationToArchive?.id}`}
+        recordName={locationToArchive?.name || 'location'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

@@ -95,7 +95,7 @@ export function InspectionListView() {
                       >
                         {insp.id.slice(0, 8)}…
                       </Link>
-                      <div className="text-[11px] text-muted font-sans mt-0.5">
+                      <div className="text-xs text-muted font-sans mt-0.5">
                         {new Date(insp.createdAt).toLocaleDateString()}
                       </div>
                     </td>
@@ -103,13 +103,13 @@ export function InspectionListView() {
                       <div className="font-medium">
                         {insp.productionOutput?.item?.name || 'Production Batch'}
                       </div>
-                      <div className="text-[11px] text-muted">
+                      <div className="text-xs text-muted">
                         {insp.productionOutput?.task?.instance?.order?.orderNumber
                           ? `Order ${insp.productionOutput.task.instance.order.orderNumber}`
                           : insp.sourceType}
                       </div>
                     </td>
-                    <td className="py-3 px-4 font-mono text-[11px]">
+                    <td className="py-3 px-4 font-mono text-xs">
                       {insp.productionOutput?.lot?.lotNumber || '—'}
                     </td>
                     <td className="py-3 px-4 font-mono font-semibold">

@@ -140,13 +140,13 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-line text-xs">
             <div>
-              <span className="text-muted block text-[11px]">Requested Date</span>
+              <span className="text-muted block text-xs">Requested Date</span>
               <strong className="text-ink font-semibold">
                 {new Date(order.requestedDate).toLocaleDateString()}
               </strong>
             </div>
             <div>
-              <span className="text-muted block text-[11px]">Promised Date</span>
+              <span className="text-muted block text-xs">Promised Date</span>
               <strong className="text-ink font-semibold">
                 {order.promisedDate
                   ? new Date(order.promisedDate).toLocaleDateString()
@@ -154,7 +154,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
               </strong>
             </div>
             <div>
-              <span className="text-muted block text-[11px]">Acknowledgment</span>
+              <span className="text-muted block text-xs">Acknowledgment</span>
               <span className="text-ink font-semibold">
                 {order.customerAcknowledged
                   ? `Confirmed by ${order.customerAcknowledgedBy || "Customer"}`
@@ -182,7 +182,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
                   />
                   {m.title}
                 </span>
-                <span className="text-[11px] text-muted capitalize">
+                <span className="text-xs text-muted capitalize">
                   {m.status.toLowerCase().replace(/_/g, " ")}
                 </span>
               </div>
@@ -242,19 +242,19 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs border-t border-line/60 pt-2">
                   <div>
-                    <span className="text-muted block text-[11px]">Carrier</span>
+                    <span className="text-muted block text-xs">Carrier</span>
                     <strong className="text-ink">
                       {shipment.carrierName || "Pending Carrier"}
                     </strong>
                   </div>
                   <div>
-                    <span className="text-muted block text-[11px]">Tracking #</span>
+                    <span className="text-muted block text-xs">Tracking #</span>
                     <strong className="text-ink">
                       {shipment.trackingNumber || "—"}
                     </strong>
                   </div>
                   <div>
-                    <span className="text-muted block text-[11px]">Delivery Status</span>
+                    <span className="text-muted block text-xs">Delivery Status</span>
                     <strong className="text-ink">
                       {shipment.deliveredAt
                         ? `Delivered on ${new Date(shipment.deliveredAt).toLocaleDateString()}`
@@ -262,7 +262,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
                     </strong>
                   </div>
                   <div>
-                    <span className="text-muted block text-[11px]">Received By</span>
+                    <span className="text-muted block text-xs">Received By</span>
                     <strong className="text-ink">
                       {shipment.receivedBy || "—"}
                     </strong>
@@ -271,7 +271,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
 
                 {shipment.lines.length > 0 && (
                   <div className="text-xs border-t border-line/60 pt-2">
-                    <span className="text-muted text-[11px] block mb-1">
+                    <span className="text-muted text-xs block mb-1">
                       Shipped Contents:
                     </span>
                     <div className="flex items-center gap-3">
@@ -317,7 +317,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
                     <span className="font-medium text-ink text-xs block">
                       {doc.fileName}
                     </span>
-                    <span className="text-[11px] text-muted">
+                    <span className="text-xs text-muted">
                       {(doc.sizeBytes / 1024).toFixed(1)} KB ·{" "}
                       {new Date(doc.createdAt).toLocaleDateString()}
                     </span>
@@ -361,7 +361,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
                     <span className="font-medium text-ink text-xs block">
                       Serial: {p.serialNumber}
                     </span>
-                    <span className="text-[11px] text-muted font-mono">
+                    <span className="text-xs text-muted font-mono">
                       Digest: {p.digestSha256.substring(0, 16)}...
                     </span>
                   </div>

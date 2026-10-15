@@ -12,9 +12,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateDepartmentModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
+import { CatalogNameEditDialog } from '@/features/masters/components/catalog-name-edit-dialog';
 
 export default function DepartmentsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedDepartment, setSelectedDepartment] = useState<Department | null>(null);
+  const [departmentToArchive, setDepartmentToArchive] = useState<Department | null>(null);
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Department>('departments', { search: query || undefined });
 
@@ -38,6 +42,15 @@ export default function DepartmentsPage() {
         <Badge variant={d.status === 'ACTIVE' ? 'success' : 'default'}>
           {d.status}
         </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (department) => (
+        <PermissionGate permission="resource.manage">
+          <MasterRowActions onEdit={() => setSelectedDepartment(department)} onArchive={() => setDepartmentToArchive(department)} />
+        </PermissionGate>
       ),
     },
   ];
@@ -64,6 +77,14 @@ export default function DepartmentsPage() {
       )}
 
       <CreateDepartmentModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CatalogNameEditDialog resource="departments" record={selectedDepartment} onClose={() => setSelectedDepartment(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!departmentToArchive}
+        onClose={() => setDepartmentToArchive(null)}
+        endpoint={`/api/resources/catalog/departments/${departmentToArchive?.id}`}
+        recordName={departmentToArchive?.name || 'department'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

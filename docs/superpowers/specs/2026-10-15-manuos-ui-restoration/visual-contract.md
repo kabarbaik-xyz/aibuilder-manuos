@@ -20,8 +20,8 @@ Preserve original `ui-prototype/` hierarchy, font, restrained panels, operationa
 | Focus | 3px primary-blue visible focus ring with 3px offset, checked on white and soft surfaces |
 | Corners | Controls 8px; panels/modals 14px |
 | Spacing | 4/8/12/16/20/24/32/36px scale; no arbitrary different rhythm in each feature |
-| Headings | Page 28px/1.25/800 desktop, 24px mobile; section 16px/700; field 13px/600 |
-| Text | Body/nav 14px; table/support 12–14px; no 10–11px core labels/actions |
+| Headings | Page 28px/1.25/700 desktop, 24px mobile; section 16px/700; field 13px/600 |
+| Text | Fixed 12/13/14/16/18/20/24px scale; body/nav 14px; table/support 12–14px; no one-off sizes or weights |
 | Controls | 40px height desktop; touch interaction target at least 44px on mobile; textarea min 120px |
 | Panel | White, 1px line border, no heavy shadow; 24px inner padding desktop, 20px mobile |
 

@@ -16,6 +16,8 @@ import { Dialog } from '@/components/ui/dialog';
 import { ErrorState } from '@/components/ui/resource-state';
 import { FormErrorSummary } from '@/components/ui/form-errors';
 import { ApiError } from '@/lib/api/client';
+import { MasterRowActions, ArchiveMasterDialog } from '@/features/masters/components/master-row-actions';
+import { TechnicianEditDialog } from '@/features/masters/components/technician-edit-dialog';
 
 export default function TechniciansPage() {
   const { search, setSearch, query } = useListSearch();
@@ -24,6 +26,8 @@ export default function TechniciansPage() {
   const skills = skillsData?.data || [];
 
   const [selectedTech, setSelectedTech] = useState<Technician | null>(null);
+  const [techToEdit, setTechToEdit] = useState<Technician | null>(null);
+  const [techToArchive, setTechToArchive] = useState<Technician | null>(null);
   const [skillId, setSkillId] = useState('');
   const [skillLevel, setSkillLevel] = useState(3);
   const [skillError, setSkillError] = useState<ApiError | null>(null);
@@ -93,9 +97,13 @@ export default function TechniciansPage() {
       key: 'actions',
       header: 'Actions',
       render: (t) => (
-        <PermissionGate permission="resource.manage"><Button variant="default" size="small" onClick={(e) => { e.stopPropagation(); setSelectedTech(t); }}>
-          Add Skill
-        </Button></PermissionGate>
+        <PermissionGate permission="resource.manage">
+          <MasterRowActions
+            onEdit={() => setTechToEdit(t)}
+            onArchive={() => setTechToArchive(t)}
+            extraActions={[{ label: 'Add Skill', icon: 'plus', onSelect: () => setSelectedTech(t) }]}
+          />
+        </PermissionGate>
       ),
     },
   ];
@@ -120,6 +128,14 @@ export default function TechniciansPage() {
       )}
 
       {/* Add Skill Dialog */}
+      <TechnicianEditDialog technician={techToEdit} onClose={() => setTechToEdit(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!techToArchive}
+        onClose={() => setTechToArchive(null)}
+        endpoint={`/api/resources/catalog/technicians/${techToArchive?.id}`}
+        recordName={techToArchive?.name || techToArchive?.membership?.user?.name || 'technician'}
+        onArchived={refetch}
+      />
       <Dialog
         isOpen={!!selectedTech}
         onClose={() => setSelectedTech(null)}

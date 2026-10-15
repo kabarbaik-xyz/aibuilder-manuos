@@ -84,6 +84,7 @@ it('preserves base-unit quantity precision without floating-point stock', () => 
 **Interfaces:** `createMaster(principal, resourceContract, input)` is an internal typed dispatch over a closed catalog, not a client-selected SQL table. Exposed services have resource names such as `createCustomer`, `archiveItem`, `listItemBalances` (the balance reader is added in O01). Every read/edit uses workspace + ID and version.
 
 - [ ] Add customer/contact/supplier/item/UOM/conversion/location schemas, uniqueness and archival restrictions. Add membership customer FKs at this migration and explicitly preserve existing users with null customer scope.
+- [x] Expose row-level Edit and Archive actions for customers, suppliers, items, locations and UOMs. Use available version checks and preserve referenced history through archival.
 - [ ] Create endpoint DTOs/examples and grant checks before UI. Test duplicate codes, wrong-workspace FK, inactive references, illegal precision/conversion, and archival of used records.
 - [ ] Implement actual searchable/filterable lists, master details and bounded create/edit forms; error fields use the shared adapter. Use stable IDs in selectors, not names.
 - [ ] Verify creating a new customer and item in the UI, refreshing, and reading the same DB records. Empty workspace remains usable; defaults are not silently fabricated.
@@ -96,6 +97,7 @@ it('preserves base-unit quantity precision without floating-point stock', () => 
 **Interfaces:** validated resource IDs/calendar intervals/skill levels/cert expiry and immutable QC checklist revisions are consumed by W01/W02 and planning. `getResourceContext(principal, resourceIds, at)` returns authorized actual availability/requirements, not a fixed demo shift.
 
 - [ ] Add editable department/calendar/exception, machine class/machine, technician membership/skill/cert, order type and checklist catalogs. Archive rather than delete references.
+- [x] Expose row-level Edit and Archive actions for departments, calendars, machines, technician profiles, skills, order types and QC checklists; keep published QC checklists read-only.
 - [ ] Test overlapping/bad calendar intervals, expiry, wrong membership/resource ownership and item/operation reference mistakes. Order-type default cannot point to an unpublished process once W01 supplies versions.
 - [ ] Build resource pages and forms, including no-qualified-resource and missing-calendar states. No fake skill/QA identity added by persona switching.
 - [ ] Run `rtk npm run test:integration -- tests/integration/resources.test.ts` and typecheck; verify one resource edit changes returned availability rather than remaining a code constant.

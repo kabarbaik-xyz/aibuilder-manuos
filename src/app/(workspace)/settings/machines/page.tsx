@@ -12,9 +12,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateMachineModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
+import { CatalogNameEditDialog } from '@/features/masters/components/catalog-name-edit-dialog';
 
 export default function MachinesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
+  const [machineToArchive, setMachineToArchive] = useState<Machine | null>(null);
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Machine>('machines', { search: query || undefined });
 
@@ -50,6 +54,15 @@ export default function MachinesPage() {
         </Badge>
       ),
     },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (machine) => (
+        <PermissionGate permission="resource.manage">
+          <MasterRowActions onEdit={() => setSelectedMachine(machine)} onArchive={() => setMachineToArchive(machine)} />
+        </PermissionGate>
+      ),
+    },
   ];
 
   return (
@@ -74,6 +87,14 @@ export default function MachinesPage() {
       )}
 
       <CreateMachineModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CatalogNameEditDialog resource="machines" record={selectedMachine} onClose={() => setSelectedMachine(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!machineToArchive}
+        onClose={() => setMachineToArchive(null)}
+        endpoint={`/api/resources/catalog/machines/${machineToArchive?.id}`}
+        recordName={machineToArchive?.name || 'machine'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

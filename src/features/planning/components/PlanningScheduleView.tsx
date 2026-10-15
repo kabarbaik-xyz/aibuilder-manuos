@@ -90,7 +90,7 @@ export function PlanningScheduleView() {
 
         <div className="planning-metric">
           <span className="text-xs font-semibold text-muted tracking-wider uppercase">Expected finish</span>
-          <div className="text-lg font-bold text-success mt-1 truncate">
+          <div className="text-lg font-bold text-ink mt-1 truncate">
             {schedule.scheduledTaskCount && schedule.projectedEndAt ? new Date(schedule.projectedEndAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not scheduled'}
           </div>
           <p className="text-xs text-muted mt-1">Taking shifts & weekends into account</p>
@@ -98,7 +98,7 @@ export function PlanningScheduleView() {
 
         <div className="planning-metric">
           <span className="text-xs font-semibold text-muted tracking-wider uppercase">Critical Path</span>
-          <div className="text-2xl font-bold text-warning mt-1">
+          <div className="text-2xl font-bold text-ink mt-1">
             {schedule.criticalPathCount} Tasks
           </div>
           <p className="text-xs text-muted mt-1">Zero slack activities</p>
@@ -106,7 +106,7 @@ export function PlanningScheduleView() {
 
         <div className="planning-metric">
           <span className="text-xs font-semibold text-muted tracking-wider uppercase">Scheduled tasks</span>
-          <div className="text-2xl font-bold text-primary mt-1">
+          <div className="text-2xl font-bold text-ink mt-1">
             {schedule.scheduledTaskCount}
           </div>
           <p className="text-xs text-muted mt-1">Sequenced in routing network</p>

@@ -206,11 +206,11 @@ export default function PassportPage() {
                         >
                           <div>
                             <strong className="text-ink">{mat.itemName}</strong>
-                            <span className="text-muted text-[11px] ml-2">
+                            <span className="text-muted text-xs ml-2">
                               ({mat.itemCode})
                             </span>
                             {mat.lotNumber && (
-                              <span className="block text-[11px] text-muted font-mono">
+                              <span className="block text-xs text-muted font-mono">
                                 Lot: {mat.lotNumber}
                               </span>
                             )}
@@ -310,7 +310,7 @@ export default function PassportPage() {
                                 Rework Attempt #{qc.rework.attemptNumber}:
                               </strong>{" "}
                               {qc.rework.instruction}
-                              <span className="block text-[11px] text-amber-700">
+                              <span className="block text-xs text-amber-700">
                                 Authorized by {qc.rework.authorizedBy} · Status:{" "}
                                 {qc.rework.status}
                               </span>
@@ -357,7 +357,7 @@ export default function PassportPage() {
                       <strong className="text-ink text-xs block">
                         Verifiable Audit Anchor
                       </strong>
-                      <p className="text-[11px] text-muted break-all font-mono mt-1">
+                      <p className="text-xs text-muted break-all font-mono mt-1">
                         {passport.digestSha256}
                       </p>
                     </div>

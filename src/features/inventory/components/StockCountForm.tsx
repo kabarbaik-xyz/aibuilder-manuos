@@ -1,14 +1,16 @@
 'use client';
 
-import { Textarea } from '@/components/ui/textarea';
-import { Select } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useItems, useLocations } from '@/features/masters/hooks';
 import { useCreateStockCount, useStockBalances } from '../hooks';
 import { parseQuantity } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
+import { Panel } from '@/components/ui/panel';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, Trash2, ClipboardCheck } from 'lucide-react';
 
 export function StockCountForm() {
   const router = useRouter();
@@ -33,7 +35,7 @@ export function StockCountForm() {
     { itemId: '', locationId: '', lotId: '', countedQuantity: '0', notes: '' },
   ]);
 
-  const items = itemsRes?.data || [];
+  const items = (itemsRes?.data || []).filter((i: any) => i.status === 'ACTIVE');
   const locations = locationsRes?.data || [];
 
   const handleAddLine = () => {
@@ -91,85 +93,102 @@ export function StockCountForm() {
   };
 
   return (
-    <div className="card max-w-4xl mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold">Record Physical Inventory Count</h1>
-        <p className="text-sm text-muted">
-          Capture counted stock levels against current system book snapshots. Discrepancies will be submitted for owner approval.
-        </p>
-      </div>
-
+    <Panel className="p-6 max-w-4xl mx-auto space-y-6">
       {errorMsg && (
-        <div className="p-4 rounded bg-danger-soft border border-danger/20 text-danger text-sm">
-          {errorMsg}
+        <div className="p-4 rounded-xl bg-danger-soft border border-line text-danger text-xs font-medium">
+          <strong>Validation Error:</strong> {errorMsg}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              Target Location (Optional)
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Target Location <span className="text-muted">(Optional)</span>
+            </label>
             <Select
-              className="input w-full"
+              className="w-full text-xs"
               value={locationId}
               onChange={(e) => {
-                setLocationId(e.target.value);
-                // Also update lines with this location if empty
-                setLines(lines.map((l) => ({ ...l, locationId: l.locationId || e.target.value })));
+                const newLoc = e.target.value;
+                setLocationId(newLoc);
+                setLines(lines.map((l) => ({ ...l, locationId: l.locationId || newLoc })));
               }}
             >
-              <option value="">All Locations / Facility-Wide</option>
+              <option value="">All Locations / Facility-Wide Audit</option>
               {locations.map((loc: any) => (
                 <option key={loc.id} value={loc.id}>
                   {loc.code} — {loc.name} ({loc.kind})
                 </option>
               ))}
-            </Select></label>
+            </Select>
+            <p className="text-xs text-muted mt-1">
+              Select a specific area or audit across all warehouse bins.
+            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-muted mb-1">
-              Reason / Cycle Count Code *
-            
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Reason / Cycle Count Code <span className="text-danger">*</span>
+            </label>
             <Input
               type="text"
               required
-              className="input w-full"
+              className="w-full text-xs"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-            /></label>
+              placeholder="e.g. Monthly Finished Goods Count"
+            />
+            <p className="text-xs text-muted mt-1">
+              Internal reference code or audit reason for variance logs.
+            </p>
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase text-muted mb-1">Notes
+          <label className="block text-xs font-medium text-ink mb-1.5">
+            Audit Scope & Context Notes <span className="text-muted">(Optional)</span>
+          </label>
           <Textarea
-            className="input w-full h-16 py-2"
-            placeholder="Optional context about this stock count..."
+            className="w-full h-18 py-2 text-xs"
+            placeholder="Document counting conditions, counter teams, or specific bin ranges..."
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-          /></label>
+          />
         </div>
 
         {/* Lines */}
-        <div className="space-y-3">
+        <div className="space-y-3 pt-2 border-t border-line">
           <div className="flex justify-between items-center">
-            <h2 className="text-sm font-semibold uppercase text-ink">Count Lines ({lines.length})</h2>
-            <Button type="button" variant="default" size="small" onClick={handleAddLine}>
-              + Add Item Line
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Counted Line Items ({lines.length})
+              </h2>
+              <p className="text-xs text-muted mt-0.5">
+                Record actual physical units observed in the selected location
+              </p>
+            </div>
+            <Button type="button" variant="default" onClick={handleAddLine}>
+              <span className="inline-flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                Add Item Line
+              </span>
             </Button>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {lines.map((line, idx) => (
-              <div key={idx} className="p-3 card bg-surface-muted border border-line flex flex-col md:flex-row gap-3 items-end">
+              <div
+                key={idx}
+                className="p-3.5 rounded-xl bg-surface-muted/60 border border-line flex flex-col md:flex-row gap-3 items-end transition-all"
+              >
                 <div className="flex-1 w-full">
-                  <label className="block text-xs text-muted mb-1">Item *
+                  <label className="block text-xs font-medium text-ink mb-1">
+                    Item <span className="text-danger">*</span>
+                  </label>
                   <Select
                     required
-                    className="input w-full text-sm"
+                    className="w-full text-xs"
                     value={line.itemId}
                     onChange={(e) => handleLineChange(idx, 'itemId', e.target.value)}
                   >
@@ -179,14 +198,16 @@ export function StockCountForm() {
                         {item.code} — {item.name}
                       </option>
                     ))}
-                  </Select></label>
+                  </Select>
                 </div>
 
                 <div className="flex-1 w-full">
-                  <label className="block text-xs text-muted mb-1">Location *
+                  <label className="block text-xs font-medium text-ink mb-1">
+                    Location <span className="text-danger">*</span>
+                  </label>
                   <Select
                     required
-                    className="input w-full text-sm"
+                    className="w-full text-xs"
                     value={line.locationId}
                     onChange={(e) => handleLineChange(idx, 'locationId', e.target.value)}
                   >
@@ -196,30 +217,32 @@ export function StockCountForm() {
                         {loc.code} ({loc.kind})
                       </option>
                     ))}
-                  </Select></label>
+                  </Select>
                 </div>
 
                 <div className="w-full md:w-36">
-                  <label className="block text-xs text-muted mb-1">Counted Qty *
+                  <label className="block text-xs font-medium text-ink mb-1">
+                    Counted Qty <span className="text-danger">*</span>
+                  </label>
                   <Input
                     type="number"
                     step="any"
                     min="0"
                     required
-                    className="input w-full font-mono font-bold"
+                    className="w-full font-mono font-bold text-xs"
                     value={line.countedQuantity}
                     onChange={(e) => handleLineChange(idx, 'countedQuantity', e.target.value)}
-                  /></label>
+                  />
                 </div>
 
                 {lines.length > 1 && (
                   <Button
                     type="button"
                     variant="ghost"
-                    size="small"
                     onClick={() => handleRemoveLine(idx)}
+                    title="Remove line"
                   >
-                    ✕
+                    <Trash2 className="w-3.5 h-3.5 text-danger" />
                   </Button>
                 )}
               </div>
@@ -227,20 +250,22 @@ export function StockCountForm() {
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-line">
-          <Button type="button" variant="default" size="small" onClick={() => router.back()}>
+        <div className="flex justify-end items-center gap-3 pt-4 border-t border-line">
+          <Button type="button" variant="default" onClick={() => router.back()}>
             Cancel
           </Button>
           <Button
             type="submit"
             variant="primary"
-            size="small"
             disabled={createMutation.isPending}
           >
-            {createMutation.isPending ? 'Submitting Count...' : 'Submit Physical Count'}
+            <span className="inline-flex items-center gap-1.5">
+              <ClipboardCheck className="w-4 h-4" />
+              {createMutation.isPending ? 'Submitting Count...' : 'Submit Physical Count'}
+            </span>
           </Button>
         </div>
       </form>
-    </div>
+    </Panel>
   );
 }

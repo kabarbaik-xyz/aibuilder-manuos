@@ -116,7 +116,7 @@ export function PortalOrderListView() {
 
                   {/* Progress bar */}
                   <div className="w-full max-w-md pt-1.5">
-                    <div className="flex justify-between text-[11px] text-muted mb-1">
+                    <div className="flex justify-between text-xs text-muted mb-1">
                       <span>Verified Progress</span>
                       <span className="font-semibold text-ink">
                         {order.progressPct}%

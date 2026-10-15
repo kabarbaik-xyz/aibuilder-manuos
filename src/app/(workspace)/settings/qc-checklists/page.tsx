@@ -12,9 +12,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateQcChecklistModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
+import { CatalogNameEditDialog } from '@/features/masters/components/catalog-name-edit-dialog';
 
 export default function QcChecklistsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedChecklist, setSelectedChecklist] = useState<QcChecklist | null>(null);
+  const [checklistToArchive, setChecklistToArchive] = useState<QcChecklist | null>(null);
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<QcChecklist>('qc-checklists', { search: query || undefined });
 
@@ -50,6 +54,19 @@ export default function QcChecklistsPage() {
         </Badge>
       ),
     },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (checklist) => (
+        <PermissionGate permission="quality.configure">
+          <MasterRowActions
+            canEdit={checklist.status !== 'PUBLISHED'}
+            onEdit={() => setSelectedChecklist(checklist)}
+            onArchive={() => setChecklistToArchive(checklist)}
+          />
+        </PermissionGate>
+      ),
+    },
   ];
 
   return (
@@ -74,6 +91,14 @@ export default function QcChecklistsPage() {
       )}
 
       <CreateQcChecklistModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CatalogNameEditDialog resource="qc-checklists" record={selectedChecklist} onClose={() => setSelectedChecklist(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!checklistToArchive}
+        onClose={() => setChecklistToArchive(null)}
+        endpoint={`/api/resources/catalog/qc-checklists/${checklistToArchive?.id}`}
+        recordName={checklistToArchive?.name || 'QC checklist'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

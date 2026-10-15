@@ -48,7 +48,7 @@ export function ProposalReview({
     <Panel className="p-4 space-y-4 border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line pb-3">
         <div className="flex items-center gap-2">
-          <Badge variant="blue" className="text-[10px] font-bold uppercase">
+          <Badge variant="blue" className="text-xs font-bold uppercase">
             AI Proposal Candidate
           </Badge>
           <span className="text-xs font-mono text-muted">
@@ -94,7 +94,7 @@ export function ProposalReview({
         <span className="text-xs font-semibold uppercase tracking-wider text-muted">
           Generated Candidate Preview:
         </span>
-        <pre className="max-h-40 overflow-y-auto rounded-md border border-line bg-surface-muted p-2 font-mono text-[11px] text-ink">
+        <pre className="max-h-40 overflow-y-auto rounded-md border border-line bg-surface-muted p-2 font-mono text-xs text-ink">
           {JSON.stringify(JSON.parse(proposal.candidateJson), null, 2)}
         </pre>
       </div>

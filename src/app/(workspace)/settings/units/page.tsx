@@ -11,9 +11,13 @@ import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/resource-state';
 import { CreateUomModal } from '@/features/masters/components/resource-forms';
+import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/components/master-row-actions';
+import { CatalogNameEditDialog } from '@/features/masters/components/catalog-name-edit-dialog';
 
 export default function UnitsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedUom, setSelectedUom] = useState<UnitOfMeasure | null>(null);
+  const [uomToArchive, setUomToArchive] = useState<UnitOfMeasure | null>(null);
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<UnitOfMeasure>('uoms', { search: query || undefined });
 
@@ -40,6 +44,15 @@ export default function UnitsPage() {
       header: 'Decimal Precision',
       render: (u) => <span className="text-ink">{u.precision} decimal places</span>,
     },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (uom) => (
+        <PermissionGate permission="item.manage">
+          <MasterRowActions onEdit={() => setSelectedUom(uom)} onArchive={() => setUomToArchive(uom)} />
+        </PermissionGate>
+      ),
+    },
   ];
 
   return (
@@ -64,6 +77,14 @@ export default function UnitsPage() {
       )}
 
       <CreateUomModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CatalogNameEditDialog resource="uoms" record={selectedUom} onClose={() => setSelectedUom(null)} />
+      <ArchiveMasterDialog
+        isOpen={!!uomToArchive}
+        onClose={() => setUomToArchive(null)}
+        endpoint={`/api/resources/catalog/uoms/${uomToArchive?.id}`}
+        recordName={uomToArchive?.name || 'unit of measure'}
+        onArchived={refetch}
+      />
     </div>
   );
 }

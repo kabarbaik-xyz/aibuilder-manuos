@@ -125,7 +125,7 @@ export function ShipmentListView() {
                         <div className="font-medium text-ink">
                           {s.customer?.name || "Customer"}
                         </div>
-                        <div className="text-[11px] text-muted">
+                        <div className="text-xs text-muted">
                           Order {s.order?.orderNumber}
                         </div>
                       </td>
@@ -133,13 +133,13 @@ export function ShipmentListView() {
                         <div className="font-semibold font-mono">
                           {formatQuantity(totalAtoms)} units
                         </div>
-                        <div className="text-[11px] text-muted truncate max-w-45">
+                        <div className="text-xs text-muted truncate max-w-45">
                           {s.order?.item?.name}
                         </div>
                       </td>
                       <td className="py-3 px-4">
                         <div className="text-xs">{s.carrierName || "—"}</div>
-                        <div className="text-[11px] font-mono text-muted">
+                        <div className="text-xs font-mono text-muted">
                           {s.trackingNumber || "No tracking"}
                         </div>
                       </td>
@@ -154,7 +154,7 @@ export function ShipmentListView() {
                           <Badge variant="default">{s.status}</Badge>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-[11px] text-muted">
+                      <td className="py-3 px-4 text-xs text-muted">
                         <div>
                           Allocated:{" "}
                           {new Date(s.allocatedAt).toLocaleDateString()}
