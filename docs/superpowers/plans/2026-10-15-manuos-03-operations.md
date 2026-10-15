@@ -83,11 +83,11 @@ This arithmetic assertion supplements, not replaces, actual two-connection servi
 
 **Produces:** `scheduleTasks(input)`, `evaluateAssignment`, `assignTask`, `startTask`, `pauseTask`, `resumeTask` and persisted server-timestamp sessions. `scheduleTasks` uses real work intervals/resources/material constraints; I01 adds integrated CPM/slack/disruption analysis on the same scheduler.
 
-- [ ] Define authorized resource/calendar/remaining-duration inputs and timezone-aware interval behavior. Remove hardcoded availability dates and unrelated-skill fallback in assignment; test expiry/skill minimum/capacity and existing bookings.
-- [ ] Reserve actual resource slots through a versioned assignment/plan command; repeated assignment does not increment reserved workload again.
-- [ ] Build authoritative readiness snapshots from W04/O03, apply legal start/pause/resume transitions and session timestamps atomically, denying wrong operator/predecessor/material/resource state.
-- [ ] Render task instructions/pinned revisions/material evidence and a timer derived from server sessions. Reload/pause/offline behavior cannot create elapsed time/output records from a local ticking counter alone.
-- [ ] Run `rtk npm test -- src/engines/schedule.test.ts` and `rtk npm run test:integration -- tests/integration/task-execution.test.ts`; check real assignment/session readback and blocked action paths in UI.
+- [x] Define authorized resource/calendar/remaining-duration inputs and timezone-aware interval behavior. Remove hardcoded availability dates and unrelated-skill fallback in assignment; test expiry/skill minimum/capacity and existing bookings.
+- [x] Reserve actual resource slots through a versioned assignment/plan command; repeated assignment does not increment reserved workload again.
+- [x] Build authoritative readiness snapshots from W04/O03, apply legal start/pause/resume transitions and session timestamps atomically, denying wrong operator/predecessor/material/resource state.
+- [x] Render task instructions/pinned revisions/material evidence and a timer derived from server sessions. Reload/pause/offline behavior cannot create elapsed time/output records from a local ticking counter alone.
+- [x] Run `rtk npm test -- src/engines/schedule.test.ts` and `rtk npm run test:integration -- tests/integration/task-execution.test.ts`; check real assignment/session readback and blocked action paths in UI.
 
 ## O06 — Output, inspection/rework and actual released FG
 

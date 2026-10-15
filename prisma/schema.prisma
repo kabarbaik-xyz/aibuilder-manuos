@@ -30,6 +30,9 @@ model User {
   supplyReceipts SupplyReceipt[]
   countedStockCounts  StockCount[] @relation("CountedByUser")
   approvedStockCounts StockCount[] @relation("ApprovedByUser")
+  productionOutputs   ProductionOutput[]
+  inspections         Inspection[]
+  authorizedReworks   ReworkAttempt[]
 
   @@map("users")
 }
@@ -133,6 +136,12 @@ model Workspace {
   supplyReceiptLines SupplyReceiptLine[]
   stockCounts       StockCount[]
   stockCountLines   StockCountLine[]
+  resourceBookings  ResourceBooking[]
+  workSessions      WorkSession[]
+  productionOutputs ProductionOutput[]
+  inspections       Inspection[]
+  inspectionResults InspectionResult[]
+  reworkAttempts    ReworkAttempt[]
 
   @@map("workspaces")
 }
@@ -392,6 +401,7 @@ model Item {
   supplyOrderLines  SupplyOrderLine[]
   supplyReceiptLines SupplyReceiptLine[]
   stockCountLines   StockCountLine[]
+  productionOutputs ProductionOutput[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -436,6 +446,7 @@ model Location {
   supplyReceiptLines SupplyReceiptLine[]
   stockCounts       StockCount[]
   stockCountLines   StockCountLine[]
+  productionOutputs ProductionOutput[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -571,6 +582,7 @@ model Technician {
   skills           TechnicianSkill[]
   certifications   TechnicianCertification[]
   tasks            Task[]
+  workSessions     WorkSession[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -685,6 +697,7 @@ model QcChecklist {
 
   workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   checks      QcChecklistCheck[]
+  inspections Inspection[]
 
   @@unique([workspaceId, code, revision])
   @@unique([workspaceId, id])
@@ -1005,6 +1018,8 @@ model Task {
   demands                MaterialDemand[]
   events                 WorkflowEvent[]
   reservations           StockReservation[]
+  resourceBookings       ResourceBooking[]
+  workSessions           WorkSession[]
 
   @@unique([instanceId, nodeKey, attemptNumber])
   @@unique([workspaceId, id])
@@ -1359,6 +1374,50 @@ model StockCountLine {
   @@map("stock_count_lines")
 }
 
+// -------------------------------------------------------------
+// Resource Bookings & Work Sessions (Milestone M3 - O05)
+// -------------------------------------------------------------
 
+model ResourceBooking {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  resourceType String    @map("resource_type") // TECHNICIAN | MACHINE
+  resourceId   String    @map("resource_id")
+  taskId       String    @map("task_id")
+  startAt      DateTime  @map("start_at")
+  endAt        DateTime  @map("end_at")
+  status       String    @default("CONFIRMED") // CONFIRMED | CANCELLED
+  version      Int       @default(1)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task         Task      @relation(fields: [workspaceId, taskId], references: [workspaceId, id], onDelete: Cascade)
 
+  @@unique([workspaceId, id])
+  @@index([workspaceId, resourceType, resourceId])
+  @@map("resource_bookings")
+}
+
+model WorkSession {
+  id              String     @id @default(uuid())
+  workspaceId     String     @map("workspace_id")
+  taskId          String     @map("task_id")
+  technicianId    String     @map("technician_id")
+  sessionType     String     @map("session_type") // RUNNING | PAUSED
+  startedAt       DateTime   @map("started_at")
+  endedAt         DateTime?  @map("ended_at")
+  durationMinutes Int?       @map("duration_minutes")
+  notes           String?
+  version         Int        @default(1)
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  workspace       Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task            Task       @relation(fields: [workspaceId, taskId], references: [workspaceId, id], onDelete: Cascade)
+  technician      Technician @relation(fields: [workspaceId, technicianId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, taskId])
+  @@map("work_sessions")
+}

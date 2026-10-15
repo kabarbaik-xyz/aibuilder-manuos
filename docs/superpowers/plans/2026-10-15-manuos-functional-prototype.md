@@ -42,6 +42,8 @@ Execute the following subsystem plans in order. They are bounded implementation 
 
 ## Milestone review gates
 
+**UI repair handoff:** [UI restoration plan](2026-10-15-manuos-ui-restoration.md) restores the approved mock across implemented pages, including a wider semantic-icon sidebar, one shell, readable light controls/states and centered CRUD Add dialogs. Schedule at a safe checkpoint with the active functional worker; it is not deferred behind the dynamic-form/AI-builder feature expansion. Future feature UI must follow its [visual contract](../specs/2026-10-15-manuos-ui-restoration/visual-contract.md).
+
 | Gate | Reviewable product result | What must not be claimed yet |
 | --- | --- | --- |
 | M0 | Login + scoped API + persisted bootstrap with denial/rollback proof | Generic orders/inventory/workflows are not implemented by schema alone |

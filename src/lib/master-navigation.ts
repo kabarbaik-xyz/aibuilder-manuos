@@ -25,6 +25,9 @@ export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
   { title: 'Workflow Studio', href: '/workflows', permissions: ['workflow.read', 'workflow.author'] },
   { title: 'Supply Orders', href: '/supply-orders', permissions: ['supply.read', 'supply.create'] },
   { title: 'Inbound Receipts', href: '/inventory/receipts', permissions: ['inventory.read', 'inventory.receive'] },
+  { title: 'Inventory Ledger', href: '/inventory', permissions: ['inventory.read'] },
+  { title: 'Production Planning', href: '/planning', permissions: ['planning.read', 'task.assign'] },
+  { title: 'Shop Floor Workstation', href: '/shop-floor', permissions: ['task.read_assigned', 'task.execute_assigned', 'planning.read'] },
 ];
 
 export function getWorkflowNavigation(permissions: readonly string[]) {

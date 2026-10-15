@@ -1,0 +1,632 @@
+import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { Principal } from '@/server/auth/principal';
+import { requireAnyPermission, hasPermission } from '@/server/auth/permissions';
+import { executeCommand } from '@/server/db/transaction';
+import { BadRequestError, NotFoundError, ForbiddenError } from '@/domain/errors';
+import { ExecutionRepository } from './repository';
+import { ConsumptionService } from '../inventory/consumption';
+import {
+  StartTaskInput,
+  StartTaskSchema,
+  PauseTaskInput,
+  PauseTaskSchema,
+  ResumeTaskInput,
+  ResumeTaskSchema,
+  TaskExecutionDetailDTO,
+  MyTaskSummaryDTO,
+  WorkSessionDTO,
+} from './contracts';
+
+export class ExecutionService {
+  private readonly repo: ExecutionRepository;
+  private readonly consumptionService: ConsumptionService;
+
+  constructor(private readonly db: PrismaClient) {
+    this.repo = new ExecutionRepository(db);
+    this.consumptionService = new ConsumptionService(db);
+  }
+
+  /**
+   * Authoritatively starts a task on the shop floor.
+   * Validates predecessor task completion, material readiness, and operator authorization.
+   * Creates a live server-timestamped WorkSession and updates status to RUNNING.
+   */
+  async startTask(
+    principal: Principal,
+    rawInput: unknown,
+    idempotencyKey?: string
+  ) {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.write']);
+    const input: StartTaskInput = StartTaskSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+
+    const task = await this.repo.findTaskWithExecutionDetails(workspaceId, input.taskId);
+    if (!task) {
+      throw new NotFoundError(`Task '${input.taskId}' not found`);
+    }
+
+    // 1. Status check: task must be READY or ASSIGNED
+    if (task.status === 'RUNNING') {
+      // Already running: return idempotent response
+      const activeSession = await this.repo.findActiveSession(workspaceId, task.id);
+      return {
+        data: { task, session: activeSession },
+        resourceVersion: task.version,
+      };
+    }
+
+    if (task.status !== 'READY' && task.status !== 'ASSIGNED') {
+      throw new BadRequestError(
+        `Cannot start task in status '${task.status}'. Must be in READY or ASSIGNED status.`
+      );
+    }
+
+    // 2. Predecessor dependencies validation
+    for (const dep of task.predecessorDeps) {
+      if (dep.predecessor.status !== 'COMPLETED') {
+        throw new BadRequestError(
+          `Cannot start task '${task.nodeKey}': predecessor task '${dep.predecessor.nodeKey}' has status '${dep.predecessor.status}', but must be COMPLETED.`
+        );
+      }
+    }
+
+    // 3. Operator assignment check
+    let effectiveTechnicianId = task.assignedTechnicianId;
+    if (principal.technicianId) {
+      if (task.assignedTechnicianId && task.assignedTechnicianId !== principal.technicianId) {
+        const isSupervisor =
+          hasPermission(principal, 'task.assign') ||
+          hasPermission(principal, 'planning.write') ||
+          hasPermission(principal, 'workspace.admin');
+        if (!isSupervisor) {
+          throw new ForbiddenError(
+            `Task '${task.nodeKey}' is assigned to another technician.`
+          );
+        }
+      }
+      effectiveTechnicianId = principal.technicianId;
+    }
+
+    if (!effectiveTechnicianId) {
+      // Find technician record for principal if available
+      const tech = await this.db.technician.findFirst({
+        where: { workspaceId, isActive: true },
+      });
+      effectiveTechnicianId = tech?.id || null;
+    }
+
+    if (!effectiveTechnicianId) {
+      throw new BadRequestError(
+        `Cannot start task without an assigned technician or active operator identity.`
+      );
+    }
+
+    // 4. Material Readiness check
+    const readiness = await this.consumptionService.getTaskMaterialReadiness(
+      principal,
+      task.id
+    );
+
+    if (readiness.demands.length > 0) {
+      // Ensure that not all demands are completely unreserved and unissued
+      const hasAnyStockReady = readiness.demands.some(
+        (d) => d.issuedAtoms > 0n || d.reservedAtoms > 0n || d.availableInWarehouseAtoms > 0n
+      );
+      if (!hasAnyStockReady) {
+        throw new BadRequestError(
+          `Cannot start task '${task.nodeKey}': material demands have zero available, reserved, or issued stock.`
+        );
+      }
+    }
+
+    return executeCommand<any, any>({
+      principal,
+      commandType: 'task.start',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: input,
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const now = new Date();
+
+        // Close any dangling active sessions if any exist
+        const danglingSession = await tx.workSession.findFirst({
+          where: { workspaceId, taskId: task.id, endedAt: null },
+        });
+        if (danglingSession) {
+          const duration = Math.max(1, Math.round((now.getTime() - danglingSession.startedAt.getTime()) / 60000));
+          await tx.workSession.update({
+            where: { id: danglingSession.id },
+            data: { endedAt: now, durationMinutes: duration },
+          });
+        }
+
+        // Create new RUNNING work session
+        const session = await this.repo.createWorkSession(tx, {
+          workspaceId,
+          taskId: task.id,
+          technicianId: effectiveTechnicianId!,
+          sessionType: 'RUNNING',
+          startedAt: now,
+          notes: input.notes,
+        });
+
+        // Update task status and startedAt
+        const updatedTask = await tx.task.update({
+          where: {
+            workspaceId_id: {
+              workspaceId,
+              id: task.id,
+            },
+          },
+          data: {
+            status: 'RUNNING',
+            startedAt: task.startedAt ?? now,
+            assignedTechnicianId: effectiveTechnicianId,
+            version: { increment: 1 },
+          },
+        });
+
+        // Update Order to IN_PRODUCTION if RELEASED
+        if (task.instance.order.status === 'RELEASED') {
+          await tx.order.update({
+            where: {
+              workspaceId_id: {
+                workspaceId,
+                id: task.instance.orderId,
+              },
+            },
+            data: {
+              status: 'IN_PRODUCTION',
+              version: { increment: 1 },
+            },
+          });
+        }
+
+        // Record Workflow Event
+        await tx.workflowEvent.create({
+          data: {
+            workspaceId,
+            instanceId: task.instanceId,
+            taskId: task.id,
+            fromStatus: task.status,
+            toStatus: 'RUNNING',
+            action: 'START',
+            actorUserId: principal.userId,
+            detailJson: JSON.stringify({
+              technicianId: effectiveTechnicianId,
+              startedAt: now.toISOString(),
+              notes: input.notes,
+            }),
+          },
+        });
+
+        return {
+          data: {
+            task: updatedTask,
+            session,
+          },
+          aggregateType: 'TASK',
+          aggregateId: task.id,
+          resourceVersion: updatedTask.version,
+        };
+      },
+    });
+  }
+
+  /**
+   * Pauses an active RUNNING task.
+   * Closes the active session, calculates actual duration, and creates a PAUSED session.
+   */
+  async pauseTask(
+    principal: Principal,
+    rawInput: unknown,
+    idempotencyKey?: string
+  ) {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.write']);
+    const input: PauseTaskInput = PauseTaskSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+
+    const task = await this.repo.findTaskWithExecutionDetails(workspaceId, input.taskId);
+    if (!task) {
+      throw new NotFoundError(`Task '${input.taskId}' not found`);
+    }
+
+    if (task.status === 'PAUSED') {
+      const activeSession = await this.repo.findActiveSession(workspaceId, task.id);
+      return {
+        data: { task, session: activeSession },
+        resourceVersion: task.version,
+      };
+    }
+
+    if (task.status !== 'RUNNING') {
+      throw new BadRequestError(
+        `Cannot pause task in status '${task.status}'. Task must be RUNNING.`
+      );
+    }
+
+    return executeCommand<any, any>({
+      principal,
+      commandType: 'task.pause',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: input,
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const now = new Date();
+
+        // 1. Close active RUNNING session
+        const activeSession = await tx.workSession.findFirst({
+          where: {
+            workspaceId,
+            taskId: task.id,
+            sessionType: 'RUNNING',
+            endedAt: null,
+          },
+          orderBy: { startedAt: 'desc' },
+        });
+
+        let addedMinutes = 0;
+        if (activeSession) {
+          addedMinutes = Math.max(
+            1,
+            Math.round((now.getTime() - activeSession.startedAt.getTime()) / 60000)
+          );
+          await tx.workSession.update({
+            where: { id: activeSession.id },
+            data: {
+              endedAt: now,
+              durationMinutes: addedMinutes,
+              version: { increment: 1 },
+            },
+          });
+        }
+
+        // 2. Create PAUSED session
+        const technicianId =
+          activeSession?.technicianId || task.assignedTechnicianId || principal.technicianId!;
+        const pauseSession = await tx.workSession.create({
+          data: {
+            workspaceId,
+            taskId: task.id,
+            technicianId,
+            sessionType: 'PAUSED',
+            startedAt: now,
+            notes: `${input.reason}${input.notes ? `: ${input.notes}` : ''}`,
+          },
+        });
+
+        // 3. Update Task
+        const updatedTask = await tx.task.update({
+          where: {
+            workspaceId_id: {
+              workspaceId,
+              id: task.id,
+            },
+          },
+          data: {
+            status: 'PAUSED',
+            actualDurationMinutes: { increment: addedMinutes },
+            version: { increment: 1 },
+          },
+        });
+
+        // 4. Record Workflow Event
+        await tx.workflowEvent.create({
+          data: {
+            workspaceId,
+            instanceId: task.instanceId,
+            taskId: task.id,
+            fromStatus: 'RUNNING',
+            toStatus: 'PAUSED',
+            action: 'PAUSE',
+            actorUserId: principal.userId,
+            detailJson: JSON.stringify({
+              reason: input.reason,
+              notes: input.notes,
+              pausedAt: now.toISOString(),
+            }),
+          },
+        });
+
+        return {
+          data: {
+            task: updatedTask,
+            session: pauseSession,
+          },
+          aggregateType: 'TASK',
+          aggregateId: task.id,
+          resourceVersion: updatedTask.version,
+        };
+      },
+    });
+  }
+
+  /**
+   * Resumes a PAUSED task.
+   * Closes the PAUSED session and starts a new RUNNING session.
+   */
+  async resumeTask(
+    principal: Principal,
+    rawInput: unknown,
+    idempotencyKey?: string
+  ) {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.write']);
+    const input: ResumeTaskInput = ResumeTaskSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+
+    const task = await this.repo.findTaskWithExecutionDetails(workspaceId, input.taskId);
+    if (!task) {
+      throw new NotFoundError(`Task '${input.taskId}' not found`);
+    }
+
+    if (task.status === 'RUNNING') {
+      const activeSession = await this.repo.findActiveSession(workspaceId, task.id);
+      return {
+        data: { task, session: activeSession },
+        resourceVersion: task.version,
+      };
+    }
+
+    if (task.status !== 'PAUSED') {
+      throw new BadRequestError(
+        `Cannot resume task in status '${task.status}'. Task must be PAUSED.`
+      );
+    }
+
+    return executeCommand<any, any>({
+      principal,
+      commandType: 'task.resume',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: input,
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const now = new Date();
+
+        // 1. Close active PAUSED session
+        const activePause = await tx.workSession.findFirst({
+          where: {
+            workspaceId,
+            taskId: task.id,
+            sessionType: 'PAUSED',
+            endedAt: null,
+          },
+          orderBy: { startedAt: 'desc' },
+        });
+
+        if (activePause) {
+          const pauseMinutes = Math.max(
+            0,
+            Math.round((now.getTime() - activePause.startedAt.getTime()) / 60000)
+          );
+          await tx.workSession.update({
+            where: { id: activePause.id },
+            data: {
+              endedAt: now,
+              durationMinutes: pauseMinutes,
+              version: { increment: 1 },
+            },
+          });
+        }
+
+        // 2. Create new RUNNING session
+        const technicianId =
+          activePause?.technicianId || task.assignedTechnicianId || principal.technicianId!;
+        const runningSession = await tx.workSession.create({
+          data: {
+            workspaceId,
+            taskId: task.id,
+            technicianId,
+            sessionType: 'RUNNING',
+            startedAt: now,
+            notes: input.notes,
+          },
+        });
+
+        // 3. Update task status
+        const updatedTask = await tx.task.update({
+          where: {
+            workspaceId_id: {
+              workspaceId,
+              id: task.id,
+            },
+          },
+          data: {
+            status: 'RUNNING',
+            version: { increment: 1 },
+          },
+        });
+
+        // 4. Record Workflow Event
+        await tx.workflowEvent.create({
+          data: {
+            workspaceId,
+            instanceId: task.instanceId,
+            taskId: task.id,
+            fromStatus: 'PAUSED',
+            toStatus: 'RUNNING',
+            action: 'RESUME',
+            actorUserId: principal.userId,
+            detailJson: JSON.stringify({
+              resumedAt: now.toISOString(),
+              notes: input.notes,
+            }),
+          },
+        });
+
+        return {
+          data: {
+            task: updatedTask,
+            session: runningSession,
+          },
+          aggregateType: 'TASK',
+          aggregateId: task.id,
+          resourceVersion: updatedTask.version,
+        };
+      },
+    });
+  }
+
+  /**
+   * Retrieves full execution details for shop floor operator view.
+   */
+  async getTaskExecutionDetail(
+    principal: Principal,
+    taskId: string
+  ): Promise<TaskExecutionDetailDTO> {
+    const workspaceId = principal.workspaceId;
+    const task = await this.repo.findTaskWithExecutionDetails(workspaceId, taskId);
+    if (!task) {
+      throw new NotFoundError(`Task '${taskId}' not found`);
+    }
+
+    const readiness = await this.consumptionService.getTaskMaterialReadiness(principal, taskId);
+    const node = task.instance.workflowVersion.nodes.find((n) => n.key === task.nodeKey);
+
+    const sessionsDTO: WorkSessionDTO[] = task.workSessions.map((s) => ({
+      id: s.id,
+      workspaceId: s.workspaceId,
+      taskId: s.taskId,
+      technicianId: s.technicianId,
+      technicianName: s.technician?.name,
+      sessionType: s.sessionType as 'RUNNING' | 'PAUSED',
+      startedAt: s.startedAt.toISOString(),
+      endedAt: s.endedAt ? s.endedAt.toISOString() : null,
+      durationMinutes: s.durationMinutes,
+      notes: s.notes,
+    }));
+
+    const activeSession = sessionsDTO.find((s) => s.endedAt === null) || null;
+
+    // Derive current elapsed minutes from server session timestamps
+    let currentElapsedMinutes = task.actualDurationMinutes;
+    if (activeSession && activeSession.sessionType === 'RUNNING') {
+      const liveMinutes = Math.max(
+        0,
+        Math.round((Date.now() - new Date(activeSession.startedAt).getTime()) / 60000)
+      );
+      currentElapsedMinutes += liveMinutes;
+    }
+
+    const predecessors = task.predecessorDeps.map((dep) => ({
+      taskId: dep.predecessor.id,
+      nodeKey: dep.predecessor.nodeKey,
+      status: dep.predecessor.status,
+      isCompleted: dep.predecessor.status === 'COMPLETED',
+    }));
+
+    return {
+      id: task.id,
+      workspaceId: task.workspaceId,
+      instanceId: task.instanceId,
+      jobsheetId: task.jobsheetId,
+      nodeKey: task.nodeKey,
+      nodeName: node?.name || task.nodeKey,
+      status: task.status,
+      attemptNumber: task.attemptNumber,
+      plannedDurationMinutes: task.plannedDurationMinutes,
+      actualDurationMinutes: task.actualDurationMinutes,
+      currentElapsedMinutes,
+      startedAt: task.startedAt ? task.startedAt.toISOString() : null,
+      completedAt: task.completedAt ? task.completedAt.toISOString() : null,
+      assignedTechnician: task.assignedTechnician
+        ? {
+            id: task.assignedTechnician.id,
+            code: task.assignedTechnician.code,
+            name: task.assignedTechnician.name,
+          }
+        : null,
+      assignedMachine: task.assignedMachine
+        ? {
+            id: task.assignedMachine.id,
+            code: task.assignedMachine.code,
+            name: task.assignedMachine.name,
+          }
+        : null,
+      order: {
+        id: task.instance.order.id,
+        orderNumber: task.instance.order.orderNumber,
+        customerId: task.instance.order.customer.id,
+        customerName: task.instance.order.customer.name,
+        itemId: task.instance.order.item.id,
+        itemCode: task.instance.order.item.code,
+        itemName: task.instance.order.item.name,
+        targetAtoms: task.targetAtoms.toString(),
+      },
+      instructionRevision: task.jobsheet?.instructionRevision || 1,
+      predecessors,
+      materialReadiness: readiness,
+      activeSession,
+      sessions: sessionsDTO,
+    };
+  }
+
+  /**
+   * Lists tasks for execution for the current operator.
+   */
+  async getMyTasks(principal: Principal): Promise<MyTaskSummaryDTO[]> {
+    const workspaceId = principal.workspaceId;
+    const isSupervisor =
+      hasPermission(principal, 'planning.read') ||
+      hasPermission(principal, 'task.assign') ||
+      hasPermission(principal, 'workspace.admin');
+
+    const tasks = await this.repo.listTasksForExecution(
+      workspaceId,
+      principal.technicianId,
+      isSupervisor
+    );
+
+    return tasks.map((t) => {
+      const node = t.instance.workflowVersion.nodes.find((n) => n.key === t.nodeKey);
+      const activeSession = t.workSessions[0];
+
+      let currentElapsedMinutes = t.actualDurationMinutes;
+      if (activeSession && activeSession.sessionType === 'RUNNING' && !activeSession.endedAt) {
+        currentElapsedMinutes += Math.max(
+          0,
+          Math.round((Date.now() - activeSession.startedAt.getTime()) / 60000)
+        );
+      }
+
+      // Check if predecessors completed
+      const allPredecessorsCompleted = t.predecessorDeps.every(
+        (p) => p.predecessor.status === 'COMPLETED'
+      );
+
+      let canStart = false;
+      let blockReason: string | undefined;
+
+      if (t.status === 'COMPLETED' || t.status === 'CANCELLED') {
+        canStart = false;
+        blockReason = `Task is already ${t.status}`;
+      } else if (!allPredecessorsCompleted) {
+        canStart = false;
+        blockReason = 'Waiting for predecessor tasks to complete';
+      } else if (t.status === 'READY' || t.status === 'ASSIGNED') {
+        canStart = true;
+      } else if (t.status === 'RUNNING' || t.status === 'PAUSED') {
+        canStart = true;
+      }
+
+      return {
+        id: t.id,
+        nodeKey: t.nodeKey,
+        nodeName: node?.name || t.nodeKey,
+        status: t.status,
+        orderNumber: t.instance.order.orderNumber,
+        customerName: t.instance.order.customer.name,
+        itemName: t.instance.order.item.name,
+        plannedDurationMinutes: t.plannedDurationMinutes,
+        actualDurationMinutes: t.actualDurationMinutes,
+        currentElapsedMinutes,
+        activeSessionType: activeSession ? (activeSession.sessionType as 'RUNNING' | 'PAUSED') : null,
+        canStart,
+        blockReason,
+      };
+    });
+  }
+}
+
+import { db } from '@/server/db/client';
+export const executionService = new ExecutionService(db);
