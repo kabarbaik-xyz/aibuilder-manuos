@@ -1,5 +1,16 @@
 # ManuOS Requirements Traceability Matrix
 
+> **2026-10-15 audit note:** Existing “Verified” entries are historical assertions,
+> not fresh proof of persisted, end-to-end functionality. See
+> [the source audit](functionality-audit-and-sqlite-plan.md) for confirmed gaps and
+> the proposed SQLite implementation. Revalidate entries per flow before treating
+> this matrix as completion evidence.
+> The [expanded product audit](product-foundation-gap-audit.md) also covers the
+> missing identity, authorization, master-data and workflow foundations required
+> by the user's current functional expectations.
+> Its sections 9–12 add the consolidated inventory-to-delivery scope and require
+> UI/API/database reconciliation evidence rather than screen-count completion.
+
 This document maps all business requirements (BR-01 to BR-24), functional requirements (F1–F13 / PRD §7–§8), and persona screens (S1–S7) to implementation tasks, acceptance criteria, and verification evidence.
 
 ---

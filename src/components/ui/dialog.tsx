@@ -11,6 +11,7 @@ export interface DialogProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   type?: 'drawer' | 'modal';
+  className?: string;
 }
 
 export function Dialog({
@@ -21,6 +22,7 @@ export function Dialog({
   children,
   footer,
   type = 'drawer',
+  className = '',
 }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -41,6 +43,12 @@ export function Dialog({
   }, [isOpen]);
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDialogElement>) => {
+    // Only handle clicks directly originating on the <dialog> element itself (the backdrop)
+    if (e.target !== dialogRef.current) return;
+
+    // Ignore synthetic keyboard clicks (e.g. Enter key triggering synthetic click)
+    if (e.detail === 0 || (e.clientX === 0 && e.clientY === 0)) return;
+
     const dialog = dialogRef.current;
     if (!dialog) return;
     const rect = dialog.getBoundingClientRect();
@@ -60,7 +68,7 @@ export function Dialog({
   return (
     <dialog
       ref={dialogRef}
-      className={type === 'drawer' ? 'detail-dialog' : 'search-dialog'}
+      className={`${type === 'drawer' ? 'detail-dialog' : 'search-dialog'} ${className}`.trim()}
       onClick={handleBackdropClick}
       onCancel={(e) => {
         e.preventDefault();

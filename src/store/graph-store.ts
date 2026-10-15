@@ -52,6 +52,7 @@ export interface GraphStoreState {
   currentPersona: PersonaType;
   currentScreen: ScreenType;
   isNavMenuOpen: boolean;
+  isSidebarCollapsed: boolean;
   toastMessage: string | null;
   activeModal: string | null; // 'recovery' | 'memory' | 'passport' | 'promise' | 'deal' | 'intake' | 'brain' | 'audit' | 'task' | 'search' | null
   modalData: any;
@@ -72,6 +73,9 @@ export interface GraphStoreState {
   setPersona: (persona: PersonaType) => void;
   setScreen: (screen: ScreenType) => void;
   toggleNavMenu: () => void;
+  toggleSidebar: () => void;
+  closeNavMenu: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   showToast: (msg: string) => void;
   openModal: (modalName: string, data?: any) => void;
   closeModal: () => void;
@@ -113,6 +117,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   currentPersona: 'Owner',
   currentScreen: 'command',
   isNavMenuOpen: false,
+  isSidebarCollapsed: false,
   toastMessage: null,
   activeModal: null,
   modalData: null,
@@ -532,6 +537,23 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
   toggleNavMenu: () => {
     set((s) => ({ isNavMenuOpen: !s.isNavMenuOpen }));
+  },
+
+  toggleSidebar: () => {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 850px)').matches) {
+      set((s) => ({ isNavMenuOpen: !s.isNavMenuOpen }));
+      return;
+    }
+
+    set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed }));
+  },
+
+  closeNavMenu: () => {
+    set({ isNavMenuOpen: false });
+  },
+
+  setSidebarCollapsed: (collapsed: boolean) => {
+    set({ isSidebarCollapsed: collapsed });
   },
 
   showToast: (msg: string) => {

@@ -5,6 +5,7 @@ import { useGraphStore } from '../store/graph-store';
 import { SCREENS } from '../lib/navigation';
 import { Icon } from './icons';
 import { Button } from './ui/button';
+import { AccountMenu } from './account-menu';
 
 interface TopbarProps {
   customBreadcrumb?: React.ReactNode;
@@ -12,7 +13,7 @@ interface TopbarProps {
 }
 
 export function Topbar({ customBreadcrumb, activeTitle }: TopbarProps = {}) {
-  const { currentScreen, toggleNavMenu, openModal } = useGraphStore();
+  const { currentScreen, toggleSidebar, isSidebarCollapsed, isNavMenuOpen, openModal } = useGraphStore();
   const screen = SCREENS.find((s) => s.id === currentScreen) || SCREENS[0];
 
   return (
@@ -20,9 +21,10 @@ export function Topbar({ customBreadcrumb, activeTitle }: TopbarProps = {}) {
       <div className="flex">
         <button
           type="button"
-          className="icon-btn menu-toggle"
-          onClick={toggleNavMenu}
+          className={`icon-btn menu-toggle ${isSidebarCollapsed || isNavMenuOpen ? 'collapsed' : ''}`}
+          onClick={toggleSidebar}
           aria-label="Toggle navigation"
+          title="Toggle navigation"
         >
           <Icon name="menu" />
         </button>
@@ -54,12 +56,15 @@ export function Topbar({ customBreadcrumb, activeTitle }: TopbarProps = {}) {
           Demo session
         </span>
         <Button
+          className="topbar-assistant"
+          aria-label="Ask ManuOS"
           variant="soft"
           icon="spark"
           onClick={() => openModal('brain')}
         >
-          Ask ManuOS
+          <span>Ask ManuOS</span>
         </Button>
+        <AccountMenu />
       </div>
     </header>
   );

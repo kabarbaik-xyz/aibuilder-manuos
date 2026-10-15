@@ -46,22 +46,44 @@ Rules:
     if (!res.aiResult) {
       // Deterministic rule-based answer based on keywords
       const q = (question || '').toLowerCase();
-      let answer = 'Factory operations are currently tracking 6 active work orders with 78 units passed QC.';
-      let evidenceRefs = ['ORD-2026-088', 'QC-PASS-78'];
+      let answer = 'Factory operations are currently tracking 6 active work orders with 78 units passed QC inspection on Shift A.';
+      let evidenceRefs = ['#CO-2026-1042', 'QC-PASS-78', 'Shift A'];
       let linkToScreen = 'command';
 
-      if (q.includes('delay') || q.includes('disruption') || q.includes('terminal block') || q.includes('apex')) {
-        answer = 'Order ORD-2026-088 has a material delivery disruption on terminal block TB-400A (+3 days delay to Nov 28). A batch split recovery plan (40 units Nov 25 / 80 units Nov 28) has been prepared.';
-        evidenceRefs = ['ORD-2026-088', 'TB-400A', 'Apex Electronics'];
+      if (q.includes('delay') || q.includes('disruption') || q.includes('terminal block') || q.includes('tb-24') || q.includes('risk') || q.includes('attention')) {
+        const delayed = snapshot?.delayed !== false;
+        answer = delayed
+          ? 'Order #CO-2026-1042 is projected for Nov 28 (+3 days) due to supplier delay on Terminal Blocks TB-24. Machining continues; wiring tasks T12-T14 are blocked. Recommended action: Split batch delivery.'
+          : 'All 6 manufacturing orders are currently tracking on schedule with no active material disruptions.';
+        evidenceRefs = ['#CO-2026-1042', 'TB-24', 'Apex Supplier'];
         linkToScreen = 'orchestrator';
-      } else if (q.includes('machine') || q.includes('bottleneck') || q.includes('utilization')) {
-        answer = '5-Axis CNC Mill MCH-02 is operating at 91% capacity and represents the critical bottleneck for high-precision components.';
-        evidenceRefs = ['MCH-02', 'CNC 5-Axis'];
+      } else if (q.includes('runnable') || q.includes('keep running') || q.includes('continue')) {
+        answer = 'Saw cutting, 5-Axis CNC finish milling (CNC-02), and press brake bending can proceed normally. Only wiring and electrical testing (T12, T13, T14) are waiting on terminal blocks.';
+        evidenceRefs = ['CNC-02', 'PB-01', 'Tasks T1-T8'];
         linkToScreen = 'orchestrator';
-      } else if (q.includes('technician') || q.includes('dispatch') || q.includes('wabo')) {
-        answer = 'Technician Marcus Vance holds active WABO D1.1 structural welding cert. Junior apprentice Wei Lin is eligible for pairing.';
-        evidenceRefs = ['T-101', 'WABO-D1.1', 'T-106'];
+      } else if (q.includes('recovery') || q.includes('plan') || q.includes('changed') || q.includes('split')) {
+        const approved = snapshot?.approved;
+        answer = approved
+          ? 'Split delivery approved by Alex Rahman: 40 ready units reserved for Nov 25 delivery. The remaining 80 units will ship Nov 28 following TB-24 arrival.'
+          : 'Proposed recovery: Split batch delivery (Tranche 1: 40 units on Nov 25; Tranche 2: 80 units on Nov 28). Cost impact is +0.8%. Ready for supervisor review.';
+        evidenceRefs = ['Recovery Plan #RP-1042', '40/80 Split', 'Nov 25'];
+        linkToScreen = 'orchestrator';
+      } else if (q.includes('machine') || q.includes('bottleneck') || q.includes('utilization') || q.includes('cnc')) {
+        answer = '5-Axis CNC Mill CNC-02 is operating at 91% capacity and represents the shop floor bottleneck. Press brake PB-01 is available on Shift A.';
+        evidenceRefs = ['CNC-02 (91%)', 'PB-01 (Ready)', 'Shift A'];
         linkToScreen = 'workstation';
+      } else if (q.includes('technician') || q.includes('operator') || q.includes('hendra') || q.includes('marcus') || q.includes('who')) {
+        answer = 'Technician Hendra Wijaya is active on CNC-02 (Shift A). Budi Santoso is certified for precision assembly pairing.';
+        evidenceRefs = ['Hendra Wijaya (CNC)', 'Budi Santoso (Assembly)'];
+        linkToScreen = 'workstation';
+      } else if (q.includes('network') || q.includes('partner') || q.includes('subcontract') || q.includes('batam')) {
+        answer = 'Batam CNC Hub has 38 hours of reserve 5-axis capacity available. Nusantara Metalcraft offers expedited delivery for electrical components.';
+        evidenceRefs = ['Batam CNC Hub', 'Nusantara Metalcraft'];
+        linkToScreen = 'network';
+      } else if (q.includes('material') || q.includes('stock') || q.includes('inventory') || q.includes('aluminum') || q.includes('titanium')) {
+        answer = 'Raw inventory: Aluminum 6061-T6 billet has 450 kg in stock. Titanium Ti-6Al-4V has 320 kg QC-passed. Terminal blocks TB-24 are currently depleted.';
+        evidenceRefs = ['AL-6061 (450kg)', 'Ti-6Al-4V (320kg)', 'TB-24 (Stockout)'];
+        linkToScreen = 'orchestrator';
       }
 
       return NextResponse.json({

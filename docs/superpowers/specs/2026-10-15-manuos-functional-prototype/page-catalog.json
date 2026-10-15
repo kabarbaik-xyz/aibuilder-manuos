@@ -1,0 +1,563 @@
+{
+  "status": "PROPOSED_NOT_IMPLEMENTED",
+  "entries": [
+    {
+      "id": "A01",
+      "release": "R0",
+      "route": "/login",
+      "plannedPageFile": "src/app/(auth)/login/page.tsx",
+      "job": "Email/password, pending/failure, session-expired notice; no public signup",
+      "primaryActionOrSource": "Provider sign-in; real session",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "A02",
+      "release": "R0",
+      "route": "/account",
+      "plannedPageFile": "src/app/(account)/account/page.tsx",
+      "job": "Actual name/email, sessions, change-password flow supported by pinned provider",
+      "primaryActionOrSource": "Own profile/password/session revocation",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "A03",
+      "release": "R0",
+      "route": "/settings/company",
+      "plannedPageFile": "src/app/(workspace)/settings/company/page.tsx",
+      "job": "Company name, timezone/currency, default calendar, bootstrap checklist",
+      "primaryActionOrSource": "`workspace.manage`; no silent reinterpretation of posted quantities",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "A04",
+      "release": "R0",
+      "route": "/settings/users",
+      "plannedPageFile": "src/app/(workspace)/settings/users/page.tsx",
+      "job": "Users/memberships, status, role grants, customer/operator links",
+      "primaryActionOrSource": "`access.manage`; account creation and activation policy",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "A05",
+      "release": "R0",
+      "route": "/settings/users/[id]",
+      "plannedPageFile": "src/app/(workspace)/settings/users/[id]/page.tsx",
+      "job": "User/membership detail, grants, disable/revoke sessions, linked customer/technician",
+      "primaryActionOrSource": "`access.manage`; preserve final admin",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "A06",
+      "release": "R0",
+      "route": "/settings/roles",
+      "plannedPageFile": "src/app/(workspace)/settings/roles/page.tsx",
+      "job": "Role definitions, permission matrix, assignments",
+      "primaryActionOrSource": "`access.manage`; no self-escalation via client input",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M01",
+      "release": "R0",
+      "route": "/settings/customers",
+      "plannedPageFile": "src/app/(workspace)/settings/customers/page.tsx",
+      "job": "Code/name/contact/status, search/filter; create/edit drawer",
+      "primaryActionOrSource": "`customer.manage`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M02",
+      "release": "R0",
+      "route": "/settings/customers/[id]",
+      "plannedPageFile": "src/app/(workspace)/settings/customers/[id]/page.tsx",
+      "job": "Contacts, customer-owned orders, portal memberships",
+      "primaryActionOrSource": "`customer.manage`; scope portal links explicitly",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M03",
+      "release": "R0",
+      "route": "/settings/suppliers",
+      "plannedPageFile": "src/app/(workspace)/settings/suppliers/page.tsx",
+      "job": "Supplier code/name/contact/lead time; create/edit drawer",
+      "primaryActionOrSource": "`supplier.manage`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M04",
+      "release": "R0",
+      "route": "/settings/suppliers/[id]",
+      "plannedPageFile": "src/app/(workspace)/settings/suppliers/[id]/page.tsx",
+      "job": "Profile, supply orders, receipt history",
+      "primaryActionOrSource": "`supplier.manage`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M05",
+      "release": "R0",
+      "route": "/inventory/items",
+      "plannedPageFile": "src/app/(workspace)/inventory/items/page.tsx",
+      "job": "Item code/type/base UOM/tracking/status; create/edit",
+      "primaryActionOrSource": "`item.manage`; do not change used base UOM",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M06",
+      "release": "R0",
+      "route": "/inventory/items/[id]",
+      "plannedPageFile": "src/app/(workspace)/inventory/items/[id]/page.tsx",
+      "job": "Spec/UOM conversion, stock by lot/location, ledger, open demand/supply",
+      "primaryActionOrSource": "`item.manage`; typed links, no direct balance editing",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M07",
+      "release": "R0",
+      "route": "/settings/locations",
+      "plannedPageFile": "src/app/(workspace)/settings/locations/page.tsx",
+      "job": "Raw/WIP/quarantine/FG locations and active status",
+      "primaryActionOrSource": "`location.manage`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M08",
+      "release": "R0",
+      "route": "/settings/units",
+      "plannedPageFile": "src/app/(workspace)/settings/units/page.tsx",
+      "job": "Base UOM, precision/dimension; item conversion links",
+      "primaryActionOrSource": "`item.manage`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M09",
+      "release": "R0",
+      "route": "/settings/departments",
+      "plannedPageFile": "src/app/(workspace)/settings/departments/page.tsx",
+      "job": "Code/name/status and assigned resources",
+      "primaryActionOrSource": "`resource.manage`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M10",
+      "release": "R0",
+      "route": "/settings/calendars",
+      "plannedPageFile": "src/app/(workspace)/settings/calendars/page.tsx",
+      "job": "Working week, shifts and exceptions; clear timezone",
+      "primaryActionOrSource": "`resource.manage`; invalid/overlapping interval errors",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M11",
+      "release": "R0",
+      "route": "/settings/machines",
+      "plannedPageFile": "src/app/(workspace)/settings/machines/page.tsx",
+      "job": "Machine/class/calendar/status/load links",
+      "primaryActionOrSource": "`resource.manage`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M12",
+      "release": "R0",
+      "route": "/settings/technicians",
+      "plannedPageFile": "src/app/(workspace)/settings/technicians/page.tsx",
+      "job": "User-linked technicians, skills, certificates/expiry, calendar",
+      "primaryActionOrSource": "`resource.manage`; no fake actor/profile constants",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M13",
+      "release": "R0",
+      "route": "/settings/skills-certifications",
+      "plannedPageFile": "src/app/(workspace)/settings/skills-certifications/page.tsx",
+      "job": "Skill/cert catalog, levels, active state",
+      "primaryActionOrSource": "`resource.manage`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M14",
+      "release": "R0",
+      "route": "/settings/order-types",
+      "plannedPageFile": "src/app/(workspace)/settings/order-types/page.tsx",
+      "job": "Type code/name/default template/active state",
+      "primaryActionOrSource": "`workflow.author`; only published default usable",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "M15",
+      "release": "R0",
+      "route": "/settings/qc-checklists",
+      "plannedPageFile": "src/app/(workspace)/settings/qc-checklists/page.tsx",
+      "job": "Checklist/version/method/criteria; draft/review/publish",
+      "primaryActionOrSource": "`quality.configure`; immutable used versions",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "W01",
+      "release": "R0",
+      "route": "/workflows",
+      "plannedPageFile": "src/app/(workspace)/workflows/page.tsx",
+      "job": "Templates by order type, draft/published versions, owners",
+      "primaryActionOrSource": "`workflow.read`; create with author grant",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "W02",
+      "release": "R0",
+      "route": "/workflows/new",
+      "plannedPageFile": "src/app/(workspace)/workflows/new/page.tsx",
+      "job": "Order type/name, start manually or draft from description",
+      "primaryActionOrSource": "`workflow.author`; no save represented by preview alone",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "W03",
+      "release": "R0",
+      "route": "/workflows/[id]/versions/[versionId]",
+      "plannedPageFile": "src/app/(workspace)/workflows/[id]/versions/[versionId]/page.tsx",
+      "job": "Operation map, inspector, requirements/guards, validation, version history",
+      "primaryActionOrSource": "Author edit draft; owner/reviewer `workflow.publish`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "O01",
+      "release": "R0",
+      "route": "/orders",
+      "plannedPageFile": "src/app/(workspace)/orders/page.tsx",
+      "job": "Number/customer/item/qty, due/predicted date, material/work/QC/shipping status",
+      "primaryActionOrSource": "`order.read`; create action with `order.create`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "O02",
+      "release": "R0",
+      "route": "/orders/new",
+      "plannedPageFile": "src/app/(workspace)/orders/new/page.tsx",
+      "job": "Select customer/type/item/qty/date; manual entry/RFQ draft; engineering prerequisites",
+      "primaryActionOrSource": "`order.create`; saved draft ID after commit",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "O03",
+      "release": "R0",
+      "route": "/orders/[id]",
+      "plannedPageFile": "src/app/(workspace)/orders/[id]/page.tsx",
+      "job": "Overview, production, material demand, engineering, quality/delivery, history tabs",
+      "primaryActionOrSource": "Explicit release/cancel/acknowledgment according to state/grants",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "E01",
+      "release": "R0",
+      "route": "/engineering",
+      "plannedPageFile": "src/app/(workspace)/engineering/page.tsx",
+      "job": "Draft/review queue, customer questions and revision status",
+      "primaryActionOrSource": "`engineering.read`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "E02",
+      "release": "R0",
+      "route": "/engineering/orders/[orderId]",
+      "plannedPageFile": "src/app/(workspace)/engineering/orders/[orderId]/page.tsx",
+      "job": "Editable specs/drawing revision, BOM qty/UOM, routing/version, QC checklist, questions",
+      "primaryActionOrSource": "Save draft, submit review, authorized approve; no unresolved blocking question on release",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "P01",
+      "release": "R0",
+      "route": "/planning",
+      "plannedPageFile": "src/app/(workspace)/planning/page.tsx",
+      "job": "Order/resource scope, dependency graph/Gantt/task list, shortage/availability, exact dates",
+      "primaryActionOrSource": "`planning.read`; schedule proposal/commit and authorized assignment",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "P02",
+      "release": "R0",
+      "route": "/planning/tasks/[id]",
+      "plannedPageFile": "src/app/(workspace)/planning/tasks/[id]/page.tsx",
+      "job": "Task constraints, predecessor/material evidence, eligible operator/machine candidates",
+      "primaryActionOrSource": "`task.assign`; eligibility rejection reasons visible",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "S01",
+      "release": "R0",
+      "route": "/shop-floor",
+      "plannedPageFile": "src/app/(workspace)/shop-floor/page.tsx",
+      "job": "My assigned tasks with readiness, machine, instructions and next action",
+      "primaryActionOrSource": "`task.execute_assigned`; no other operator's queue by default",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "S02",
+      "release": "R0",
+      "route": "/shop-floor/tasks/[id]",
+      "plannedPageFile": "src/app/(workspace)/shop-floor/tasks/[id]/page.tsx",
+      "job": "Pinned instructions/revision, material allocation, state/timer, produced/QC/held quantities, event history",
+      "primaryActionOrSource": "Start/pause/resume/output/finish commands, actual pending states",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I01",
+      "release": "R0",
+      "route": "/inventory",
+      "plannedPageFile": "src/app/(workspace)/inventory/page.tsx",
+      "job": "Eligible on-hand/reserved/available/quarantine/WIP, lot/location filters, shortages",
+      "primaryActionOrSource": "`inventory.read`; balances derived, not editable cells",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I02",
+      "release": "R0",
+      "route": "/inventory/movements",
+      "plannedPageFile": "src/app/(workspace)/inventory/movements/page.tsx",
+      "job": "Stock-card ledger with source/destination, qty/UOM, lot/ref/actor; export matching actual format",
+      "primaryActionOrSource": "`inventory.read`; link to posted document",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I03",
+      "release": "R0",
+      "route": "/inventory/receipts/new",
+      "plannedPageFile": "src/app/(workspace)/inventory/receipts/new/page.tsx",
+      "job": "Approved source lines/open qty, actual qty/lot/location, incoming QC disposition",
+      "primaryActionOrSource": "`inventory.receive`; validate source and no duplicate posting",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I04",
+      "release": "R0",
+      "route": "/inventory/receipts/[id]",
+      "plannedPageFile": "src/app/(workspace)/inventory/receipts/[id]/page.tsx",
+      "job": "Posted lines, source order, lot, quality and movement links",
+      "primaryActionOrSource": "Read-only posted evidence; authorized correction via reversal",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I05",
+      "release": "R0",
+      "route": "/inventory/issues/new",
+      "plannedPageFile": "src/app/(workspace)/inventory/issues/new/page.tsx",
+      "job": "Released order/task demand, eligible buckets/reservations, issue qty/WIP destination",
+      "primaryActionOrSource": "`inventory.issue`; no negative/held stock issue",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I06",
+      "release": "R0",
+      "route": "/inventory/transfers/new",
+      "plannedPageFile": "src/app/(workspace)/inventory/transfers/new/page.tsx",
+      "job": "Same-workspace item/lot source/destination and available qty",
+      "primaryActionOrSource": "`inventory.transfer`; quantity conservation",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I07",
+      "release": "R0",
+      "route": "/inventory/returns/new",
+      "plannedPageFile": "src/app/(workspace)/inventory/returns/new/page.tsx",
+      "job": "Issued WIP balance, unused qty, return location/reason",
+      "primaryActionOrSource": "`inventory.issue`; no new stock fabricated",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I08",
+      "release": "R0",
+      "route": "/inventory/counts",
+      "plannedPageFile": "src/app/(workspace)/inventory/counts/page.tsx",
+      "job": "Count queue, location, submitted discrepancies/status",
+      "primaryActionOrSource": "`inventory.count`; approve grant separate",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "I09",
+      "release": "R0",
+      "route": "/inventory/counts/[id]",
+      "plannedPageFile": "src/app/(workspace)/inventory/counts/[id]/page.tsx",
+      "job": "Book snapshot, counted values, delta/reason and approval/posting",
+      "primaryActionOrSource": "`inventory.adjust_approve`; stale snapshot/recount handling",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "B01",
+      "release": "R0",
+      "route": "/purchasing",
+      "plannedPageFile": "src/app/(workspace)/purchasing/page.tsx",
+      "job": "Supply orders, supplier, expected/open qty/date, approval/receipt status",
+      "primaryActionOrSource": "`supply.read`; create draft with buyer grant",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "B02",
+      "release": "R0",
+      "route": "/purchasing/new",
+      "plannedPageFile": "src/app/(workspace)/purchasing/new/page.tsx",
+      "job": "Supplier, actual item/UOM/qty/date/rate, linked shortage reference",
+      "primaryActionOrSource": "`supply.create`; single workspace currency",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "B03",
+      "release": "R0",
+      "route": "/purchasing/[id]",
+      "plannedPageFile": "src/app/(workspace)/purchasing/[id]/page.tsx",
+      "job": "Approved lines, partial receipts, open quantities, ETA changes/history",
+      "primaryActionOrSource": "`supply.approve` or `inventory.receive` as granted",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "Q01",
+      "release": "R0",
+      "route": "/quality",
+      "plannedPageFile": "src/app/(workspace)/quality/page.tsx",
+      "job": "Incoming/final inspection queue, held/rework, due operation",
+      "primaryActionOrSource": "`quality.read`; assigned/authorized scope",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "Q02",
+      "release": "R0",
+      "route": "/quality/inspections/[id]",
+      "plannedPageFile": "src/app/(workspace)/quality/inspections/[id]/page.tsx",
+      "job": "Actual source lot/units, checklist measurements, pass/rework/scrap disposition, attachments",
+      "primaryActionOrSource": "`quality.inspect`; required checks and distinct quantities",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "Q03",
+      "release": "R0",
+      "route": "/quality/rework/[id]",
+      "plannedPageFile": "src/app/(workspace)/quality/rework/[id]/page.tsx",
+      "job": "Original defect, affected units, approved instructions, new attempt and reinspection",
+      "primaryActionOrSource": "Authorized assign/execute/inspect; evidence links to original output",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "D01",
+      "release": "R0",
+      "route": "/delivery",
+      "plannedPageFile": "src/app/(workspace)/delivery/page.tsx",
+      "job": "Shipments, order/customer, allocated/dispatch/delivery quantities/status",
+      "primaryActionOrSource": "`delivery.read`; new shipment with granted dispatch",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "D02",
+      "release": "R0",
+      "route": "/delivery/new",
+      "plannedPageFile": "src/app/(workspace)/delivery/new/page.tsx",
+      "job": "Order, promise tranche, QC-released lot/units, packing/destination",
+      "primaryActionOrSource": "`delivery.dispatch`; allocate before dispatch",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "D03",
+      "release": "R0",
+      "route": "/delivery/[id]",
+      "plannedPageFile": "src/app/(workspace)/delivery/[id]/page.tsx",
+      "job": "Shipment lines, movement, actual dispatch/received confirmation, documents",
+      "primaryActionOrSource": "Dispatch/confirm delivery under state and permission",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "T01",
+      "release": "R0",
+      "route": "/passports/[serial]",
+      "plannedPageFile": "src/app/(evidence)/passports/[serial]/page.tsx",
+      "job": "Actual item/order, lots, operations, QC/rework, final release/shipment evidence",
+      "primaryActionOrSource": "Staff trace permission or customer ownership; unknown serial = not found",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "C01",
+      "release": "R0",
+      "route": "/portal/orders",
+      "plannedPageFile": "src/app/(customer)/portal/orders/page.tsx",
+      "job": "Only linked customer's orders and truthful quantities/dates",
+      "primaryActionOrSource": "`customer_order.read_own`",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "C02",
+      "release": "R0",
+      "route": "/portal/orders/[id]",
+      "plannedPageFile": "src/app/(customer)/portal/orders/[id]/page.tsx",
+      "job": "Order progress/shipments/milestones, permitted docs/passports, promise revision",
+      "primaryActionOrSource": "Own-order acknowledgment only; internal costs/other customers excluded",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "X01",
+      "release": "R0",
+      "route": "/audit",
+      "plannedPageFile": "src/app/(workspace)/audit/page.tsx",
+      "job": "Authorized operational events by resource/actor/date; evidence links",
+      "primaryActionOrSource": "`audit.read`; no edit/delete actions",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "R01",
+      "release": "R1",
+      "route": "/command-center",
+      "plannedPageFile": "src/app/(workspace)/command-center/page.tsx",
+      "job": "Real cross-module exception queue, orders at risk, stock/material blockers, pending approvals and traceable quantities; drill-down to actual records",
+      "primaryActionOrSource": "",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "R02",
+      "release": "R1",
+      "route": "/intelligence/brain",
+      "plannedPageFile": "src/app/(workspace)/intelligence/brain/page.tsx",
+      "job": "Read-only question over authorized persisted snapshot; evidence links, revision/time and AI/computed/unavailable source",
+      "primaryActionOrSource": "",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "R03",
+      "release": "R1",
+      "route": "/intelligence/promise",
+      "plannedPageFile": "src/app/(workspace)/intelligence/promise/page.tsx",
+      "job": "Quantity/type/routing/date feasibility; resource/material/calendar drivers, uncertainty and validated alternatives; does not silently book capacity",
+      "primaryActionOrSource": "",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "R04",
+      "release": "R1",
+      "route": "/intelligence/impact/[eventId]",
+      "plannedPageFile": "src/app/(workspace)/intelligence/impact/[eventId]/page.tsx",
+      "job": "Actual disruption target, affected/runnable branches, before/after schedule/slack and order ETA deltas",
+      "primaryActionOrSource": "",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "R05",
+      "release": "R1",
+      "route": "/intelligence/recoveries/[id]",
+      "plannedPageFile": "src/app/(workspace)/intelligence/recoveries/[id]/page.tsx",
+      "job": "Side-by-side feasible options, resource/quantity changes and evidence; explicit human approval applies ordinary commands with revision checks",
+      "primaryActionOrSource": "",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "R06",
+      "release": "R1",
+      "route": "/intelligence/memory",
+      "plannedPageFile": "src/app/(workspace)/intelligence/memory/page.tsx",
+      "job": "Search evidence by family/operation/material/resource/version, actual planned-vs-actual samples, no-history state and separate policy recommendation",
+      "primaryActionOrSource": "",
+      "implementedByThisPlan": false
+    },
+    {
+      "id": "R07",
+      "release": "R1",
+      "route": null,
+      "plannedPageFile": null,
+      "job": "Engineering Copilot assists RFQ/spec/BOM/routing/workflow drafting with editable review; resulting records use the same R0 commands",
+      "primaryActionOrSource": "",
+      "implementedByThisPlan": false
+    }
+  ]
+}

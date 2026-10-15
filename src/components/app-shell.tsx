@@ -6,6 +6,7 @@ import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import { Toast } from './ui/toast';
 import { ModalManager } from './modal-manager';
+import { FloatingCopilot } from './floating-copilot';
 import { CommandCenterView } from '../features/command-center/command-center-view';
 import { OrchestratorView } from '../features/orchestrator/orchestrator-view';
 import { WorkstationView } from '../features/workstation/workstation-view';
@@ -19,7 +20,15 @@ export interface AppShellProps {
 }
 
 export function AppShell({ children, breadcrumb, activeTitle }: AppShellProps = {}) {
-  const { currentScreen, toastMessage, openModal } = useGraphStore();
+  const {
+    currentScreen,
+    toastMessage,
+    openModal,
+    isSidebarCollapsed,
+    isNavMenuOpen,
+    toggleSidebar,
+    closeNavMenu,
+  } = useGraphStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -27,14 +36,32 @@ export function AppShell({ children, breadcrumb, activeTitle }: AppShellProps = 
         e.preventDefault();
         openModal('search');
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleSidebar();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        openModal('brain');
+      }
+      if (e.key === 'Escape' && isNavMenuOpen) {
+        closeNavMenu();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [openModal]);
+  }, [openModal, toggleSidebar, isNavMenuOpen, closeNavMenu]);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <Sidebar />
+      {isNavMenuOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={closeNavMenu}
+          aria-hidden="true"
+        />
+      )}
       <div className="workspace">
         <Topbar customBreadcrumb={breadcrumb} activeTitle={activeTitle} />
         <main id="main" tabIndex={-1}>
@@ -56,6 +83,7 @@ export function AppShell({ children, breadcrumb, activeTitle }: AppShellProps = 
         </footer>
       </div>
 
+      <FloatingCopilot />
       <ModalManager />
       <Toast message={toastMessage} />
     </div>

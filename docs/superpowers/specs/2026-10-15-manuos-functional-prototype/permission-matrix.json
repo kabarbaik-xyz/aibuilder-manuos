@@ -1,0 +1,426 @@
+{
+  "status": "PROPOSED_NOT_IMPLEMENTED",
+  "defaultDeny": true,
+  "roles": [
+    "ACCESS_ADMIN",
+    "OWNER",
+    "SALES",
+    "ENGINEER",
+    "PLANNER",
+    "TECHNICIAN",
+    "QC",
+    "WAREHOUSE",
+    "BUYER",
+    "CUSTOMER"
+  ],
+  "bootstrapMembershipRoles": [
+    "ACCESS_ADMIN",
+    "OWNER"
+  ],
+  "rules": [
+    "Memberships may hold multiple explicit roles; OWNER is not an implicit wildcard.",
+    "Assigned-task, customer, workspace and document-parent predicates apply in addition to a permission.",
+    "ACCESS_ADMIN audit scope is access administration, not unrestricted business audit.",
+    "documents.upload is restricted to an allowed parent; TECHNICIAN may upload only evidence for assigned work.",
+    "Document downloads authorize the typed parent; CUSTOMER uses owned-order visibility and never a general internal-document grant.",
+    "Changing grants or disabling a membership affects subsequent commands, including idempotent receipt replay.",
+    "No supplied actor, persona, customer ID or resource permission is accepted as authentication."
+  ],
+  "permissions": [
+    {
+      "code": "access.manage",
+      "roles": [
+        "ACCESS_ADMIN"
+      ]
+    },
+    {
+      "code": "workspace.manage",
+      "roles": [
+        "ACCESS_ADMIN"
+      ]
+    },
+    {
+      "code": "customer.manage",
+      "roles": [
+        "OWNER",
+        "SALES"
+      ]
+    },
+    {
+      "code": "customer.read",
+      "roles": [
+        "OWNER",
+        "SALES",
+        "ENGINEER",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "supplier.manage",
+      "roles": [
+        "OWNER",
+        "BUYER"
+      ]
+    },
+    {
+      "code": "supplier.read",
+      "roles": [
+        "OWNER",
+        "BUYER",
+        "WAREHOUSE",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "item.manage",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "location.manage",
+      "roles": [
+        "OWNER",
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "resource.manage",
+      "roles": [
+        "OWNER",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "workflow.read",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "workflow.author",
+      "roles": [
+        "ENGINEER"
+      ]
+    },
+    {
+      "code": "workflow.publish",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "engineering.read",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER",
+        "SALES"
+      ]
+    },
+    {
+      "code": "engineering.write",
+      "roles": [
+        "ENGINEER"
+      ]
+    },
+    {
+      "code": "engineering.approve",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "order.read",
+      "roles": [
+        "OWNER",
+        "SALES",
+        "ENGINEER",
+        "PLANNER",
+        "WAREHOUSE",
+        "BUYER",
+        "QC"
+      ]
+    },
+    {
+      "code": "order.create",
+      "roles": [
+        "OWNER",
+        "SALES"
+      ]
+    },
+    {
+      "code": "order.release",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "order.cancel",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "planning.read",
+      "roles": [
+        "OWNER",
+        "PLANNER",
+        "ENGINEER"
+      ]
+    },
+    {
+      "code": "planning.write",
+      "roles": [
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "task.assign",
+      "roles": [
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "task.read_assigned",
+      "roles": [
+        "TECHNICIAN"
+      ]
+    },
+    {
+      "code": "task.execute_assigned",
+      "roles": [
+        "TECHNICIAN"
+      ]
+    },
+    {
+      "code": "quality.configure",
+      "roles": [
+        "ENGINEER",
+        "QC"
+      ]
+    },
+    {
+      "code": "quality.read",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER",
+        "QC"
+      ]
+    },
+    {
+      "code": "quality.inspect",
+      "roles": [
+        "QC"
+      ]
+    },
+    {
+      "code": "inventory.read",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER",
+        "WAREHOUSE",
+        "BUYER",
+        "QC"
+      ]
+    },
+    {
+      "code": "inventory.opening",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "inventory.receive",
+      "roles": [
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "inventory.issue",
+      "roles": [
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "inventory.consume_assigned",
+      "roles": [
+        "TECHNICIAN"
+      ]
+    },
+    {
+      "code": "inventory.transfer",
+      "roles": [
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "inventory.count",
+      "roles": [
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "inventory.adjust_approve",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "inventory.reverse",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "supply.read",
+      "roles": [
+        "OWNER",
+        "BUYER",
+        "WAREHOUSE",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "supply.create",
+      "roles": [
+        "BUYER"
+      ]
+    },
+    {
+      "code": "supply.approve",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "supply.change_eta",
+      "roles": [
+        "OWNER",
+        "BUYER"
+      ]
+    },
+    {
+      "code": "delivery.read",
+      "roles": [
+        "OWNER",
+        "WAREHOUSE",
+        "SALES",
+        "PLANNER",
+        "QC"
+      ]
+    },
+    {
+      "code": "delivery.dispatch",
+      "roles": [
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "delivery.confirm",
+      "roles": [
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "traceability.read",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "QC",
+        "WAREHOUSE"
+      ]
+    },
+    {
+      "code": "documents.upload",
+      "roles": [
+        "ENGINEER",
+        "QC",
+        "WAREHOUSE",
+        "TECHNICIAN"
+      ]
+    },
+    {
+      "code": "audit.read",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "access.audit",
+      "roles": [
+        "ACCESS_ADMIN"
+      ]
+    },
+    {
+      "code": "history.read",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "brain.query",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "promise.evaluate",
+      "roles": [
+        "OWNER",
+        "SALES",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "impact.evaluate",
+      "roles": [
+        "OWNER",
+        "ENGINEER",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "recovery.propose",
+      "roles": [
+        "OWNER",
+        "PLANNER"
+      ]
+    },
+    {
+      "code": "recovery.approve",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "copilot.draft",
+      "roles": [
+        "ENGINEER",
+        "SALES"
+      ]
+    },
+    {
+      "code": "customer_order.read_own",
+      "roles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "code": "customer_order.acknowledge_own",
+      "roles": [
+        "CUSTOMER"
+      ]
+    }
+  ]
+}

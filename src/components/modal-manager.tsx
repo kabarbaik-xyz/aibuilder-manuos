@@ -62,6 +62,7 @@ export function ModalManager() {
           onClose={closeModal}
           title="Ask ManuOS"
           subtitle="A quick answer grounded in the active shop-floor state."
+          className="dialog-drawer-chat"
         >
           <BrainDrawer />
         </Dialog>

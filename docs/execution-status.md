@@ -1,5 +1,22 @@
 # ManuOS Execution Status
 
+> **2026-10-15 source audit:** The completion claims below are historical reports,
+> not current end-to-end readiness evidence. Current source has session-only
+> Zustand state, order confirmation without order creation, unhandled detail
+> actions, and a fixed-content passport route. SQLite persistence has been
+> requested but is not implemented. See
+> [functionality audit and SQLite design](functionality-audit-and-sqlite-plan.md)
+> for evidence, proposed architecture, and acceptance criteria.
+>
+> **Expanded foundation review:**
+> [Product foundation gap audit](product-foundation-gap-audit.md) additionally
+> confirms missing authentication/RBAC, master-data administration, customer/order
+> type relationships, and workflow lifecycle/runtime. Use its revised dependency
+> ordering; adding persistence alone does not establish a functional application.
+> Sections 9–12 of that audit now define the inventory/purchasing/production/
+> delivery baseline, stock reconciliation fixture, and full end-to-end completion
+> gates. Inventory is currently material counters, not a transaction subsystem.
+
 **Last Updated:** 2026-10-14  
 **Current Phase:** P9 — Final Verification, Demo Assets & Submission Pack  
 **Current Task:** Completed — Prototype fully operational and demo-ready  

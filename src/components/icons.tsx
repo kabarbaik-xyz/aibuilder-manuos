@@ -1,6 +1,8 @@
 import React from 'react';
 
 const paths: Record<string, React.ReactNode> = {
+  settings: <><path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3Z" /><circle cx="12" cy="12" r="3" /></>,
+  logout: <><path d="M9 4H4v16h5M10 12h11m-4-4 4 4-4 4" /></>,
   grid: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />

@@ -3,7 +3,7 @@
 import React from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useGraphStore } from '../store/graph-store';
-import { SCREENS, PERSONA_PROFILES, PersonaType, ScreenType } from '../lib/navigation';
+import { SCREENS, ScreenType } from '../lib/navigation';
 import { Icon } from './icons';
 import { Badge } from './ui/badge';
 
@@ -13,18 +13,15 @@ export function Sidebar() {
 
   const {
     currentScreen,
-    currentPersona,
     isNavMenuOpen,
     disruption,
     activeRecovery,
     setScreen,
-    setPersona,
     resetScenario,
     injectDisruption,
     openModal,
   } = useGraphStore();
 
-  const profile = PERSONA_PROFILES[currentPersona];
   const hasPendingDecision = disruption.isDelayed && (!activeRecovery || activeRecovery.status === 'PROPOSED');
 
   const handleNavClick = (screenId: ScreenType) => {
@@ -148,26 +145,6 @@ export function Sidebar() {
           </button>
         </div>
 
-        <div className="profile">
-          <span className="avatar">{profile.avatar}</span>
-          <div className="profile-info">
-            <strong>{profile.name}</strong>
-            <label className="sr-only" htmlFor="persona-select">
-              Switch persona
-            </label>
-            <select
-              id="persona-select"
-              value={currentPersona}
-              onChange={(e) => setPersona(e.target.value as PersonaType)}
-            >
-              <option value="Owner">Owner</option>
-              <option value="Supervisor">Supervisor</option>
-              <option value="Technician">Technician</option>
-              <option value="Customer">Customer</option>
-            </select>
-          </div>
-          <Icon name="down" className="w-3.5 text-muted" />
-        </div>
       </div>
     </aside>
   );
