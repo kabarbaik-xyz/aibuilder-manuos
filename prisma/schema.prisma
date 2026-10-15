@@ -33,6 +33,7 @@ model User {
   productionOutputs   ProductionOutput[]
   inspections         Inspection[]
   authorizedReworks   ReworkAttempt[]
+  uploadedDocuments   Document[]
 
   @@map("users")
 }
@@ -142,6 +143,11 @@ model Workspace {
   inspections       Inspection[]
   inspectionResults InspectionResult[]
   reworkAttempts    ReworkAttempt[]
+  shipments         Shipment[]
+  shipmentLines     ShipmentLine[]
+  documents         Document[]
+  documentLinks     DocumentLink[]
+  passports         Passport[]
 
   @@map("workspaces")
 }
@@ -303,6 +309,7 @@ model Customer {
   contacts    CustomerContact[]
   memberships Membership[]
   orders      Order[]
+  shipments   Shipment[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -402,6 +409,8 @@ model Item {
   supplyReceiptLines SupplyReceiptLine[]
   stockCountLines   StockCountLine[]
   productionOutputs ProductionOutput[]
+  shipmentLines     ShipmentLine[]
+  passports         Passport[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -447,6 +456,7 @@ model Location {
   stockCounts       StockCount[]
   stockCountLines   StockCountLine[]
   productionOutputs ProductionOutput[]
+  shipmentLines     ShipmentLine[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -825,6 +835,9 @@ model Order {
   requestedDate        DateTime              @map("requested_date")
   promisedDate         DateTime?             @map("promised_date")
   status               String                @default("DRAFT") // DRAFT | REVIEW | READY | RELEASED | IN_PRODUCTION | PARTIALLY_DELIVERED | DELIVERED | CANCELLED
+  customerAcknowledged   Boolean               @default(false) @map("customer_acknowledged")
+  customerAcknowledgedAt DateTime?             @map("customer_acknowledged_at")
+  customerAcknowledgedBy String?               @map("customer_acknowledged_by")
   version              Int                   @default(1)
   createdAt            DateTime              @default(now()) @map("created_at")
   updatedAt            DateTime              @updatedAt @map("updated_at")
@@ -840,6 +853,8 @@ model Order {
   manufacturingOrders  ManufacturingOrder[]
   demands              MaterialDemand[]
   reservations         StockReservation[]
+  shipments            Shipment[]
+  passports            Passport[]
 
   @@unique([workspaceId, orderNumber])
   @@unique([workspaceId, id])
@@ -1117,6 +1132,8 @@ model Lot {
   supplyReceiptLines SupplyReceiptLine[]
   stockCountLines   StockCountLine[]
   productionOutputs ProductionOutput[]
+  shipmentLines     ShipmentLine[]
+  passports         Passport[]
 
   @@unique([workspaceId, itemId, lotNumber])
   @@unique([workspaceId, id])
@@ -1543,3 +1560,134 @@ model ReworkAttempt {
   @@index([workspaceId, taskId])
   @@map("rework_attempts")
 }
+
+// -------------------------------------------------------------
+// Delivery & Shipment Management (Milestone M3 - O07)
+// -------------------------------------------------------------
+
+model Shipment {
+  id                 String         @id @default(uuid())
+  workspaceId        String         @map("workspace_id")
+  shipmentNumber     String         @map("shipment_number")
+  orderId            String         @map("order_id")
+  customerId         String         @map("customer_id")
+  status             String         @default("ALLOCATED") // ALLOCATED | DISPATCHED | DELIVERED | CANCELLED
+  allocatedAt        DateTime       @default(now()) @map("allocated_at")
+  dispatchedAt       DateTime?      @map("dispatched_at")
+  deliveredAt        DateTime?      @map("delivered_at")
+  carrierName        String?        @map("carrier_name")
+  trackingNumber     String?        @map("tracking_number")
+  destinationAddress String?        @map("destination_address")
+  proofOfDelivery    String?        @map("proof_of_delivery")
+  receivedBy         String?        @map("received_by")
+  notes              String?
+  version            Int            @default(1)
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  workspace          Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order              Order          @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  customer           Customer       @relation(fields: [workspaceId, customerId], references: [workspaceId, id])
+  lines              ShipmentLine[]
+
+  @@unique([workspaceId, shipmentNumber])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, orderId])
+  @@index([workspaceId, customerId])
+  @@map("shipments")
+}
+
+model ShipmentLine {
+  id               String    @id @default(uuid())
+  workspaceId      String    @map("workspace_id")
+  shipmentId       String    @map("shipment_id")
+  itemId           String    @map("item_id")
+  lotId            String?   @map("lot_id")
+  sourceLocationId String    @map("source_location_id")
+  allocatedAtoms   BigInt    @map("allocated_atoms")
+  dispatchedAtoms  BigInt    @default(0) @map("dispatched_atoms")
+  deliveredAtoms   BigInt    @default(0) @map("delivered_atoms")
+  movementId       String?   @map("movement_id")
+  reservationId    String?   @map("reservation_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  shipment         Shipment  @relation(fields: [workspaceId, shipmentId], references: [workspaceId, id], onDelete: Cascade)
+  item             Item      @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
+  lot              Lot?      @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+  sourceLocation   Location  @relation(fields: [workspaceId, sourceLocationId], references: [workspaceId, id])
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, shipmentId])
+  @@map("shipment_lines")
+}
+
+// -------------------------------------------------------------
+// Document Management & Customer Evidence (Milestone M3 - O08)
+// -------------------------------------------------------------
+
+model Document {
+  id             String         @id @default(uuid())
+  workspaceId    String         @map("workspace_id")
+  storageKey     String         @unique @map("storage_key")
+  fileName       String         @map("file_name")
+  mimeType       String         @map("mime_type")
+  sizeBytes      Int            @map("size_bytes")
+  checksumSha256 String         @map("checksum_sha256")
+  uploadedById   String         @map("uploaded_by_id")
+  description    String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy     User           @relation(fields: [uploadedById], references: [id])
+  links          DocumentLink[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, storageKey])
+  @@map("documents")
+}
+
+model DocumentLink {
+  id              String    @id @default(uuid())
+  workspaceId     String    @map("workspace_id")
+  documentId      String    @map("document_id")
+  parentType      String    @map("parent_type") // ORDER | TASK | INSPECTION | SHIPMENT | PASSPORT
+  parentId        String    @map("parent_id")
+  customerVisible Boolean   @default(false) @map("customer_visible")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document        Document  @relation(fields: [workspaceId, documentId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, parentType, parentId])
+  @@map("document_links")
+}
+
+model Passport {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  serialNumber String    @map("serial_number")
+  orderId      String?   @map("order_id")
+  itemId       String    @map("item_id")
+  lotId        String?   @map("lot_id")
+  status       String    @default("RELEASED") // DRAFT | RELEASED | REVOKED
+  digestSha256 String    @map("digest_sha256")
+  publishedAt  DateTime  @default(now()) @map("published_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order        Order?    @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  item         Item      @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  lot          Lot?      @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+
+  @@unique([workspaceId, serialNumber])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, orderId])
+  @@map("passports")
+}
+
+

@@ -95,11 +95,11 @@ This arithmetic assertion supplements, not replaces, actual two-connection servi
 
 **Produces:** `recordOutput`, `createInspection`, `finalizeInspection`, `authorizeRework`, `recordReinspection`. Final output posts FG to held stock and distinct actual evidence; QC reclassifies the same held population.
 
-- [ ] Validate output against task/attempt/pinned item and reviewed required material. Record explicit consumption with output or reconcile prior linked consumption; never consume it twice.
-- [ ] Do not sum intermediate operation outputs as additional ordered final units. Lot/serial tracking follows item policy; reject overproduction in this release rather than clamp silently.
-- [ ] Finalize required check results and pass/rework/scrap dispositions under an inspector grant. A failed result is held/rework until an explicit disposition, not automatic physical scrap.
-- [ ] Test repeated same-key and different-key QC passes for the same units, quantity conservation, rework attempts, missing measurements, fake actor/client role, and full rollback on ledger failure.
-- [ ] Run the named integration/browser files and `db:reconcile`. Expected: 10 produced → 8 accepted + 2 held → reinspection totals 10 accepted, never 12.
+- [x] Validate output against task/attempt/pinned item and reviewed required material. Record explicit consumption with output or reconcile prior linked consumption; never consume it twice.
+- [x] Do not sum intermediate operation outputs as additional ordered final units. Lot/serial tracking follows item policy; reject overproduction in this release rather than clamp silently.
+- [x] Finalize required check results and pass/rework/scrap dispositions under an inspector grant. A failed result is held/rework until an explicit disposition, not automatic physical scrap.
+- [x] Test repeated same-key and different-key QC passes for the same units, quantity conservation, rework attempts, missing measurements, fake actor/client role, and full rollback on ledger failure.
+- [x] Run the named integration/browser files and `db:reconcile`. Expected: 10 produced → 8 accepted + 2 held → reinspection totals 10 accepted, never 12.
 
 ## O07 — Shipment allocation, dispatch and delivery
 
@@ -107,10 +107,10 @@ This arithmetic assertion supplements, not replaces, actual two-connection servi
 
 **Produces:** `allocateShipment`, `dispatchShipment`, `confirmDelivery`; order detail reads actual allocated/shipped/delivered quantities separately from produced/accepted history.
 
-- [ ] Allocate eligible accepted FG to actual order/customer/lot/units, preserving reservation semantics. No picking quarantine or another customer's order units.
-- [ ] Dispatch posts the stock movement and consumes reservation once. Delivery confirmation records actual evidence; promise-tranche approval alone never counts as shipment.
-- [ ] Test partial shipments, over-allocation/dispatch, repeat requests and cancellation before/after dispatch under explicit reversal policy.
-- [ ] Run named integration/browser checks and reconcile the complete stock fixture through two shipments. Final accepted history remains 10 while FG stock becomes zero.
+- [x] Allocate eligible accepted FG to actual order/customer/lot/units, preserving reservation semantics. No picking quarantine or another customer's order units.
+- [x] Dispatch posts the stock movement and consumes reservation once. Delivery confirmation records actual evidence; promise-tranche approval alone never counts as shipment.
+- [x] Test partial shipments, over-allocation/dispatch, repeat requests and cancellation before/after dispatch under explicit reversal policy.
+- [x] Run named integration/browser checks and reconcile the complete stock fixture through two shipments. Final accepted history remains 10 while FG stock becomes zero.
 
 ## O08 — Private documents, factual passports and customer portal
 
@@ -118,11 +118,11 @@ This arithmetic assertion supplements, not replaces, actual two-connection servi
 
 **Produces:** `getCustomerOrder`, `acknowledgePromise`, `getPassport`, `authorizeDocumentDownload`. Reads resolve actual session customer/order relationships and stored evidence; no client label is an ownership credential.
 
-- [ ] Store private file metadata/content under configured persistent root with allowlisted size/type, server-generated storage key and typed parent links; reject arbitrary filesystem paths. Files have actual checksums, not invented certification claims.
-- [ ] Generate passport projection from actual unit/lot, input use, operation/operator/instruction, QC/rework/release/shipment evidence. Unknown/unowned serial returns scoped not-found.
-- [ ] Implement portal list/detail/acknowledgment and real downloads. Remove unsupported “download ZIP” or generate an actual archive matching media type; plain text renamed `.zip` is not accepted.
-- [ ] Test customer B/workspace B via direct API/download URLs and cached-query boundaries, then complete the real customer UI path after staff shipping.
-- [ ] Run named integration/browser checks. Expected: actual file content/record links and privacy behavior; no whole internal graph sent then hidden with CSS.
+- [x] Store private file metadata/content under configured persistent root with allowlisted size/type, server-generated storage key and typed parent links; reject arbitrary filesystem paths. Files have actual checksums, not invented certification claims.
+- [x] Generate passport projection from actual unit/lot, input use, operation/operator/instruction, QC/rework/release/shipment evidence. Unknown/unowned serial returns scoped not-found.
+- [x] Implement portal list/detail/acknowledgment and real downloads. Remove unsupported “download ZIP” or generate an actual archive matching media type; plain text renamed `.zip` is not accepted.
+- [x] Test customer B/workspace B via direct API/download URLs and cached-query boundaries, then complete the real customer UI path after staff shipping.
+- [x] Run named integration/browser checks. Expected: actual file content/record links and privacy behavior; no whole internal graph sent then hidden with CSS.
 
 ## O09 — R0 end-to-end/restart milestone
 

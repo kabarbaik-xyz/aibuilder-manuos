@@ -3,7 +3,7 @@ import { FileCog, ShoppingCart, PackageCheck, Boxes, Users, Truck, Package, Rule
 const symbols = {
  'arrow-left': ArrowLeft,
  engineering: FileCog, supply: ShoppingCart, receipt: PackageCheck, inventory: Boxes,
- customers: Users, supplier: Truck, item: Package, ruler: Ruler, location: MapPin,
+ customers: Users, supplier: Truck, delivery: Truck, item: Package, ruler: Ruler, location: MapPin,
  department: Network, machine: Cog, technician: UserRoundCog, certificate: Award,
  'order-type': Tags, checklist: ClipboardCheck, users: Users, brain: Brain, route: Route, box: Package,
 };

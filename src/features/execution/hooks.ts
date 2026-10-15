@@ -62,3 +62,17 @@ export function useResumeTask() {
     },
   });
 }
+
+export function useRecordTaskOutput() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: Parameters<typeof import('./api').recordTaskOutput>[0]) =>
+      import('./api').then((m) => m.recordTaskOutput(params)),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['execution'] });
+      queryClient.invalidateQueries({ queryKey: ['execution', 'task', vars.taskId] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['planning'] });
+    },
+  });
+}

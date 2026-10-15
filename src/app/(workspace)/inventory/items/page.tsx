@@ -79,8 +79,8 @@ export default function ItemsPage() {
           New Item
         </Button></>} />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="item-filters">
+        <div className="item-search">
           <Input
             type="text"
             placeholder="Search code or description..."

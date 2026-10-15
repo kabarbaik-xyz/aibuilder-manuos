@@ -78,9 +78,17 @@ export function PassportModal({ serial = 'SN-1042-078' }: { serial?: string }) {
         Manufacturing passport traceability. Verifies material origin, machine logs, and rework correction.
       </p>
 
-      <div className="dialog-actions mt">
-        <Button variant="default" fullWidth icon="download" onClick={downloadRecord}>
-          Download traceability record
+      <div className="dialog-actions mt flex items-center gap-2">
+        <a
+          href={`/passports/${encodeURIComponent(serial)}`}
+          className="btn primary flex-1 text-center"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open Certified Passport →
+        </a>
+        <Button variant="default" icon="download" onClick={downloadRecord}>
+          Download record
         </Button>
       </div>
     </div>

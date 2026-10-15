@@ -267,15 +267,6 @@ export function CustomerPortalView() {
                   </button>
                 </div>
               ))}
-              <Button
-                variant="default"
-                fullWidth
-                className="mt"
-                icon="download"
-                onClick={() => downloadSample('All-Documents-1042.zip')}
-              >
-                Download all
-              </Button>
             </div>
           </section>
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { Dialog } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import React, { useState, useEffect } from 'react';
@@ -9,11 +10,13 @@ import {
   useStartTask,
   usePauseTask,
   useResumeTask,
+  useRecordTaskOutput,
 } from '../hooks';
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { formatQuantity } from '@/domain/quantity';
+import { formatQuantity, parseQuantity } from '@/domain/quantity';
+import { mastersApi, Location } from '@/features/masters/api';
 
 export interface ShopFloorWorkstationViewProps {
   taskId: string;
@@ -25,11 +28,31 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const startMutation = useStartTask();
   const pauseMutation = usePauseTask();
   const resumeMutation = useResumeTask();
+  const recordOutputMutation = useRecordTaskOutput();
 
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [pauseReason, setPauseReason] = useState('BREAK');
   const [pauseNotes, setPauseNotes] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Production Output Modal state
+  const [showOutputModal, setShowOutputModal] = useState(false);
+  const [outputQty, setOutputQty] = useState('');
+  const [destLocationId, setDestLocationId] = useState('');
+  const [lotNumber, setLotNumber] = useState('');
+  const [isFinal, setIsFinal] = useState(true);
+  const [outputNotes, setOutputNotes] = useState('');
+  const [locations, setLocations] = useState<Location[]>([]);
+
+  useEffect(() => {
+    mastersApi.getLocations().then((res: any) => {
+      setLocations(res.data);
+      const defaultLoc = res.data.find(
+        (l: any) => l.type === 'QUARANTINE' || l.type === 'FINISHED_GOODS'
+      );
+      if (defaultLoc) setDestLocationId(defaultLoc.id);
+    });
+  }, []);
 
   // Live timer tick derived from server session start timestamp
   const [secondsOffset, setSecondsOffset] = useState(0);
@@ -114,6 +137,27 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     }
   };
 
+  const handleOutputSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionError(null);
+    try {
+      const atoms = parseQuantity(outputQty, 0);
+      await recordOutputMutation.mutateAsync({
+        taskId: task.id,
+        outputAtoms: atoms,
+        destinationLocationId: destLocationId,
+        lotNumber: lotNumber.trim() || undefined,
+        isFinal,
+        notes: outputNotes.trim() || undefined,
+      });
+      setShowOutputModal(false);
+      setOutputNotes('');
+      refetch();
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to record output');
+    }
+  };
+
   // Calculate live formatted duration
   const baseMinutes = task.actualDurationMinutes;
   const totalSeconds = baseMinutes * 60 + (isRunning ? secondsOffset : 0);
@@ -177,39 +221,48 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             {(task.status === 'READY' || task.status === 'ASSIGNED') && (
-              <button
-                type="button"
+              <Button
+                variant="primary"
                 onClick={handleStart}
                 disabled={startMutation.isPending}
-                className="px-5 py-2.5 bg-success-soft hover:bg-success-soft text-ink font-semibold text-xs rounded-xl transition flex items-center gap-2"
+                icon="bolt"
               >
-                <Icon name="bolt" className="w-4 h-4" />
                 {startMutation.isPending ? 'Starting...' : 'Start Operation'}
-              </button>
+              </Button>
             )}
 
             {isRunning && (
-              <button
-                type="button"
-                onClick={() => setShowPauseModal(true)}
-                disabled={pauseMutation.isPending}
-                className="px-4 py-2.5 bg-warning-soft hover:bg-warning-soft text-ink font-semibold text-xs rounded-xl shadow-amber-950/50 transition flex items-center gap-2"
-              >
-                <Icon name="clock" className="w-4 h-4" />
-                Pause Work
-              </button>
+              <>
+                <Button
+                  onClick={() => setShowPauseModal(true)}
+                  disabled={pauseMutation.isPending}
+                  icon="clock"
+                >
+                  Pause Work
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setOutputQty(formatQuantity(BigInt(task.order.targetAtoms)));
+                    setShowOutputModal(true);
+                  }}
+                  disabled={recordOutputMutation.isPending}
+                  icon="check"
+                >
+                  Record Output
+                </Button>
+              </>
             )}
 
             {isPaused && (
-              <button
-                type="button"
+              <Button
+                variant="primary"
                 onClick={handleResume}
                 disabled={resumeMutation.isPending}
-                className="px-5 py-2.5 bg-primary hover:bg-primary-soft text-white font-semibold text-xs rounded-xl transition flex items-center gap-2"
+                icon="reset"
               >
-                <Icon name="reset" className="w-4 h-4" />
                 {resumeMutation.isPending ? 'Resuming...' : 'Resume Operation'}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -417,24 +470,125 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 /></label>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-line">
-                <button
-                  type="button"
+              <div className="dialog-actions">
+                <Button
                   onClick={() => setShowPauseModal(false)}
-                  className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded transition"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="primary"
                   disabled={pauseMutation.isPending}
-                  className="px-4 py-2 bg-warning-soft hover:bg-warning-soft text-ink font-medium text-xs rounded transition"
                 >
                   {pauseMutation.isPending ? 'Pausing...' : 'Confirm Pause'}
-                </button>
+                </Button>
               </div>
             </form>
           
+        </Dialog>
+      )}
+
+      {/* Production Output Modal */}
+      {showOutputModal && (
+        <Dialog
+          isOpen
+          onClose={() => setShowOutputModal(false)}
+          title="Record Production Output"
+          size="md"
+          pending={recordOutputMutation.isPending}
+        >
+          <form onSubmit={handleOutputSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Output Quantity (units)
+              </label>
+              <input
+                type="number"
+                step="any"
+                required
+                min="0.000001"
+                value={outputQty}
+                onChange={(e) => setOutputQty(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+                placeholder="e.g. 10"
+              />
+              <span className="text-[11px] text-muted block mt-1">
+                Quantity produced from this operation to be transferred into holding/quarantine.
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Destination Location
+              </label>
+              <Select
+                value={destLocationId}
+                onChange={(e) => setDestLocationId(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              >
+                {locations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name} ({loc.type})
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Lot / Batch Number (Optional)
+              </label>
+              <input
+                type="text"
+                value={lotNumber}
+                onChange={(e) => setLotNumber(e.target.value)}
+                placeholder="Auto-generated if left blank"
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="checkbox"
+                id="isFinalOp"
+                checked={isFinal}
+                onChange={(e) => setIsFinal(e.target.checked)}
+                className="rounded border-line text-primary focus:ring-primary"
+              />
+              <label htmlFor="isFinalOp" className="text-xs text-ink cursor-pointer">
+                Final operation (posts output to Quarantine and awaits QC Inspection)
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Production Notes
+              </label>
+              <Textarea
+                value={outputNotes}
+                onChange={(e) => setOutputNotes(e.target.value)}
+                placeholder="Optional remarks, machine telemetry, batch observations..."
+                rows={2}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="dialog-actions">
+              <Button
+                onClick={() => setShowOutputModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={recordOutputMutation.isPending}
+              >
+                {recordOutputMutation.isPending ? 'Recording Output...' : 'Confirm Output'}
+              </Button>
+            </div>
+          </form>
         </Dialog>
       )}
     </div>

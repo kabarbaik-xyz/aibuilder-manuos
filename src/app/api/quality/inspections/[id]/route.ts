@@ -21,7 +21,7 @@ export async function GET(
       throw new NotFoundError(`Inspection '${id}' not found`);
     }
 
-    return jsonResponse(inspection, { status: 200 });
+    return jsonResponse({ data: inspection }, { status: 200 });
   } catch (err) {
     return formatErrorResponse(err);
   }

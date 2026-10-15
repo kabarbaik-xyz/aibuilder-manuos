@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       sourceType,
     });
 
-    return jsonResponse(inspections, { status: 200 });
+    return jsonResponse({ data: inspections }, { status: 200 });
   } catch (err) {
     return formatErrorResponse(err);
   }

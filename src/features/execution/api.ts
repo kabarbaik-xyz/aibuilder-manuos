@@ -42,3 +42,21 @@ export async function resumeTask(input: ResumeTaskInput) {
     body: JSON.stringify({ notes: input.notes }),
   });
 }
+
+export interface RecordOutputParams {
+  taskId: string;
+  outputAtoms: bigint | string | number;
+  destinationLocationId: string;
+  lotNumber?: string;
+  serialNumber?: string;
+  isFinal?: boolean;
+  notes?: string;
+}
+
+export async function recordTaskOutput(params: RecordOutputParams) {
+  const { taskId, ...body } = params;
+  return apiRequest(`/api/execution/tasks/${taskId}/output`, {
+    method: 'POST',
+    body: JSON.stringify(stringifyQuantities(body)),
+  });
+}

@@ -30,6 +30,9 @@ export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
   { title: 'Inventory', href: '/inventory', icon: 'inventory', permissions: ['inventory.read'] },
   { title: 'Planning', href: '/planning', icon: 'calendar', permissions: ['planning.read', 'task.assign'] },
   { title: 'My Work', href: '/shop-floor', icon: 'work', permissions: ['task.read_assigned', 'task.execute_assigned', 'planning.read'] },
+  { title: 'Quality Control', href: '/quality/inspections', icon: 'checklist', permissions: ['quality.read', 'quality.inspect'] },
+  { title: 'Delivery & Shipping', href: '/delivery/shipments', icon: 'delivery', permissions: ['delivery.read', 'order.read'] },
+  { title: 'Customer Portal', href: '/portal/orders', icon: 'order', permissions: ['customer_order.read_own'] },
 ];
 
 export function getWorkflowNavigation(permissions: readonly string[]) {
