@@ -87,14 +87,26 @@ async function main() {
   // 2. Ensure permissions and roles are seeded
   await seedPermissionsAndRoles(prisma, workspace.id);
 
-  // 3. Provision user with ACCESS_ADMIN and OWNER roles
+  // 3. Provision user with all roles for full administrative and operational capabilities
+  const allRoles = [
+    'ACCESS_ADMIN',
+    'OWNER',
+    'ENGINEER',
+    'PLANNER',
+    'WAREHOUSE',
+    'QC',
+    'SALES',
+    'BUYER',
+    'TECHNICIAN',
+  ];
+
   const { user, membership } = await provisionUser(
     {
       name: 'System Administrator',
       email,
       password,
       workspaceId: workspace.id,
-      roleCodes: ['ACCESS_ADMIN', 'OWNER'],
+      roleCodes: allRoles,
     },
     prisma
   );
@@ -102,7 +114,7 @@ async function main() {
   console.log(`\nBootstrap successful!`);
   console.log(`User ID:       ${user.id}`);
   console.log(`Membership ID: ${membership.id}`);
-  console.log(`Assigned:      [ACCESS_ADMIN, OWNER]`);
+  console.log(`Assigned:      [${allRoles.join(', ')}]`);
 }
 
 main()

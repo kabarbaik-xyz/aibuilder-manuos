@@ -16,6 +16,8 @@ export interface WorkspaceFixture {
     admin: TestAccessResult;
     planner: TestAccessResult;
     operator: TestAccessResult;
+    warehouse: TestAccessResult;
+    qc: TestAccessResult;
     customerUser: TestAccessResult;
   };
   masters: {
@@ -28,6 +30,9 @@ export interface WorkspaceFixture {
     rawLocationId: string;
     wipLocationId: string;
     fgLocationId: string;
+    quarantineLocationId: string;
+    customerLocationId: string;
+    scrapLocationId: string;
     departmentId: string;
     calendarId: string;
     machineClassId: string;
@@ -52,6 +57,7 @@ export interface FactoryFixture {
     masters: {
       customerId: string;
       rawItemId: string;
+      rawLocationId: string;
     };
   };
   close(): Promise<void>;
@@ -98,6 +104,20 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
     email: 'planner@alpha.test',
     name: 'Alpha Planner',
     roles: ['PRODUCTION_PLANNER'],
+  });
+
+  const warehouseAlpha = await seedTestAccess(testDb.db, {
+    workspaceCode: 'WS-ALPHA',
+    email: 'warehouse@alpha.test',
+    name: 'Alpha Warehouse Specialist',
+    roles: ['WAREHOUSE'],
+  });
+
+  const qcAlpha = await seedTestAccess(testDb.db, {
+    workspaceCode: 'WS-ALPHA',
+    email: 'qc@alpha.test',
+    name: 'Alpha QC Inspector',
+    roles: ['QC'],
   });
 
   // Seed baseline Masters for Alpha using mastersService
@@ -172,6 +192,24 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
     ownerAlpha.principal,
     { code: 'LOC-FG-BAY1', name: 'Finished Goods Bay 1', kind: 'FG' },
     'key-loc-fg-alpha'
+  );
+
+  const quarantineLoc = await mastersService.createLocation(
+    ownerAlpha.principal,
+    { code: 'LOC-QUAR-01', name: 'Quarantine Holding Bay', kind: 'QUARANTINE' },
+    'key-loc-quar-alpha'
+  );
+
+  const customerLoc = await mastersService.createLocation(
+    ownerAlpha.principal,
+    { code: 'LOC-CUST-STAGE', name: 'Customer Staging Outbound', kind: 'CUSTOMER' },
+    'key-loc-cust-alpha'
+  );
+
+  const scrapLoc = await mastersService.createLocation(
+    ownerAlpha.principal,
+    { code: 'LOC-SCRAP-01', name: 'Scrap & Consumption Area', kind: 'SCRAP' },
+    'key-loc-scrap-alpha'
   );
 
   const dept = await mastersService.createDepartment(
@@ -297,6 +335,12 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
     'key-raw-beta'
   );
 
+  const rawLocationBeta = await mastersService.createLocation(
+    ownerBeta.principal,
+    { code: 'LOC-RAW-BETA', name: 'Beta Raw Store', kind: 'RAW' },
+    'key-loc-raw-beta'
+  );
+
   return {
     db: testDb.db,
     url: testDb.url,
@@ -308,6 +352,8 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
         admin: adminAlpha,
         planner: plannerAlpha,
         operator: operatorAlpha,
+        warehouse: warehouseAlpha,
+        qc: qcAlpha,
         customerUser: customerUserAlpha,
       },
       masters: {
@@ -320,6 +366,9 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
         rawLocationId: rawLoc.data.id,
         wipLocationId: wipLoc.data.id,
         fgLocationId: fgLoc.data.id,
+        quarantineLocationId: quarantineLoc.data.id,
+        customerLocationId: customerLoc.data.id,
+        scrapLocationId: scrapLoc.data.id,
         departmentId: dept.data.id,
         calendarId: cal.data.id,
         machineClassId: mClass.data.id,
@@ -338,6 +387,7 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
       masters: {
         customerId: customerBeta.data.id,
         rawItemId: rawItemBeta.data.id,
+        rawLocationId: rawLocationBeta.data.id,
       },
     },
     close: async () => {

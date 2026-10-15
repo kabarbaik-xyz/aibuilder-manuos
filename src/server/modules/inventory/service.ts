@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { Principal } from '@/server/auth/principal';
 import { requirePermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
@@ -33,16 +34,13 @@ export class InventoryService {
     requirePermission(principal, 'inventory.opening');
     const input: PostOpeningBalanceInput = PostOpeningBalanceSchema.parse(rawInput);
 
-    return executeCommand(
-      this.db,
+    return executeCommand({
       principal,
-      {
-        commandType: 'inventory.post_opening_balance',
-        resourceId: input.itemId,
-        payload: input,
-        key: idempotencyKey,
-      },
-      async (tx, commandId) => {
+      commandType: 'inventory.post_opening_balance',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: input,
+      prismaClient: this.db,
+      handler: async (tx, { requestId }) => {
         let lotId: string | undefined = undefined;
 
         if (input.lotNumber) {
@@ -81,15 +79,20 @@ export class InventoryService {
             destinationLotId: lotId,
             atoms: input.atoms,
             referenceType: MovementReferenceType.OPENING,
-            referenceId: commandId,
+            referenceId: requestId,
             notes: input.notes,
           },
-          commandId
+          requestId
         );
 
-        return movement;
-      }
-    );
+        return {
+          data: movement,
+          aggregateType: 'STOCK_MOVEMENT',
+          aggregateId: movement.id,
+          resourceVersion: 1,
+        };
+      },
+    });
   }
 
   async postMovement(
@@ -118,7 +121,7 @@ export class InventoryService {
         requirePermission(principal, 'inventory.consume_assigned');
         break;
       case MovementType.QC_DISPOSITION:
-        requirePermission(principal, 'qc.inspect');
+        requirePermission(principal, 'quality.inspect');
         break;
       case MovementType.ADJUSTMENT:
         requirePermission(principal, 'inventory.adjust_approve');
@@ -130,19 +133,22 @@ export class InventoryService {
         requirePermission(principal, 'inventory.transfer');
     }
 
-    return executeCommand(
-      this.db,
+    return executeCommand({
       principal,
-      {
-        commandType: `inventory.${input.movementType.toLowerCase()}`,
-        resourceId: input.itemId,
-        payload: input,
-        key: idempotencyKey,
+      commandType: `inventory.${input.movementType.toLowerCase()}`,
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: input,
+      prismaClient: this.db,
+      handler: async (tx, { requestId }) => {
+        const movement = await postMovement(tx, principal, input, requestId);
+        return {
+          data: movement,
+          aggregateType: 'STOCK_MOVEMENT',
+          aggregateId: movement.id,
+          resourceVersion: 1,
+        };
       },
-      async (tx, commandId) => {
-        return postMovement(tx, principal, input, commandId);
-      }
-    );
+    });
   }
 
   async getBalances(

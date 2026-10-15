@@ -67,6 +67,11 @@ export async function provisionUser(
           password: hashedPassword,
         },
       });
+    } else {
+      await client.account.update({
+        where: { id: account.id },
+        data: { password: hashedPassword },
+      });
     }
   }
 

@@ -10,16 +10,21 @@ export function serializeJson(data: any): string {
 }
 
 export function canonicalJson(obj: any): string {
+  if (obj === undefined) {
+    return 'null';
+  }
   if (typeof obj === 'bigint') {
     return JSON.stringify(obj.toString());
   }
   if (obj === null || typeof obj !== 'object') {
-    return JSON.stringify(obj);
+    return JSON.stringify(obj) ?? 'null';
   }
   if (Array.isArray(obj)) {
     return '[' + obj.map(canonicalJson).join(',') + ']';
   }
-  const keys = Object.keys(obj).sort();
+  const keys = Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort();
   return (
     '{' +
     keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`).join(',') +

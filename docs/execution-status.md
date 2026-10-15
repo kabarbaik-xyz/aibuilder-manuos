@@ -18,8 +18,8 @@
 > gates. Inventory is currently material counters, not a transaction subsystem.
 
 **Last Updated:** 2026-10-15  
-**Current Phase:** Workflows, Orders & Production Instantiation (Milestone M2: W01–W06)  
-**Current Task:** Completed — Workflows, Orders & Engineering Hub operational, fully verified with 91 automated tests across 25 test files  
+**Current Phase:** Inventory, Stock Ledger & Operations (Milestone M3: O01–O04)  
+**Current Task:** Completed O01 (Stock Ledger, Lots, Balances & Opening Records) — 100 automated tests passing across 26 test files  
 
 ---
 
@@ -40,12 +40,14 @@
 | **M2** | W04 | Bounded Workflow Transition & Guard Engine | **100% COMPLETE** | Finite action transition evaluator, AND-join resolution, skill/cert requirements, material coverage gate, QC checklist guard. `src/domain/workflow-runtime.test.ts` (8 tests). |
 | **M2** | W05 | Workflow Studio, Order Hub & Engineering Hub UI | **100% COMPLETE** | App router pages (`/workflows`, `/orders`, `/engineering`), interactive definition editor, review editor, order intake form. `tests/e2e/order-engineering-workflow.spec.ts` (1 test). |
 | **M2** | W06 | M2 Acceptance & Second-Type Proof | **100% COMPLETE** | Materially different Diamond DAG (PCBA) with parallel branches and AND-join, multi-type coexistence, version pinning, simulated restart persistence. `tests/integration/workflow-independence.test.ts` (1 test). |
+| **M3** | O01 | Stock Ledger, Lots, Balances & Opening Records | **100% COMPLETE** | Migration `20261015030000_m3_inventory_ledger`, double-entry stock ledger, append-only triggers, unique normalized buckets without lots, strict conservation, full rollback on error. `tests/integration/inventory-ledger.test.ts` (9 tests). |
 
 ---
 
 ## Verification Evidence Summary
 
-1. **Deterministic Invariant Preservation:** Real progress remains strictly tied to confirmed physical completions. Split batch recovery conserves total units.
-2. **Automated Test Suite:** 91 tests passing across 25 test files via Vitest without mocks or stubs (`npm test`).
+1. **Deterministic Invariant Preservation:** Stock transfers strictly conserve physical inventory. Append-only triggers prevent mutations or deletions on stock movements. Balances cannot become negative.
+2. **Automated Test Suite:** 100 tests passing across 26 test files via Vitest without mocks or stubs (`npm test`).
 3. **TypeScript Typecheck:** Clean typecheck (`npm run typecheck`) with 0 errors across all UI features, API routes, domain engines, and test suites.
-4. **Durable Persistence:** SQLite in WAL mode with strict foreign keys, command idempotency, append-only auditing, and BigInt atomic precision.
+4. **Durable Persistence:** SQLite in WAL mode with strict foreign keys, command idempotency, append-only auditing, BigInt atomic precision, and independent sum-of-movements reconciliation.
+

@@ -18,11 +18,11 @@ F01–F07 and W01–W06 are prerequisites. Master-plan constraints apply. Follow
 
 **Produces:** `postMovement(tx, principal, movement)`, `getBalances(principal, filters)`, `reconcileStock(db, workspaceId)` and stable stock-bucket keys. Typed moves have positive atoms, real source/destination/disposition and references; virtual boundaries have explicit semantics.
 
-- [ ] Write migration/ledger tests for opening receipt, transfer preserving global physical quantity, QC disposition move, illegal negative source, missing lot/serial and cross-workspace item/location.
-- [ ] Add SQL checks, unique normalized stock buckets even when lots are absent, append-only posting/event protection and transactionally maintained balance projections.
-- [ ] Implement opening balances as a privileged explicit setup command. No editable quantity cells or startup reset; production/receipt/shipment source FKs are added as their source tables migrate.
-- [ ] Verify reconciliation matches independent sum-of-movement queries. A failed balance/ledger update must roll back both sides.
-- [ ] Run `rtk npm run test:integration -- tests/integration/inventory-ledger.test.ts`; expected: quantity invariants and no-lot uniqueness pass in actual SQLite.
+- [x] Write migration/ledger tests for opening receipt, transfer preserving global physical quantity, QC disposition move, illegal negative source, missing lot/serial and cross-workspace item/location.
+- [x] Add SQL checks, unique normalized stock buckets even when lots are absent, append-only posting/event protection and transactionally maintained balance projections.
+- [x] Implement opening balances as a privileged explicit setup command. No editable quantity cells or startup reset; production/receipt/shipment source FKs are added as their source tables migrate.
+- [x] Verify reconciliation matches independent sum-of-movement queries. A failed balance/ledger update must roll back both sides.
+- [x] Run `rtk npm run test:integration -- tests/integration/inventory-ledger.test.ts`; expected: quantity invariants and no-lot uniqueness pass in actual SQLite.
 
 ## O02 — Basic supply orders and actual partial receipt
 
