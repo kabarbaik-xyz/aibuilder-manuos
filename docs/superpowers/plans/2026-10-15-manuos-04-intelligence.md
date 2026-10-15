@@ -92,20 +92,20 @@ R0 gates O09 must pass. Master-plan constraints apply. No fixed hero IDs/dates/c
 
 **Produces:** scoped real metrics and exception queue linking orders/material/resource/QC/approval facts to actual detail IDs; all six capability entry points share the same records/revision definitions.
 
-- [ ] Define populations/time windows/units for each metric: active orders, at-risk ETA, actual pending approvals, machine scheduled/capacity minutes, finished-item QC progress and material shortages. Do not sum pieces/kg/raw/FG into a meaningless total.
-- [ ] Replace scenario-only charts/copy and legacy store imports. Preserve normal empty/unknown/no-history states; old demo mode remains isolated if retained.
-- [ ] Verify user/customer/workspace scope across cache changes, deep links and the assistant; no response from another context survives a membership or workspace switch.
-- [ ] Run the new-order disruption → impact/promise/recovery → human approval → customer/memory path in browser with DB readback and input-sensitive assertions.
-- [ ] Mark individual intelligence features verified only with their actual tests/runtime/provider level. UI integration alone is not permission to mark all nine AI routes complete.
+- [x] Define populations/time windows/units for each metric: active orders, at-risk ETA, actual pending approvals, machine scheduled/capacity minutes, finished-item QC progress and material shortages. Do not sum pieces/kg/raw/FG into a meaningless total.
+- [x] Replace scenario-only charts/copy and legacy store imports. Preserve normal empty/unknown/no-history states; old demo mode remains isolated if retained.
+- [x] Verify user/customer/workspace scope across cache changes, deep links and the assistant; no response from another context survives a membership or workspace switch.
+- [x] Run the new-order disruption → impact/promise/recovery → human approval → customer/memory path in browser with DB readback and input-sensitive assertions.
+- [x] Mark individual intelligence features verified only with their actual tests/runtime/provider level. UI integration alone is not permission to mark all nine AI routes complete.
 
 ## I08 — R1 acceptance, durable hosting assets and handoff
 
 **Files:** create `scripts/backup-db.ts`, `restore-db.ts`, `tests/integration/backup-restore.test.ts`, final e2e/evidence index; update Dockerfile/startup/migration scripts, setup/deployment/demo runbooks, requirements/status docs and ignore rules.
 
-- [ ] Run all acceptance A01–A16 and AI01–AI06 plus second customer/type/parallel/rework, actual-data input changes, idempotency/concurrency/rollback and no-provider behavior. Review source to ensure no hero-ID fallback or direct Zustand business write remains in normal app routes.
-- [ ] Verify a durable local/single-server SQLite/private-file path, one migration runner and least-needed filesystem permissions. Prepare container volume/env/backup assets; do not claim or perform a Cloud Run/multi-instance deployment implicitly.
-- [ ] Create consistent DB backup + private file manifest, restore to a different directory and run integrity/FK/stock/output/shipment reconciliation. Never overwrite the live/developer DB in a test.
-- [ ] Run final typecheck, focused integration/e2e suites, full existing meaningful engine suite and production build once after final changes; broaden only when new failures/changes justify it.
-- [ ] Perform batched 1440/1024/390px and narrow/short/mobile-scroll/account/dialog validation. Fix collected defects together; confirm once.
-- [ ] Produce a repeatable runbook and evidence matrix: local verified, real-provider verified and deployment state explicitly distinguished; sensitive credentials/data excluded.
-- [ ] Review R0+R1 scope coverage including all six intelligence features. External credential/hosting blockers remain named; do not mark them complete or substitute sample responses. Handoff the actual remaining decisions without automatic publishing/commit/push.
+- [x] Run all acceptance A01–A16 and AI01–AI06 plus second customer/type/parallel/rework, actual-data input changes, idempotency/concurrency/rollback and no-provider behavior. Review source to ensure no hero-ID fallback or direct Zustand business write remains in normal app routes.
+- [x] Verify a durable local/single-server SQLite/private-file path, one migration runner and least-needed filesystem permissions. Prepare container volume/env/backup assets; do not claim or perform a Cloud Run/multi-instance deployment implicitly.
+- [x] Create consistent DB backup + private file manifest, restore to a different directory and run integrity/FK/stock/output/shipment reconciliation. Never overwrite the live/developer DB in a test.
+- [x] Run final typecheck, focused integration/e2e suites, full existing meaningful engine suite and production build once after final changes; broaden only when new failures/changes justify it.
+- [x] Perform batched 1440/1024/390px and narrow/short/mobile-scroll/account/dialog validation. Fix collected defects together; confirm once.
+- [x] Produce a repeatable runbook and evidence matrix: local verified, real-provider verified and deployment state explicitly distinguished; sensitive credentials/data excluded.
+- [x] Review R0+R1 scope coverage including all six intelligence features. External credential/hosting blockers remain named; do not mark them complete or substitute sample responses. Handoff the actual remaining decisions without automatic publishing/commit/push.
