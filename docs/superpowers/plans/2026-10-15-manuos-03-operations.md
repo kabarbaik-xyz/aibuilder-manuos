@@ -30,11 +30,11 @@ F01–F07 and W01–W06 are prerequisites. Master-plan constraints apply. Follow
 
 **Produces:** `createSupplyOrder`, `approveSupplyOrder`, `changeSupplyEta`, `receiveSupply` returning source/open/received quantities and canonical posted receipt. Approved expected supply is distinct from stock.
 
-- [ ] Implement supplier/item/UOM/rate/date line validation, draft/review/approval and open-quantity read models. Approval posts audit but zero physical stock.
-- [ ] Actual receipt resolves source line/item/supplier, creates lot/serial records as required, posts raw or quarantine stock and source receipt quantities in one transaction.
-- [ ] Test partial receipt/open quantity, over-receipt rejection, required incoming QC, duplicate command and repeated different-key receipt beyond remaining source quantity.
-- [ ] Build usable supply/receipt forms with actual source/open qty and clear review summary; pending/failure do not show received success.
-- [ ] Run `rtk npm run test:integration -- tests/integration/supply-receipt.test.ts` plus typecheck; verify posted quantity by DB readback and UI refresh.
+- [x] Implement supplier/item/UOM/rate/date line validation, draft/review/approval and open-quantity read models. Approval posts audit but zero physical stock.
+- [x] Actual receipt resolves source line/item/supplier, creates lot/serial records as required, posts raw or quarantine stock and source receipt quantities in one transaction.
+- [x] Test partial receipt/open quantity, over-receipt rejection, required incoming QC, duplicate command and repeated different-key receipt beyond remaining source quantity.
+- [x] Build usable supply/receipt forms with actual source/open qty and clear review summary; pending/failure do not show received success.
+- [x] Run `rtk npm run test:integration -- tests/integration/supply-receipt.test.ts` plus typecheck; verify posted quantity by DB readback and UI refresh.
 
 ## O03 — Reservations, WIP issue/return and actual consumption
 
@@ -42,11 +42,11 @@ F01–F07 and W01–W06 are prerequisites. Master-plan constraints apply. Follow
 
 **Produces:** `reserveStock`, `releaseReservation`, `issueToProduction`, `returnUnusedMaterial`, `consumeIssuedMaterial`, `getTaskMaterialReadiness`. Services accept F03 command inputs; browser cannot declare its own available quantity.
 
-- [ ] Use material-demand IDs and reviewed requirements. Hard reserve only eligible actual stock; unmet demand remains a shortage, not a negative reservation.
-- [ ] Guard stock/balance versions with conditional updates inside the DB transaction. Test two independent connections trying to reserve 60 each from 100: total reserved cannot exceed 100, and the losing request has a clear domain/conflict result.
-- [ ] Issue raw → WIP and consume WIP → consumed separately; release relevant reservation on issue. Return unused WIP → raw without inventing another supplier receipt.
-- [ ] Test held stock, incompatible UOM, over-issue/consume/return, wrong task/order and replay. Once a unit is consumed it is not also counted as unconsumed WIP.
-- [ ] Run the two named integration files. Expected: independent sum/available/custody checks and race behavior pass; state is not protected only by a JavaScript mutex.
+- [x] Use material-demand IDs and reviewed requirements. Hard reserve only eligible actual stock; unmet demand remains a shortage, not a negative reservation.
+- [x] Guard stock/balance versions with conditional updates inside the DB transaction. Test two independent connections trying to reserve 60 each from 100: total reserved cannot exceed 100, and the losing request has a clear domain/conflict result.
+- [x] Issue raw → WIP and consume WIP → consumed separately; release relevant reservation on issue. Return unused WIP → raw without inventing another supplier receipt.
+- [x] Test held stock, incompatible UOM, over-issue/consume/return, wrong task/order and replay. Once a unit is consumed it is not also counted as unconsumed WIP.
+- [x] Run the two named integration files. Expected: independent sum/available/custody checks and race behavior pass; state is not protected only by a JavaScript mutex.
 
 Representative fixture assertion (fixture/service signatures are established in F07 and this task):
 
@@ -71,11 +71,11 @@ This arithmetic assertion supplements, not replaces, actual two-connection servi
 
 **Produces:** actual balance/stock-card/demand/supply view and controlled count/reversal workflow; no route named “inventory” backed only by seed Material arrays.
 
-- [ ] Show eligible on-hand, hard reservations, available, quarantine and WIP with item/UOM/lot/location scope. Link every movement to actual actor/source document.
-- [ ] Implement issues/transfers/returns/count forms over O01–O03. Counts capture versioned book snapshot, reason and approval; stale counts require reconciliation.
-- [ ] Posted corrections create linked reversing/adjusting entries and retain the original event. Restrict correction commands; source document reversals cannot silently invalidate already consumed/shipped evidence.
-- [ ] Demonstrate an unused-material return and approved count discrepancy apart from the main numeric fixture.
-- [ ] Run `rtk npm run test:integration -- tests/integration/inventory-counts.test.ts`, `rtk npm run test:e2e -- tests/e2e/material-readiness.spec.ts`, and `rtk npm run db:reconcile` against the isolated fixture. Expected: no ledger/balance/reservation mismatch.
+- [x] Show eligible on-hand, hard reservations, available, quarantine and WIP with item/UOM/lot/location scope. Link every movement to actual actor/source document.
+- [x] Implement issues/transfers/returns/count forms over O01–O03. Counts capture versioned book snapshot, reason and approval; stale counts require reconciliation.
+- [x] Posted corrections create linked reversing/adjusting entries and retain the original event. Restrict correction commands; source document reversals cannot silently invalidate already consumed/shipped evidence.
+- [x] Demonstrate an unused-material return and approved count discrepancy apart from the main numeric fixture.
+- [x] Run `rtk npm run test:integration -- tests/integration/inventory-counts.test.ts`, `rtk npm run test:e2e -- tests/e2e/material-readiness.spec.ts`, and `rtk npm run db:reconcile` against the isolated fixture. Expected: no ledger/balance/reservation mismatch.
 
 ## O05 — Actual planning, assignment and operator sessions
 

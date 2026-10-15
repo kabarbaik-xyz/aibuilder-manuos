@@ -15,6 +15,7 @@ export interface WorkspaceFixture {
     owner: TestAccessResult;
     admin: TestAccessResult;
     planner: TestAccessResult;
+    buyer: TestAccessResult;
     operator: TestAccessResult;
     warehouse: TestAccessResult;
     qc: TestAccessResult;
@@ -103,7 +104,14 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
     workspaceCode: 'WS-ALPHA',
     email: 'planner@alpha.test',
     name: 'Alpha Planner',
-    roles: ['PRODUCTION_PLANNER'],
+    roles: ['PLANNER'],
+  });
+
+  const buyerAlpha = await seedTestAccess(testDb.db, {
+    workspaceCode: 'WS-ALPHA',
+    email: 'buyer@alpha.test',
+    name: 'Alpha Buyer',
+    roles: ['BUYER'],
   });
 
   const warehouseAlpha = await seedTestAccess(testDb.db, {
@@ -142,7 +150,7 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
     workspaceCode: 'WS-ALPHA',
     email: 'customer@apex.test',
     name: 'Apex Portal Rep',
-    roles: ['CUSTOMER_VIEWER'],
+    roles: ['CUSTOMER'],
     customerId: customerAlpha.data.id,
   });
 
@@ -252,7 +260,7 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
     workspaceCode: 'WS-ALPHA',
     email: 'operator@alpha.test',
     name: 'Lead CNC Operator',
-    roles: ['OPERATOR'],
+    roles: ['TECHNICIAN'],
   });
 
   const tech = await mastersService.createTechnician(
@@ -351,6 +359,7 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
         owner: ownerAlpha,
         admin: adminAlpha,
         planner: plannerAlpha,
+        buyer: buyerAlpha,
         operator: operatorAlpha,
         warehouse: warehouseAlpha,
         qc: qcAlpha,

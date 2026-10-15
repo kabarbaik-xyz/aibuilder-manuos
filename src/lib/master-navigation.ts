@@ -23,6 +23,8 @@ export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
   { title: 'Order Hub', href: '/orders', permissions: ['order.read', 'order.create'] },
   { title: 'Engineering Hub', href: '/engineering', permissions: ['engineering.read', 'engineering.write'] },
   { title: 'Workflow Studio', href: '/workflows', permissions: ['workflow.read', 'workflow.author'] },
+  { title: 'Supply Orders', href: '/supply-orders', permissions: ['supply.read', 'supply.create'] },
+  { title: 'Inbound Receipts', href: '/inventory/receipts', permissions: ['inventory.read', 'inventory.receive'] },
 ];
 
 export function getWorkflowNavigation(permissions: readonly string[]) {

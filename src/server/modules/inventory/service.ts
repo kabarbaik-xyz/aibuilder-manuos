@@ -6,6 +6,12 @@ import { executeCommand } from '@/server/db/transaction';
 import { BadRequestError } from '@/domain/errors';
 import { InventoryRepository } from './repository';
 import { postMovement, reconcileStock } from './ledger';
+import { ReservationService } from './reservations';
+import { IssueService } from './issues';
+import { ConsumptionService } from './consumption';
+import { createStockCount, approveStockCount, listStockCounts, getStockCount } from './counts';
+import { transferStock } from './transfers';
+import { reverseMovement } from './reversals';
 import {
   MovementType,
   MovementReferenceType,
@@ -16,14 +22,22 @@ import {
   StockFilters,
   StockFilterSchema,
   StockBalanceDTO,
+  StockCountDTO,
+  StockMovementDTO,
   StockReconciliationResult,
 } from './contracts';
 
 export class InventoryService {
   private readonly repo: InventoryRepository;
+  private readonly reservationService: ReservationService;
+  private readonly issueService: IssueService;
+  private readonly consumptionService: ConsumptionService;
 
   constructor(private readonly db: PrismaClient) {
     this.repo = new InventoryRepository(db);
+    this.reservationService = new ReservationService(db);
+    this.issueService = new IssueService(db);
+    this.consumptionService = new ConsumptionService(db);
   }
 
   async postOpeningBalance(
@@ -172,8 +186,133 @@ export class InventoryService {
     requirePermission(principal, 'inventory.read');
     return reconcileStock(this.db, principal.workspaceId);
   }
+
+  // -------------------------------------------------------------
+  // O03 Operations
+  // -------------------------------------------------------------
+
+  async reserveStock(principal: Principal, rawInput: unknown, idempotencyKey?: string) {
+    return this.reservationService.reserveStock(principal, rawInput, idempotencyKey);
+  }
+
+  async releaseReservation(principal: Principal, reservationId: string, idempotencyKey?: string) {
+    return this.reservationService.releaseReservation(principal, reservationId, idempotencyKey);
+  }
+
+  async listReservations(
+    principal: Principal,
+    filters: { demandId?: string; orderId?: string; taskId?: string; status?: string } = {}
+  ) {
+    return this.reservationService.listReservations(principal, filters);
+  }
+
+  async issueToProduction(principal: Principal, rawInput: unknown, idempotencyKey?: string) {
+    return this.issueService.issueToProduction(principal, rawInput, idempotencyKey);
+  }
+
+  async returnUnusedMaterial(principal: Principal, rawInput: unknown, idempotencyKey?: string) {
+    return this.issueService.returnUnusedMaterial(principal, rawInput, idempotencyKey);
+  }
+
+  async consumeIssuedMaterial(principal: Principal, rawInput: unknown, idempotencyKey?: string) {
+    return this.consumptionService.consumeIssuedMaterial(principal, rawInput, idempotencyKey);
+  }
+
+  async getTaskMaterialReadiness(principal: Principal, taskId: string) {
+    requirePermission(principal, 'inventory.read');
+    return this.consumptionService.getTaskMaterialReadiness(principal, taskId);
+  }
+
+  // -------------------------------------------------------------
+  // O04 Operations (Stock Counts, Transfers & Reversals)
+  // -------------------------------------------------------------
+
+  async createStockCount(principal: Principal, rawInput: unknown, idempotencyKey?: string) {
+    return executeCommand<any, StockCountDTO>({
+      principal,
+      commandType: 'inventory.create_stock_count',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: rawInput as any,
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const count = await createStockCount(tx, principal, rawInput as any);
+        return {
+          data: count,
+          aggregateType: 'STOCK_COUNT',
+          aggregateId: count.id,
+          resourceVersion: count.version,
+        };
+      },
+    });
+  }
+
+  async approveStockCount(principal: Principal, countId: string, idempotencyKey?: string) {
+    return executeCommand<{ countId: string }, StockCountDTO>({
+      principal,
+      commandType: 'inventory.approve_stock_count',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: { countId },
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const count = await approveStockCount(tx, principal, countId);
+        return {
+          data: count,
+          aggregateType: 'STOCK_COUNT',
+          aggregateId: count.id,
+          resourceVersion: count.version,
+        };
+      },
+    });
+  }
+
+  async listStockCounts(principal: Principal) {
+    return listStockCounts(this.db, principal);
+  }
+
+  async getStockCount(principal: Principal, countId: string) {
+    return getStockCount(this.db, principal, countId);
+  }
+
+  async transferStock(principal: Principal, rawInput: unknown, idempotencyKey?: string) {
+    return executeCommand<any, StockMovementDTO>({
+      principal,
+      commandType: 'inventory.transfer_stock',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: rawInput as any,
+      prismaClient: this.db,
+      handler: async (tx, { requestId }) => {
+        const movement = await transferStock(tx, principal, rawInput as any, requestId);
+        return {
+          data: movement,
+          aggregateType: 'STOCK_MOVEMENT',
+          aggregateId: movement.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async reverseMovement(principal: Principal, rawInput: unknown, idempotencyKey?: string) {
+    return executeCommand<any, StockMovementDTO>({
+      principal,
+      commandType: 'inventory.reverse_movement',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: rawInput as any,
+      prismaClient: this.db,
+      handler: async (tx, { requestId }) => {
+        const movement = await reverseMovement(tx, principal, rawInput as any, requestId);
+        return {
+          data: movement,
+          aggregateType: 'STOCK_MOVEMENT',
+          aggregateId: movement.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
 }
 
 import { db } from '@/server/db/client';
 export const inventoryService = new InventoryService(db);
+
 

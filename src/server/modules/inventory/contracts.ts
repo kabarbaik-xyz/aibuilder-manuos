@@ -143,6 +143,30 @@ export interface StockBalanceDTO {
   version: number;
 }
 
+export interface StockMovementDTO {
+  id: string;
+  workspaceId: string;
+  movementType: MovementType | string;
+  itemId: string;
+  itemCode?: string;
+  itemName?: string;
+  sourceLocationId: string | null;
+  sourceLocationCode?: string | null;
+  destinationLocationId: string | null;
+  destinationLocationCode?: string | null;
+  sourceLotId: string | null;
+  sourceLotNumber?: string | null;
+  destinationLotId: string | null;
+  destinationLotNumber?: string | null;
+  atoms: bigint;
+  referenceType: string | null;
+  referenceId: string | null;
+  actorUserId: string;
+  actorName?: string;
+  notes: string | null;
+  occurredAt: Date | string;
+}
+
 export interface StockReconciliationResult {
   workspaceId: string;
   balanced: boolean;
@@ -158,3 +182,241 @@ export interface StockReconciliationResult {
     delta: bigint;
   }>;
 }
+
+// -------------------------------------------------------------
+// O03 Reservations, Issues, Returns & Consumption Contracts
+// -------------------------------------------------------------
+
+export const ReserveStockSchema = z.object({
+  demandId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  lotId: z.string().uuid().nullable().optional(),
+  atoms: z
+    .union([z.bigint(), z.string(), z.number()])
+    .transform((val) => {
+      if (typeof val === 'bigint') return val;
+      if (typeof val === 'number') return BigInt(Math.floor(val));
+      return BigInt(val);
+    })
+    .refine((val) => val > 0n, {
+      message: 'Reservation atoms must be strictly positive (> 0)',
+    }),
+  notes: z.string().optional(),
+});
+export type ReserveStockInput = z.infer<typeof ReserveStockSchema>;
+
+export const ReleaseReservationSchema = z.object({
+  reservationId: z.string().uuid(),
+  notes: z.string().optional(),
+});
+export type ReleaseReservationInput = z.infer<typeof ReleaseReservationSchema>;
+
+export const IssueToProductionSchema = z.object({
+  demandId: z.string().uuid(),
+  sourceLocationId: z.string().uuid(),
+  sourceLotId: z.string().uuid().nullable().optional(),
+  wipLocationId: z.string().uuid(),
+  atoms: z
+    .union([z.bigint(), z.string(), z.number()])
+    .transform((val) => {
+      if (typeof val === 'bigint') return val;
+      if (typeof val === 'number') return BigInt(Math.floor(val));
+      return BigInt(val);
+    })
+    .refine((val) => val > 0n, {
+      message: 'Issue atoms must be strictly positive (> 0)',
+    }),
+  reservationId: z.string().uuid().nullable().optional(),
+  notes: z.string().optional(),
+});
+export type IssueToProductionInput = z.infer<typeof IssueToProductionSchema>;
+
+export const ReturnUnusedMaterialSchema = z.object({
+  demandId: z.string().uuid(),
+  wipLocationId: z.string().uuid(),
+  destinationLocationId: z.string().uuid(),
+  lotId: z.string().uuid().nullable().optional(),
+  atoms: z
+    .union([z.bigint(), z.string(), z.number()])
+    .transform((val) => {
+      if (typeof val === 'bigint') return val;
+      if (typeof val === 'number') return BigInt(Math.floor(val));
+      return BigInt(val);
+    })
+    .refine((val) => val > 0n, {
+      message: 'Return atoms must be strictly positive (> 0)',
+    }),
+  notes: z.string().optional(),
+});
+export type ReturnUnusedMaterialInput = z.infer<typeof ReturnUnusedMaterialSchema>;
+
+export const ConsumeIssuedMaterialSchema = z.object({
+  demandId: z.string().uuid(),
+  wipLocationId: z.string().uuid(),
+  lotId: z.string().uuid().nullable().optional(),
+  atoms: z
+    .union([z.bigint(), z.string(), z.number()])
+    .transform((val) => {
+      if (typeof val === 'bigint') return val;
+      if (typeof val === 'number') return BigInt(Math.floor(val));
+      return BigInt(val);
+    })
+    .refine((val) => val > 0n, {
+      message: 'Consume atoms must be strictly positive (> 0)',
+    }),
+  taskId: z.string().uuid().nullable().optional(),
+  notes: z.string().optional(),
+});
+export type ConsumeIssuedMaterialInput = z.infer<typeof ConsumeIssuedMaterialSchema>;
+
+export interface StockReservationDTO {
+  id: string;
+  workspaceId: string;
+  demandId: string | null;
+  orderId: string | null;
+  taskId: string | null;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  locationId: string;
+  locationCode: string;
+  locationName: string;
+  lotId: string | null;
+  lotNumber: string | null;
+  reservedAtoms: bigint;
+  status: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskMaterialReadinessDTO {
+  taskId: string;
+  orderId: string;
+  isFullyAllocated: boolean;
+  isFullyIssued: boolean;
+  isFullyConsumed: boolean;
+  demands: Array<{
+    demandId: string;
+    itemId: string;
+    itemCode: string;
+    itemName: string;
+    itemTracking: string;
+    requiredAtoms: bigint;
+    reservedAtoms: bigint;
+    issuedAtoms: bigint;
+    consumedAtoms: bigint;
+    availableInWarehouseAtoms: bigint;
+    status: string;
+  }>;
+}
+
+// -------------------------------------------------------------
+// Stock Counts & Line Schemas (Milestone M3 - O04)
+// -------------------------------------------------------------
+
+export const StockCountStatus = {
+  DRAFT: 'DRAFT',
+  SUBMITTED: 'SUBMITTED',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  CANCELLED: 'CANCELLED',
+} as const;
+export type StockCountStatus = (typeof StockCountStatus)[keyof typeof StockCountStatus];
+
+export const CreateStockCountLineSchema = z.object({
+  itemId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  lotId: z.string().uuid().nullable().optional(),
+  countedAtoms: z
+    .union([z.bigint(), z.string(), z.number()])
+    .transform((val) => {
+      if (typeof val === 'bigint') return val;
+      if (typeof val === 'number') return BigInt(Math.floor(val));
+      return BigInt(val);
+    })
+    .refine((val) => val >= 0n, {
+      message: 'Counted atoms cannot be negative',
+    }),
+  notes: z.string().optional(),
+});
+
+export const CreateStockCountSchema = z.object({
+  locationId: z.string().uuid().nullable().optional(),
+  reason: z.string().optional(),
+  notes: z.string().optional(),
+  lines: z.array(CreateStockCountLineSchema).min(1, 'At least one line is required for a count'),
+});
+export type CreateStockCountInput = z.infer<typeof CreateStockCountSchema>;
+
+export const StockTransferSchema = z
+  .object({
+    itemId: z.string().uuid(),
+    sourceLocationId: z.string().uuid(),
+    destinationLocationId: z.string().uuid(),
+    sourceLotId: z.string().uuid().nullable().optional(),
+    destinationLotId: z.string().uuid().nullable().optional(),
+    atoms: z
+      .union([z.bigint(), z.string(), z.number()])
+      .transform((val) => {
+        if (typeof val === 'bigint') return val;
+        if (typeof val === 'number') return BigInt(Math.floor(val));
+        return BigInt(val);
+      })
+      .refine((val) => val > 0n, {
+        message: 'Transfer atoms must be strictly positive (> 0)',
+      }),
+    notes: z.string().optional(),
+  })
+  .refine((data) => data.sourceLocationId !== data.destinationLocationId, {
+    message: 'Source and destination locations must be distinct',
+    path: ['destinationLocationId'],
+  });
+export type StockTransferInput = z.infer<typeof StockTransferSchema>;
+
+export const ReverseMovementSchema = z.object({
+  movementId: z.string().uuid(),
+  reason: z.string().trim().min(3, 'A reason with at least 3 characters is required for reversal'),
+});
+export type ReverseMovementInput = z.infer<typeof ReverseMovementSchema>;
+
+export interface StockCountLineDTO {
+  id: string;
+  countId: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  locationId: string;
+  locationCode: string;
+  locationName: string;
+  lotId: string | null;
+  lotNumber: string | null;
+  snapshotAtoms: bigint;
+  countedAtoms: bigint;
+  discrepancyAtoms: bigint;
+  movementId: string | null;
+  notes: string | null;
+  version: number;
+}
+
+export interface StockCountDTO {
+  id: string;
+  workspaceId: string;
+  countNumber: string;
+  status: StockCountStatus;
+  locationId: string | null;
+  locationCode?: string | null;
+  locationName?: string | null;
+  reason: string | null;
+  notes: string | null;
+  countedById: string;
+  countedByName: string;
+  approvedById: string | null;
+  approvedByName?: string | null;
+  approvedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  lines: StockCountLineDTO[];
+}
+

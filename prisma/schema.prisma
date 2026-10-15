@@ -27,6 +27,9 @@ model User {
   accounts      Account[]
   memberships   Membership[]
   stockMovements StockMovement[]
+  supplyReceipts SupplyReceipt[]
+  countedStockCounts  StockCount[] @relation("CountedByUser")
+  approvedStockCounts StockCount[] @relation("ApprovedByUser")
 
   @@map("users")
 }
@@ -124,6 +127,12 @@ model Workspace {
   stockBalances     StockBalance[]
   stockReservations StockReservation[]
   stockMovements    StockMovement[]
+  supplyOrders      SupplyOrder[]
+  supplyOrderLines  SupplyOrderLine[]
+  supplyReceipts    SupplyReceipt[]
+  supplyReceiptLines SupplyReceiptLine[]
+  stockCounts       StockCount[]
+  stockCountLines   StockCountLine[]
 
   @@map("workspaces")
 }
@@ -325,6 +334,8 @@ model Supplier {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  supplyOrders  SupplyOrder[]
+  supplyReceipts SupplyReceipt[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -378,6 +389,9 @@ model Item {
   stockBalances     StockBalance[]
   stockReservations StockReservation[]
   stockMovements    StockMovement[]
+  supplyOrderLines  SupplyOrderLine[]
+  supplyReceiptLines SupplyReceiptLine[]
+  stockCountLines   StockCountLine[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -419,6 +433,9 @@ model Location {
   stockReservations StockReservation[]
   sourceMovements   StockMovement[] @relation("SourceLocation")
   destMovements     StockMovement[] @relation("DestLocation")
+  supplyReceiptLines SupplyReceiptLine[]
+  stockCounts       StockCount[]
+  stockCountLines   StockCountLine[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -1080,6 +1097,8 @@ model Lot {
   stockReservations StockReservation[]
   sourceMovements   StockMovement[]    @relation("SourceLot")
   destMovements     StockMovement[]    @relation("DestLot")
+  supplyReceiptLines SupplyReceiptLine[]
+  stockCountLines   StockCountLine[]
 
   @@unique([workspaceId, itemId, lotNumber])
   @@unique([workspaceId, id])
@@ -1187,5 +1206,159 @@ model StockMovement {
   @@unique([workspaceId, id])
   @@map("stock_movements")
 }
+
+// -------------------------------------------------------------
+// Supply Orders & Receipts (Milestone M3 - O02)
+// -------------------------------------------------------------
+
+model SupplyOrder {
+  id             String            @id @default(uuid())
+  workspaceId    String            @map("workspace_id")
+  orderNumber    String            @map("order_number")
+  supplierId     String            @map("supplier_id")
+  status         String            @default("DRAFT") // DRAFT | APPROVED | PARTIALLY_RECEIVED | RECEIVED | CANCELLED
+  expectedDate   DateTime          @map("expected_date")
+  notes          String?
+  version        Int               @default(1)
+  approvedById   String?           @map("approved_by_id")
+  approvedAt     DateTime?         @map("approved_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  workspace      Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  supplier       Supplier          @relation(fields: [workspaceId, supplierId], references: [workspaceId, id])
+  lines          SupplyOrderLine[]
+  receipts       SupplyReceipt[]
+
+  @@unique([workspaceId, orderNumber])
+  @@unique([workspaceId, id])
+  @@map("supply_orders")
+}
+
+model SupplyOrderLine {
+  id             String              @id @default(uuid())
+  workspaceId    String              @map("workspace_id")
+  supplyOrderId  String              @map("supply_order_id")
+  itemId         String              @map("item_id")
+  orderedAtoms   BigInt              @map("ordered_atoms")
+  receivedAtoms  BigInt              @default(0) @map("received_atoms")
+  unitPriceCents Int?                @map("unit_price_cents")
+  notes          String?
+  version        Int                 @default(1)
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  supplyOrder    SupplyOrder         @relation(fields: [workspaceId, supplyOrderId], references: [workspaceId, id], onDelete: Cascade)
+  item           Item                @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
+  receiptLines   SupplyReceiptLine[]
+
+  @@unique([workspaceId, id])
+  @@map("supply_order_lines")
+}
+
+model SupplyReceipt {
+  id            String              @id @default(uuid())
+  workspaceId   String              @map("workspace_id")
+  receiptNumber String              @map("receipt_number")
+  supplyOrderId String              @map("supply_order_id")
+  supplierId    String              @map("supplier_id")
+  receivedDate  DateTime            @default(now()) @map("received_date")
+  notes         String?
+  receivedById  String              @map("received_by_id")
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  workspace     Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  supplyOrder   SupplyOrder         @relation(fields: [workspaceId, supplyOrderId], references: [workspaceId, id])
+  supplier      Supplier            @relation(fields: [workspaceId, supplierId], references: [workspaceId, id])
+  receivedBy    User                @relation(fields: [receivedById], references: [id])
+  lines         SupplyReceiptLine[]
+
+  @@unique([workspaceId, receiptNumber])
+  @@unique([workspaceId, id])
+  @@map("supply_receipts")
+}
+
+model SupplyReceiptLine {
+  id                String          @id @default(uuid())
+  workspaceId       String          @map("workspace_id")
+  receiptId         String          @map("receipt_id")
+  supplyOrderLineId String          @map("supply_order_line_id")
+  itemId            String          @map("item_id")
+  locationId        String          @map("location_id")
+  lotId             String?         @map("lot_id")
+  receivedAtoms     BigInt          @map("received_atoms")
+  movementId        String?         @map("movement_id")
+  notes             String?
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  receipt           SupplyReceipt   @relation(fields: [workspaceId, receiptId], references: [workspaceId, id], onDelete: Cascade)
+  supplyOrderLine   SupplyOrderLine @relation(fields: [workspaceId, supplyOrderLineId], references: [workspaceId, id])
+  item              Item            @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
+  location          Location        @relation(fields: [workspaceId, locationId], references: [workspaceId, id])
+  lot               Lot?            @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+
+  @@unique([workspaceId, id])
+  @@map("supply_receipt_lines")
+}
+
+// -------------------------------------------------------------
+// Stock Counts & Inventory Adjustments (Milestone M3 - O04)
+// -------------------------------------------------------------
+
+model StockCount {
+  id             String           @id @default(uuid())
+  workspaceId    String           @map("workspace_id")
+  countNumber    String           @map("count_number")
+  status         String           @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | CANCELLED
+  locationId     String?          @map("location_id")
+  reason         String?
+  notes          String?
+  countedById    String           @map("counted_by_id")
+  approvedById   String?          @map("approved_by_id")
+  approvedAt     DateTime?        @map("approved_at")
+  version        Int              @default(1)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  workspace      Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  location       Location?        @relation(fields: [workspaceId, locationId], references: [workspaceId, id])
+  countedBy      User             @relation("CountedByUser", fields: [countedById], references: [id])
+  approvedBy     User?            @relation("ApprovedByUser", fields: [approvedById], references: [id])
+  lines          StockCountLine[]
+
+  @@unique([workspaceId, countNumber])
+  @@unique([workspaceId, id])
+  @@map("stock_counts")
+}
+
+model StockCountLine {
+  id                String          @id @default(uuid())
+  workspaceId       String          @map("workspace_id")
+  countId           String          @map("count_id")
+  itemId            String          @map("item_id")
+  locationId        String          @map("location_id")
+  lotId             String?         @map("lot_id")
+  snapshotAtoms     BigInt          @map("snapshot_atoms")
+  countedAtoms      BigInt          @map("counted_atoms")
+  discrepancyAtoms  BigInt          @map("discrepancy_atoms")
+  movementId        String?         @map("movement_id")
+  notes             String?
+  version           Int             @default(1)
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  count             StockCount      @relation(fields: [workspaceId, countId], references: [workspaceId, id], onDelete: Cascade)
+  item              Item            @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  location          Location        @relation(fields: [workspaceId, locationId], references: [workspaceId, id])
+  lot               Lot?            @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+
+  @@unique([workspaceId, id])
+  @@map("stock_count_lines")
+}
+
+
 
 

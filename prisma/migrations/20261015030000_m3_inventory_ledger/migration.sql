@@ -67,7 +67,7 @@ CREATE TABLE "stock_reservations" (
     "demand_id" TEXT,
     "order_id" TEXT,
     "task_id" TEXT,
-    "itemId" TEXT NOT NULL,
+    "item_id" TEXT NOT NULL,
     "location_id" TEXT NOT NULL,
     "lot_id" TEXT,
     "reserved_atoms" BIGINT NOT NULL CHECK ("reserved_atoms" > 0),
@@ -79,7 +79,7 @@ CREATE TABLE "stock_reservations" (
     CONSTRAINT "stock_reservations_workspace_id_demand_id_fkey" FOREIGN KEY ("workspace_id", "demand_id") REFERENCES "material_demands" ("workspace_id", "id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "stock_reservations_workspace_id_order_id_fkey" FOREIGN KEY ("workspace_id", "order_id") REFERENCES "orders" ("workspace_id", "id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "stock_reservations_workspace_id_task_id_fkey" FOREIGN KEY ("workspace_id", "task_id") REFERENCES "tasks" ("workspace_id", "id") ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT "stock_reservations_workspace_id_item_id_fkey" FOREIGN KEY ("workspace_id", "itemId") REFERENCES "items" ("workspace_id", "id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "stock_reservations_workspace_id_item_id_fkey" FOREIGN KEY ("workspace_id", "item_id") REFERENCES "items" ("workspace_id", "id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "stock_reservations_workspace_id_location_id_fkey" FOREIGN KEY ("workspace_id", "location_id") REFERENCES "locations" ("workspace_id", "id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "stock_reservations_workspace_id_lot_id_fkey" FOREIGN KEY ("workspace_id", "lot_id") REFERENCES "lots" ("workspace_id", "id") ON DELETE SET NULL ON UPDATE CASCADE
 );
