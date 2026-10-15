@@ -1,11 +1,12 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import React, { useState } from 'react';
-import { useCalendars, useAddCalendarException } from '@/features/masters/hooks';
+import { useAddCalendarException } from '@/features/masters/hooks';
 import { Calendar } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,7 @@ export default function CalendarsPage() {
   const [exceptionReason, setExceptionReason] = useState('');
   const [exceptionError, setExceptionError] = useState<ApiError | null>(null);
 
-  const { data, isLoading, error, refetch } = useCalendars();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Calendar>('calendars', {});
   const addException = useAddCalendarException(exceptionCalendar?.id ?? '');
 
   const calendars = data?.data || [];
@@ -84,6 +85,7 @@ export default function CalendarsPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load calendars'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={calendars}
           isLoading={isLoading}

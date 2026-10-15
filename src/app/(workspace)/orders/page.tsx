@@ -1,15 +1,20 @@
 'use client';
 
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { OrderDto } from '@/features/orders/api';
+
 import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
-import { useOrders } from '@/features/orders/hooks';
+
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/resource-state';
 
 export default function OrdersPage() {
-  const { data: orders = [], isPending, error, refetch } = useOrders();
+  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<OrderDto>('orders');
+  const orders = pageData?.data || [];
 
   if (isPending) return <LoadingState message="Loading orders…" />;
   if (error) return <ErrorState title="Failed to load orders" onRetry={() => refetch()} />;
@@ -82,6 +87,7 @@ export default function OrdersPage() {
           </table>
         </div>
       )}
+      <Pagination {...pagination} />
     </div>
   );
 }

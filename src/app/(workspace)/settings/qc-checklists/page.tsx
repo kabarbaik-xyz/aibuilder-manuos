@@ -1,9 +1,10 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import React, { useState } from 'react';
-import { useQcChecklists } from '@/features/masters/hooks';
+
 import { QcChecklist } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +14,7 @@ import { CreateQcChecklistModal } from '@/features/masters/components/resource-f
 
 export default function QcChecklistsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useQcChecklists();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<QcChecklist>('qc-checklists', {});
 
   const checklists = data?.data || [];
 
@@ -59,6 +60,7 @@ export default function QcChecklistsPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load checklists'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={checklists}
           isLoading={isLoading}

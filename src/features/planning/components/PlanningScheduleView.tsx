@@ -1,4 +1,7 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { ScheduledTaskResult } from '@/engines/schedule';
 
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
@@ -8,13 +11,14 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import React, { useState } from 'react';
 import { useTechnicians, useMachines } from '@/features/masters/hooks';
-import { useSchedule, useAssignTask } from '../hooks';
+import { useAssignTask } from '../hooks';
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 
 export function PlanningScheduleView() {
-  const { data: schedule, isLoading, error, refetch } = useSchedule();
+  const { data: pageData, isLoading, error, refetch, pagination } = usePaginatedList<ScheduledTaskResult, { makespanMinutes: number; projectedEndAt: string; criticalPathCount: number; scheduledTaskCount: number }>('planning');
+  const schedule = pageData?.summary ? { ...pageData.summary, scheduledTasks: pageData.data } : undefined;
   const assignMutation = useAssignTask();
   const techniciansQuery = useTechnicians();
   const machinesQuery = useMachines();
@@ -93,7 +97,7 @@ export function PlanningScheduleView() {
         <div className="planning-metric">
           <span className="text-xs font-semibold text-muted tracking-wider uppercase">Critical Path</span>
           <div className="text-2xl font-bold text-warning mt-1">
-            {schedule.criticalPath.length} Tasks
+            {schedule.criticalPathCount} Tasks
           </div>
           <p className="text-xs text-muted mt-1">Zero slack activities</p>
         </div>
@@ -101,7 +105,7 @@ export function PlanningScheduleView() {
         <div className="planning-metric">
           <span className="text-xs font-semibold text-muted tracking-wider uppercase">Scheduled tasks</span>
           <div className="text-2xl font-bold text-primary mt-1">
-            {schedule.scheduledTasks.length}
+            {schedule.scheduledTaskCount}
           </div>
           <p className="text-xs text-muted mt-1">Sequenced in routing network</p>
         </div>
@@ -196,6 +200,8 @@ export function PlanningScheduleView() {
           </table>
         </div>}
       </div>
+
+      <Pagination {...pagination} />
 
       {/* Resource Assignment Modal */}
       {selectedTaskId && (

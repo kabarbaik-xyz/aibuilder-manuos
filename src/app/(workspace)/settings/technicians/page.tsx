@@ -1,11 +1,12 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
-import { useTechnicians, useAddTechnicianSkill, useSkills } from '@/features/masters/hooks';
+import { useAddTechnicianSkill, useSkills } from '@/features/masters/hooks';
 import { Technician } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +17,7 @@ import { FormErrorSummary } from '@/components/ui/form-errors';
 import { ApiError } from '@/lib/api/client';
 
 export default function TechniciansPage() {
-  const { data, isLoading, error, refetch } = useTechnicians();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Technician>('technicians', {});
   const { data: skillsData } = useSkills();
   const skills = skillsData?.data || [];
 
@@ -105,6 +106,7 @@ export default function TechniciansPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load technicians'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={technicians}
           isLoading={isLoading}

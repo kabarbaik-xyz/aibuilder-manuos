@@ -1,9 +1,10 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import React, { useState } from 'react';
-import { useOrderTypes } from '@/features/masters/hooks';
+
 import { OrderType } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +14,7 @@ import { CreateOrderTypeModal } from '@/features/masters/components/resource-for
 
 export default function OrderTypesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useOrderTypes();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<OrderType>('order-types', {});
 
   const orderTypes = data?.data || [];
 
@@ -49,6 +50,7 @@ export default function OrderTypesPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load order types'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={orderTypes}
           isLoading={isLoading}

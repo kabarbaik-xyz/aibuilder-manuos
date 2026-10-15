@@ -1,10 +1,11 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import { Select } from '@/components/ui/select';
 import React, { useState } from 'react';
-import { useLocations } from '@/features/masters/hooks';
+
 import { Location } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +16,7 @@ import { CreateLocationModal } from '@/features/masters/components/resource-form
 export default function LocationsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useLocations({
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Location>('locations', {
     type: typeFilter || undefined,
   });
 
@@ -89,6 +90,7 @@ export default function LocationsPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load locations'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={locations}
           isLoading={isLoading}

@@ -1,14 +1,19 @@
 'use client';
 
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { SupplyReceiptDTO } from '@/server/modules/supply/contracts';
+
 import { ErrorState } from '@/components/ui/resource-state';
 import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
-import { useSupplyReceipts } from '@/features/supply/hooks';
+
 import { formatQuantity } from '@/domain/quantity';
 
 export default function InventoryReceiptsPage() {
-  const { data: receipts, isLoading, refetch, error: queryError } = useSupplyReceipts();
+  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<SupplyReceiptDTO>('receipts');
+  const receipts = pageData?.data || [];
 
   if (queryError) return <div className="page-stack"><PageHeader title="Inbound receipts"/><ErrorState message={queryError.message} onRetry={()=>refetch()}/></div>;
 
@@ -81,6 +86,7 @@ export default function InventoryReceiptsPage() {
           )}
         </div>
       </div>
+      <Pagination {...pagination} />
     </div>
   );
 }

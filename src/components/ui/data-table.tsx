@@ -1,4 +1,5 @@
 import React from 'react';
+import { Pagination, type PaginationProps } from './pagination';
 import Link from 'next/link';
 import { EmptyState, LoadingState } from './resource-state';
 
@@ -10,6 +11,7 @@ export interface Column<T> {
 }
 
 export interface DataTableProps<T> {
+  pagination?: PaginationProps;
   columns: Column<T>[];
   data?: T[];
   isLoading?: boolean;
@@ -21,6 +23,7 @@ export interface DataTableProps<T> {
 
 export function DataTable<T extends { id?: string }>({
   columns,
+  pagination,
   data,
   isLoading,
   emptyTitle,
@@ -33,11 +36,11 @@ export function DataTable<T extends { id?: string }>({
   }
 
   if (!data || data.length === 0) {
-    return <EmptyState title={emptyTitle} description={emptyDescription} />;
+    return <><EmptyState title={emptyTitle} description={emptyDescription} />{pagination && <Pagination {...pagination} />}</>;
   }
 
   return (
-    <div className="data-table">
+    <div><div className="data-table">
       <table className="w-full text-left text-sm text-ink">
         <thead className="border-b border-line bg-surface text-xs font-semibold uppercase tracking-wider text-muted">
           <tr>
@@ -66,6 +69,6 @@ export function DataTable<T extends { id?: string }>({
           ))}
         </tbody>
       </table>
-    </div>
+    </div>{pagination && <Pagination {...pagination} />}</div>
   );
 }

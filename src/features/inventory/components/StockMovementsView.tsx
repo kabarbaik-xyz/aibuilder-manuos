@@ -1,5 +1,9 @@
 'use client';
 
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { StockMovementDTO } from '@/server/modules/inventory/contracts';
+
 import { ErrorState } from '@/components/ui/resource-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { Dialog } from '@/components/ui/dialog';
@@ -7,7 +11,7 @@ import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useStockMovements, useReverseMovement } from '../hooks';
+import { useReverseMovement } from '../hooks';
 import { formatQuantity } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
 
@@ -18,21 +22,12 @@ export function StockMovementsView() {
   const [reversalReason, setReversalReason] = useState('');
   const [reversalError, setReversalError] = useState<string | null>(null);
 
-  const { data: movements, isLoading, refetch, error: queryError } = useStockMovements({
-    movementType: movementTypeFilter || undefined,
-  });
+  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<StockMovementDTO>('stock-movements', { search: itemFilter, movementType: movementTypeFilter });
+  const movements = pageData?.data || [];
 
   const reverseMutation = useReverseMovement();
 
-  const filteredMovements = (movements || []).filter((m) => {
-    const code = (m.itemCode || '').toLowerCase();
-    const name = (m.itemName || '').toLowerCase();
-    const query = itemFilter.toLowerCase();
-    if (itemFilter && !code.includes(query) && !name.includes(query)) {
-      return false;
-    }
-    return true;
-  });
+  const filteredMovements = movements;
 
   const handleReverse = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -248,6 +243,7 @@ export function StockMovementsView() {
           
         </Dialog>
       )}
+      <Pagination {...pagination} />
     </div>
   );
 }

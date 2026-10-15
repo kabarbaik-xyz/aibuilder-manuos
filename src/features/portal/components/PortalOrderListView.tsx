@@ -1,8 +1,11 @@
-"use client";
+'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { CustomerOrderSummaryDTO } from '@/features/portal/api';
 
 import React from "react";
 import Link from "next/link";
-import { usePortalOrders } from "../hooks";
+
 import { Button } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
 import { PageHeader } from "@/components/ui/page-header";
@@ -11,7 +14,9 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export function PortalOrderListView() {
-  const { orders, loading, error, refresh } = usePortalOrders();
+  const { data: pageData, isLoading: loading, error: queryError, refetch: refresh, pagination } = usePaginatedList<CustomerOrderSummaryDTO>('portal-orders');
+  const orders = pageData?.data || [];
+  const error = queryError?.message;
 
   return (
     <div className="page-stack">
@@ -28,7 +33,7 @@ export function PortalOrderListView() {
         <Panel className="p-8 text-center">
           <p className="text-sm text-red-600 font-medium mb-2">{error}</p>
           <Button
-            onClick={refresh}
+            onClick={() => void refresh()}
           >
             Retry
           </Button>
@@ -135,6 +140,7 @@ export function PortalOrderListView() {
           })}
         </div>
       )}
+      <Pagination {...pagination} />
     </div>
   );
 }

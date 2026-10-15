@@ -29,15 +29,17 @@ export class ProductionBrainService {
     requireAnyPermission(principal, [
       'order.read',
       'planning.read',
-      'execution.read',
+      'inventory.read',
+      'resource.manage',
       'customer_order.read_own',
     ]);
 
     const startTime = Date.now();
     const context = await buildAuthorizedContext(principal, this.prisma);
 
-    const promptVersion = 'brain-qa-v1';
-    const cacheKey = `brain:${context.contextHash}:${promptVersion}:${question.trim().toLowerCase()}`;
+    const model = process.env.GEMINI_FLASH_MODEL || 'gemini-2.5-flash';
+    const promptVersion = 'brain-qa-v4';
+    const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
     // 1. Check scoped cache
     const cached = getCached<Explanation<BrainAnswerDTO>>(cacheKey);
@@ -45,26 +47,29 @@ export class ProductionBrainService {
       return cached;
     }
 
+    const inventoryQuestion = /stock|inventory|material|stok|persediaan/i.test(question) && !/order|production|produksi/i.test(question);
+
     // 2. Build structured grounded prompt
     const prompt = `
 You are the ManuOS Operational Brain assistant for ${principal.workspaceId}.
 Answer the question below STRICTLY using the authorized factory operational context.
-NEVER invent fake orders, machines, or parts. Reference real IDs and numbers from the context.
+The context is a bounded sample, not workspace totals. Missing categories may be restricted by access. Say when the requested facts are unavailable. NEVER invent fake orders, machines, or parts. Reference real IDs and numbers from the context.
 
 Operational Context:
-- Active Orders (${context.orders.length}):
-${context.orders.map((o) => `  * ${o.orderNumber}: ${o.itemCode} (${o.orderedQty} units) for ${o.customerName}, Status: ${o.status}, Promised: ${o.promisedDate || 'None'}`).join('\n')}
+- Active Orders (${inventoryQuestion ? 'omitted: inventory-only question' : context.orders.length}):
+${(inventoryQuestion ? [] : context.orders).map((o) => `  * ${o.orderNumber}: ${o.itemCode} (${o.orderedQty} units) for ${o.customerName}, Status: ${o.status}, Promised: ${o.promisedDate || 'None'}`).join('\n')}
 
 - Stock Balances (${context.inventory.length}):
 ${context.inventory.map((i) => `  * ${i.itemCode} (${i.itemName}): On Hand: ${i.onHandQty}, Reserved: ${i.reservedQty}`).join('\n')}
 
-- Active Resources (${context.resources.length}):
-${context.resources.map((r) => `  * ${r.code} (${r.name}, ${r.type}): Status: ${r.status}`).join('\n')}
+- Active Resources (${inventoryQuestion ? 'omitted: inventory-only question' : context.resources.length}):
+${(inventoryQuestion ? [] : context.resources).map((r) => `  * ${r.code} (${r.name}, ${r.type}): Status: ${r.status}`).join('\n')}
 
 User Question: "${question}"
 
 Rules:
 - Read-only operational analysis only.
+- Keep the answer concise: at most 120 words and at most 5 evidence references. Answer the question directly; avoid listing every record.
 - Include verified evidence references from context in "evidenceRefs" (e.g. order numbers, part numbers).
 - Suggest relevant screen in "linkToScreen" ("command", "orchestrator", "workstation", "quality", "shipments").
 `;
@@ -85,6 +90,7 @@ Rules:
     // 4. Invoke model
     const aiRes = await callGeminiStructured<any>(prompt, cacheKey, {
       responseSchema,
+      maxOutputTokens: 1024,
     });
 
     const latencyMs = Date.now() - startTime;
@@ -93,13 +99,18 @@ Rules:
       schema: BrainAnswerSchema,
       rawData: aiRes.aiResult,
       context,
-      model: 'gemini-2.5-flash',
+      model,
       fallbackData: fallbackAnswer,
     });
 
+    if (explanation.status === 'FALLBACK' && !aiRes.aiResult) {
+      explanation.reason = aiRes.reason === 'timeout' ? 'TIMEOUT' : aiRes.reason === 'schema' ? 'SCHEMA_ERROR' : 'UNAVAILABLE';
+      explanation.message = explanation.reason === 'TIMEOUT' ? 'AI response exceeded the time limit' : explanation.reason === 'SCHEMA_ERROR' ? 'AI response could not be validated' : 'AI provider is unavailable';
+    }
+
     recordProvenance({
       contextHash: context.contextHash,
-      model: 'gemini-2.5-flash',
+      model,
       promptVersion,
       latencyMs,
       status: explanation.status,
@@ -124,14 +135,14 @@ Rules:
     if (q.includes('order') || q.includes('active') || q.includes('status')) {
       if (activeOrders.length === 0) {
         return {
-          answer: 'There are currently no active production orders in the workspace.',
+          answer: 'No active orders are present in the records accessible to this snapshot.',
           evidenceRefs: [],
           linkToScreen: 'command',
         };
       }
       const firstOrder = activeOrders[0];
       return {
-        answer: `Factory has ${activeOrders.length} active orders. Latest order ${firstOrder.orderNumber} (${firstOrder.itemCode}, ${firstOrder.orderedQty} units) is currently ${firstOrder.status}.`,
+        answer: `The latest accessible snapshot includes ${activeOrders.length} active orders (up to 20 records). Latest order ${firstOrder.orderNumber} (${firstOrder.itemCode}, ${firstOrder.orderedQty} units) is currently ${firstOrder.status}.`,
         evidenceRefs: [firstOrder.orderNumber, firstOrder.itemCode],
         linkToScreen: 'orchestrator',
       };
@@ -140,21 +151,21 @@ Rules:
     if (q.includes('stock') || q.includes('inventory') || q.includes('material')) {
       if (context.inventory.length === 0) {
         return {
-          answer: 'No inventory balances are currently recorded in the warehouse ledger.',
+          answer: 'No inventory balances are available in this snapshot. Your access may restrict inventory records.',
           evidenceRefs: [],
           linkToScreen: 'workstation',
         };
       }
       const firstInv = context.inventory[0];
       return {
-        answer: `Tracking ${context.inventory.length} item balances. ${firstInv.itemCode} has ${firstInv.onHandQty} on hand (${firstInv.reservedQty} reserved).`,
+        answer: `The accessible inventory sample includes ${context.inventory.length} items (up to 30 balance records). ${firstInv.itemCode} has ${firstInv.onHandQty} on hand (${firstInv.reservedQty} reserved).`,
         evidenceRefs: [firstInv.itemCode],
         linkToScreen: 'workstation',
       };
     }
 
     return {
-      answer: `Operational factory state contains ${activeOrders.length} orders, ${context.inventory.length} tracked materials, and ${context.resources.length} active machines/technicians.`,
+      answer: `The latest accessible snapshot contains ${activeOrders.length} orders, ${context.inventory.length} tracked materials, and ${context.resources.length} machines/technicians. This is a limited snapshot, not workspace totals.`,
       evidenceRefs: activeOrders.slice(0, 2).map((o) => o.orderNumber),
       linkToScreen: 'command',
     };

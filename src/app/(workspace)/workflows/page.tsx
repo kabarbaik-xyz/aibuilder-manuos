@@ -1,15 +1,19 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { WorkflowTemplateDto } from '@/features/workflows/api';
 
 import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
-import { useWorkflowTemplates } from '@/features/workflows/hooks';
+
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/resource-state';
 
 export default function WorkflowsPage() {
-  const { data: templates = [], isPending, error, refetch } = useWorkflowTemplates();
+  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<WorkflowTemplateDto>('workflows');
+  const templates = pageData?.data || [];
 
   if (isPending) return <LoadingState message="Loading workflows…" />;
   if (error) return <ErrorState title="Failed to load workflows" onRetry={() => refetch()} />;
@@ -63,6 +67,7 @@ export default function WorkflowsPage() {
           })}
         </div>
       )}
+      <Pagination {...pagination} />
     </div>
   );
 }

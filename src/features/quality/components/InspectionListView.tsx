@@ -1,8 +1,12 @@
 'use client';
 
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { InspectionDTO } from '@/features/quality/api';
+
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useInspections } from '../hooks';
+
 import { ButtonLink } from '@/components/ui/button-link';
 import { Badge } from '@/components/ui/badge';
 import { formatQuantity } from '@/domain/quantity';
@@ -12,9 +16,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 
 export function InspectionListView() {
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const { data: inspections, isLoading, error } = useInspections(
-    statusFilter ? { status: statusFilter } : undefined
-  );
+  const { data: pageData, isLoading, error, pagination } = usePaginatedList<InspectionDTO>('inspections', { status: statusFilter });
+  const inspections = pageData?.data || [];
 
   return (
     <div className="page-stack">
@@ -145,6 +148,7 @@ export function InspectionListView() {
           </div>
         )}
       </Panel>
+      <Pagination {...pagination} />
     </div>
   );
 }

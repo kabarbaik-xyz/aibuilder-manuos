@@ -13,6 +13,7 @@ coverage
 
 # Next.js
 .next/
+.next-*/
 out/
 build/
 dist/
@@ -20,6 +21,10 @@ dist/
 # Misc
 .DS_Store
 *.pem
+.idea/
+.vscode/
+*.swp
+*.swo
 
 # Local env files
 .env*
@@ -54,9 +59,6 @@ tests/temp/
 # Local UI review captures
 artifacts/ui-restoration/
 
-# Isolated UI browser server
-.next-ui/
-
-.next-ui-build/
-
+# Local database backup manifests and generated storage
 storage/*
+backups/

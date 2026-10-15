@@ -7,6 +7,7 @@ import { Dialog } from './ui/dialog';
 import { RecoveryStudio } from '../features/recovery/recovery-studio';
 import { PromiseModal } from '../features/promise/promise-modal';
 import { IntakeModal } from '../features/intake/intake-modal';
+import { WorkspaceBrainDrawer } from '../features/brain/workspace-brain-drawer';
 import { BrainDrawer } from '../features/brain/brain-drawer';
 import { MemoryModal } from '../features/memory/memory-modal';
 import { PassportModal } from '../features/passport/passport-modal';
@@ -22,6 +23,9 @@ export function ModalManager() {
   const { activeModal, modalData, closeModal, setScreen } = useGraphStore();
 
   if (!activeModal) return null;
+  if (!isDemo && activeModal === 'brain') {
+    return <Dialog isOpen onClose={closeModal} title="Ask ManuOS" subtitle="Your production workspace, explained." type="drawer" className="dialog-drawer-chat"><WorkspaceBrainDrawer /></Dialog>;
+  }
   if (!isDemo) {
     return <Dialog isOpen onClose={closeModal} title={activeModal === 'search' ? 'Find a page' : 'Ask ManuOS'} type={activeModal === 'search' ? 'search' : 'drawer'}>{activeModal === 'search' ? <SearchDialog/> : <div className="page-stack"><Badge variant="default">Unavailable</Badge><h3>Production intelligence is not connected yet</h3><p className="muted">Workspace answers will appear here when intelligence is connected to your operational records.</p></div>}</Dialog>;
   }

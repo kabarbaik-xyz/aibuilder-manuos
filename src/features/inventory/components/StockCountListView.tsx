@@ -1,14 +1,18 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { StockCountDTO } from '@/server/modules/inventory/contracts';
 
 import { ErrorState } from '@/components/ui/resource-state';
 import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
-import { useStockCounts } from '../hooks';
+
 import { Button } from '@/components/ui/button';
 
 export function StockCountListView() {
-  const { data: counts, isLoading, refetch, error: queryError } = useStockCounts();
+  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<StockCountDTO>('stock-counts');
+  const counts = pageData?.data || [];
 
   if (queryError) return <div className="page-stack"><PageHeader title="Stock counts"/><ErrorState message={queryError.message} onRetry={()=>refetch()}/></div>;
 
@@ -68,6 +72,7 @@ export function StockCountListView() {
           </div>
         )}
       </div>
+      <Pagination {...pagination} />
     </div>
   );
 }

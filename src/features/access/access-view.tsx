@@ -1,4 +1,5 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { useId, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -38,16 +39,15 @@ export function AccessView({ section }: { section: Section }) {
   const queryKey = ['access', workspaceId];
   const roles = useQuery({ queryKey: [...queryKey, 'roles'], queryFn: () => apiRequest<{ data: AccessRole[] }>('/api/roles'), enabled: allowed });
   const permissions = useQuery({ queryKey: [...queryKey, 'permissions'], queryFn: () => apiRequest<{ data: Permission[] }>('/api/permissions'), enabled: allowed });
-  const users = useQuery({ queryKey: [...queryKey, 'users'], queryFn: () => apiRequest<{ data: AccessUser[] }>('/api/users'), enabled: allowed && section === 'users' });
+  const table = usePaginatedList<AccessUser | AccessRole | Permission>(section, { search }, allowed);
   const scopes = useQuery({ queryKey: [...queryKey, 'scopes'], queryFn: () => apiRequest<{ data: Scopes }>('/api/access/scopes'), enabled: allowed && section === 'users' });
   if (isPending) return <LoadingState />;
   if (!allowed) return <ErrorState message={sessionError?.message || 'You need access.manage to administer workspace access.'} />;
-  const error = roles.error || permissions.error || users.error || scopes.error;
-  const loading = roles.isPending || permissions.isPending || (section === 'users' && (users.isPending || scopes.isPending));
-  const match = (value: string) => value.toLowerCase().includes(search.trim().toLowerCase());
+  const error = roles.error || permissions.error || table.error || scopes.error;
+  const loading = roles.isPending || permissions.isPending || table.isPending || (section === 'users' && scopes.isPending);
   const roleData = roles.data?.data || [];
   const permissionData = permissions.data?.data || [];
-  const userData = users.data?.data || [];
+  const userData = (table.data?.data || []) as AccessUser[];
   const userColumns: Column<AccessUser>[] = [
     { key: 'name', header: 'User', render: user => <div><strong>{user.name}</strong><p className="muted">{user.email}</p></div> },
     { key: 'roles', header: 'Roles', render: user => <div className="access-badges">{user.roles.map(code => <Badge key={code}>{roleData.find(role => role.code === code)?.name || code}</Badge>)}</div> },
@@ -72,7 +72,7 @@ export function AccessView({ section }: { section: Section }) {
     <PageHeader title={section[0].toUpperCase() + section.slice(1)} description={descriptions[section]} actions={section !== 'permissions' && <Button variant="primary" icon="plus" onClick={() => setEditor({})} disabled={loading || Boolean(error)}>{section === 'users' ? 'New user' : 'New role'}</Button>} />
     {notice && <p className="field-help" role="status">{notice}</p>}
     <div className="access-search"><label className="sr-only" htmlFor="access-search">Search {section}</label><Input id="access-search" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={`Search ${section}…`} /></div>
-    {error ? <ErrorState message={error.message} onRetry={() => { void roles.refetch(); void permissions.refetch(); if (section === 'users') { void users.refetch(); void scopes.refetch(); } }} /> : loading ? <LoadingState /> : section === 'users' ? <DataTable columns={userColumns} data={userData.filter(user => match(`${user.name} ${user.email} ${user.roles.join(' ')} ${user.status}`))} emptyTitle="No users found" emptyDescription="Try a different search or create a workspace user." /> : section === 'roles' ? <DataTable columns={roleColumns} data={roleData.filter(role => match(`${role.name} ${role.code}`))} emptyTitle="No roles found" /> : <DataTable columns={permissionColumns} data={permissionData.filter(p => match(`${p.code} ${p.description} ${p.resource}`)).map(p => ({ ...p, id: p.code }))} emptyTitle="No permissions found" />}
+    {error ? <ErrorState message={error.message} onRetry={() => { void roles.refetch(); void permissions.refetch(); void table.refetch(); if (section === 'users') { void scopes.refetch(); } }} /> : loading ? <LoadingState /> : section === 'users' ? <DataTable columns={userColumns} pagination={table.pagination} data={userData} emptyTitle="No users found" emptyDescription="Try a different search or create a workspace user." /> : section === 'roles' ? <DataTable columns={roleColumns} pagination={table.pagination} data={(table.data?.data || []) as AccessRole[]} emptyTitle="No roles found" /> : <DataTable columns={permissionColumns} pagination={table.pagination} data={((table.data?.data || []) as Permission[]).map(p => ({ ...p, id: p.code }))} emptyTitle="No permissions found" />}
     {section === 'permissions' && <p className="field-help">Permissions are defined by application capabilities. Assign them through custom roles; creating arbitrary permission names would not add application behavior.</p>}
     {editor && <AccessEditor section={section} user={editor.user} role={editor.role} roles={roleData} permissions={permissionData} scopes={scopes.data?.data || { customers: [], technicians: [] }} workspaceId={workspaceId!} onClose={() => setEditor(null)} onSaved={message => { setEditor(null); setNotice(message); }} />}
   </div>;

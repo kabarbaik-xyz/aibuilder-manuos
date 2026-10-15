@@ -125,7 +125,7 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
       {/* Top Header & Actions */}
       <PageHeader
         title={template.name}
-        description={<span className="form-builder-meta"><Badge variant={version.status === 'PUBLISHED' ? 'success' : version.status === 'REVIEW' ? 'warning' : 'default'}>{version.status.toLowerCase()}</Badge><span>Version {version.versionNumber}</span><span>{template.purpose.toLowerCase().replace(/_/g, ' ')}</span><span className="form-builder-template-code">{template.code}</span></span>}
+        description={<span className="form-builder-meta"><Badge variant={version.status === 'PUBLISHED' ? 'success' : version.status === 'REVIEW' ? 'warning' : 'default'}>{version.status.toLowerCase()}</Badge><span>Version {version.versionNumber}</span><span>{template.purpose.toLowerCase().replace(/_/g, ' ')}</span></span>}
         actions={
         <div className="flex items-center gap-2">
           {!isReadOnly && (
@@ -192,10 +192,13 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
 
       {/* AI Form Assistant */}
       {!isReadOnly && (
-        <div className="space-y-4">
+        <details className="form-builder-assistant">
+          <summary><span><Icon name="spark" />Draft with AI<span className="form-builder-optional">Optional</span></span><Icon name="down" /></summary>
+          <div className="form-builder-assistant-body">
           {!aiProposal ? (
             <GenerationPanel
               target="FORM"
+              embedded
               targetDraftId={version.id}
               baseRevision={version.versionNumber}
               onGenerated={(prop) => setAiProposal(prop)}
@@ -217,43 +220,44 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
               onDiscard={() => setAiProposal(null)}
             />
           )}
-        </div>
+          </div>
+        </details>
       )}
 
-      {/* Responsive tabs keep the configuration and preview comfortably readable. */}
-      <div className="form-builder-tabs" role="group" aria-label="Editor view">
-        <Button variant={activeTab === 'fields' ? 'soft' : 'ghost'} aria-pressed={activeTab === 'fields'} onClick={() => setActiveTab('fields')}>Fields & configuration</Button>
-        <Button variant={activeTab === 'preview' ? 'soft' : 'ghost'} aria-pressed={activeTab === 'preview'} onClick={() => setActiveTab('preview')}>Live preview</Button>
-      </div>
+      {/* One workbench keeps the field outline beside a focused configuration or preview. */}
+      <Panel className="form-builder-workbench">
+        <div className="form-builder-toolbar">
+          <div><strong>Form builder</strong><span>{definition.fields.length} {definition.fields.length === 1 ? 'field' : 'fields'}</span></div>
+          <div className="form-builder-tabs" role="group" aria-label="Editor view"><Button variant={activeTab === 'fields' ? 'default' : 'ghost'} aria-pressed={activeTab === 'fields'} onClick={() => setActiveTab('fields')}>Configure</Button><Button variant={activeTab === 'preview' ? 'default' : 'ghost'} aria-pressed={activeTab === 'preview'} onClick={() => setActiveTab('preview')}>Preview</Button></div>
+        </div>
+        <div className={`form-builder-layout form-builder-view-${activeTab}`}>
+          {/* Fields list */}
+          <aside className="form-builder-fields" aria-label="Form fields">
+            <div className="form-builder-panel-header"><h2>Fields</h2>{!isReadOnly && <Button variant="ghost" size="small" icon="plus" onClick={() => { handleAddField(); setActiveTab('fields'); }}>Add field</Button>}</div>
+            <div className="form-builder-field-list">
+              {definition.fields.map((field, idx) => (
+                <div key={field.key} className={`form-builder-field ${selectedIndex === idx ? 'is-selected' : ''}`}>
+                  <button type="button" className="form-builder-field-select" aria-pressed={selectedIndex === idx} onClick={() => { setSelectedIndex(idx); setActiveTab('fields'); }}><span className="form-builder-field-number">{idx + 1}</span><span><strong>{field.label}</strong><small>{field.kind === 'textarea' ? 'Long text' : field.kind === 'select' ? 'Single choice' : field.kind.replace(/_/g, ' ')}{field.required ? ' · Required' : ''}</small></span></button>
+                  {!isReadOnly && selectedIndex === idx && <div className="form-builder-field-actions"><Button variant="icon" aria-label={`Move ${field.label} up`} title="Move up" disabled={idx === 0} onClick={() => handleMoveField(idx, 'up')}><Icon name="chevron" className="form-builder-up" /></Button><Button variant="icon" aria-label={`Move ${field.label} down`} title="Move down" disabled={idx === definition.fields.length - 1} onClick={() => handleMoveField(idx, 'down')}><Icon name="chevron" className="form-builder-down" /></Button><Button variant="icon" aria-label={`Remove ${field.label}`} title="Remove field" onClick={() => handleRemoveField(idx)}><Icon name="close" /></Button></div>}
+                </div>
+              ))}
+              {!definition.fields.length && <p className="field-help form-builder-empty">Add your first field to start building this form.</p>}
+            </div>
+          </aside>
 
-      {/* Three columns on wide screens; switchable preview on narrower workspaces. */}
-      <div className={`form-builder-layout form-builder-view-${activeTab}`}>
-        {/* Fields list */}
-        <Panel className="form-builder-fields">
-          <div className="form-builder-panel-header"><div><h2>Fields <span className="form-builder-count">{definition.fields.length}</span></h2><p>Select a field to inspect its settings.</p></div>{!isReadOnly && <Button variant="soft" size="small" icon="plus" onClick={handleAddField}>Add</Button>}</div>
-          <div className="form-builder-field-list">
-            {definition.fields.map((field, idx) => (
-              <div key={field.key} className={`form-builder-field ${selectedIndex === idx ? 'is-selected' : ''}`}>
-                <button type="button" className="form-builder-field-select" aria-pressed={selectedIndex === idx} onClick={() => setSelectedIndex(idx)}><span className="form-builder-field-number">{String(idx + 1).padStart(2, '0')}</span><span><strong>{field.label}</strong><small>{field.kind.replace(/_/g, ' ')}{field.required ? ' · Required' : ''}</small></span></button>
-                {!isReadOnly && <div className="form-builder-field-actions"><Button variant="icon" aria-label={`Move ${field.label} up`} title="Move up" disabled={idx === 0} onClick={() => handleMoveField(idx, 'up')}><Icon name="chevron" className="form-builder-up" /></Button><Button variant="icon" aria-label={`Move ${field.label} down`} title="Move down" disabled={idx === definition.fields.length - 1} onClick={() => handleMoveField(idx, 'down')}><Icon name="chevron" className="form-builder-down" /></Button><Button variant="icon" aria-label={`Remove ${field.label}`} title="Remove field" onClick={() => handleRemoveField(idx)}><Icon name="close" /></Button></div>}
-              </div>
-            ))}
-            {!definition.fields.length && <p className="field-help">No fields yet. Add the first field to begin.</p>}
-          </div>
-        </Panel>
+          {/* Field configuration */}
+          <section className="form-builder-config" aria-label="Field configuration">
+            <div className="form-builder-panel-header"><div><h2>{selectedField?.label || 'Field settings'}</h2><p>{selectedField ? `Field ${selectedIndex + 1} of ${definition.fields.length}` : 'Select a field from the outline.'}</p></div>{isReadOnly && <Badge>Read only</Badge>}</div>
+            <div className="form-builder-panel-body">{selectedField ? <FieldEditor field={selectedField} availableEarlierFields={definition.fields.slice(0, selectedIndex)} onChange={updated => { const nextFields = [...definition.fields]; nextFields[selectedIndex] = updated; setDefinition({ ...definition, fields: nextFields }); }} readOnly={isReadOnly} /> : <div className="form-builder-empty"><h3>Build your form</h3><p>Add a field to configure its label, type and rules.</p>{!isReadOnly && <Button variant="soft" icon="plus" onClick={handleAddField}>Add first field</Button>}</div>}</div>
+          </section>
 
-        {/* Field configuration */}
-        <Panel className="form-builder-config">
-          <div className="form-builder-panel-header"><div><h2>Field settings</h2><p>{selectedField?.label || 'No field selected'}</p></div>{isReadOnly && <Badge>Read only</Badge>}</div>
-          <div className="form-builder-panel-body">{selectedField ? <FieldEditor field={selectedField} availableEarlierFields={definition.fields.slice(0, selectedIndex)} onChange={updated => { const nextFields = [...definition.fields]; nextFields[selectedIndex] = updated; setDefinition({ ...definition, fields: nextFields }); }} readOnly={isReadOnly} /> : <p className="field-help">Select or add a field to configure its properties.</p>}</div>
-        </Panel>
-
-        {/* Live preview remains interactive for published definitions. */}
-        <Panel className="form-builder-preview">
-          <div className="form-builder-panel-header"><div><h2>Live preview</h2><p>Try the form as a respondent.</p></div><Button variant="ghost" size="small" onClick={() => setPreviewAnswers({})}>Reset</Button></div>
-          <div className="form-builder-panel-body"><FormRenderer definition={definition} value={previewAnswers} onChange={setPreviewAnswers} /><p className="form-builder-preview-note">Preview answers are temporary and are not submitted.</p></div>
-        </Panel>
-      </div>
+          {/* Preview uses the full main canvas instead of competing with the configuration. */}
+          <section className="form-builder-preview" aria-label="Form preview">
+            <div className="form-builder-panel-header"><div><h2>Form preview</h2><p>Check the respondent experience.</p></div><Button variant="ghost" size="small" onClick={() => setPreviewAnswers({})}>Reset answers</Button></div>
+            <div className="form-builder-panel-body"><h3 className="form-builder-preview-title">{template.name}</h3><FormRenderer definition={definition} value={previewAnswers} onChange={setPreviewAnswers} /><p className="form-builder-preview-note">Preview only. Answers are not submitted.</p></div>
+          </section>
+        </div>
+      </Panel>
     </div>
   );
 }

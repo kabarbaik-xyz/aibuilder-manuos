@@ -1,3 +1,4 @@
+import { formatQuantity } from '@/domain/quantity';
 import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { createHash } from 'crypto';
@@ -14,7 +15,7 @@ export interface AuthorizedContextOrder {
   customerName: string;
   itemCode: string;
   itemName: string;
-  orderedQty: number;
+  orderedQty: string;
   status: string;
   promisedDate: string | null;
 }
@@ -23,8 +24,8 @@ export interface AuthorizedContextInventory {
   itemId: string;
   itemCode: string;
   itemName: string;
-  onHandQty: number;
-  reservedQty: number;
+  onHandQty: string;
+  reservedQty: string;
 }
 
 export interface AuthorizedContextResource {
@@ -74,7 +75,8 @@ export async function buildAuthorizedContext(
 
   // 2. Fetch scoped orders (respect customer tenancy if customer user)
   const effectiveCustomerId = principal.customerId || undefined;
-  const dbOrders = await prisma.order.findMany({
+  const canReadOrders = principal.permissions.has('order.read') || principal.permissions.has('planning.read') || (Boolean(effectiveCustomerId) && principal.permissions.has('customer_order.read_own'));
+  const dbOrders = canReadOrders ? await prisma.order.findMany({
     where: {
       workspaceId,
       ...(effectiveCustomerId ? { customerId: effectiveCustomerId } : {}),
@@ -87,7 +89,7 @@ export async function buildAuthorizedContext(
     },
     take: 20,
     orderBy: { createdAt: 'desc' },
-  });
+  }) : [];
 
   const orders: AuthorizedContextOrder[] = dbOrders.map((o) => ({
     id: o.id,
@@ -95,13 +97,13 @@ export async function buildAuthorizedContext(
     customerName: o.customer.name,
     itemCode: o.item.code,
     itemName: o.item.name,
-    orderedQty: Number(o.orderedAtoms / 1_000_000n),
+    orderedQty: formatQuantity(o.orderedAtoms),
     status: o.status,
     promisedDate: o.promisedDate ? o.promisedDate.toISOString().slice(0, 10) : null,
   }));
 
   // 3. Fetch inventory balances
-  const balances = await prisma.stockBalance.findMany({
+  const balances = !effectiveCustomerId && principal.permissions.has('inventory.read') ? await prisma.stockBalance.findMany({
     where: {
       workspaceId,
       ...(scope?.itemId ? { itemId: scope.itemId } : {}),
@@ -110,7 +112,7 @@ export async function buildAuthorizedContext(
       item: true,
     },
     take: 30,
-  });
+  }) : [];
 
   const itemBalanceMap = new Map<string, { item: any; onHand: bigint; reserved: bigint }>();
   for (const b of balances) {
@@ -129,21 +131,22 @@ export async function buildAuthorizedContext(
       itemId,
       itemCode: data.item.code,
       itemName: data.item.name,
-      onHandQty: Number(data.onHand / 1_000_000n),
-      reservedQty: Number(data.reserved / 1_000_000n),
+      onHandQty: formatQuantity(data.onHand),
+      reservedQty: formatQuantity(data.reserved),
     })
   );
 
   // 4. Fetch resources (machines & technicians)
-  const machines = await prisma.machine.findMany({
+  const canReadResources = !effectiveCustomerId && (principal.permissions.has('planning.read') || principal.permissions.has('resource.manage'));
+  const machines = canReadResources ? await prisma.machine.findMany({
     where: { workspaceId, archivedAt: null },
     take: 10,
-  });
+  }) : [];
 
-  const technicians = await prisma.technician.findMany({
+  const technicians = canReadResources ? await prisma.technician.findMany({
     where: { workspaceId, archivedAt: null },
     take: 10,
-  });
+  }) : [];
 
   const resources: AuthorizedContextResource[] = [
     ...machines.map((m) => ({
@@ -166,10 +169,10 @@ export async function buildAuthorizedContext(
   const evidenceSet = new Set<string>();
 
   // Include active items in workspace
-  const catalogItems = await prisma.item.findMany({
+  const catalogItems = !effectiveCustomerId && (principal.permissions.has('inventory.read') || principal.permissions.has('item.manage') || principal.permissions.has('planning.read')) ? await prisma.item.findMany({
     where: { workspaceId, archivedAt: null },
     take: 50,
-  });
+  }) : [];
   for (const it of catalogItems) {
     evidenceSet.add(it.id);
     evidenceSet.add(it.code);
@@ -199,10 +202,12 @@ export async function buildAuthorizedContext(
     workspaceId,
     workspaceRevision,
     effectiveCustomerId,
+    permissions: [...principal.permissions].sort(),
     scope,
-    orders: orders.map((o) => ({ id: o.id, num: o.orderNumber, status: o.status })),
-    inventory: inventory.map((i) => ({ code: i.itemCode, onHand: i.onHandQty })),
-    resources: resources.map((r) => ({ code: r.code, status: r.status })),
+    orders,
+    inventory,
+    resources,
+    evidenceIndex: [...evidenceSet].sort(),
   };
 
   const contextHash = createHash('sha256')

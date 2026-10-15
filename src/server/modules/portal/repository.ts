@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { db as defaultDb } from '@/server/db/client';
 import { formatQuantity } from '@/domain/quantity';
 import {
@@ -11,13 +11,15 @@ import {
 } from './contracts';
 
 export class PortalRepository {
-  constructor(private readonly prisma: PrismaClient = defaultDb) {}
+  constructor(private readonly prisma: PrismaClient | Prisma.TransactionClient = defaultDb) {}
 
   async listCustomerOrders(
     workspaceId: string,
-    customerId: string
+    customerId: string,
+    pagination?: { skip: number; take: number }
   ): Promise<CustomerOrderSummaryDTO[]> {
     const orders = await this.prisma.order.findMany({
+      ...(pagination || {}),
       where: {
         workspaceId,
         customerId,
@@ -42,7 +44,7 @@ export class PortalRepository {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
 
     return orders.map((o) => {

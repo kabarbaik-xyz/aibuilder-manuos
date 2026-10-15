@@ -1,9 +1,10 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import React, { useState } from 'react';
-import { useDepartments } from '@/features/masters/hooks';
+
 import { Department } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +14,7 @@ import { CreateDepartmentModal } from '@/features/masters/components/resource-fo
 
 export default function DepartmentsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useDepartments();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Department>('departments', {});
 
   const departments = data?.data || [];
 
@@ -49,6 +50,7 @@ export default function DepartmentsPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load departments'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={departments}
           isLoading={isLoading}

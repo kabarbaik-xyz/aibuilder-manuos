@@ -7,11 +7,5 @@ export const metadata = {
 };
 
 export default function ShopFloorPage() {
-  return (
-    <div className="page-stack">
-      <div className="max-w-7xl mx-auto">
-        <ShopFloorTaskListView />
-      </div>
-    </div>
-  );
+  return <ShopFloorTaskListView />;
 }

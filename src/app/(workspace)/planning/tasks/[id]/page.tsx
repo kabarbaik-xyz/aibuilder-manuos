@@ -6,6 +6,7 @@ import { planningService } from '@/server/modules/planning/service';
 import { executionService } from '@/server/modules/execution/service';
 import { Badge } from '@/components/ui/badge';
 import { notFound } from 'next/navigation';
+import { NotFoundError } from '@/domain/errors';
 
 export const metadata = {
   title: 'Task Planning & Resource Assignment | ManuOS',
@@ -21,12 +22,13 @@ export default async function PlanningTaskDetailPage({
   const h = await headers();
   const mockReq = { headers: h } as any;
 
+  const principal = await requirePrincipal(mockReq);
   let task: any;
   try {
-    const principal = await requirePrincipal(mockReq);
     task = await executionService.getTaskExecutionDetail(principal, id);
-  } catch {
-    notFound();
+  } catch (error) {
+    if (error instanceof NotFoundError) notFound();
+    throw error;
   }
 
   return (

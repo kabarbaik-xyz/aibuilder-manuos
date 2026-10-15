@@ -1,11 +1,12 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useCustomers } from '@/features/masters/hooks';
+
 import { Customer } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +18,7 @@ export default function CustomersPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useCustomers({ search: search || undefined });
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Customer>('customers', { search: search || undefined });
 
   const customers = data?.data || [];
 
@@ -75,6 +76,7 @@ export default function CustomersPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load customers'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={customers}
           isLoading={isLoading}

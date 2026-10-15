@@ -1,11 +1,15 @@
 'use client';
 
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { StockBalanceDTO } from '@/server/modules/inventory/contracts';
+
 import { ErrorState } from '@/components/ui/resource-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useStockBalances } from '../hooks';
+
 import { formatQuantity } from '@/domain/quantity';
 import { Button } from '@/components/ui/button';
 
@@ -13,17 +17,10 @@ export function StockBalancesView() {
   const [itemFilter, setItemFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
 
-  const { data: balances, isLoading, refetch, error: queryError } = useStockBalances();
+  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<StockBalanceDTO>('stock-balances', { search: itemFilter, locationSearch: locationFilter });
+  const balances = pageData?.data || [];
 
-  const filteredBalances = (balances || []).filter((b) => {
-    if (itemFilter && !b.itemCode.toLowerCase().includes(itemFilter.toLowerCase()) && !b.itemName.toLowerCase().includes(itemFilter.toLowerCase())) {
-      return false;
-    }
-    if (locationFilter && !b.locationCode.toLowerCase().includes(locationFilter.toLowerCase()) && !b.locationName.toLowerCase().includes(locationFilter.toLowerCase())) {
-      return false;
-    }
-    return true;
-  });
+  const filteredBalances = balances;
 
   // Calculate totals
   let totalOnHandAtoms = 0n;
@@ -58,35 +55,35 @@ export function StockBalancesView() {
       {/* Summary Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="card p-4">
-          <p className="text-xs text-muted uppercase font-semibold">Stock positions</p>
+          <p className="text-xs text-muted uppercase font-semibold">Stock positions on this page</p>
           <p className="text-xl font-bold font-mono text-ink mt-1">
             {filteredBalances.length}
           </p>
           <p className="text-xs text-muted mt-1">Item, lot and location combinations</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-muted uppercase font-semibold">Reserved positions</p>
+          <p className="text-xs text-muted uppercase font-semibold">Reserved on this page</p>
           <p className="text-xl font-bold font-mono text-warning mt-1">
             {filteredBalances.filter(b => b.reservedAtoms > 0n).length}
           </p>
           <p className="text-xs text-muted mt-1">Positions with reserved stock</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-muted uppercase font-semibold">Available positions</p>
+          <p className="text-xs text-muted uppercase font-semibold">Available on this page</p>
           <p className="text-xl font-bold font-mono text-success mt-1">
             {filteredBalances.filter(b => b.availableAtoms > 0n).length}
           </p>
           <p className="text-xs text-muted mt-1">Positions with available stock</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-muted uppercase font-semibold">WIP positions</p>
+          <p className="text-xs text-muted uppercase font-semibold">WIP on this page</p>
           <p className="text-xl font-bold font-mono text-primary mt-1">
             {filteredBalances.filter(b => b.locationKind === 'WIP').length}
           </p>
           <p className="text-xs text-muted mt-1">Positions in production</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-muted uppercase font-semibold">Quarantine positions</p>
+          <p className="text-xs text-muted uppercase font-semibold">Quarantine on this page</p>
           <p className="text-xl font-bold font-mono text-danger mt-1">
             {filteredBalances.filter(b => b.locationKind === 'QUARANTINE').length}
           </p>
@@ -173,6 +170,7 @@ export function StockBalancesView() {
           </div>
         )}
       </div>
+      <Pagination {...pagination} />
     </div>
   );
 }

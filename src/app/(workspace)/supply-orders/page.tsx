@@ -1,15 +1,20 @@
 'use client';
 
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { SupplyOrderDTO } from '@/server/modules/supply/contracts';
+
 import { ErrorState } from '@/components/ui/resource-state';
 import { PageHeader } from '@/components/ui/page-header';
 import React from 'react';
 import Link from 'next/link';
-import { useSupplyOrders } from '@/features/supply/hooks';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 export default function SupplyOrdersPage() {
-  const { data: orders, isLoading, refetch, error: queryError } = useSupplyOrders();
+  const { data: pageData, isLoading, refetch, error: queryError, pagination } = usePaginatedList<SupplyOrderDTO>('supply-orders');
+  const orders = pageData?.data || [];
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
@@ -88,6 +93,7 @@ export default function SupplyOrdersPage() {
           )}
         </div>
       </div>
+      <Pagination {...pagination} />
     </div>
   );
 }

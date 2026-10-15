@@ -1,9 +1,10 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import React, { useState } from 'react';
-import { useUoms } from '@/features/masters/hooks';
+
 import { UnitOfMeasure } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ import { CreateUomModal } from '@/features/masters/components/resource-forms';
 
 export default function UnitsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useUoms();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<UnitOfMeasure>('uoms', {});
 
   const uoms = data?.data || [];
 
@@ -49,6 +50,7 @@ export default function UnitsPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load units of measure'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={uoms}
           isLoading={isLoading}

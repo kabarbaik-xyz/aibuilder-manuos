@@ -1,11 +1,12 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PageHeader } from '@/components/ui/page-header';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useItems } from '@/features/masters/hooks';
+
 import { Item } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +19,7 @@ export default function ItemsPage() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useItems({
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Item>('items', {
     search: search || undefined,
     type: typeFilter || undefined,
   });
@@ -107,6 +108,7 @@ export default function ItemsPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load items'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={items}
           isLoading={isLoading}

@@ -1,8 +1,12 @@
 "use client";
 
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { ShipmentDTO } from '@/features/delivery/api';
+
 import React, { useState } from "react";
 import Link from "next/link";
-import { useShipments } from "../hooks";
+
 import { Button } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
 import { PageHeader } from "@/components/ui/page-header";
@@ -16,12 +20,8 @@ export function ShipmentListView() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  const {
-    data: shipments,
-    isLoading,
-    error,
-    refetch,
-  } = useShipments(statusFilter ? { status: statusFilter } : undefined);
+  const { data: pageData, isLoading, error, refetch, pagination } = usePaginatedList<ShipmentDTO>('shipments', { status: statusFilter });
+  const shipments = pageData?.data || [];
 
   return (
     <div className="page-stack">
@@ -184,6 +184,7 @@ export function ShipmentListView() {
         onClose={() => setShowCreateModal(false)}
         onSuccess={() => refetch()}
       />
+      <Pagination {...pagination} />
     </div>
   );
 }

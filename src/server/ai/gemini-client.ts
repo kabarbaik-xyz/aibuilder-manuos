@@ -7,6 +7,7 @@ export interface AICallOptions {
   model?: string;
   responseMimeType?: string;
   responseSchema?: any;
+  maxOutputTokens?: number;
 }
 
 export interface AICallResponse<T> {
@@ -16,7 +17,7 @@ export interface AICallResponse<T> {
 }
 
 /**
- * Server-only helper to invoke Google Gemini with caching, bounded retries, and schema fallback.
+ * Server-only helper to invoke Google Gemini with caching, a bounded deadline, and schema fallback.
  */
 export async function callGeminiStructured<T>(
   prompt: string,
@@ -39,20 +40,22 @@ export async function callGeminiStructured<T>(
 
   const modelName = options.model || process.env.GEMINI_FLASH_MODEL || 'gemini-2.5-flash';
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
   try {
     const ai = new GoogleGenAI({ apiKey });
 
-    // Request with 10s timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    // Allow a bounded 30s response window for operational snapshots.
 
     const response = await ai.models.generateContent({
       model: modelName,
       contents: prompt,
       config: {
+        abortSignal: controller.signal,
         responseMimeType: options.responseMimeType || 'application/json',
         responseSchema: options.responseSchema,
         temperature: 0.2,
+        maxOutputTokens: options.maxOutputTokens,
       },
     });
 
@@ -75,9 +78,11 @@ export async function callGeminiStructured<T>(
       return { aiResult: null, reason: 'schema', rawText: text };
     }
   } catch (err: any) {
-    if (err.name === 'AbortError') {
+    if (controller.signal.aborted || err.name === 'AbortError' || err.name === 'TimeoutError') {
       return { aiResult: null, reason: 'timeout' };
     }
     return { aiResult: null, reason: 'unavailable' };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

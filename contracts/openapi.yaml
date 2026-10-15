@@ -7,6 +7,72 @@ servers:
   - url: http://localhost:3000
     description: Local development server
 paths:
+  /api/lists/{resource}:
+    get:
+      summary: Read an authorized database page for a workspace list
+      description: Applies workspace/customer scope and filters before COUNT and LIMIT/OFFSET in a SQLite transaction. Stable ordering includes an ID tie-breaker. Out-of-range pages clamp to the last page. Existing collection endpoints remain available for resource selectors and existing integrations.
+      parameters:
+        - in: path
+          name: resource
+          required: true
+          schema:
+            type: string
+            enum: [customers, suppliers, items, locations, uoms, departments, calendars, machines, technicians, skills, order-types, qc-checklists, orders, engineering, supply-orders, receipts, inspections, shipments, stock-balances, stock-movements, stock-counts, users, roles, permissions, planning, workflows, forms, portal-orders, my-work]
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, enum: [10, 25, 50, 100], default: 10 }
+        - in: query
+          name: search
+          description: Resource-specific text search, applied in the database on searchable lists.
+          schema: { type: string, maxLength: 200 }
+        - in: query
+          name: status
+          description: Order, supply order, inspection or shipment status.
+          schema: { type: string }
+        - in: query
+          name: type
+          description: Item type or location kind.
+          schema: { type: string }
+        - in: query
+          name: locationSearch
+          description: Location code or name for inventory balance lists.
+          schema: { type: string }
+        - in: query
+          name: purpose
+          description: Form template purpose filter.
+          schema: { type: string, enum: [ALL, ORDER_SPEC, TASK_EVIDENCE, QC_EVIDENCE] }
+        - in: query
+          name: movementType
+          description: Stock ledger movement type filter.
+          schema: { type: string }
+      responses:
+        '200':
+          description: A bounded page with the total filtered record count. Atom quantities serialize as decimal integer strings. Planning also returns full-graph summary metadata; its visible task IDs are selected with database pagination.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items: { type: object }
+                  pagination:
+                    type: object
+                    required: [page, pageSize, total, totalPages]
+                    properties:
+                      page: { type: integer, minimum: 1 }
+                      pageSize: { type: integer, enum: [10, 25, 50, 100] }
+                      total: { type: integer, minimum: 0 }
+                      totalPages: { type: integer, minimum: 1 }
+                  summary: { type: object }
+        '400': { description: Invalid pagination parameters }
+        '401': { description: Authentication required }
+        '403': { description: Missing permission or customer scope }
+        '404': { description: Unknown list resource }
   /api/health:
     get:
       summary: Health check endpoint

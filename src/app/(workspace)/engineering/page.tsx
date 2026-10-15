@@ -1,14 +1,19 @@
 'use client';
 
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { OrderDto } from '@/features/orders/api';
+
 import React from 'react';
 import Link from 'next/link';
-import { useOrders } from '@/features/orders/hooks';
+
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState, ErrorState } from '@/components/ui/resource-state';
 
 export default function EngineeringHubPage() {
-  const { data: orders = [], isPending, error, refetch } = useOrders();
+  const { data: pageData, isPending, error, refetch, pagination } = usePaginatedList<OrderDto>('engineering');
+  const orders = pageData?.data || [];
 
   if (isPending) return <LoadingState message="Loading engineering review queue…" />;
   if (error) return <ErrorState title="Failed to load engineering orders" onRetry={() => refetch()} />;
@@ -84,6 +89,7 @@ export default function EngineeringHubPage() {
           </tbody>
         </table>
       </div>
+      <Pagination {...pagination} />
     </div>
   );
 }

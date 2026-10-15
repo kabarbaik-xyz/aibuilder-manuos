@@ -23,6 +23,7 @@ export const MASTER_NAV_ITEMS: readonly MasterNavItem[] = [
 ];
 
 export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
+  { title: 'Dashboard', href: '/dashboard', icon: 'grid', permissions: ['order.read', 'planning.read', 'owner'] },
   { title: 'Order Hub', href: '/orders', icon: 'order', permissions: ['order.read', 'order.create'] },
   { title: 'Engineering Hub', href: '/engineering', icon: 'engineering', permissions: ['engineering.read', 'engineering.write'] },
   { title: 'Workflow Studio', href: '/workflows', icon: 'graph', permissions: ['workflow.read', 'workflow.author'] },
@@ -47,9 +48,11 @@ export function getAdminNavigation(permissions: readonly string[], roles: readon
   return ADMIN_NAV_ITEMS.filter(item => item.permissions.some(permission => permissions.includes(permission)));
 }
 
-export function getWorkflowNavigation(permissions: readonly string[], roles: readonly string[] = []) {
-  if (roles.includes('OWNER')) return WORKFLOW_NAV_ITEMS;
-  return WORKFLOW_NAV_ITEMS.filter((item) => item.permissions.some((permission) => permissions.includes(permission)));
+export function getWorkflowNavigation(permissions: readonly string[], roles: readonly string[] = [], customerId?: string | null) {
+  return WORKFLOW_NAV_ITEMS.filter(item => {
+    if (item.href === '/portal/orders') return Boolean(customerId) && permissions.includes('customer_order.read_own');
+    return roles.includes('OWNER') || item.permissions.some(permission => permissions.includes(permission));
+  });
 }
 
 export function getMasterNavigation(permissions: readonly string[], roles: readonly string[] = []) {
@@ -59,4 +62,38 @@ export function getMasterNavigation(permissions: readonly string[], roles: reado
 
 export function isMasterNavActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export interface FunctionalNavigationGroup {
+  id: string;
+  title: string;
+  items: readonly MasterNavItem[];
+}
+
+// References stay beside the workflow they support. Existing permission filters
+// remain authoritative for visibility, including owner and access-admin roles.
+const FUNCTIONAL_NAVIGATION = [
+  { id: 'overview', title: 'Overview', paths: ['/dashboard'] },
+  { id: 'sales', title: 'Sales', paths: ['/orders', '/settings/customers', '/portal/orders'] },
+  { id: 'engineering', title: 'Engineering', paths: ['/engineering', '/workflows', '/settings/order-types', '/settings/forms'] },
+  { id: 'production', title: 'Production', paths: ['/planning', '/shop-floor'] },
+  { id: 'procurement', title: 'Procurement', paths: ['/supply-orders', '/settings/suppliers'] },
+  { id: 'inventory', title: 'Inventory', paths: ['/inventory', '/inventory/receipts', '/inventory/items', '/settings/locations', '/settings/units'] },
+  { id: 'quality', title: 'Quality', paths: ['/quality/inspections', '/settings/qc-checklists'] },
+  { id: 'delivery', title: 'Delivery', paths: ['/delivery/shipments'] },
+  { id: 'resources', title: 'Resources', paths: ['/settings/departments', '/settings/machines', '/settings/technicians', '/settings/calendars', '/settings/skills-certifications'] },
+  { id: 'access', title: 'Access', paths: ['/settings/users', '/settings/roles', '/settings/permissions'] },
+] as const;
+
+export function getFunctionalNavigation(permissions: readonly string[], roles: readonly string[] = [], customerId?: string | null): FunctionalNavigationGroup[] {
+  const available = new Map([
+    ...getWorkflowNavigation(permissions, roles, customerId),
+    ...getMasterNavigation(permissions, roles),
+    ...getAdminNavigation(permissions, roles),
+  ].map(item => [item.href, item]));
+  return FUNCTIONAL_NAVIGATION.map(group => ({
+    id: group.id,
+    title: group.title,
+    items: group.paths.flatMap(path => { const item = available.get(path); return item ? [item] : []; }),
+  })).filter(group => group.items.length > 0);
 }

@@ -1,9 +1,10 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import React, { useState } from 'react';
-import { useSkills } from '@/features/masters/hooks';
+
 import { Skill } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ import { CreateSkillModal } from '@/features/masters/components/resource-forms';
 
 export default function SkillsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useSkills();
+  const { data, isLoading, error, refetch, pagination } = usePaginatedList<Skill>('skills', {});
 
   const skills = data?.data || [];
 
@@ -44,6 +45,7 @@ export default function SkillsPage() {
         <ErrorState message={(error as any)?.message || 'Failed to load skills'} onRetry={() => refetch()} />
       ) : (
         <DataTable
+          pagination={pagination}
           columns={columns}
           data={skills}
           isLoading={isLoading}

@@ -1,8 +1,11 @@
 'use client';
+import { usePaginatedList } from '@/lib/api/use-paginated-list';
+import { Pagination } from '@/components/ui/pagination';
+import type { FormTemplateDTO } from '@/server/modules/forms/contracts';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useFormTemplates, useCreateFormTemplate } from '../hooks';
+import { useCreateFormTemplate } from '../hooks';
 import { PageHeader } from '@/components/ui/page-header';
 import { Panel } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
@@ -13,12 +16,13 @@ import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
 export function TemplateList() {
-  const { data: templatesRes, isLoading, error } = useFormTemplates();
   const createMutation = useCreateFormTemplate();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filterPurpose, setFilterPurpose] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const { data: templatesRes, isLoading, error, pagination } = usePaginatedList<FormTemplateDTO>('forms', { search: searchQuery, purpose: filterPurpose });
 
   // New form modal state
   const [code, setCode] = useState('');
@@ -29,14 +33,7 @@ export function TemplateList() {
 
   const templates = templatesRes?.data || [];
 
-  const filtered = templates.filter((t) => {
-    if (filterPurpose !== 'ALL' && t.purpose !== filterPurpose) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return t.code.toLowerCase().includes(q) || t.name.toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const filtered = templates;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +88,7 @@ export function TemplateList() {
         </div>
 
         <span className="text-xs text-muted">
-          Showing {filtered.length} of {templates.length} templates
+          {pagination.total} templates
         </span>
       </div>
 
@@ -225,6 +222,7 @@ export function TemplateList() {
           </div>
         </div>
       )}
+      <Pagination {...pagination} />
     </div>
   );
 }
