@@ -4,14 +4,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { ButtonLink } from '@/components/ui/button-link';
 import { EmptyState, ErrorState } from '@/components/ui/resource-state';
-import { Icon } from '@/components/icons';
+import { getNotificationHref } from '@/features/notifications/notification-links';
 
 type Notification = {
   id: string;
   title: string;
   body: string | null;
   status: 'UNREAD' | 'READ' | 'ARCHIVED';
+  subjectType: string | null;
+  subjectId: string | null;
+  metadataJson: string | null;
   createdAt: string;
 };
 
@@ -95,21 +99,25 @@ export function NotificationInbox() {
       {!error && loading && items.length === 0 && <p className="muted">Memuat notifikasi…</p>}
       {!error && !loading && items.length === 0 && <EmptyState title="Belum ada notifikasi" description="Pembaruan yang dikirim ke akun Anda akan muncul di sini." />}
       {!error && items.length > 0 && <ul className="notification-list">
-        {items.map((item) => <li key={item.id} className={`notification-item ${item.status === 'UNREAD' ? 'unread' : ''}`}>
-          <div className="notification-copy">
-            <div className="notification-title-row"><strong>{item.title}</strong>{item.status === 'UNREAD' && <Badge variant="blue">Baru</Badge>}</div>
-            {item.body && <p>{item.body}</p>}
-            <time dateTime={item.createdAt}>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</time>
-          </div>
-          {item.status === 'UNREAD' && <Button
-            variant="icon"
-            icon="check"
-            aria-label={`Tandai ${item.title} sebagai dibaca`}
-            title="Tandai sudah dibaca"
-            disabled={pendingId !== null}
-            onClick={() => void markRead(item.id)}
-          />}
-        </li>)}
+        {items.map((item) => {
+          const href = getNotificationHref(item);
+          return <li key={item.id} className={`notification-item ${item.status === 'UNREAD' ? 'unread' : ''}`}>
+            <div className="notification-copy">
+              <div className="notification-title-row"><strong>{item.title}</strong>{item.status === 'UNREAD' && <Badge variant="blue">Baru</Badge>}</div>
+              {item.body && <p>{item.body}</p>}
+              {href && <ButtonLink href={href} variant="ghost" size="small">Buka terkait</ButtonLink>}
+              <time dateTime={item.createdAt}>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</time>
+            </div>
+            {item.status === 'UNREAD' && <Button
+              variant="icon"
+              icon="check"
+              aria-label={`Tandai ${item.title} sebagai dibaca`}
+              title="Tandai sudah dibaca"
+              disabled={pendingId !== null}
+              onClick={() => void markRead(item.id)}
+            />}
+          </li>;
+        })}
       </ul>}
       {pendingId && <span className="sr-only" role="status">Memperbarui notifikasi…</span>}
     </Dialog>

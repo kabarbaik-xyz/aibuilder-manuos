@@ -899,6 +899,7 @@ export class ExecutionService {
             body: `New ${input.severity} severity issue raised on task ${task.nodeKey}: ${input.title}`,
             subjectType: 'TASK_ISSUE',
             subjectId: issue.id,
+            metadata: { taskId: task.id },
             dedupeKey: `cmd:${createHash('sha256').update(commandKey).digest('hex')}:issue-owner:${input.ownerUserId}`,
           });
         }

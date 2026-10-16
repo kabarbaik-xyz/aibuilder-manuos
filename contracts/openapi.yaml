@@ -1294,7 +1294,34 @@ paths:
           in: query
           schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
-        '200': { description: Notifications list and unread count }
+        '200':
+          description: Notifications scoped to the authenticated user, with optional subject links and unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, status, createdAt]
+                      properties:
+                        id: { type: string, format: uuid }
+                        title: { type: string }
+                        body: { type: string, nullable: true }
+                        status: { type: string, enum: [UNREAD, READ, ARCHIVED] }
+                        subjectType: { type: string, nullable: true }
+                        subjectId: { type: string, nullable: true }
+                        metadataJson: { type: string, nullable: true }
+                        readAt: { type: string, format: date-time, nullable: true }
+                        createdAt: { type: string, format: date-time }
+                  meta:
+                    type: object
+                    required: [unreadCount]
+                    properties:
+                      unreadCount: { type: integer, minimum: 0 }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
