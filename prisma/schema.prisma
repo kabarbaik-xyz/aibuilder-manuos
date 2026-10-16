@@ -1729,7 +1729,12 @@ model RecoveryProposal {
   orderId         String   @map("order_id")
   orderVersion    Int      @map("order_version")
   proposalJson    String   @map("proposal_json")
-  status          String   @default("PROPOSED") // PROPOSED | APPROVED | SUPERSEDED
+  status          String   @default("PROPOSED") // PROPOSED | APPROVED | REJECTED | SUPERSEDED
+  proposedById    String?  @map("proposed_by_id")
+  resolvedOptionId String? @map("resolved_option_id")
+  resolvedById    String?  @map("resolved_by_id")
+  resolvedAt      DateTime? @map("resolved_at")
+  resolutionNote  String?  @map("resolution_note")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

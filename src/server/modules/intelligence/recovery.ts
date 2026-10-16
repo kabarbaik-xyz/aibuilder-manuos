@@ -3,6 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { BadRequestError, NotFoundError } from '@/domain/errors';
+import { executeCommand } from '@/server/db/transaction';
+import { z } from 'zod';
+
+const RejectProposalSchema = z.object({
+  proposalId: z.string().uuid(),
+  note: z.string().min(1).max(1000),
+});
 import {
   ApproveRecoveryInput,
   ApproveRecoverySchema,
@@ -243,5 +250,56 @@ export class RecoveryService {
     throw new BadRequestError(
       `Recovery proposal '${proposal.id}' is saved for review, but it cannot be applied because this service does not yet create a schedule change or shipment reservation.`
     );
+  }
+
+  /**
+   * Closes a proposal with an explicit REJECTED decision, recording the
+   * responsible actor and reason. Approval stays gated on a service that
+   * applies real schedule/shipment reservations (see approveRecovery).
+   */
+  async rejectProposal(
+    principal: Principal,
+    rawInput: unknown,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['planning.write', 'order.release']);
+
+    const input = RejectProposalSchema.parse(rawInput);
+
+    return executeCommand({
+      principal,
+      commandType: 'recovery.proposal.reject',
+      idempotencyKey,
+      payload: input,
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const proposal = await tx.recoveryProposal.findFirst({
+          where: { id: input.proposalId, workspaceId: principal.workspaceId },
+        });
+        if (!proposal) {
+          throw new NotFoundError(`Recovery proposal '${input.proposalId}' not found`);
+        }
+        if (proposal.status !== 'PROPOSED') {
+          throw new BadRequestError(
+            `Recovery proposal '${proposal.id}' is already ${proposal.status.toLowerCase()}`
+          );
+        }
+        const updated = await tx.recoveryProposal.update({
+          where: { id: proposal.id },
+          data: {
+            status: 'REJECTED',
+            resolvedById: principal.userId,
+            resolvedAt: new Date(),
+            resolutionNote: input.note,
+          },
+        });
+        return {
+          data: updated,
+          aggregateType: 'RECOVERY_PROPOSAL',
+          aggregateId: updated.id,
+          resourceVersion: 1,
+        };
+      },
+    });
   }
 }
