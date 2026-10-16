@@ -37,6 +37,7 @@ model User {
   notifications       NotificationInbox[]
   reportedIssues      TaskIssue[]         @relation("IssueReporter")
   ownedIssues         TaskIssue[]         @relation("IssueOwner")
+  reconciledTelemetryEvents MachineTelemetryEvent[]
 
   @@map("users")
 }
@@ -127,6 +128,7 @@ model Workspace {
   workCalendars     WorkCalendar[]
   machineClasses    MachineClass[]
   machines          Machine[]
+  telemetryEvents   MachineTelemetryEvent[]
   technicians       Technician[]
   skills            Skill[]
   certifications    Certification[]
@@ -603,6 +605,7 @@ model Machine {
   capabilitiesJson String      @default("[]") @map("capabilities_json")
   downtimes      MachineDowntime[]
   rosterIntervals RosterInterval[]
+  telemetryEvents MachineTelemetryEvent[]
   version        Int           @default(1)
   archivedAt     DateTime?     @map("archived_at")
   createdAt      DateTime      @default(now()) @map("created_at")
@@ -2142,6 +2145,31 @@ model MachineDowntime {
 
   @@index([workspaceId, machineId])
   @@map("machine_downtimes")
+}
+
+model MachineTelemetryEvent {
+  id                  String    @id @default(uuid())
+  workspaceId         String    @map("workspace_id")
+  machineId           String    @map("machine_id")
+  eventKey            String    @map("event_key")
+  state               String    // RUNNING | IDLE | DOWN | MAINTENANCE
+  occurredAt          DateTime  @map("occurred_at")
+  receivedAt          DateTime  @default(now()) @map("received_at")
+  payloadJson         String    @default("{}") @map("payload_json")
+  needsReconciliation Boolean   @default(false) @map("needs_reconciliation")
+  reconciliationNote  String?   @map("reconciliation_note")
+  reconciledAt        DateTime? @map("reconciled_at")
+  reconciledById      String?   @map("reconciled_by_id")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  machine     Machine   @relation(fields: [workspaceId, machineId], references: [workspaceId, id], onDelete: Cascade)
+  reconciledBy User?    @relation(fields: [reconciledById], references: [id])
+
+  @@unique([workspaceId, machineId, eventKey])
+  @@index([workspaceId, machineId, occurredAt])
+  @@map("machine_telemetry_events")
 }
 
 model ShiftTemplate {
