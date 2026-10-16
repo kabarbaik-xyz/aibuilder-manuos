@@ -37,6 +37,7 @@ model User {
   notifications       NotificationInbox[]
   reportedIssues      TaskIssue[]         @relation("IssueReporter")
   ownedIssues         TaskIssue[]         @relation("IssueOwner")
+  reconciledTelemetryEvents MachineTelemetryEvent[]
 
   @@map("users")
 }
@@ -127,6 +128,10 @@ model Workspace {
   workCalendars     WorkCalendar[]
   machineClasses    MachineClass[]
   machines          Machine[]
+  telemetryEvents   MachineTelemetryEvent[]
+  shareConsents     FactoryShareConsent[]     @relation("ShareConsentWorkspace")
+  partnerConsents   FactoryShareConsent[]     @relation("ShareConsentPartner")
+  sharedCommitments SharedCapacityCommitment[]
   technicians       Technician[]
   skills            Skill[]
   certifications    Certification[]
@@ -603,6 +608,7 @@ model Machine {
   capabilitiesJson String      @default("[]") @map("capabilities_json")
   downtimes      MachineDowntime[]
   rosterIntervals RosterInterval[]
+  telemetryEvents MachineTelemetryEvent[]
   version        Int           @default(1)
   archivedAt     DateTime?     @map("archived_at")
   createdAt      DateTime      @default(now()) @map("created_at")
@@ -938,6 +944,52 @@ model Order {
   @@unique([workspaceId, orderNumber])
   @@unique([workspaceId, id])
   @@map("orders")
+}
+
+model FactoryShareConsent {
+  id                 String    @id @default(uuid())
+  workspaceId        String    @map("workspace_id")
+  partnerWorkspaceId String    @map("partner_workspace_id")
+  scope              String // CAPABILITY | CAPACITY | SUPPLY
+  status             String    @default("PROPOSED") // PROPOSED | ACCEPTED | REVOKED
+  note               String?
+  proposedById       String    @map("proposed_by_id")
+  acceptedById       String?   @map("accepted_by_id")
+  acceptedAt         DateTime? @map("accepted_at")
+  revokedById        String?   @map("revoked_by_id")
+  revokedAt          DateTime? @map("revoked_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  workspace Workspace @relation("ShareConsentWorkspace", fields: [workspaceId], references: [id], onDelete: Cascade)
+  partner   Workspace @relation("ShareConsentPartner", fields: [partnerWorkspaceId], references: [id], onDelete: Cascade)
+
+  commitments SharedCapacityCommitment[]
+
+  @@unique([workspaceId, partnerWorkspaceId, scope])
+  @@unique([workspaceId, id])
+  @@map("factory_share_consents")
+}
+
+model SharedCapacityCommitment {
+  id            String   @id @default(uuid())
+  workspaceId   String   @map("workspace_id")
+  consentId     String   @map("consent_id")
+  kind          String // CAPACITY | STOCK
+  resourceKey   String   @map("resource_key")
+  quantityAtoms BigInt @map("quantity_atoms")
+  windowStart   DateTime @map("window_start")
+  windowEnd     DateTime @map("window_end")
+  status        String   @default("OFFERED") // OFFERED | WITHDRAWN
+  offeredById   String   @map("offered_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  consent    FactoryShareConsent @relation(fields: [workspaceId, consentId], references: [workspaceId, id], onDelete: Cascade)
+  workspace  Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, consentId])
+  @@map("shared_capacity_commitments")
 }
 
 model RfqDraft {
@@ -1726,7 +1778,12 @@ model RecoveryProposal {
   orderId         String   @map("order_id")
   orderVersion    Int      @map("order_version")
   proposalJson    String   @map("proposal_json")
-  status          String   @default("PROPOSED") // PROPOSED | APPROVED | SUPERSEDED
+  status          String   @default("PROPOSED") // PROPOSED | APPROVED | REJECTED | SUPERSEDED
+  proposedById    String?  @map("proposed_by_id")
+  resolvedOptionId String? @map("resolved_option_id")
+  resolvedById    String?  @map("resolved_by_id")
+  resolvedAt      DateTime? @map("resolved_at")
+  resolutionNote  String?  @map("resolution_note")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -2142,6 +2199,31 @@ model MachineDowntime {
 
   @@index([workspaceId, machineId])
   @@map("machine_downtimes")
+}
+
+model MachineTelemetryEvent {
+  id                  String    @id @default(uuid())
+  workspaceId         String    @map("workspace_id")
+  machineId           String    @map("machine_id")
+  eventKey            String    @map("event_key")
+  state               String    // RUNNING | IDLE | DOWN | MAINTENANCE
+  occurredAt          DateTime  @map("occurred_at")
+  receivedAt          DateTime  @default(now()) @map("received_at")
+  payloadJson         String    @default("{}") @map("payload_json")
+  needsReconciliation Boolean   @default(false) @map("needs_reconciliation")
+  reconciliationNote  String?   @map("reconciliation_note")
+  reconciledAt        DateTime? @map("reconciled_at")
+  reconciledById      String?   @map("reconciled_by_id")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  machine     Machine   @relation(fields: [workspaceId, machineId], references: [workspaceId, id], onDelete: Cascade)
+  reconciledBy User?    @relation(fields: [reconciledById], references: [id])
+
+  @@unique([workspaceId, machineId, eventKey])
+  @@index([workspaceId, machineId, occurredAt])
+  @@map("machine_telemetry_events")
 }
 
 model ShiftTemplate {

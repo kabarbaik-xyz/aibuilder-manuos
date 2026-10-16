@@ -2365,3 +2365,103 @@ components:
         technicianId:
           type: string
           nullable: true
+  /machines/telemetry:
+    post:
+      tags: [telemetry]
+      summary: Ingest machine telemetry events (INT-05)
+      description: >
+        Authenticated machine telemetry ingestion. Events are identified by
+        (workspace, machine, eventKey); replays of an already-ingested eventKey
+        are counted as duplicates and change nothing. Events whose occurredAt
+        precedes the latest received occurrence are flagged
+        needsReconciliation for manual review. Telemetry never actuates
+        industrial equipment.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [machineId, events]
+              properties:
+                machineId:
+                  type: string
+                  format: uuid
+                events:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [eventKey, state, occurredAt]
+                    properties:
+                      eventKey:
+                        type: string
+                        maxLength: 200
+                      state:
+                        type: string
+                        enum: [RUNNING, IDLE, DOWN, MAINTENANCE]
+                      occurredAt:
+                        type: string
+                        format: date-time
+                      payloadJson:
+                        type: string
+      responses:
+        '200':
+          description: Ingestion receipt with accepted/duplicate counts
+        '403':
+          description: Missing resource.manage permission
+        '404':
+          description: Machine not found in the authorized scope
+  /machines/telemetry/query:
+    get:
+      tags: [telemetry]
+      summary: List telemetry events or derived downtime intervals
+      parameters:
+        - { name: machineId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: view, in: query, schema: { type: string, enum: [events, downtime], default: events } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        '200':
+          description: Event list, or downtime intervals derived from state transitions (open interval has null endAt)
+  /machines/telemetry/reconcile:
+    post:
+      tags: [telemetry]
+      summary: Resolve a late-clock flagged telemetry event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, note]
+              properties:
+                eventId: { type: string, format: uuid }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Reconciled event with note and actor recorded
+        '400':
+          description: Event does not require reconciliation
+  /api/sharing/consents:
+    get:
+      summary: List cross-factory sharing consents visible to the workspace
+      tags: [Sharing]
+      responses:
+        '200': { description: Consent list }
+    post:
+      summary: Propose a sharing consent to a partner workspace (admin)
+      tags: [Sharing]
+      responses:
+        '201': { description: Consent proposed }
+  /api/sharing/consents/transition:
+    post:
+      summary: Accept (partner only) or revoke (either side) a sharing consent
+      tags: [Sharing]
+      responses:
+        '200': { description: Updated consent }
+  /api/sharing/commitments:
+    post:
+      summary: Offer a capacity/stock commitment under an accepted consent (auditable offer only; never moves inventory)
+      tags: [Sharing]
+      responses:
+        '201': { description: Commitment offered }
