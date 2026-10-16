@@ -26,6 +26,7 @@ export function PlanningScheduleView() {
   const machinesQuery = useMachines();
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedTaskVersion, setSelectedTaskVersion] = useState<number | null>(null);
   const [technicianId, setTechnicianId] = useState('');
   const [machineId, setMachineId] = useState('');
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -57,16 +58,18 @@ export function PlanningScheduleView() {
 
   const handleAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTaskId) return;
+    if (!selectedTaskId || selectedTaskVersion === null) return;
     setAssignError(null);
 
     try {
       await assignMutation.mutateAsync({
         taskId: selectedTaskId,
+        expectedVersion: selectedTaskVersion,
         technicianId: technicianId.trim() || null,
         machineId: machineId.trim() || null,
       });
       setSelectedTaskId(null);
+      setSelectedTaskVersion(null);
       setTechnicianId('');
       setMachineId('');
       refetch();
@@ -195,7 +198,7 @@ export function PlanningScheduleView() {
                     )}
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <PermissionGate permission={['task.assign', 'planning.write', 'resource.manage']}><Button size="small" onClick={() => { setAssignError(null); setSelectedTaskId(task.taskId); }}>Assign resources</Button></PermissionGate>
+                    <PermissionGate permission={['task.assign', 'planning.write', 'resource.manage']}><Button size="small" onClick={() => { setAssignError(null); setSelectedTaskId(task.taskId); setSelectedTaskVersion(task.version); }}>Assign resources</Button></PermissionGate>
                   </td>
                 </tr>
               ))}
@@ -208,7 +211,7 @@ export function PlanningScheduleView() {
 
       {/* Resource Assignment Modal */}
       {selectedTaskId && (
-        <Dialog isOpen onClose={() => setSelectedTaskId(null)} title="Assign resources" size="md" pending={assignMutation.isPending}>
+        <Dialog isOpen onClose={() => { setSelectedTaskId(null); setSelectedTaskVersion(null); }} title="Assign resources" size="md" pending={assignMutation.isPending}>
           
             
 
@@ -248,7 +251,7 @@ export function PlanningScheduleView() {
               <div className="flex justify-end gap-2 pt-2 border-t border-line">
                 <button
                   type="button"
-                  onClick={() => setSelectedTaskId(null)}
+                  onClick={() => { setSelectedTaskId(null); setSelectedTaskVersion(null); }}
                   className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded transition"
                 >
                   Cancel

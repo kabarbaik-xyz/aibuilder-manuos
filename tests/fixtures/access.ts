@@ -157,6 +157,8 @@ export async function seedTestAccess(
     roles: roleCodes,
     customerId: membership.customerId,
     technicianId: membership.technicianId,
+    facilityId: membership.facilityId,
+    facilityIds: membership.facilityId ? [membership.facilityId] : [],
   };
 
   return {

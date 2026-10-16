@@ -1,9 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
-import { BadRequestError, NotFoundError } from '@/domain/errors';
+import { BadRequestError, ConflictError, NotFoundError } from '@/domain/errors';
 import { PlanningRepository } from './repository';
 import {
   ScheduleTasksRequest,
@@ -41,10 +41,39 @@ export class PlanningService {
     principal: Principal,
     rawInput: unknown
   ): Promise<AssignmentEvaluationResult> {
+    requireAnyPermission(principal, ['planning.read', 'task.assign']);
     const input: EvaluateAssignmentInput = EvaluateAssignmentSchema.parse(rawInput);
+    this.validateAssignmentWindow(input.scheduledStartAt, input.scheduledEndAt);
+    return this.evaluateAssignmentWithClient(this.db, principal, input);
+  }
+
+  private validateAssignmentWindow(startAt?: string | Date, endAt?: string | Date) {
+    if ((startAt === undefined) !== (endAt === undefined)) {
+      throw new BadRequestError('Both assignment start and end times must be provided together');
+    }
+    if (startAt !== undefined && endAt !== undefined && new Date(startAt) >= new Date(endAt)) {
+      throw new BadRequestError('Assignment start time must be before end time');
+    }
+  }
+
+  private async evaluateAssignmentWithClient(
+    client: PrismaClient | Prisma.TransactionClient,
+    principal: Principal,
+    input: EvaluateAssignmentInput
+  ): Promise<AssignmentEvaluationResult> {
     const workspaceId = principal.workspaceId;
 
-    const task = await this.repo.findTaskWithRequirements(workspaceId, input.taskId);
+    const task = await client.task.findUnique({
+      where: { workspaceId_id: { workspaceId, id: input.taskId } },
+      include: {
+        instance: {
+          include: {
+            workflowVersion: { include: { nodes: true, edges: true } },
+            order: true,
+          },
+        },
+      },
+    });
     if (!task) {
       throw new NotFoundError(`Task '${input.taskId}' not found`);
     }
@@ -68,9 +97,19 @@ export class PlanningService {
       }
     }
 
+    if (
+      (requirements.requiredSkills?.length || requirements.requiredCertIds?.length) &&
+      !input.technicianId
+    ) {
+      violations.push('Task requirements require a technician assignment');
+    }
+    if (requirements.machineClassId && !input.machineId) {
+      violations.push('Task requirements require a machine assignment');
+    }
+
     // 1. Evaluate Technician
     if (input.technicianId) {
-      const technician = await this.db.technician.findUnique({
+      const technician = await client.technician.findUnique({
         where: {
           workspaceId_id: {
             workspaceId,
@@ -136,7 +175,7 @@ export class PlanningService {
         if (input.scheduledStartAt && input.scheduledEndAt) {
           const start = new Date(input.scheduledStartAt);
           const end = new Date(input.scheduledEndAt);
-          const conflict = await this.db.resourceBooking.findFirst({
+          const conflict = await client.resourceBooking.findFirst({
             where: {
               workspaceId,
               resourceType: 'TECHNICIAN',
@@ -148,7 +187,7 @@ export class PlanningService {
             },
           });
           if (conflict) {
-            warnings.push(
+            violations.push(
               `Technician '${technician.name}' has an overlapping booking for task '${conflict.taskId}'`
             );
           }
@@ -158,7 +197,7 @@ export class PlanningService {
 
     // 2. Evaluate Machine
     if (input.machineId) {
-      const machine = await this.db.machine.findUnique({
+      const machine = await client.machine.findUnique({
         where: {
           workspaceId_id: {
             workspaceId,
@@ -188,7 +227,7 @@ export class PlanningService {
         if (input.scheduledStartAt && input.scheduledEndAt) {
           const start = new Date(input.scheduledStartAt);
           const end = new Date(input.scheduledEndAt);
-          const conflict = await this.db.resourceBooking.findFirst({
+          const conflict = await client.resourceBooking.findFirst({
             where: {
               workspaceId,
               resourceType: 'MACHINE',
@@ -200,7 +239,7 @@ export class PlanningService {
             },
           });
           if (conflict) {
-            warnings.push(
+            violations.push(
               `Machine '${machine.name}' has an overlapping booking for task '${conflict.taskId}'`
             );
           }
@@ -231,25 +270,13 @@ export class PlanningService {
     const input: AssignTaskInput = AssignTaskSchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
 
-    // 1. Evaluate assignment eligibility
-    const evalResult = await this.evaluateAssignment(principal, {
-      taskId: input.taskId,
-      technicianId: input.technicianId,
-      machineId: input.machineId,
-      scheduledStartAt: input.startAt,
-      scheduledEndAt: input.endAt,
-    });
-
-    if (!evalResult.isEligible) {
-      throw new BadRequestError(
-        `Assignment rejected due to violations:\n${evalResult.violations.join('\n')}`
-      );
-    }
+    this.validateAssignmentWindow(input.startAt, input.endAt);
 
     return executeCommand<any, any>({
       principal,
       commandType: 'task.assign',
       idempotencyKey: idempotencyKey || randomUUID(),
+      expectedVersion: input.expectedVersion,
       payload: input,
       prismaClient: this.db,
       handler: async (tx) => {
@@ -265,6 +292,39 @@ export class PlanningService {
         if (!task) {
           throw new NotFoundError(`Task '${input.taskId}' not found`);
         }
+        if (task.version !== input.expectedVersion) {
+          throw new ConflictError(
+            `Resource version mismatch: expected ${input.expectedVersion}, but found ${task.version}`,
+            'STALE_VERSION',
+            true
+          );
+        }
+        if (!['PENDING', 'READY', 'ASSIGNED'].includes(task.status)) {
+          throw new BadRequestError(`Task cannot be assigned while status is ${task.status}`);
+        }
+        const predecessorDeps = await tx.taskDependency.findMany({
+          where: { workspaceId, successorTaskId: task.id },
+          include: { predecessor: { select: { status: true } } },
+        });
+        if (
+          predecessorDeps.some(
+            (dependency: { predecessor: { status: string } }) =>
+              dependency.predecessor.status !== 'COMPLETED'
+          )
+        ) {
+          throw new BadRequestError(
+            'Task cannot be assigned until all predecessor tasks are completed'
+          );
+        }
+
+        const existingBookings = await tx.resourceBooking.findMany({
+          where: { workspaceId, taskId: task.id, status: 'CONFIRMED' },
+          orderBy: { createdAt: 'asc' },
+        });
+        const effectiveTechnicianId =
+          input.technicianId !== undefined ? input.technicianId : task.assignedTechnicianId;
+        const effectiveMachineId =
+          input.machineId !== undefined ? input.machineId : task.assignedMachineId;
 
         // Determine schedule window
         let startAt: Date;
@@ -273,10 +333,38 @@ export class PlanningService {
         if (input.startAt && input.endAt) {
           startAt = new Date(input.startAt);
           endAt = new Date(input.endAt);
+        } else if (existingBookings.length > 0) {
+          const hasInconsistentWindows = existingBookings.some(
+            (booking: { startAt: Date; endAt: Date }) =>
+              booking.startAt.getTime() !== existingBookings[0].startAt.getTime() ||
+              booking.endAt.getTime() !== existingBookings[0].endAt.getTime()
+          );
+          if (hasInconsistentWindows) {
+            throw new ConflictError(
+              'Task has confirmed resource bookings with inconsistent schedule windows',
+              'INCONSISTENT_BOOKING_WINDOWS',
+              false
+            );
+          }
+          startAt = existingBookings[0].startAt;
+          endAt = existingBookings[0].endAt;
         } else {
           const window = addWorkingMinutes(new Date(), task.plannedDurationMinutes);
           startAt = window.start;
           endAt = window.end;
+        }
+
+        const evalResult = await this.evaluateAssignmentWithClient(tx, principal, {
+          taskId: input.taskId,
+          technicianId: effectiveTechnicianId,
+          machineId: effectiveMachineId,
+          scheduledStartAt: startAt,
+          scheduledEndAt: endAt,
+        });
+        if (!evalResult.isEligible) {
+          throw new BadRequestError(
+            `Assignment rejected due to violations:\n${evalResult.violations.join('\n')}`
+          );
         }
 
         // Determine target status
@@ -286,19 +374,30 @@ export class PlanningService {
         }
 
         // Update task
-        const updatedTask = await tx.task.update({
+        const updateResult = await tx.task.updateMany({
           where: {
-            workspaceId_id: {
-              workspaceId,
-              id: input.taskId,
-            },
+            workspaceId,
+            id: input.taskId,
+            version: input.expectedVersion,
           },
           data: {
-            assignedTechnicianId: input.technicianId !== undefined ? input.technicianId : task.assignedTechnicianId,
-            assignedMachineId: input.machineId !== undefined ? input.machineId : task.assignedMachineId,
+            assignedTechnicianId:
+              input.technicianId !== undefined ? input.technicianId : task.assignedTechnicianId,
+            assignedMachineId:
+              input.machineId !== undefined ? input.machineId : task.assignedMachineId,
             status: newStatus,
             version: { increment: 1 },
           },
+        });
+        if (updateResult.count !== 1) {
+          throw new ConflictError(
+            `Resource version mismatch: expected ${input.expectedVersion}`,
+            'STALE_VERSION',
+            true
+          );
+        }
+        const updatedTask = await tx.task.findUnique({
+          where: { workspaceId_id: { workspaceId, id: input.taskId } },
         });
 
         // Manage resource bookings
@@ -309,18 +408,18 @@ export class PlanningService {
           endAt: Date;
         }> = [];
 
-        if (input.technicianId) {
+        if (effectiveTechnicianId) {
           bookingsToCreate.push({
             resourceType: 'TECHNICIAN',
-            resourceId: input.technicianId,
+            resourceId: effectiveTechnicianId,
             startAt,
             endAt,
           });
         }
-        if (input.machineId) {
+        if (effectiveMachineId) {
           bookingsToCreate.push({
             resourceType: 'MACHINE',
-            resourceId: input.machineId,
+            resourceId: effectiveMachineId,
             startAt,
             endAt,
           });
@@ -345,8 +444,8 @@ export class PlanningService {
               action: 'ASSIGN',
               actorUserId: principal.userId,
               detailJson: JSON.stringify({
-                technicianId: input.technicianId,
-                machineId: input.machineId,
+                technicianId: effectiveTechnicianId,
+                machineId: effectiveMachineId,
                 startAt: startAt.toISOString(),
                 endAt: endAt.toISOString(),
                 notes: input.notes,
@@ -363,6 +462,7 @@ export class PlanningService {
           },
           aggregateType: 'TASK',
           aggregateId: task.id,
+          previousVersion: task.version,
           resourceVersion: updatedTask.version,
         };
       },
@@ -432,6 +532,7 @@ export class PlanningService {
 
       return {
         id: t.id,
+        version: t.version,
         name: node?.name || t.nodeKey,
         plannedDurationMinutes: t.plannedDurationMinutes || 60,
         predecessorTaskIds: t.predecessorDeps.map((p) => p.predecessorTaskId),

@@ -5,17 +5,23 @@ import { PrismaClient } from '@prisma/client';
 import { createDatabaseBackup } from '../../scripts/backup-db';
 import { restoreDatabaseBackup } from '../../scripts/restore-db';
 import { reconcileStock } from '../../src/server/modules/inventory/ledger';
+import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 
 describe('I08: Durable Backup, Checksum Verification and Isolated Restoration', () => {
   const tempTestDir = path.resolve(process.cwd(), 'backups/test-temp-' + Date.now());
+  let fixture: FactoryFixture;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     if (!fs.existsSync(tempTestDir)) {
       fs.mkdirSync(tempTestDir, { recursive: true });
     }
+    fixture = await createFactoryFixture();
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    if (fixture) {
+      await fixture.close();
+    }
     if (fs.existsSync(tempTestDir)) {
       fs.rmSync(tempTestDir, { recursive: true, force: true });
     }
@@ -25,6 +31,7 @@ describe('I08: Durable Backup, Checksum Verification and Isolated Restoration', 
     const backupRes = await createDatabaseBackup({
       destinationDir: tempTestDir,
       backupNamePrefix: 'test-backup',
+      sourceDbPath: fixture.url.replace(/^file:/, ''),
     });
 
     expect(fs.existsSync(backupRes.backupDbPath)).toBe(true);
@@ -41,6 +48,7 @@ describe('I08: Durable Backup, Checksum Verification and Isolated Restoration', 
     const backupRes = await createDatabaseBackup({
       destinationDir: tempTestDir,
       backupNamePrefix: 'tamper-test',
+      sourceDbPath: fixture.url.replace(/^file:/, ''),
     });
 
     // Tamper with the backup file by appending a byte
@@ -62,6 +70,7 @@ describe('I08: Durable Backup, Checksum Verification and Isolated Restoration', 
     const backupRes = await createDatabaseBackup({
       destinationDir: tempTestDir,
       backupNamePrefix: 'guard-test',
+      sourceDbPath: fixture.url.replace(/^file:/, ''),
     });
 
     const livePath = path.resolve(process.cwd(), 'prisma/data/dev.db');
@@ -79,6 +88,7 @@ describe('I08: Durable Backup, Checksum Verification and Isolated Restoration', 
     const backupRes = await createDatabaseBackup({
       destinationDir: tempTestDir,
       backupNamePrefix: 'valid-restore',
+      sourceDbPath: fixture.url.replace(/^file:/, ''),
     });
 
     const isolatedTarget = path.resolve(tempTestDir, 'restored-isolated.db');

@@ -185,14 +185,42 @@ export async function finalizeInspection(
     payload: input,
     prismaClient: db,
     handler: async (tx, { requestId }) => {
+      // Re-read inspection inside tx
+      const currentInspection = await tx.inspection.findUnique({
+        where: { workspaceId_id: { workspaceId, id: input.inspectionId } },
+        include: {
+          productionOutput: {
+            include: {
+              item: true,
+              lot: true,
+              task: true,
+            },
+          },
+          supplyReceipt: true,
+        },
+      });
+      if (!currentInspection) {
+        throw new NotFoundError(`Inspection '${input.inspectionId}' not found`);
+      }
+      if (currentInspection.status !== 'DRAFT') {
+        throw new BadRequestError(
+          `Cannot finalize inspection in status '${currentInspection.status}'. Inspection must be DRAFT.`
+        );
+      }
+      if (input.passedAtoms + input.reworkAtoms + input.scrappedAtoms !== currentInspection.inspectedAtoms) {
+        throw new BadRequestError(
+          `Conservation of mass violated: passed (${input.passedAtoms}) + rework (${input.reworkAtoms}) + scrap (${input.scrappedAtoms}) != inspected (${currentInspection.inspectedAtoms})`
+        );
+      }
+
       // Gate: Verify all required QC evidence forms are finalized before inspection finalization
       await assertRequiredFormsFinalized(tx, {
         workspaceId,
         subjectType: 'INSPECTION',
-        subjectId: inspection.id,
+        subjectId: currentInspection.id,
       });
 
-      const output = inspection.productionOutput;
+      const output = currentInspection.productionOutput;
       const itemId = output?.itemId;
       const lotId = output?.lotId;
       const sourceLocationId = output?.destinationLocationId;
@@ -514,6 +542,24 @@ export async function recordReinspection(
     payload: input,
     prismaClient: db,
     handler: async (tx, { requestId }) => {
+      // Re-check cumulative reinspected atoms under tx
+      const existingReinspections = await tx.inspection.findMany({
+        where: {
+          workspaceId,
+          reinspectionOfId: origInspection.id,
+          status: 'FINALIZED',
+        },
+      });
+      const priorPassed = existingReinspections.reduce((acc: bigint, r: { passedAtoms: bigint }) => acc + r.passedAtoms, 0n);
+      const priorScrapped = existingReinspections.reduce((acc: bigint, r: { scrappedAtoms: bigint }) => acc + r.scrappedAtoms, 0n);
+      const totalPrior = priorPassed + priorScrapped;
+      const currentTotal = input.passedAtoms + input.scrappedAtoms;
+      if (totalPrior + currentTotal > origInspection.reworkAtoms) {
+        throw new BadRequestError(
+          `Reinspection quantity overflow: total reinspected (${totalPrior + currentTotal}) exceeds original rework atoms (${origInspection.reworkAtoms}).`
+        );
+      }
+
       const output = origInspection.productionOutput;
       const itemId = output?.itemId;
       const lotId = output?.lotId;

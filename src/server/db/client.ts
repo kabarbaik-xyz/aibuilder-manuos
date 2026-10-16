@@ -12,6 +12,44 @@ export function createPrismaClient(databaseUrl?: string): PrismaClient {
     log: process.env.NODE_ENV === 'test' ? ['error'] : ['error', 'warn'],
   });
 
+  // Prisma connects lazily. Initialize the connection before its first query so
+  // callers using this factory cannot accidentally run with SQLite defaults.
+  let initialization: Promise<void> | undefined;
+  let initializing = false;
+  client.$use(async (params, next) => {
+    const queryText = Array.isArray(params.args)
+      ? params.args.find((arg): arg is string => typeof arg === 'string')
+      : typeof params.args === 'string'
+        ? params.args
+        : typeof params.args === 'object' &&
+            params.args !== null &&
+            'query' in params.args &&
+            typeof params.args.query === 'string'
+          ? params.args.query
+          : '';
+    const isBootstrapPragma =
+      initializing &&
+      /PRAGMA\s+(foreign_keys|busy_timeout|journal_mode)\b/i.test(queryText);
+
+    if (isBootstrapPragma) {
+      return next(params);
+    }
+
+    if (!initialization) {
+      initialization = (async () => {
+        initializing = true;
+        try {
+          await configurePrismaSqlite(client);
+        } finally {
+          initializing = false;
+        }
+      })();
+    }
+
+    await initialization;
+    return next(params);
+  });
+
   return client;
 }
 

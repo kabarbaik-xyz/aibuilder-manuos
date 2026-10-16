@@ -14,6 +14,23 @@ import {
 import { generateRecoveryOptions } from '@/engines/recovery';
 import { addWorkDays, DEFAULT_CALENDAR } from '@/engines/calendar';
 
+
+interface PersistedRecoveryProposal extends RecoveryProposalDTO {
+  workspaceId: string;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __manuos_recovery_proposals: Map<string, PersistedRecoveryProposal> | undefined;
+}
+
+function getRecoveryStore(): Map<string, PersistedRecoveryProposal> {
+  if (!globalThis.__manuos_recovery_proposals) {
+    globalThis.__manuos_recovery_proposals = new Map<string, PersistedRecoveryProposal>();
+  }
+  return globalThis.__manuos_recovery_proposals;
+}
+
 export class RecoveryService {
   constructor(private readonly db: PrismaClient) {}
 
@@ -109,9 +126,9 @@ export class RecoveryService {
     });
 
     const proposalId = crypto.randomUUID();
-
-    return {
+    const proposal: PersistedRecoveryProposal = {
       id: proposalId,
+      workspaceId,
       orderId: order.id,
       orderNumber: order.orderNumber,
       totalQty,
@@ -121,6 +138,9 @@ export class RecoveryService {
       options,
       createdAt: new Date().toISOString(),
     };
+
+    getRecoveryStore().set(proposalId, proposal);
+    return proposal;
   }
 
   /**
@@ -140,6 +160,32 @@ export class RecoveryService {
 
     const input: ApproveRecoveryInput = ApproveRecoverySchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
+
+    // Resolve and re-validate persisted recovery proposal
+    const proposal = getRecoveryStore().get(input.proposalId);
+    if (!proposal || proposal.workspaceId !== workspaceId) {
+      throw new NotFoundError(`Recovery proposal '${input.proposalId}' not found or expired`);
+    }
+    if (proposal.orderId !== input.orderId) {
+      throw new BadRequestError(`Recovery proposal does not match order '${input.orderId}'`);
+    }
+
+    const chosenOption = proposal.options.find((o) => o.id === input.optionId);
+    if (!chosenOption) {
+      throw new NotFoundError(`Option '${input.optionId}' not found in recovery proposal`);
+    }
+    if (!chosenOption.feasible) {
+      throw new BadRequestError(
+        `Cannot approve infeasible recovery option: ${chosenOption.infeasibleReason || 'Option is not feasible'}`
+      );
+    }
+
+    const totalTranches = input.tranche1Qty + (input.tranche2Qty || 0);
+    if (totalTranches !== proposal.totalQty) {
+      throw new BadRequestError(
+        `Recovery tranches must strictly conserve total ordered quantity (${proposal.totalQty}), but got ${totalTranches}`
+      );
+    }
 
     return executeCommand<any, any>({
       principal,

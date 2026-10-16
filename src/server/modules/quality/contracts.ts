@@ -1,3 +1,4 @@
+import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
 
 export const InspectionSourceType = {
@@ -35,11 +36,7 @@ export const CreateInspectionSchema = z.object({
   qcChecklistId: z.string().uuid().optional(),
   inspectedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .optional(),
   notes: z.string().max(1000).optional(),
 });
@@ -62,26 +59,14 @@ export const FinalizeInspectionSchema = z.object({
   inspectionId: z.string().uuid(),
   passedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    }),
+    .transform(parseAtomInput),
   reworkAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .default(0n),
   scrappedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .default(0n),
   destinationFgLocationId: z.string().uuid().optional(),
   destinationScrapLocationId: z.string().uuid().optional(),
@@ -94,11 +79,7 @@ export const AuthorizeReworkSchema = z.object({
   inspectionId: z.string().uuid(),
   targetAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Target rework atoms must be strictly positive (> 0)',
     }),
@@ -111,18 +92,10 @@ export const RecordReinspectionSchema = z.object({
   reworkAttemptId: z.string().uuid().optional(),
   passedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    }),
+    .transform(parseAtomInput),
   scrappedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .default(0n),
   destinationFgLocationId: z.string().uuid().optional(),
   destinationScrapLocationId: z.string().uuid().optional(),

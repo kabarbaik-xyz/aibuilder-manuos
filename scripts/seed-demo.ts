@@ -134,7 +134,7 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     const reservation = (await step(`reserve-${i}`, k => inventory.reserveStock(principal, { demandId: demand.id, locationId: loc('RAW'), lotId: lot.id, atoms: parseQuantity(String(quantity)) }, k))).data;
     // Non-overlapping resource bookings cover current and future shifts.
     const start = new Date(anchor.getTime() + (2 + Math.floor(i / 6)) * 86400000 + (i % 6) * 3600000);
-    await step(`assign-${i}`, k => planning.assignTask(principal, { taskId, technicianId: c.techId, machineId: c.machineId, startAt: start.toISOString(), endAt: new Date(start.getTime() + (45 + family * 15) * 60000).toISOString() }, k));
+    await step(`assign-${i}`, k => planning.assignTask(principal, { taskId, expectedVersion: 1, technicianId: c.techId, machineId: c.machineId, startAt: start.toISOString(), endAt: new Date(start.getTime() + (45 + family * 15) * 60000).toISOString() }, k));
     if (scenario === 'reserved') continue;
     await step(`issue-${i}`, k => inventory.issueToProduction(principal, { demandId: demand.id, sourceLocationId: loc('RAW'), sourceLotId: lot.id, wipLocationId: loc('WIP'), atoms: parseQuantity(String(quantity)), reservationId: reservation.id }, k));
     await step(`start-${i}`, k => execution.startTask(principal, { taskId, notes: `Demo ${scenario} batch` }, k));

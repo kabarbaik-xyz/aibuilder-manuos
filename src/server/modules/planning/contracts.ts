@@ -39,6 +39,7 @@ export interface AssignmentEvaluationResult {
 
 export const AssignTaskSchema = z.object({
   taskId: z.string().min(1),
+  expectedVersion: z.number().int().min(1),
   technicianId: z.string().nullable().optional(),
   machineId: z.string().nullable().optional(),
   startAt: z.string().datetime().or(z.date()).optional(),

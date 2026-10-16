@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
+import { requirePrincipal } from '@/server/auth/auth';
+import { requireAnyPermission } from '@/server/auth/permissions';
+import { formatErrorResponse } from '@/server/http/errors';
 import { callGeminiStructured } from '@/server/ai/gemini-client';
 
 export async function POST(req: Request) {
   try {
+    const principal = await requirePrincipal(req);
+    requireAnyPermission(principal, ['order.create', 'order.read', 'planning.read']);
+
     const body = await req.json();
     const { request, feasibilityResult } = body;
 
-    const cacheKey = `promise-explain:${request?.partFamily || 'part'}:${request?.quantity || 0}`;
+    const cacheKey = `promise-explain:${principal.workspaceId}:${request?.partFamily || 'part'}:${request?.quantity || 0}`;
 
     const prompt = `
 You are a manufacturing sales-operations promise advisor in ManuOS.
@@ -44,22 +50,15 @@ Rules:
     });
 
     if (!res.aiResult) {
-      const feasible = feasibilityResult?.isFeasibleOnRequestedDate;
-      const mach = feasibilityResult?.bottleneckMachineClass || '5-Axis CNC Mill';
       return NextResponse.json({
-        aiResult: {
-          summary: feasible
-            ? `Production capacity is available to deliver on the requested date with standard queue allocation.`
-            : `Requested date cannot be met without overtime due to machine queue backlog on ${mach}. Earliest feasible date is ${feasibilityResult?.feasibleDate || 'Dec 02, 2026'}.`,
-          bottleneckExplanation: `${mach} is scheduled at 91% capacity with prior committed aerospace orders. Lead time for raw titanium billet requires 4 calendar days.`,
-          alternativesNarrative: `Alternative 1: Standard queue delivers Dec 02 with zero price surcharge. Alternative 2: Overtime shift recovery allows delivery Nov 28 with +12% overtime premium.`,
-        },
-        reason: res.reason || 'fallback',
+        aiResult: null,
+        reason: res.reason || 'unavailable',
+        error: 'Promise explanation unavailable without evaluated capacity constraints.',
       });
     }
 
     return NextResponse.json(res);
   } catch (err: any) {
-    return NextResponse.json({ aiResult: null, reason: 'error' }, { status: 500 });
+    return formatErrorResponse(err);
   }
 }

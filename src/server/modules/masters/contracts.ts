@@ -182,7 +182,16 @@ export const updateQcChecklistSchema = z.object({
 
 export const assignTechnicianSkillSchema = z.object({
   skillId: z.string().min(1),
-  level: z.number().int().min(1),
+  level: z.number().int().min(0).max(4),
+  assessmentStatus: z.enum(['CLAIMED', 'OBSERVED', 'VERIFIED', 'REVOKED']).default('VERIFIED'),
+  validFrom: z.string().optional(),
+  expiresAt: z.string().optional(),
+  evidence: z.string().optional(),
+  notes: z.string().max(500).optional(),
+});
+
+export const revokeTechnicianSkillSchema = z.object({
+  notes: z.string().max(500).optional(),
 });
 
 export const createCertSchema = z.object({
@@ -194,8 +203,49 @@ export const createCertSchema = z.object({
 export const assignTechnicianCertSchema = z.object({
   certificationId: z.string().min(1),
   certificateNumber: z.string().nullable().optional(),
+  scope: z.string().max(200).optional(),
+  evidence: z.string().max(500).optional(),
   issuedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().max(500).optional(),
+});
+
+export const revokeTechnicianCertSchema = z.object({
+  notes: z.string().max(500).optional(),
+});
+
+export const createMachineDowntimeSchema = z.object({
+  machineId: z.string().min(1),
+  reason: z.string().min(1).max(200),
+  startAt: z.string(),
+  endAt: z.string(),
+  notes: z.string().max(500).optional(),
+});
+
+export const createShiftTemplateSchema = z.object({
+  facilityId: z.string().optional(),
+  code: z.string().min(1).max(50),
+  name: z.string().min(1).max(100),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  breakMinutes: z.number().int().min(0).default(60),
+  isOvernight: z.boolean().default(false),
+});
+
+export const publishRosterIntervalSchema = z.object({
+  facilityId: z.string().optional(),
+  technicianId: z.string().optional(),
+  machineId: z.string().optional(),
+  shiftTemplateId: z.string().optional(),
+  intervalType: z.enum(['SHIFT', 'OVERTIME', 'TRAINING', 'LEAVE', 'MAINTENANCE', 'HOLIDAY']).default('SHIFT'),
+  startAt: z.string(),
+  endAt: z.string(),
+  breakIntervals: z.array(z.object({ start: z.string(), end: z.string() })).default([]),
+  notes: z.string().max(500).optional(),
+});
+
+export const publishRosterBatchSchema = z.object({
+  intervals: z.array(publishRosterIntervalSchema).min(1),
 });
 
 export const createOrderTypeSchema = z.object({
@@ -262,3 +312,45 @@ export type createOrderTypeSchema = { _type: z.input<typeof createOrderTypeSchem
 export type updateOrderTypeSchema = { _type: z.input<typeof updateOrderTypeSchema> };
 export type createQcChecklistSchema = { _type: z.input<typeof createQcChecklistSchema> };
 
+
+// -------------------------------------------------------------
+// Facility & Issue Reasons (Phase 2)
+// -------------------------------------------------------------
+
+export const createFacilitySchema = z.object({
+  code: z.string().trim().min(1).max(50),
+  name: z.string().trim().min(1).max(200),
+  timezone: z.string().trim().min(1).default('Asia/Jakarta'),
+  address: z.string().max(500).optional(),
+  isDefault: z.boolean().default(false),
+});
+export type CreateFacilityInput = z.input<typeof createFacilitySchema>;
+
+export const updateFacilitySchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  timezone: z.string().trim().min(1).optional(),
+  address: z.string().max(500).optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+  isDefault: z.boolean().optional(),
+});
+export type UpdateFacilityInput = z.infer<typeof updateFacilitySchema>;
+
+export const createIssueReasonSchema = z.object({
+  category: z.enum(['PAUSE', 'SCRAP', 'REWORK', 'BLOCKER']),
+  code: z.string().trim().min(1).max(50),
+  label: z.string().trim().min(1).max(200),
+  sortOrder: z.number().int().min(0).default(0),
+});
+export type CreateIssueReasonInput = z.input<typeof createIssueReasonSchema>;
+
+export const updateIssueReasonSchema = z.object({
+  label: z.string().trim().min(1).max(200).optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+export type UpdateIssueReasonInput = z.infer<typeof updateIssueReasonSchema>;
+
+export type CreateMachineDowntimeInput = z.input<typeof createMachineDowntimeSchema>;
+export type CreateShiftTemplateInput = z.input<typeof createShiftTemplateSchema>;
+export type PublishRosterBatchInput = z.input<typeof publishRosterBatchSchema>;
+export type PublishRosterIntervalInput = z.input<typeof publishRosterIntervalSchema>;

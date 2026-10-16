@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
+import { requirePrincipal } from '@/server/auth/auth';
+import { requireAnyPermission } from '@/server/auth/permissions';
+import { formatErrorResponse } from '@/server/http/errors';
 import { callGeminiStructured } from '@/server/ai/gemini-client';
 
 export async function POST(req: Request) {
   try {
+    const principal = await requirePrincipal(req);
+    requireAnyPermission(principal, ['task.assign', 'planning.write', 'planning.read']);
+
     const body = await req.json();
     const { task, rankedCandidates } = body;
 
-    const cacheKey = `dispatch-rationale:${task?.id || 'task'}:${(rankedCandidates || []).map((c: any) => c.technicianId || c.id).join('-')}`;
+    const cacheKey = `dispatch-rationale:${principal.workspaceId}:${task?.id || 'task'}:${(rankedCandidates || []).map((c: any) => c.technicianId || c.id).join('-')}`;
 
     const prompt = `
 You are a dispatch supervisor assistant in ManuOS.
@@ -42,20 +48,15 @@ Rules:
     });
 
     if (!res.aiResult) {
-      const top = rankedCandidates?.[0];
       return NextResponse.json({
-        aiResult: {
-          rationale: top
-            ? `${top.name || 'Top candidate'} holds verified Level 4 CNC Certification with a 94% on-time completion record and an immediate open machine window.`
-            : 'Candidate holds required certified credentials and has the lowest current queue loading.',
-          gapFlag: false,
-        },
-        reason: res.reason || 'fallback',
+        aiResult: null,
+        reason: res.reason || 'unavailable',
+        error: 'Grounded dispatch rationale unavailable without active AI evaluation.',
       });
     }
 
     return NextResponse.json(res);
   } catch (err: any) {
-    return NextResponse.json({ aiResult: null, reason: 'error' }, { status: 500 });
+    return formatErrorResponse(err);
   }
 }

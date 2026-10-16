@@ -155,9 +155,10 @@ export async function instantiateWorkflow(
       (BigInt(order.orderedAtoms) * BigInt(bomLine.requirementAtoms)) /
       BigInt(bomLine.outputBasisAtoms || 1000000n);
 
-    // Allowance percentage calculation
-    const allowancePercent = bomLine.allowancePercent || 0.0;
-    const allowanceBasis = BigInt(Math.round(allowancePercent * 100)); // e.g. 5.0% -> 500
+    // Allowance calculation using authoritative integer basis points
+    const allowanceBasis = BigInt(
+      (bomLine as any).allowanceBps ?? Math.round((bomLine.allowancePercent || 0.0) * 100)
+    );
     const allowanceAtoms = (baseRequirement * allowanceBasis) / 10000n;
     const totalRequiredAtoms = baseRequirement + allowanceAtoms;
 

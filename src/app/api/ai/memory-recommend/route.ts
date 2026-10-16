@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
+import { requirePrincipal } from '@/server/auth/auth';
+import { requireAnyPermission } from '@/server/auth/permissions';
+import { formatErrorResponse } from '@/server/http/errors';
 import { callGeminiStructured } from '@/server/ai/gemini-client';
 
 export async function POST(req: Request) {
   try {
+    const principal = await requirePrincipal(req);
+    requireAnyPermission(principal, ['engineering.read', 'planning.read']);
+
     const body = await req.json();
     const { query, stats } = body;
 
-    const cacheKey = `memory-recommend:${query?.partFamily || 'generic'}:${query?.operationType || 'mfg'}`;
+    const cacheKey = `memory-recommend:${principal.workspaceId}:${query?.partFamily || 'generic'}:${query?.operationType || 'mfg'}`;
 
     const prompt = `
 You are a senior manufacturing engineer reviewing factory memory records in ManuOS.
@@ -42,17 +48,14 @@ Rules:
 
     if (!res.aiResult) {
       return NextResponse.json({
-        aiResult: {
-          recommendation: 'Add +15% planning buffer to rough CNC cycle time for titanium manifold family.',
-          rationale: 'Across the last 3 production runs, actual machining time averaged +17.4% above initial estimate due to tool deflection and coolant dwell requirements on 5-axis Mazak.',
-          suggestedPaddingPct: 15,
-        },
-        reason: res.reason || 'fallback',
+        aiResult: null,
+        reason: res.reason || 'unavailable',
+        error: 'Memory recommendation unavailable without historical execution evidence.',
       });
     }
 
     return NextResponse.json(res);
   } catch (err: any) {
-    return NextResponse.json({ aiResult: null, reason: 'error' }, { status: 500 });
+    return formatErrorResponse(err);
   }
 }

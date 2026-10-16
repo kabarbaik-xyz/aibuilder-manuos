@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { db as defaultDb } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
-import { requirePermission } from '@/server/auth/permissions';
+import { requirePermission, requireAnyPermission } from '@/server/auth/permissions';
 import { ConflictError, NotFoundError, BadRequestError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
@@ -1238,9 +1238,28 @@ export class MastersService {
         });
         if (!skill) throw new NotFoundError(`Skill '${input.skillId}' not found`);
 
-        if (input.level > skill.scaleMax) {
-          throw new BadRequestError(`Skill level cannot exceed scale max of ${skill.scaleMax}`);
+        const effectiveMax = Math.min(skill.scaleMax, 4);
+        if (input.level < 0 || input.level > effectiveMax) {
+          throw new BadRequestError(`Skill level must be between 0 and scale max of ${effectiveMax}`);
         }
+
+        const validFrom = input.validFrom ? new Date(input.validFrom) : null;
+        const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+        const status = input.assessmentStatus || 'VERIFIED';
+
+        // Record immutable assessment history
+        await tx.skillAssessmentHistory.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            technicianId,
+            skillId: input.skillId,
+            level: input.level,
+            assessmentStatus: status,
+            assessedBy: principal.userId,
+            evidence: input.evidence,
+            notes: input.notes,
+          },
+        });
 
         const ts = await tx.technicianSkill.upsert({
           where: {
@@ -1251,6 +1270,13 @@ export class MastersService {
           },
           update: {
             level: input.level,
+            assessmentStatus: status,
+            validFrom,
+            expiresAt,
+            evidence: input.evidence,
+            notes: input.notes,
+            revokedAt: null,
+            revokedById: null,
             assessedAt: new Date(),
             assessedBy: principal.userId,
           },
@@ -1259,6 +1285,11 @@ export class MastersService {
             technicianId,
             skillId: input.skillId,
             level: input.level,
+            assessmentStatus: status,
+            validFrom,
+            expiresAt,
+            evidence: input.evidence,
+            notes: input.notes,
             assessedBy: principal.userId,
           },
           include: { skill: true },
@@ -1269,6 +1300,66 @@ export class MastersService {
           aggregateType: 'TECHNICIAN',
           aggregateId: tech.id,
           resourceVersion: tech.version,
+        };
+      },
+    });
+  }
+
+  async revokeSkill(
+    principal: Principal,
+    technicianId: string,
+    skillId: string,
+    input: { notes?: string },
+    idempotencyKey: string
+  ) {
+    requirePermission(principal, 'resource.manage');
+
+    return executeCommand({
+      principal,
+      commandType: 'technician.revoke_skill',
+      idempotencyKey,
+      payload: { technicianId, skillId, ...input },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const ts = await tx.technicianSkill.findFirst({
+          where: { technicianId, skillId, workspaceId: principal.workspaceId },
+        });
+        if (!ts) throw new NotFoundError(`Technician skill assignment for skill '${skillId}' not found`);
+
+        const updated = await tx.technicianSkill.update({
+          where: {
+            technicianId_skillId: {
+              technicianId,
+              skillId,
+            },
+          },
+          data: {
+            assessmentStatus: 'REVOKED',
+            revokedAt: new Date(),
+            revokedById: principal.userId,
+            notes: input.notes,
+          },
+          include: { skill: true },
+        });
+
+        // Record revocation in assessment history
+        await tx.skillAssessmentHistory.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            technicianId,
+            skillId,
+            level: 0,
+            assessmentStatus: 'REVOKED',
+            assessedBy: principal.userId,
+            notes: input.notes,
+          },
+        });
+
+        return {
+          data: updated,
+          aggregateType: 'TECHNICIAN',
+          aggregateId: technicianId,
+          resourceVersion: 1,
         };
       },
     });
@@ -1299,6 +1390,13 @@ export class MastersService {
         });
         if (!cert) throw new NotFoundError(`Certification '${input.certificationId}' not found`);
 
+        if (input.validUntil < input.issuedDate) {
+          throw new BadRequestError('validUntil date cannot precede issuedDate');
+        }
+
+        const validFromDate = new Date(`${input.issuedDate}T00:00:00.000Z`);
+        const expiresAtDate = new Date(`${input.validUntil}T23:59:59.999Z`);
+
         const tc = await tx.technicianCertification.upsert({
           where: {
             technicianId_certificationId: {
@@ -1310,6 +1408,14 @@ export class MastersService {
             certificateNumber: input.certificateNumber,
             issuedDate: input.issuedDate,
             validUntil: input.validUntil,
+            validFromDate,
+            expiresAtDate,
+            scope: input.scope,
+            evidence: input.evidence,
+            notes: input.notes,
+            status: 'ACTIVE',
+            revokedAt: null,
+            revokedById: null,
           },
           create: {
             workspaceId: principal.workspaceId,
@@ -1318,6 +1424,12 @@ export class MastersService {
             certificateNumber: input.certificateNumber,
             issuedDate: input.issuedDate,
             validUntil: input.validUntil,
+            validFromDate,
+            expiresAtDate,
+            scope: input.scope,
+            evidence: input.evidence,
+            notes: input.notes,
+            status: 'ACTIVE',
           },
           include: { certification: true },
         });
@@ -1329,6 +1441,276 @@ export class MastersService {
           resourceVersion: tech.version,
         };
       },
+    });
+  }
+
+  async revokeCert(
+    principal: Principal,
+    technicianId: string,
+    certificationId: string,
+    input: { notes?: string },
+    idempotencyKey: string
+  ) {
+    requirePermission(principal, 'resource.manage');
+
+    return executeCommand({
+      principal,
+      commandType: 'technician.revoke_cert',
+      idempotencyKey,
+      payload: { technicianId, certificationId, ...input },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const tc = await tx.technicianCertification.findFirst({
+          where: { technicianId, certificationId, workspaceId: principal.workspaceId },
+        });
+        if (!tc) throw new NotFoundError(`Technician certificate not found`);
+
+        const updated = await tx.technicianCertification.update({
+          where: {
+            technicianId_certificationId: {
+              technicianId,
+              certificationId,
+            },
+          },
+          data: {
+            status: 'REVOKED',
+            revokedAt: new Date(),
+            revokedById: principal.userId,
+            notes: input.notes,
+          },
+          include: { certification: true },
+        });
+
+        return {
+          data: updated,
+          aggregateType: 'TECHNICIAN',
+          aggregateId: technicianId,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Machine Downtime Management
+  // -----------------------------------------------------------
+  async createMachineDowntime(
+    principal: Principal,
+    input: contracts.CreateMachineDowntimeInput,
+    idempotencyKey: string
+  ) {
+    requirePermission(principal, 'resource.manage');
+
+    return executeCommand({
+      principal,
+      commandType: 'machine.downtime.create',
+      idempotencyKey,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const machine = await tx.machine.findFirst({
+          where: { id: input.machineId, workspaceId: principal.workspaceId },
+        });
+        if (!machine) throw new NotFoundError(`Machine '${input.machineId}' not found`);
+
+        const startAt = new Date(input.startAt);
+        const endAt = new Date(input.endAt);
+        if (startAt >= endAt) {
+          throw new BadRequestError('startAt must be strictly before endAt');
+        }
+
+        const dt = await tx.machineDowntime.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            machineId: input.machineId,
+            reason: input.reason,
+            startAt,
+            endAt,
+            notes: input.notes,
+            status: 'SCHEDULED',
+          },
+          include: { machine: true },
+        });
+
+        return {
+          data: dt,
+          aggregateType: 'MACHINE_DOWNTIME',
+          aggregateId: dt.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async listMachineDowntimes(principal: Principal, machineId: string) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.read']);
+
+    return this.prisma.machineDowntime.findMany({
+      where: { machineId, workspaceId: principal.workspaceId },
+      orderBy: { startAt: 'desc' },
+      include: { machine: true },
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Shift Templates & Roster Intervals
+  // -----------------------------------------------------------
+  async createShiftTemplate(
+    principal: Principal,
+    input: contracts.CreateShiftTemplateInput,
+    idempotencyKey: string
+  ) {
+    requirePermission(principal, 'resource.manage');
+
+    return executeCommand({
+      principal,
+      commandType: 'shift_template.create',
+      idempotencyKey,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const existing = await tx.shiftTemplate.findFirst({
+          where: { workspaceId: principal.workspaceId, code: input.code },
+        });
+        if (existing) throw new ConflictError(`Shift template '${input.code}' already exists`);
+
+        if (input.facilityId) {
+          const fac = await tx.facility.findFirst({
+            where: { id: input.facilityId, workspaceId: principal.workspaceId, isActive: true },
+          });
+          if (!fac) throw new BadRequestError(`Facility '${input.facilityId}' not found or inactive`);
+        }
+
+        const st = await tx.shiftTemplate.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            facilityId: input.facilityId,
+            code: input.code,
+            name: input.name,
+            startTime: input.startTime,
+            endTime: input.endTime,
+            breakMinutes: input.breakMinutes ?? 60,
+            isOvernight: input.isOvernight ?? false,
+          },
+        });
+
+        return {
+          data: st,
+          aggregateType: 'SHIFT_TEMPLATE',
+          aggregateId: st.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async listShiftTemplates(principal: Principal, facilityId?: string) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.read']);
+
+    return this.prisma.shiftTemplate.findMany({
+      where: {
+        workspaceId: principal.workspaceId,
+        isActive: true,
+        ...(facilityId ? { facilityId } : {}),
+      },
+      orderBy: { code: 'asc' },
+    });
+  }
+
+  async publishRosterIntervals(
+    principal: Principal,
+    input: contracts.PublishRosterBatchInput,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.write']);
+
+    return executeCommand({
+      principal,
+      commandType: 'roster.publish',
+      idempotencyKey,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const createdIntervals = [];
+
+        for (const item of input.intervals) {
+          const startAt = new Date(item.startAt);
+          const endAt = new Date(item.endAt);
+          if (startAt >= endAt) {
+            throw new BadRequestError(`Invalid interval: startAt (${item.startAt}) must precede endAt (${item.endAt})`);
+          }
+
+          if (item.technicianId) {
+            const tech = await tx.technician.findFirst({
+              where: { id: item.technicianId, workspaceId: principal.workspaceId, isActive: true },
+            });
+            if (!tech) throw new BadRequestError(`Technician '${item.technicianId}' not found or inactive`);
+          }
+
+          if (item.machineId) {
+            const mach = await tx.machine.findFirst({
+              where: { id: item.machineId, workspaceId: principal.workspaceId },
+            });
+            if (!mach) throw new BadRequestError(`Machine '${item.machineId}' not found`);
+          }
+
+          const record = await tx.rosterInterval.create({
+            data: {
+              workspaceId: principal.workspaceId,
+              facilityId: item.facilityId,
+              technicianId: item.technicianId,
+              machineId: item.machineId,
+              shiftTemplateId: item.shiftTemplateId,
+              intervalType: item.intervalType || 'SHIFT',
+              startAt,
+              endAt,
+              status: 'PUBLISHED',
+              breakIntervalsJson: JSON.stringify(item.breakIntervals || []),
+              notes: item.notes,
+            },
+          });
+
+          createdIntervals.push(record);
+        }
+
+        return {
+          data: createdIntervals,
+          aggregateType: 'ROSTER_INTERVAL',
+          aggregateId: principal.workspaceId,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async listRosterIntervals(
+    principal: Principal,
+    filter: {
+      technicianId?: string;
+      machineId?: string;
+      facilityId?: string;
+      startAt?: string;
+      endAt?: string;
+      status?: string;
+    }
+  ) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.read']);
+
+    return this.prisma.rosterInterval.findMany({
+      where: {
+        workspaceId: principal.workspaceId,
+        ...(filter.technicianId ? { technicianId: filter.technicianId } : {}),
+        ...(filter.machineId ? { machineId: filter.machineId } : {}),
+        ...(filter.facilityId ? { facilityId: filter.facilityId } : {}),
+        ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.startAt && filter.endAt
+          ? {
+              startAt: { lte: new Date(filter.endAt) },
+              endAt: { gte: new Date(filter.startAt) },
+            }
+          : {}),
+      },
+      orderBy: { startAt: 'asc' },
     });
   }
 
@@ -1363,8 +1745,9 @@ export class MastersService {
         });
         if (existing) throw new ConflictError(`Skill '${input.code}' already exists`, 'DUPLICATE_CODE');
 
+        const scaleMax = Math.min(input.scaleMax ?? 4, 4);
         const skill = await tx.skill.create({
-          data: { workspaceId: principal.workspaceId, ...input },
+          data: { workspaceId: principal.workspaceId, ...input, scaleMax },
         });
 
         return {
@@ -1681,6 +2064,321 @@ export class MastersService {
         exceptionToday: t.calendar?.exceptions[0] || null,
       })),
     };
+  }
+
+  // -------------------------------------------------------------
+  // Facility & Facility Grants (Phase 2)
+  // -------------------------------------------------------------
+  async listFacilities(principal: Principal) {
+    return await this.prisma.facility.findMany({
+      where: { workspaceId: principal.workspaceId },
+      orderBy: [{ isDefault: 'desc' }, { code: 'asc' }],
+    });
+  }
+
+  async getFacility(principal: Principal, id: string) {
+    const facility = await this.prisma.facility.findFirst({
+      where: { id, workspaceId: principal.workspaceId },
+    });
+    if (!facility) {
+      throw new NotFoundError(`Facility '${id}' not found`);
+    }
+    return facility;
+  }
+
+  async createFacility(
+    principal: Principal,
+    input: contracts.CreateFacilityInput,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['resource.manage', 'workspace.admin', 'owner']);
+    const validated = contracts.createFacilitySchema.parse(input);
+
+    return executeCommand({
+      principal,
+      commandType: 'facility.create',
+      idempotencyKey,
+      payload: validated,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const existing = await tx.facility.findUnique({
+          where: {
+            workspaceId_code: {
+              workspaceId: principal.workspaceId,
+              code: validated.code,
+            },
+          },
+        });
+        if (existing) {
+          throw new ConflictError(`Facility with code '${validated.code}' already exists`);
+        }
+
+        if (validated.isDefault) {
+          await tx.facility.updateMany({
+            where: { workspaceId: principal.workspaceId, isDefault: true },
+            data: { isDefault: false },
+          });
+        }
+
+        const data = await tx.facility.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            code: validated.code,
+            name: validated.name,
+            timezone: validated.timezone,
+            address: validated.address ?? null,
+            isDefault: validated.isDefault,
+            status: 'ACTIVE',
+          },
+        });
+
+        return {
+          data,
+          aggregateType: 'FACILITY',
+          aggregateId: data.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async updateFacility(
+    principal: Principal,
+    id: string,
+    input: contracts.UpdateFacilityInput,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['resource.manage', 'workspace.admin', 'owner']);
+    const validated = contracts.updateFacilitySchema.parse(input);
+
+    return executeCommand({
+      principal,
+      commandType: 'facility.update',
+      idempotencyKey,
+      payload: { id, ...validated },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const current = await tx.facility.findFirst({
+          where: { id, workspaceId: principal.workspaceId },
+        });
+        if (!current) {
+          throw new NotFoundError(`Facility '${id}' not found`);
+        }
+
+        if (validated.isDefault && !current.isDefault) {
+          await tx.facility.updateMany({
+            where: { workspaceId: principal.workspaceId, isDefault: true },
+            data: { isDefault: false },
+          });
+        }
+
+        const data = await tx.facility.update({
+          where: { id },
+          data: {
+            name: validated.name ?? current.name,
+            timezone: validated.timezone ?? current.timezone,
+            address: validated.address !== undefined ? validated.address : current.address,
+            status: validated.status ?? current.status,
+            isDefault: validated.isDefault !== undefined ? validated.isDefault : current.isDefault,
+          },
+        });
+
+        return {
+          data,
+          aggregateType: 'FACILITY',
+          aggregateId: data.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async grantFacilityAccess(
+    principal: Principal,
+    membershipId: string,
+    facilityId: string,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['access.manage', 'workspace.admin', 'owner']);
+
+    return executeCommand({
+      principal,
+      commandType: 'facility.grant_access',
+      idempotencyKey,
+      payload: { membershipId, facilityId },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const mem = await tx.membership.findFirst({
+          where: { id: membershipId, workspaceId: principal.workspaceId },
+        });
+        if (!mem) throw new NotFoundError(`Membership '${membershipId}' not found`);
+
+        const fac = await tx.facility.findFirst({
+          where: { id: facilityId, workspaceId: principal.workspaceId },
+        });
+        if (!fac) throw new NotFoundError(`Facility '${facilityId}' not found`);
+
+        const grant = await tx.membershipFacilityGrant.upsert({
+          where: {
+            membershipId_facilityId: {
+              membershipId,
+              facilityId,
+            },
+          },
+          create: {
+            workspaceId: principal.workspaceId,
+            membershipId,
+            facilityId,
+          },
+          update: {},
+        });
+
+        return {
+          data: grant,
+          aggregateType: 'MEMBERSHIP_FACILITY_GRANT',
+          aggregateId: grant.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async revokeFacilityAccess(
+    principal: Principal,
+    membershipId: string,
+    facilityId: string,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['access.manage', 'workspace.admin', 'owner']);
+
+    return executeCommand({
+      principal,
+      commandType: 'facility.revoke_access',
+      idempotencyKey,
+      payload: { membershipId, facilityId },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        await tx.membershipFacilityGrant.deleteMany({
+          where: {
+            membershipId,
+            facilityId,
+            workspaceId: principal.workspaceId,
+          },
+        });
+
+        return {
+          data: { revoked: true, membershipId, facilityId },
+          aggregateType: 'MEMBERSHIP_FACILITY_GRANT',
+          aggregateId: `${membershipId}-${facilityId}`,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  // -------------------------------------------------------------
+  // Issue Reasons (Phase 2)
+  // -------------------------------------------------------------
+  async listIssueReasons(principal: Principal, category?: string) {
+    const where: any = { workspaceId: principal.workspaceId };
+    if (category) where.category = category;
+    return await this.prisma.issueReason.findMany({
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+    });
+  }
+
+  async createIssueReason(
+    principal: Principal,
+    input: contracts.CreateIssueReasonInput,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.write', 'workspace.admin', 'owner']);
+    const validated = contracts.createIssueReasonSchema.parse(input);
+
+    return executeCommand({
+      principal,
+      commandType: 'issue_reason.create',
+      idempotencyKey,
+      payload: validated,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const existing = await tx.issueReason.findUnique({
+          where: {
+            workspaceId_category_code: {
+              workspaceId: principal.workspaceId,
+              category: validated.category,
+              code: validated.code,
+            },
+          },
+        });
+        if (existing) {
+          throw new ConflictError(
+            `Issue reason with code '${validated.code}' already exists in category '${validated.category}'`
+          );
+        }
+
+        const data = await tx.issueReason.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            category: validated.category,
+            code: validated.code,
+            label: validated.label,
+            sortOrder: validated.sortOrder,
+            isActive: true,
+          },
+        });
+
+        return {
+          data,
+          aggregateType: 'ISSUE_REASON',
+          aggregateId: data.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async updateIssueReason(
+    principal: Principal,
+    id: string,
+    input: contracts.UpdateIssueReasonInput,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.write', 'workspace.admin', 'owner']);
+    const validated = contracts.updateIssueReasonSchema.parse(input);
+
+    return executeCommand({
+      principal,
+      commandType: 'issue_reason.update',
+      idempotencyKey,
+      payload: { id, ...validated },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const current = await tx.issueReason.findFirst({
+          where: { id, workspaceId: principal.workspaceId },
+        });
+        if (!current) {
+          throw new NotFoundError(`Issue reason '${id}' not found`);
+        }
+
+        const data = await tx.issueReason.update({
+          where: { id },
+          data: {
+            label: validated.label ?? current.label,
+            isActive: validated.isActive !== undefined ? validated.isActive : current.isActive,
+            sortOrder: validated.sortOrder !== undefined ? validated.sortOrder : current.sortOrder,
+          },
+        });
+
+        return {
+          data,
+          aggregateType: 'ISSUE_REASON',
+          aggregateId: data.id,
+          resourceVersion: 1,
+        };
+      },
+    });
   }
 }
 

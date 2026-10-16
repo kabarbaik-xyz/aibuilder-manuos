@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
+import { requirePrincipal } from '@/server/auth/auth';
+import { requireAnyPermission } from '@/server/auth/permissions';
+import { formatErrorResponse } from '@/server/http/errors';
 import { callGeminiStructured } from '@/server/ai/gemini-client';
 
 export async function POST(req: Request) {
   try {
+    const principal = await requirePrincipal(req);
+    requireAnyPermission(principal, ['network.read', 'order.read', 'planning.read', 'planning.write']);
+
     const body = await req.json();
     const { requirement, partnerMatches } = body;
 
-    const cacheKey = `partner-fit:${requirement?.department || 'dept'}:${requirement?.machineClass || 'mach'}`;
+    const cacheKey = `partner-fit:${principal.workspaceId}:${requirement?.department || 'dept'}:${requirement?.machineClass || 'mach'}`;
 
     const prompt = `
 You are a supply chain network coordinator in ManuOS.
@@ -39,19 +45,14 @@ Rules:
 
     if (!res.aiResult) {
       return NextResponse.json({
-        aiResult: {
-          narrative: 'Apex Precision (Jurong Hub) provides verified 5-axis DMG MORI capacity with ISO-9001 certification. Turnaround matches required window with 1.05x benchmark rate index.',
-          riskNotes: [
-            'Requires bilateral data consent before sharing raw CAD parasolids',
-            'Transit time adds 4 hours buffer between Jurong and Tuas facilities',
-          ],
-        },
-        reason: res.reason || 'fallback',
+        aiResult: null,
+        reason: res.reason || 'unavailable',
+        error: 'Partner fit narrative unavailable without verified network capacity data.',
       });
     }
 
     return NextResponse.json(res);
   } catch (err: any) {
-    return NextResponse.json({ aiResult: null, reason: 'error' }, { status: 500 });
+    return formatErrorResponse(err);
   }
 }

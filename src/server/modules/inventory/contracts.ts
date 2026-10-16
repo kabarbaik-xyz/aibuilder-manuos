@@ -1,3 +1,4 @@
+import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
 
 export const MovementType = {
@@ -56,11 +57,7 @@ export const PostMovementSchema = z
     destinationLotId: z.string().uuid().nullable().optional(),
     atoms: z
       .union([z.bigint(), z.string(), z.number()])
-      .transform((val) => {
-        if (typeof val === 'bigint') return val;
-        if (typeof val === 'number') return BigInt(Math.floor(val));
-        return BigInt(val);
-      })
+      .transform(parseAtomInput)
       .refine((val) => val > 0n, {
         message: 'Movement atoms must be strictly positive (> 0)',
       }),
@@ -102,11 +99,7 @@ export const PostOpeningBalanceSchema = z.object({
   expirationDate: z.string().datetime().optional(),
   atoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Opening balance atoms must be strictly positive (> 0)',
     }),
@@ -193,11 +186,7 @@ export const ReserveStockSchema = z.object({
   lotId: z.string().uuid().nullable().optional(),
   atoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Reservation atoms must be strictly positive (> 0)',
     }),
@@ -218,11 +207,7 @@ export const IssueToProductionSchema = z.object({
   wipLocationId: z.string().uuid(),
   atoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Issue atoms must be strictly positive (> 0)',
     }),
@@ -238,11 +223,7 @@ export const ReturnUnusedMaterialSchema = z.object({
   lotId: z.string().uuid().nullable().optional(),
   atoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Return atoms must be strictly positive (> 0)',
     }),
@@ -256,11 +237,7 @@ export const ConsumeIssuedMaterialSchema = z.object({
   lotId: z.string().uuid().nullable().optional(),
   atoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Consume atoms must be strictly positive (> 0)',
     }),
@@ -330,11 +307,7 @@ export const CreateStockCountLineSchema = z.object({
   lotId: z.string().uuid().nullable().optional(),
   countedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val >= 0n, {
       message: 'Counted atoms cannot be negative',
     }),
@@ -358,11 +331,7 @@ export const StockTransferSchema = z
     destinationLotId: z.string().uuid().nullable().optional(),
     atoms: z
       .union([z.bigint(), z.string(), z.number()])
-      .transform((val) => {
-        if (typeof val === 'bigint') return val;
-        if (typeof val === 'number') return BigInt(Math.floor(val));
-        return BigInt(val);
-      })
+      .transform(parseAtomInput)
       .refine((val) => val > 0n, {
         message: 'Transfer atoms must be strictly positive (> 0)',
       }),

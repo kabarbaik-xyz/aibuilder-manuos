@@ -274,6 +274,7 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
     },
     'key-tech-alpha'
   );
+  operatorAlpha.principal.technicianId = tech.data.id;
 
   await mastersService.assignSkill(
     ownerAlpha.principal,

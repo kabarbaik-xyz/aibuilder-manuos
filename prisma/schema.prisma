@@ -34,6 +34,7 @@ model User {
   inspections         Inspection[]
   authorizedReworks   ReworkAttempt[]
   uploadedDocuments   Document[]
+  notifications       NotificationInbox[]
 
   @@map("users")
 }
@@ -102,6 +103,14 @@ model Workspace {
   updatedAt   DateTime     @updatedAt @map("updated_at")
 
   memberships       Membership[]
+  facilities        Facility[]
+  skillAssessmentHistories SkillAssessmentHistory[]
+  machineDowntimes  MachineDowntime[]
+  shiftTemplates    ShiftTemplate[]
+  rosterIntervals   RosterInterval[]
+  membershipFacilityGrants MembershipFacilityGrant[]
+  issueReasons      IssueReason[]
+  notifications     NotificationInbox[]
   roles             Role[]
   numberSequences   NumberSequence[]
   commandReceipts   CommandReceipt[]
@@ -124,6 +133,8 @@ model Workspace {
   workflowVersions  WorkflowVersion[]
   workflowInstances WorkflowInstance[]
   orders            Order[]
+  orderLines        OrderLine[]
+  drawingRevisions  DrawingRevision[]
   manufacturingOrders ManufacturingOrder[]
   materialDemands   MaterialDemand[]
   lots              Lot[]
@@ -171,6 +182,9 @@ model Membership {
   workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   customer     Customer?        @relation(fields: [workspaceId, customerId], references: [workspaceId, id])
+  facilityId   String?          @map("facility_id")
+  facility     Facility?        @relation(fields: [workspaceId, facilityId], references: [workspaceId, id])
+  facilityGrants MembershipFacilityGrant[]
   roles        MembershipRole[]
 
   @@unique([workspaceId, userId])
@@ -283,6 +297,8 @@ model AuditEvent {
   beforeRevision Int?      @map("before_revision")
   afterRevision  Int?      @map("after_revision")
   detailJson     String    @map("detail_json")
+  reason         String?
+  correlationId  String?   @map("correlation_id")
   occurredAt     DateTime  @default(now()) @map("occurred_at")
 
   workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -378,6 +394,7 @@ model Uom {
   baseItems   Item[]              @relation("BaseUomRelation")
   conversions ItemUomConversion[]
   bomLines    BomLine[]
+  orderLines  OrderLine[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -414,6 +431,8 @@ model Item {
   supplyReceiptLines SupplyReceiptLine[]
   stockCountLines   StockCountLine[]
   productionOutputs ProductionOutput[]
+  orderLines        OrderLine[]
+  drawingRevisions  DrawingRevision[]
   shipmentLines     ShipmentLine[]
   passports         Passport[]
 
@@ -559,7 +578,13 @@ model Machine {
   machineClassId String        @map("machine_class_id")
   departmentId   String?       @map("department_id")
   calendarId     String?       @map("calendar_id")
+  facilityId     String?       @map("facility_id")
+  facility       Facility?     @relation(fields: [workspaceId, facilityId], references: [workspaceId, id])
   status         String        @default("AVAILABLE") // AVAILABLE | MAINTENANCE | OFFLINE
+  capacityUnits  Int           @default(1) @map("capacity_units")
+  capabilitiesJson String      @default("[]") @map("capabilities_json")
+  downtimes      MachineDowntime[]
+  rosterIntervals RosterInterval[]
   version        Int           @default(1)
   archivedAt     DateTime?     @map("archived_at")
   createdAt      DateTime      @default(now()) @map("created_at")
@@ -585,6 +610,8 @@ model Technician {
   departmentId     String?                    @map("department_id")
   calendarId       String?                    @map("calendar_id")
   maxWeeklyMinutes Int                        @default(2400) @map("max_weekly_minutes") // 40h standard
+  facilityId       String?                    @map("facility_id")
+  facility         Facility?                  @relation(fields: [workspaceId, facilityId], references: [workspaceId, id])
   isActive         Boolean                    @default(true) @map("is_active")
   version          Int                        @default(1)
   archivedAt       DateTime?                  @map("archived_at")
@@ -598,6 +625,8 @@ model Technician {
   certifications   TechnicianCertification[]
   tasks            Task[]
   workSessions     WorkSession[]
+  rosterIntervals  RosterInterval[]
+  assessmentHistory SkillAssessmentHistory[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -609,13 +638,14 @@ model Skill {
   workspaceId String            @map("workspace_id")
   code        String
   name        String
-  scaleMax    Int               @default(5) @map("scale_max")
+  scaleMax    Int               @default(4) @map("scale_max")
   isActive    Boolean           @default(true) @map("is_active")
   createdAt   DateTime          @default(now()) @map("created_at")
   updatedAt   DateTime          @updatedAt @map("updated_at")
 
   workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   technicians TechnicianSkill[]
+  assessmentHistory SkillAssessmentHistory[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -628,6 +658,13 @@ model TechnicianSkill {
   technicianId String     @map("technician_id")
   skillId      String     @map("skill_id")
   level        Int        // 1..scaleMax
+  assessmentStatus String @default("VERIFIED") @map("assessment_status") // CLAIMED | OBSERVED | VERIFIED | REVOKED
+  validFrom    DateTime?  @map("valid_from")
+  expiresAt    DateTime?  @map("expires_at")
+  evidence     String?
+  revokedAt    DateTime?  @map("revoked_at")
+  revokedById  String?    @map("revoked_by_id")
+  notes        String?
   assessedAt   DateTime   @default(now()) @map("assessed_at")
   assessedBy   String?    @map("assessed_by")
   createdAt    DateTime   @default(now()) @map("created_at")
@@ -664,6 +701,14 @@ model TechnicianCertification {
   technicianId      String        @map("technician_id")
   certificationId   String        @map("certification_id")
   certificateNumber String?       @map("certificate_number")
+  status            String        @default("ACTIVE") // ACTIVE | REVOKED | EXPIRED
+  scope             String?
+  evidence          String?
+  validFromDate     DateTime?     @map("valid_from_date")
+  expiresAtDate     DateTime?     @map("expires_at_date")
+  revokedAt         DateTime?     @map("revoked_at")
+  revokedById       String?       @map("revoked_by_id")
+  notes             String?
   issuedDate        String        @map("issued_date") // YYYY-MM-DD
   validUntil        String        @map("valid_until") // YYYY-MM-DD
   createdAt         DateTime      @default(now()) @map("created_at")
@@ -783,6 +828,7 @@ model WorkflowVersion {
   nodes          WorkflowNode[]
   edges          WorkflowEdge[]
   instances      WorkflowInstance[]
+  manufacturingOrders ManufacturingOrder[]
 
   @@unique([templateId, versionNumber])
   @@unique([workspaceId, id])
@@ -839,6 +885,12 @@ model Order {
   orderedAtoms         BigInt                @map("ordered_atoms")
   requestedDate        DateTime              @map("requested_date")
   promisedDate         DateTime?             @map("promised_date")
+  facilityId           String?               @map("facility_id")
+  facility             Facility?             @relation(fields: [workspaceId, facilityId], references: [workspaceId, id])
+  deliveryAddress      String?               @map("delivery_address")
+  contractReference    String?               @map("contract_reference")
+  confirmedAt          DateTime?             @map("confirmed_at")
+  confirmedById        String?               @map("confirmed_by_id")
   status               String                @default("DRAFT") // DRAFT | REVIEW | READY | RELEASED | IN_PRODUCTION | PARTIALLY_DELIVERED | DELIVERED | CANCELLED
   customerAcknowledged   Boolean               @default(false) @map("customer_acknowledged")
   customerAcknowledgedAt DateTime?             @map("customer_acknowledged_at")
@@ -853,6 +905,7 @@ model Order {
   item                 Item                  @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
   questions            CustomerQuestion[]
   rfqDrafts            RfqDraft[]
+  lines                OrderLine[]
   engineeringRevisions EngineeringRevision[]
   instances            WorkflowInstance[]
   manufacturingOrders  ManufacturingOrder[]
@@ -907,6 +960,8 @@ model EngineeringRevision {
   specsJson         String             @default("{}") @map("specs_json")
   workflowVersionId String?            @map("workflow_version_id")
   outputBasisAtoms  BigInt             @default(1000000) @map("output_basis_atoms")
+  orderLineId       String?            @map("order_line_id")
+  drawingRevisionId String?            @map("drawing_revision_id")
   approvedById      String?            @map("approved_by_id")
   approvedAt        DateTime?          @map("approved_at")
   version           Int                @default(1)
@@ -914,6 +969,9 @@ model EngineeringRevision {
   updatedAt         DateTime           @updatedAt @map("updated_at")
 
   order             Order              @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  orderLine         OrderLine?         @relation(fields: [workspaceId, orderLineId], references: [workspaceId, id])
+  drawingRevision   DrawingRevision?   @relation(fields: [workspaceId, drawingRevisionId], references: [workspaceId, id])
+  manufacturingOrders ManufacturingOrder[]
   bomLines          BomLine[]
   instances         WorkflowInstance[]
 
@@ -932,6 +990,7 @@ model BomLine {
   requirementAtoms      BigInt              @map("requirement_atoms")
   outputBasisAtoms      BigInt              @default(1000000) @map("output_basis_atoms")
   allowancePercent      Float               @default(0.0) @map("allowance_percent")
+  allowanceBps          Int                 @default(0) @map("allowance_bps")
   createdAt             DateTime            @default(now()) @map("created_at")
   updatedAt             DateTime            @updatedAt @map("updated_at")
 
@@ -973,8 +1032,11 @@ model ManufacturingOrder {
   id           String      @id @default(uuid())
   workspaceId  String      @map("workspace_id")
   orderId      String      @map("order_id")
+  orderLineId  String?     @map("order_line_id")
   moNumber     String      @map("mo_number")
   departmentId String?     @map("department_id")
+  workflowVersionId String? @map("workflow_version_id")
+  engineeringRevisionId String? @map("engineering_revision_id")
   status       String      @default("RELEASED") // RELEASED | IN_PROGRESS | COMPLETED | CANCELLED
   targetAtoms  BigInt      @map("target_atoms")
   version      Int         @default(1)
@@ -983,6 +1045,9 @@ model ManufacturingOrder {
 
   workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   order        Order       @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  orderLine    OrderLine?  @relation(fields: [workspaceId, orderLineId], references: [workspaceId, id])
+  workflowVersion WorkflowVersion? @relation(fields: [workspaceId, workflowVersionId], references: [workspaceId, id])
+  engineeringRevision EngineeringRevision? @relation(fields: [workspaceId, engineeringRevisionId], references: [workspaceId, id])
   department   Department? @relation(fields: [workspaceId, departmentId], references: [workspaceId, id])
   jobsheets    Jobsheet[]
 
@@ -1101,6 +1166,8 @@ model WorkflowEvent {
   commandId     String?          @map("command_id")
   attemptNumber Int              @default(1) @map("attempt_number")
   detailJson    String           @default("{}") @map("detail_json")
+  reason        String?
+  correlationId String?          @map("correlation_id")
   occurredAt    DateTime         @default(now()) @map("occurred_at")
 
   instance      WorkflowInstance @relation(fields: [workspaceId, instanceId], references: [workspaceId, id], onDelete: Cascade)
@@ -1648,6 +1715,7 @@ model Document {
   workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   uploadedBy     User           @relation(fields: [uploadedById], references: [id])
   links          DocumentLink[]
+  drawingRevisions DrawingRevision[]
   formSubmissionDocuments FormSubmissionDocument[]
 
   @@unique([workspaceId, id])
@@ -1832,3 +1900,239 @@ model FormSubmissionDocument {
 
 
 
+
+
+// -------------------------------------------------------------
+// Facility, Grants, Issue Reasons & Notifications (Phase 2)
+// -------------------------------------------------------------
+
+model Facility {
+  id          String       @id @default(uuid())
+  workspaceId String       @map("workspace_id")
+  code        String
+  name        String
+  timezone    String       @default("Asia/Jakarta")
+  status      String       @default("ACTIVE") // ACTIVE | INACTIVE
+  address     String?
+  isDefault   Boolean      @default(false) @map("is_default")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+  facilityGrants MembershipFacilityGrant[]
+  technicians Technician[]
+  machines    Machine[]
+  orders      Order[]
+  shiftTemplates ShiftTemplate[]
+  rosterIntervals RosterInterval[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("facilities")
+}
+
+model MembershipFacilityGrant {
+  id           String     @id @default(uuid())
+  workspaceId  String     @map("workspace_id")
+  membershipId String     @map("membership_id")
+  facilityId   String     @map("facility_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  workspace    Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  facility     Facility   @relation(fields: [workspaceId, facilityId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([membershipId, facilityId])
+  @@map("membership_facility_grants")
+}
+
+model IssueReason {
+  id          String    @id @default(uuid())
+  workspaceId String    @map("workspace_id")
+  category    String    // PAUSE | SCRAP | REWORK | BLOCKER
+  code        String
+  label       String
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, category, code])
+  @@map("issue_reasons")
+}
+
+model NotificationInbox {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  userId       String    @map("user_id")
+  title        String
+  body         String?
+  status       String    @default("UNREAD") // UNREAD | READ | ARCHIVED
+  subjectType  String?   @map("subject_type")
+  subjectId    String?   @map("subject_id")
+  metadataJson String?   @map("metadata_json")
+  readAt       DateTime? @map("read_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId, status])
+  @@index([workspaceId, createdAt])
+  @@map("notification_inbox")
+}
+
+
+// -------------------------------------------------------------
+// Multi-Item Orders & Drawing Revision Control (Phase 3)
+// -------------------------------------------------------------
+
+model OrderLine {
+  id              String      @id @default(uuid())
+  workspaceId     String      @map("workspace_id")
+  orderId         String      @map("order_id")
+  lineNumber      Int         @map("line_number")
+  itemId          String      @map("item_id")
+  uomId           String?     @map("uom_id")
+  orderedAtoms    BigInt      @map("ordered_atoms")
+  allocatedAtoms  BigInt      @default(0) @map("allocated_atoms")
+  shippedAtoms    BigInt      @default(0) @map("shipped_atoms")
+  unitPriceCents  BigInt?     @map("unit_price_cents")
+  requestedDate   DateTime?   @map("requested_date")
+  promisedDate    DateTime?   @map("promised_date")
+  notes           String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  workspace       Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order           Order       @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  item            Item        @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
+  uom             Uom?        @relation(fields: [workspaceId, uomId], references: [workspaceId, id])
+  manufacturingOrders ManufacturingOrder[]
+  engineeringRevisions EngineeringRevision[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, orderId, lineNumber])
+  @@map("order_lines")
+}
+
+model DrawingRevision {
+  id              String      @id @default(uuid())
+  workspaceId     String      @map("workspace_id")
+  documentId      String      @map("document_id")
+  itemId          String      @map("item_id")
+  drawingNumber   String      @map("drawing_number")
+  revisionCode    String      @map("revision_code")
+  status          String      @default("RELEASED") // DRAFT | RELEASED | SUPERSEDED
+  releasedAt      DateTime    @default(now()) @map("released_at")
+  releasedById    String?     @map("released_by_id")
+  supersededAt    DateTime?   @map("superseded_at")
+  supersededById  String?     @map("superseded_by_id")
+  notes           String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  workspace       Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document        Document    @relation(fields: [workspaceId, documentId], references: [workspaceId, id])
+  item            Item        @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
+  engineeringRevisions EngineeringRevision[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, itemId, drawingNumber, revisionCode])
+  @@map("drawing_revisions")
+}
+
+
+model SkillAssessmentHistory {
+  id               String     @id @default(uuid())
+  workspaceId      String     @map("workspace_id")
+  technicianId     String     @map("technician_id")
+  skillId          String     @map("skill_id")
+  level            Int
+  assessmentStatus String     @map("assessment_status")
+  assessedBy       String?    @map("assessed_by")
+  evidence         String?
+  notes            String?
+  createdAt        DateTime   @default(now()) @map("created_at")
+
+  workspace        Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  technician       Technician @relation(fields: [workspaceId, technicianId], references: [workspaceId, id], onDelete: Cascade)
+  skill            Skill      @relation(fields: [workspaceId, skillId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([workspaceId, technicianId])
+  @@map("skill_assessment_history")
+}
+
+model MachineDowntime {
+  id           String     @id @default(uuid())
+  workspaceId  String     @map("workspace_id")
+  machineId    String     @map("machine_id")
+  reason       String
+  startAt      DateTime   @map("start_at")
+  endAt        DateTime   @map("end_at")
+  status       String     @default("SCHEDULED") // SCHEDULED | ACTIVE | COMPLETED | CANCELLED
+  notes        String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  workspace    Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  machine      Machine    @relation(fields: [workspaceId, machineId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([workspaceId, machineId])
+  @@map("machine_downtimes")
+}
+
+model ShiftTemplate {
+  id           String           @id @default(uuid())
+  workspaceId  String           @map("workspace_id")
+  facilityId   String?          @map("facility_id")
+  code         String
+  name         String
+  startTime    String           @map("start_time")
+  endTime      String           @map("end_time")
+  breakMinutes Int              @default(60) @map("break_minutes")
+  isOvernight  Boolean          @default(false) @map("is_overnight")
+  isActive     Boolean          @default(true) @map("is_active")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  facility     Facility?        @relation(fields: [workspaceId, facilityId], references: [workspaceId, id])
+  rosterIntervals RosterInterval[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@map("shift_templates")
+}
+
+model RosterInterval {
+  id                 String         @id @default(uuid())
+  workspaceId        String         @map("workspace_id")
+  facilityId         String?        @map("facility_id")
+  technicianId       String?        @map("technician_id")
+  machineId          String?        @map("machine_id")
+  shiftTemplateId    String?        @map("shift_template_id")
+  intervalType       String         @default("SHIFT") @map("interval_type") // SHIFT | OVERTIME | TRAINING | LEAVE | MAINTENANCE | HOLIDAY
+  startAt            DateTime       @map("start_at")
+  endAt              DateTime       @map("end_at")
+  status             String         @default("PUBLISHED") // DRAFT | PUBLISHED | CANCELLED
+  breakIntervalsJson String         @default("[]") @map("break_intervals_json")
+  notes              String?
+  version            Int            @default(1)
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  workspace          Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  facility           Facility?      @relation(fields: [workspaceId, facilityId], references: [workspaceId, id])
+  technician         Technician?    @relation(fields: [workspaceId, technicianId], references: [workspaceId, id], onDelete: Cascade)
+  machine            Machine?       @relation(fields: [workspaceId, machineId], references: [workspaceId, id], onDelete: Cascade)
+  shiftTemplate      ShiftTemplate? @relation(fields: [workspaceId, shiftTemplateId], references: [workspaceId, id])
+
+  @@index([workspaceId, technicianId, startAt, endAt])
+  @@index([workspaceId, machineId, startAt, endAt])
+  @@map("roster_intervals")
+}

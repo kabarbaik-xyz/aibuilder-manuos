@@ -23,6 +23,12 @@ export class EngineeringService {
             questions: true,
           },
         },
+        orderLine: true,
+        drawingRevision: {
+          include: {
+            document: true,
+          },
+        },
         bomLines: {
           include: {
             item: true,
@@ -65,6 +71,29 @@ export class EngineeringService {
 
         if (input.expectedVersion && input.expectedVersion !== rev.version) {
           throw new ConflictError('STALE_VERSION: Engineering revision was updated by another process.');
+        }
+
+        // Validate order line if specified
+        if (input.orderLineId) {
+          const line = await tx.orderLine.findFirst({
+            where: { id: input.orderLineId, orderId: rev.orderId, workspaceId: principal.workspaceId },
+          });
+          if (!line) {
+            throw new BadRequestError(`Order line '${input.orderLineId}' not found on order '${rev.orderId}'`);
+          }
+        }
+
+        // Validate drawing revision if specified
+        if (input.drawingRevisionId) {
+          const drawing = await tx.drawingRevision.findFirst({
+            where: { id: input.drawingRevisionId, workspaceId: principal.workspaceId },
+          });
+          if (!drawing) {
+            throw new BadRequestError(`Drawing revision '${input.drawingRevisionId}' not found`);
+          }
+          if (drawing.status !== 'RELEASED') {
+            throw new BadRequestError(`Drawing revision '${input.drawingRevisionId}' is in status '${drawing.status}'. Must be 'RELEASED'.`);
+          }
         }
 
         // Validate workflow version if provided
@@ -140,6 +169,7 @@ export class EngineeringService {
               requirementAtoms,
               outputBasisAtoms: lineBasisAtoms,
               allowancePercent: line.allowancePercent || 0.0,
+              allowanceBps: Math.round((line.allowancePercent || 0.0) * 100),
             },
           });
         }
@@ -150,6 +180,8 @@ export class EngineeringService {
             specsJson: JSON.stringify(input.specs || {}),
             workflowVersionId: input.workflowVersionId ?? rev.workflowVersionId,
             outputBasisAtoms,
+            orderLineId: input.orderLineId !== undefined ? input.orderLineId : rev.orderLineId,
+            drawingRevisionId: input.drawingRevisionId !== undefined ? input.drawingRevisionId : rev.drawingRevisionId,
             version: { increment: 1 },
           },
           include: {
@@ -294,6 +326,109 @@ export class EngineeringService {
           resourceVersion: updated.version,
         };
       },
+    });
+  }
+  async releaseDrawingRevision(
+    principal: Principal,
+    input: contracts.ReleaseDrawingRevisionInput,
+    idempotencyKey: string
+  ) {
+    requirePermission(principal, 'engineering.write');
+
+    return executeCommand({
+      principal,
+      commandType: 'engineering.drawing.release',
+      idempotencyKey,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const doc = await tx.document.findFirst({
+          where: { id: input.documentId, workspaceId: principal.workspaceId },
+        });
+        if (!doc) throw new NotFoundError(`Document '${input.documentId}' not found`);
+
+        const item = await tx.item.findFirst({
+          where: { id: input.itemId, workspaceId: principal.workspaceId, archivedAt: null },
+        });
+        if (!item) throw new NotFoundError(`Item '${input.itemId}' not found or inactive`);
+
+        // Check if this exact revision already exists
+        const existing = await tx.drawingRevision.findUnique({
+          where: {
+            workspaceId_itemId_drawingNumber_revisionCode: {
+              workspaceId: principal.workspaceId,
+              itemId: input.itemId,
+              drawingNumber: input.drawingNumber,
+              revisionCode: input.revisionCode,
+            },
+          },
+          include: { document: true },
+        });
+        if (existing) {
+          return {
+            data: existing,
+            aggregateType: 'DRAWING_REVISION',
+            aggregateId: existing.id,
+            resourceVersion: 1,
+          };
+        }
+
+        // Supersede any previously RELEASED revisions for this item and drawingNumber
+        await tx.drawingRevision.updateMany({
+          where: {
+            workspaceId: principal.workspaceId,
+            itemId: input.itemId,
+            drawingNumber: input.drawingNumber,
+            status: 'RELEASED',
+          },
+          data: {
+            status: 'SUPERSEDED',
+            supersededAt: new Date(),
+            supersededById: principal.userId,
+          },
+        });
+
+        const drawingRevision = await tx.drawingRevision.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            documentId: input.documentId,
+            itemId: input.itemId,
+            drawingNumber: input.drawingNumber,
+            revisionCode: input.revisionCode,
+            status: 'RELEASED',
+            releasedAt: new Date(),
+            releasedById: principal.userId,
+            notes: input.notes,
+          },
+          include: {
+            document: true,
+            item: true,
+          },
+        });
+
+        return {
+          data: drawingRevision,
+          aggregateType: 'DRAWING_REVISION',
+          aggregateId: drawingRevision.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  async listDrawingRevisions(principal: Principal, itemId: string) {
+    requirePermission(principal, 'engineering.read');
+
+    return this.prisma.drawingRevision.findMany({
+      where: {
+        workspaceId: principal.workspaceId,
+        itemId,
+      },
+      include: {
+        document: true,
+        item: true,
+      },
+      orderBy: [{ drawingNumber: 'asc' }, { createdAt: 'desc' }],
     });
   }
 }

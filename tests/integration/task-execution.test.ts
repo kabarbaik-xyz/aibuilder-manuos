@@ -7,7 +7,7 @@ import { EngineeringService } from '@/server/modules/engineering/service';
 import { PlanningService } from '@/server/modules/planning/service';
 import { ExecutionService } from '@/server/modules/execution/service';
 import { InventoryService } from '@/server/modules/inventory/service';
-import { BadRequestError, ForbiddenError } from '@/domain/errors';
+import { BadRequestError, ConflictError, ForbiddenError } from '@/domain/errors';
 
 describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
   let fixture: FactoryFixture;
@@ -134,7 +134,12 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
     );
 
     // 4. Release Order to generate tasks and material demands
-    const releaseRes = await releaseOrder(alpha.users.owner.principal, orderId, 'key-order-release-m3', fixture.db);
+    const releaseRes = await releaseOrder(
+      alpha.users.owner.principal,
+      orderId,
+      'key-order-release-m3',
+      fixture.db
+    );
     instanceId = releaseRes.data.instanceId;
     op10TaskId = releaseRes.data.taskIds['OP-10'];
     qc20TaskId = releaseRes.data.taskIds['QC-20'];
@@ -163,6 +168,38 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
     });
     expect(res2.isEligible).toBe(true);
     expect(res2.violations).toHaveLength(0);
+
+    const missingRequiredResources = await planningService.evaluateAssignment(
+      alpha.users.planner.principal,
+      { taskId: op10TaskId }
+    );
+    expect(missingRequiredResources.isEligible).toBe(false);
+    expect(missingRequiredResources.violations.join(' ')).toMatch(/require a technician/);
+    expect(missingRequiredResources.violations.join(' ')).toMatch(/require a machine/);
+  });
+
+  it('requires planning permission and rejects invalid assignment windows', async () => {
+    const { alpha } = fixture;
+
+    await expect(
+      planningService.evaluateAssignment(alpha.users.operator.principal, {
+        taskId: op10TaskId,
+      })
+    ).rejects.toThrow(ForbiddenError);
+
+    await expect(
+      planningService.evaluateAssignment(alpha.users.buyer.principal, {
+        taskId: op10TaskId,
+      })
+    ).rejects.toThrow(ForbiddenError);
+
+    await expect(
+      planningService.evaluateAssignment(alpha.users.planner.principal, {
+        taskId: op10TaskId,
+        scheduledStartAt: '2026-10-16T10:00:00.000Z',
+        scheduledEndAt: '2026-10-16T10:00:00.000Z',
+      })
+    ).rejects.toThrow(BadRequestError);
   });
 
   it('assigns qualified technician and machine, creating resource bookings', async () => {
@@ -174,6 +211,7 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
         taskId: op10TaskId,
         technicianId: alpha.masters.technicianId,
         machineId: alpha.masters.machineId,
+        expectedVersion: 1,
         startAt: '2026-10-16T08:00:00.000Z',
         endAt: '2026-10-16T10:00:00.000Z',
       },
@@ -199,6 +237,7 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
         taskId: op10TaskId,
         technicianId: alpha.masters.technicianId,
         machineId: alpha.masters.machineId,
+        expectedVersion: 2,
         startAt: '2026-10-16T13:00:00.000Z',
         endAt: '2026-10-16T15:00:00.000Z',
       },
@@ -216,6 +255,324 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
       where: { taskId: op10TaskId, status: 'CANCELLED' },
     });
     expect(cancelledBookings).toHaveLength(2);
+
+    await expect(
+      planningService.assignTask(
+        alpha.users.planner.principal,
+        {
+          taskId: op10TaskId,
+          technicianId: alpha.masters.technicianId,
+          machineId: alpha.masters.machineId,
+          expectedVersion: 1,
+        },
+        'cmd-assign-op10-stale-version'
+      )
+    ).rejects.toThrow(ConflictError);
+  });
+
+  it('rejects overlapping confirmed bookings and preserves assignment booking agreement on partial updates', async () => {
+    const { alpha } = fixture;
+    const overlapStart = '2026-10-16T14:00:00.000Z';
+    const overlapEnd = '2026-10-16T15:00:00.000Z';
+    const unblockedTask = await fixture.db.task.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId,
+        nodeKey: 'INDEPENDENT-OVERLAP-CHECK',
+        plannedDurationMinutes: 60,
+      },
+    });
+
+    const partialUpdate = await planningService.assignTask(
+      alpha.users.planner.principal,
+      {
+        taskId: op10TaskId,
+        technicianId: alpha.masters.technicianId,
+        expectedVersion: 3,
+        startAt: '2026-10-16T14:00:00.000Z',
+        endAt: '2026-10-16T16:00:00.000Z',
+      },
+      'cmd-assign-op10-partial'
+    );
+    expect((partialUpdate.data as any).task.assignedMachineId).toBe(alpha.masters.machineId);
+
+    const confirmed = await fixture.db.resourceBooking.findMany({
+      where: { taskId: op10TaskId, status: 'CONFIRMED' },
+    });
+    expect(confirmed.map((booking) => booking.resourceType).sort()).toEqual([
+      'MACHINE',
+      'TECHNICIAN',
+    ]);
+    expect(
+      confirmed.every((booking) => booking.startAt.toISOString() === '2026-10-16T14:00:00.000Z')
+    ).toBe(true);
+
+    await planningService.assignTask(
+      alpha.users.planner.principal,
+      {
+        taskId: op10TaskId,
+        technicianId: alpha.masters.technicianId,
+        expectedVersion: 4,
+      },
+      'cmd-assign-op10-preserve-window'
+    );
+    const preservedWindowBookings = await fixture.db.resourceBooking.findMany({
+      where: { taskId: op10TaskId, status: 'CONFIRMED' },
+    });
+    expect(
+      preservedWindowBookings.every(
+        (booking) =>
+          booking.startAt.toISOString() === '2026-10-16T14:00:00.000Z' &&
+          booking.endAt.toISOString() === '2026-10-16T16:00:00.000Z'
+      )
+    ).toBe(true);
+
+    const evaluation = await planningService.evaluateAssignment(alpha.users.planner.principal, {
+      taskId: unblockedTask.id,
+      technicianId: alpha.masters.technicianId,
+      scheduledStartAt: overlapStart,
+      scheduledEndAt: overlapEnd,
+    });
+    expect(evaluation.isEligible).toBe(false);
+    expect(
+      evaluation.violations.some((violation) => violation.includes('overlapping booking'))
+    ).toBe(true);
+
+    await expect(
+      planningService.assignTask(
+        alpha.users.planner.principal,
+        {
+          taskId: unblockedTask.id,
+          technicianId: alpha.masters.technicianId,
+          expectedVersion: 1,
+          startAt: overlapStart,
+          endAt: overlapEnd,
+        },
+        'cmd-assign-qc20-overlap'
+      )
+    ).rejects.toThrow(BadRequestError);
+
+    const taskAfterRejection = await fixture.db.task.findUnique({
+      where: { id: unblockedTask.id },
+    });
+    expect(taskAfterRejection?.assignedTechnicianId).toBeNull();
+    expect(
+      await fixture.db.resourceBooking.count({
+        where: { taskId: unblockedTask.id, status: 'CONFIRMED' },
+      })
+    ).toBe(0);
+  });
+
+  it('enforces booking interval and resource overlap triggers for inserts and updates', async () => {
+    const { alpha } = fixture;
+    const triggers = await fixture.db.$queryRawUnsafe<Array<{ name: string }>>(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'resource_bookings_%'"
+    );
+    expect(triggers.map((trigger) => trigger.name).sort()).toEqual([
+      'resource_bookings_prevent_overlap_insert',
+      'resource_bookings_prevent_overlap_update',
+      'resource_bookings_validate_interval_insert',
+      'resource_bookings_validate_interval_update',
+    ]);
+    const taskA = await fixture.db.task.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId,
+        nodeKey: 'TRIGGER-BOOKING-A',
+        plannedDurationMinutes: 60,
+      },
+    });
+    const taskB = await fixture.db.task.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId,
+        nodeKey: 'TRIGGER-BOOKING-B',
+        plannedDurationMinutes: 60,
+      },
+    });
+    const startAt = new Date('2030-01-01T08:00:00.000Z');
+    const endAt = new Date('2030-01-01T09:00:00.000Z');
+    const firstBooking = await fixture.db.resourceBooking.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        resourceType: 'TECHNICIAN',
+        resourceId: alpha.masters.technicianId,
+        taskId: taskA.id,
+        startAt,
+        endAt,
+      },
+    });
+
+    await expect(
+      fixture.db.resourceBooking.create({
+        data: {
+          workspaceId: alpha.workspaceId,
+          resourceType: 'TECHNICIAN',
+          resourceId: alpha.masters.technicianId,
+          taskId: taskB.id,
+          startAt: new Date('2030-01-01T08:30:00.000Z'),
+          endAt: new Date('2030-01-01T09:30:00.000Z'),
+        },
+      })
+    ).rejects.toThrow();
+
+    const cancelledBooking = await fixture.db.resourceBooking.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        resourceType: 'TECHNICIAN',
+        resourceId: alpha.masters.technicianId,
+        taskId: taskB.id,
+        startAt: new Date('2030-01-01T08:30:00.000Z'),
+        endAt: new Date('2030-01-01T09:30:00.000Z'),
+        status: 'CANCELLED',
+      },
+    });
+    await expect(
+      fixture.db.resourceBooking.update({
+        where: { id: cancelledBooking.id },
+        data: { status: 'CONFIRMED' },
+      })
+    ).rejects.toThrow();
+    await expect(
+      fixture.db.resourceBooking.update({
+        where: { id: cancelledBooking.id },
+        data: { startAt: endAt, endAt: startAt },
+      })
+    ).rejects.toThrow();
+    await expect(
+      fixture.db.resourceBooking.create({
+        data: {
+          workspaceId: alpha.workspaceId,
+          resourceType: 'MACHINE',
+          resourceId: alpha.masters.machineId,
+          taskId: taskB.id,
+          startAt: endAt,
+          endAt: startAt,
+        },
+      })
+    ).rejects.toThrow();
+    expect(firstBooking.status).toBe('CONFIRMED');
+  });
+
+  it('rejects silent normalization of inconsistent legacy booking windows', async () => {
+    const { alpha } = fixture;
+    const legacyTask = await fixture.db.task.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId,
+        nodeKey: 'INCONSISTENT-LEGACY-WINDOWS',
+        plannedDurationMinutes: 60,
+        assignedTechnicianId: alpha.masters.technicianId,
+        assignedMachineId: alpha.masters.machineId,
+      },
+    });
+    await fixture.db.resourceBooking.createMany({
+      data: [
+        {
+          workspaceId: alpha.workspaceId,
+          resourceType: 'TECHNICIAN',
+          resourceId: alpha.masters.technicianId,
+          taskId: legacyTask.id,
+          startAt: new Date('2031-01-01T08:00:00.000Z'),
+          endAt: new Date('2031-01-01T09:00:00.000Z'),
+        },
+        {
+          workspaceId: alpha.workspaceId,
+          resourceType: 'MACHINE',
+          resourceId: alpha.masters.machineId,
+          taskId: legacyTask.id,
+          startAt: new Date('2031-01-01T09:00:00.000Z'),
+          endAt: new Date('2031-01-01T10:00:00.000Z'),
+        },
+      ],
+    });
+    await expect(
+      planningService.assignTask(
+        alpha.users.planner.principal,
+        {
+          taskId: legacyTask.id,
+          expectedVersion: 1,
+          technicianId: alpha.masters.technicianId,
+        },
+        'cmd-assign-inconsistent-legacy-windows'
+      )
+    ).rejects.toThrow(ConflictError);
+  });
+
+  it('rejects assignment when predecessors are incomplete and handles concurrent resource claims', async () => {
+    const { alpha } = fixture;
+    await expect(
+      planningService.assignTask(
+        alpha.users.planner.principal,
+        {
+          taskId: qc20TaskId,
+          technicianId: alpha.masters.technicianId,
+          expectedVersion: 1,
+        },
+        'cmd-assign-qc-before-predecessor'
+      )
+    ).rejects.toThrow(BadRequestError);
+
+    const runningTask = await fixture.db.task.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId,
+        nodeKey: 'NON-ASSIGNABLE-RUNNING',
+        plannedDurationMinutes: 60,
+        status: 'RUNNING',
+      },
+    });
+    await expect(
+      planningService.assignTask(
+        alpha.users.planner.principal,
+        {
+          taskId: runningTask.id,
+          technicianId: alpha.masters.technicianId,
+          expectedVersion: 1,
+        },
+        'cmd-assign-running-task'
+      )
+    ).rejects.toThrow(BadRequestError);
+
+    const concurrentTasks = await Promise.all(
+      ['CONCURRENT-CLAIM-A', 'CONCURRENT-CLAIM-B'].map((nodeKey) =>
+        fixture.db.task.create({
+          data: {
+            workspaceId: alpha.workspaceId,
+            instanceId,
+            nodeKey,
+            plannedDurationMinutes: 60,
+          },
+        })
+      )
+    );
+    const attempts = await Promise.allSettled(
+      concurrentTasks.map((task) =>
+        planningService.assignTask(
+          alpha.users.planner.principal,
+          {
+            taskId: task.id,
+            technicianId: alpha.masters.technicianId,
+            expectedVersion: task.version,
+            startAt: '2030-01-02T08:00:00.000Z',
+            endAt: '2030-01-02T09:00:00.000Z',
+          },
+          `cmd-concurrent-${task.id}`
+        )
+      )
+    );
+    expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(attempts.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(
+      await fixture.db.resourceBooking.count({
+        where: {
+          resourceType: 'TECHNICIAN',
+          resourceId: alpha.masters.technicianId,
+          status: 'CONFIRMED',
+          startAt: new Date('2030-01-02T08:00:00.000Z'),
+        },
+      })
+    ).toBe(1);
   });
 
   it('rejects starting task when predecessor task is not completed', async () => {

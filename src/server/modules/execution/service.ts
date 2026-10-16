@@ -72,13 +72,20 @@ export class ExecutionService {
     }
 
     // 3. Operator assignment check
+    const isSupervisor =
+      hasPermission(principal, 'task.assign') ||
+      hasPermission(principal, 'planning.write') ||
+      hasPermission(principal, 'workspace.admin') ||
+      hasPermission(principal, 'owner');
+
     let effectiveTechnicianId = task.assignedTechnicianId;
-    if (principal.technicianId) {
+    if (input.technicianId) {
+      if (!isSupervisor) {
+        throw new ForbiddenError('Only supervisors can start a task on behalf of another technician.');
+      }
+      effectiveTechnicianId = input.technicianId;
+    } else if (principal.technicianId) {
       if (task.assignedTechnicianId && task.assignedTechnicianId !== principal.technicianId) {
-        const isSupervisor =
-          hasPermission(principal, 'task.assign') ||
-          hasPermission(principal, 'planning.write') ||
-          hasPermission(principal, 'workspace.admin');
         if (!isSupervisor) {
           throw new ForbiddenError(
             `Task '${task.nodeKey}' is assigned to another technician.`
@@ -86,19 +93,18 @@ export class ExecutionService {
         }
       }
       effectiveTechnicianId = principal.technicianId;
-    }
-
-    if (!effectiveTechnicianId) {
-      // Find technician record for principal if available
-      const tech = await this.db.technician.findFirst({
-        where: { workspaceId, isActive: true },
-      });
-      effectiveTechnicianId = tech?.id || null;
+    } else if (task.assignedTechnicianId) {
+      if (!isSupervisor) {
+        throw new ForbiddenError(
+          `Task '${task.nodeKey}' is assigned to another technician.`
+        );
+      }
+      effectiveTechnicianId = task.assignedTechnicianId;
     }
 
     if (!effectiveTechnicianId) {
       throw new BadRequestError(
-        `Cannot start task without an assigned technician or active operator identity.`
+        'Cannot start task: no assigned technician and principal has no linked technician profile.'
       );
     }
 
@@ -246,6 +252,18 @@ export class ExecutionService {
       );
     }
 
+    const isSupervisor =
+      hasPermission(principal, 'task.assign') ||
+      hasPermission(principal, 'planning.write') ||
+      hasPermission(principal, 'workspace.admin') ||
+      hasPermission(principal, 'owner');
+
+    if (!isSupervisor && task.assignedTechnicianId && (!principal.technicianId || task.assignedTechnicianId !== principal.technicianId)) {
+      throw new ForbiddenError(
+        `Cannot pause task '${task.nodeKey}': task is assigned to another technician.`
+      );
+    }
+
     return executeCommand<any, any>({
       principal,
       commandType: 'task.pause',
@@ -371,6 +389,18 @@ export class ExecutionService {
     if (task.status !== 'PAUSED') {
       throw new BadRequestError(
         `Cannot resume task in status '${task.status}'. Task must be PAUSED.`
+      );
+    }
+
+    const isResumeSupervisor =
+      hasPermission(principal, 'task.assign') ||
+      hasPermission(principal, 'planning.write') ||
+      hasPermission(principal, 'workspace.admin') ||
+      hasPermission(principal, 'owner');
+
+    if (!isResumeSupervisor && task.assignedTechnicianId && (!principal.technicianId || task.assignedTechnicianId !== principal.technicianId)) {
+      throw new ForbiddenError(
+        `Cannot resume task '${task.nodeKey}': task is assigned to another technician.`
       );
     }
 

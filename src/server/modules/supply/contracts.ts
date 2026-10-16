@@ -1,3 +1,4 @@
+import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
 
 export const SupplyOrderStatus = {
@@ -14,11 +15,7 @@ export const CreateSupplyOrderLineSchema = z.object({
   itemId: z.string().uuid(),
   orderedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Ordered atoms must be strictly positive (> 0)',
     }),
@@ -47,11 +44,7 @@ export const ReceiveSupplyLineSchema = z.object({
   locationId: z.string().uuid(),
   receivedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Received atoms must be strictly positive (> 0)',
     }),

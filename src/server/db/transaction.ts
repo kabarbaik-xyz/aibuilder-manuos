@@ -52,6 +52,8 @@ export interface ExecuteCommandOptions<TInput, TOutput> {
   expectedVersion?: number;
   payload: TInput;
   requestId?: string;
+  correlationId?: string;
+  reason?: string;
   prismaClient?: PrismaClient;
   handler: (
     tx: any,
@@ -151,6 +153,8 @@ export async function executeCommand<TInput, TOutput>(
         beforeRevision: expectedVersion ?? null,
         afterRevision: result.resourceVersion,
         detailJson: serializeJson(result.auditDetails || {}),
+        reason: options.reason ?? null,
+        correlationId: options.correlationId ?? null,
       },
     });
 

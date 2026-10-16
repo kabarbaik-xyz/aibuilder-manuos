@@ -120,8 +120,41 @@ export class DeliveryService {
           },
         });
 
+        // Check order cumulative cap inside tx
+        const existingLines = await tx.shipmentLine.findMany({
+          where: {
+            workspaceId,
+            shipment: { orderId: order.id, status: { not: 'CANCELLED' } },
+          },
+        });
+        const currentAllocated = existingLines.reduce((acc: bigint, l: { allocatedAtoms: bigint }) => acc + l.allocatedAtoms, 0n);
+        const newAllocated = input.lines.reduce((acc, l) => acc + l.allocatedAtoms, 0n);
+        if (currentAllocated + newAllocated > order.orderedAtoms) {
+          throw new BadRequestError(
+            `Shipment allocation exceeds order ordered quantity (${order.orderedAtoms} atoms).`
+          );
+        }
+
         // Create shipment lines and stock reservations
         for (const line of input.lines) {
+          const bucketKey = getBucketKey(line.itemId, line.sourceLocationId, line.lotId);
+          const balance = await tx.stockBalance.findUnique({
+            where: {
+              workspaceId_bucketKey: {
+                workspaceId,
+                bucketKey,
+              },
+            },
+          });
+          const onHand = balance?.onHandAtoms ?? 0n;
+          const reserved = balance?.reservedAtoms ?? 0n;
+          const available = onHand > reserved ? onHand - reserved : 0n;
+          if (available < line.allocatedAtoms) {
+            throw new BadRequestError(
+              `Insufficient available stock for item in source location. Required: ${line.allocatedAtoms} atoms, Available: ${available} atoms.`
+            );
+          }
+
           const reservation = await tx.stockReservation.create({
             data: {
               workspaceId,
@@ -135,7 +168,7 @@ export class DeliveryService {
           });
 
           // Increment reserved atoms on stock balance
-          const bucketKey = getBucketKey(line.itemId, line.sourceLocationId, line.lotId);
+// bucketKey already resolved
           await tx.stockBalance.update({
             where: {
               workspaceId_bucketKey: {
@@ -227,6 +260,15 @@ export class DeliveryService {
       prismaClient: this.db,
       handler: async (tx, { requestId }) => {
         const now = new Date();
+
+        const currentShipment = await tx.shipment.findUnique({
+          where: { id: input.shipmentId },
+        });
+        if (!currentShipment || currentShipment.status !== ShipmentStatus.ALLOCATED) {
+          throw new BadRequestError(
+            `Cannot dispatch shipment in status '${currentShipment?.status}'. Only ALLOCATED shipments can be dispatched.`
+          );
+        }
 
         for (const line of shipment.lines) {
           // 1. Post physical shipment movement
@@ -361,6 +403,15 @@ export class DeliveryService {
       prismaClient: this.db,
       handler: async (tx, { requestId }) => {
         const deliveredAt = input.deliveredAt ? new Date(input.deliveredAt) : new Date();
+
+        const currentShipment = await tx.shipment.findUnique({
+          where: { id: input.shipmentId },
+        });
+        if (!currentShipment || currentShipment.status !== ShipmentStatus.DISPATCHED) {
+          throw new BadRequestError(
+            `Cannot confirm delivery for shipment in status '${currentShipment?.status}'. Shipment must be DISPATCHED.`
+          );
+        }
 
         // Update line delivered atoms
         for (const line of shipment.lines) {

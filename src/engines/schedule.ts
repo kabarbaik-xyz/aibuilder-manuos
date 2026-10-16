@@ -16,6 +16,7 @@ export const DEFAULT_SCHEDULE_CALENDAR: ScheduleCalendar = {
 
 export interface TaskScheduleInput {
   id: string;
+  version?: number;
   name?: string;
   plannedDurationMinutes: number;
   predecessorTaskIds?: string[];
@@ -64,6 +65,7 @@ export interface ScheduleTasksInput {
 
 export interface ScheduledTaskResult {
   taskId: string;
+  version: number;
   startAt: string;
   endAt: string;
   assignedTechnicianId: string | null;
@@ -313,6 +315,7 @@ export function scheduleTasks(input: ScheduleTasksInput): ScheduleOutput {
 
     scheduledTasks.push({
       taskId,
+      version: task.version ?? 1,
       startAt: eStart.toISOString(),
       endAt: eEnd.toISOString(),
       assignedTechnicianId: task.assignedTechnicianId || null,

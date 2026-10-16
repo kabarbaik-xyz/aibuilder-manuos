@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
+import { requirePrincipal } from '@/server/auth/auth';
+import { requireAnyPermission } from '@/server/auth/permissions';
+import { formatErrorResponse } from '@/server/http/errors';
 import { callGeminiStructured } from '@/server/ai/gemini-client';
 
 export async function POST(req: Request) {
   try {
+    const principal = await requirePrincipal(req);
+    requireAnyPermission(principal, ['planning.read', 'planning.view', 'schedule.view', 'task.assign']);
+
     const body = await req.json();
     const { disruption, affectedOrders, blockedTasks, runnableTasks } = body;
 
-    const cacheKey = `explain-impact:${disruption?.id || 'default'}:${(affectedOrders || []).map((o: any) => o.id || o).join(',')}`;
+    const cacheKey = `explain-impact:${principal.workspaceId}:${disruption?.id || 'default'}:${(affectedOrders || []).map((o: any) => o.id || o).join(',')}`;
 
     const prompt = `
 You are an operational manufacturing copilot for ManuOS.
@@ -47,31 +53,14 @@ Rules:
 
     if (!res.aiResult) {
       return NextResponse.json({
-        aiResult: {
-          summary: 'Terminal block delivery delay pushes Order ORD-2026-088 completion to Nov 28 (+3 calendar days).',
-          cause: 'Supplier Apex Electronics reported logistics port delay for Component TB-400A.',
-          blastRadius: [
-            'Wiring & harness assembly blocked until Nov 25',
-            'Final functional testing and QA inspection shifted to Nov 26-28',
-            'Assembly line 2 idle for 14 hours unless re-sequenced',
-          ],
-          watchItems: [
-            'Confirm courier tracking on Nov 25 morning',
-            'Verify technician availability for expedited testing on Nov 27',
-          ],
-        },
-        reason: res.reason || 'fallback',
+        aiResult: null,
+        reason: res.reason || 'unavailable',
+        error: 'Grounded AI impact explanation unavailable.',
       });
     }
 
     return NextResponse.json(res);
   } catch (err: any) {
-    return NextResponse.json(
-      {
-        aiResult: null,
-        reason: 'error',
-      },
-      { status: 500 }
-    );
+    return formatErrorResponse(err);
   }
 }

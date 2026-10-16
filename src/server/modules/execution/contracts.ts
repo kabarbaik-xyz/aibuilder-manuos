@@ -3,6 +3,8 @@ import { TaskMaterialReadinessDTO } from '../inventory/contracts';
 
 export const StartTaskSchema = z.object({
   taskId: z.string().min(1),
+  technicianId: z.string().optional(),
+  overrideReason: z.string().max(500).optional(),
   notes: z.string().max(500).optional(),
 });
 

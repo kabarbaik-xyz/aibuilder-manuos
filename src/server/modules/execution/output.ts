@@ -1,23 +1,20 @@
 import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
-import { requireAnyPermission } from '@/server/auth/permissions';
+import { requireAnyPermission, hasPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
-import { BadRequestError, NotFoundError } from '@/domain/errors';
+import { BadRequestError, NotFoundError, ForbiddenError } from '@/domain/errors';
 import { randomUUID } from 'crypto';
 import { postMovement } from '../inventory/ledger';
 import { MovementType, MovementReferenceType } from '../inventory/contracts';
 import { assertRequiredFormsFinalized } from '../forms/completion';
+import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
 
 export const RecordOutputSchema = z.object({
   taskId: z.string().min(1),
   outputAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Output atoms must be strictly positive (> 0)',
     }),
@@ -72,6 +69,23 @@ export async function recordOutput(
     throw new NotFoundError(`Task '${input.taskId}' not found`);
   }
 
+  // Assignment ownership check
+  const isSupervisor =
+    hasPermission(principal, 'task.assign') ||
+    hasPermission(principal, 'planning.write') ||
+    hasPermission(principal, 'workspace.admin') ||
+    hasPermission(principal, 'owner');
+
+  if (
+    !isSupervisor &&
+    task.assignedTechnicianId &&
+    (!principal.technicianId || task.assignedTechnicianId !== principal.technicianId)
+  ) {
+    throw new ForbiddenError(
+      `Cannot record output for task '${task.nodeKey}': task is assigned to another technician.`
+    );
+  }
+
   if (task.status !== 'RUNNING' && task.status !== 'READY' && task.status !== 'WAITING_QC') {
     throw new BadRequestError(
       `Cannot record output for task in status '${task.status}'. Task must be RUNNING or READY.`
@@ -81,27 +95,7 @@ export async function recordOutput(
   const order = task.instance.order;
   const targetItemId = task.targetItemId || order.itemId;
 
-  // 2. Overproduction guard: Check total output for this task / order
-  const existingOutputs = await db.productionOutput.findMany({
-    where: {
-      workspaceId,
-      taskId: task.id,
-      status: { not: 'REJECTED' },
-    },
-  });
-  const cumulativeOutputAtoms = existingOutputs.reduce(
-    (acc, o) => acc + o.outputAtoms,
-    0n
-  );
-
-  const isFinalOp = task.successorDeps.length === 0 || input.isFinal;
-  if (isFinalOp && cumulativeOutputAtoms + input.outputAtoms > order.orderedAtoms) {
-    throw new BadRequestError(
-      `Overproduction rejected: cumulative output (${cumulativeOutputAtoms + input.outputAtoms} atoms) exceeds ordered quantity (${order.orderedAtoms} atoms).`
-    );
-  }
-
-  // 3. Verify destination location
+  // 2. Verify destination location
   const destLocation = await db.location.findUnique({
     where: {
       workspaceId_id: {
@@ -125,7 +119,7 @@ export async function recordOutput(
     );
   }
 
-  // 4. Verify item and lot requirements
+  // 3. Verify item and lot requirements
   const item = await db.item.findUnique({
     where: {
       workspaceId_id: {
@@ -174,6 +168,45 @@ export async function recordOutput(
     handler: async (tx, { requestId }) => {
       const now = new Date();
 
+      // Re-read task and existing outputs inside the transaction
+      const currentTask = await tx.task.findUnique({
+        where: { workspaceId_id: { workspaceId, id: input.taskId } },
+        include: {
+          successorDeps: true,
+        },
+      });
+      if (!currentTask) {
+        throw new NotFoundError(`Task '${input.taskId}' not found`);
+      }
+      if (
+        currentTask.status !== 'RUNNING' &&
+        currentTask.status !== 'READY' &&
+        currentTask.status !== 'WAITING_QC'
+      ) {
+        throw new BadRequestError(
+          `Cannot record output for task in status '${currentTask.status}'. Task must be RUNNING or READY.`
+        );
+      }
+
+      const existingOutputs = await tx.productionOutput.findMany({
+        where: {
+          workspaceId,
+          taskId: currentTask.id,
+          status: { not: 'REJECTED' },
+        },
+      });
+      const cumulativeOutputAtoms = existingOutputs.reduce(
+        (acc: bigint, o: { outputAtoms: bigint }) => acc + o.outputAtoms,
+        0n
+      );
+
+      const isFinalOp = currentTask.successorDeps.length === 0 || input.isFinal;
+      if (isFinalOp && cumulativeOutputAtoms + input.outputAtoms > order.orderedAtoms) {
+        throw new BadRequestError(
+          `Overproduction rejected: cumulative output (${cumulativeOutputAtoms + input.outputAtoms} atoms) exceeds ordered quantity (${order.orderedAtoms} atoms).`
+        );
+      }
+
       // Post physical inventory movement for the produced goods into destination location
       const movement = await postMovement(
         tx,
@@ -186,16 +219,15 @@ export async function recordOutput(
           destinationLotId: lotId,
           atoms: input.outputAtoms,
           referenceType: MovementReferenceType.TASK,
-          referenceId: task.id,
-          notes: input.notes || `Production output from task ${task.nodeKey}`,
+          referenceId: currentTask.id,
+          notes: input.notes || `Production output from task ${currentTask.nodeKey}`,
         },
         requestId
       );
 
       // Reconcile and consume remaining WIP for this task if BOM demands exist
-      const demands = order.demands.filter((d) => !d.taskId || d.taskId === task.id);
+      const demands = order.demands.filter((d) => !d.taskId || d.taskId === currentTask.id);
       for (const demand of demands) {
-        // Find issued stock movements to WIP that haven't been consumed yet
         const wipBalances = await tx.stockBalance.findMany({
           where: {
             workspaceId,
@@ -207,7 +239,8 @@ export async function recordOutput(
 
         // Compute proportional consumption
         const proportionalRequired =
-          (input.outputAtoms * demand.requiredAtoms) / (order.orderedAtoms > 0n ? order.orderedAtoms : 1n);
+          (input.outputAtoms * demand.requiredAtoms) /
+          (order.orderedAtoms > 0n ? order.orderedAtoms : 1n);
 
         let remainingToConsume = proportionalRequired;
         for (const bal of wipBalances) {
@@ -226,13 +259,20 @@ export async function recordOutput(
               sourceLotId: bal.lotId,
               atoms: consumeFromThis,
               referenceType: MovementReferenceType.TASK,
-              referenceId: task.id,
-              notes: `Consumed for output of task ${task.nodeKey}`,
+              referenceId: currentTask.id,
+              notes: `Consumed for output of task ${currentTask.nodeKey}`,
             },
             requestId
           );
 
           remainingToConsume -= consumeFromThis;
+        }
+
+        // Hard gate: reject unsatisfied required consumption
+        if (demand.requiredAtoms > 0n && remainingToConsume > 0n) {
+          throw new BadRequestError(
+            `Insufficient WIP inventory for required item '${demand.item?.name || demand.itemId}': required ${proportionalRequired} atoms, but only ${proportionalRequired - remainingToConsume} atoms were available in WIP.`
+          );
         }
       }
 
@@ -240,8 +280,8 @@ export async function recordOutput(
       const output = await tx.productionOutput.create({
         data: {
           workspaceId,
-          taskId: task.id,
-          attemptNumber: task.attemptNumber,
+          taskId: currentTask.id,
+          attemptNumber: currentTask.attemptNumber,
           itemId: item.id,
           lotId,
           outputAtoms: input.outputAtoms,
@@ -259,7 +299,7 @@ export async function recordOutput(
       await assertRequiredFormsFinalized(tx, {
         workspaceId,
         subjectType: 'TASK',
-        subjectId: task.id,
+        subjectId: currentTask.id,
       });
 
       // Update Task status
@@ -268,7 +308,7 @@ export async function recordOutput(
         where: {
           workspaceId_id: {
             workspaceId,
-            id: task.id,
+            id: currentTask.id,
           },
         },
         data: {
@@ -281,13 +321,13 @@ export async function recordOutput(
       // If successor tasks exist and this task COMPLETED, promote successors with all predecessors completed to READY
       if (!isFinalOp) {
         const successors = await tx.taskDependency.findMany({
-          where: { workspaceId, predecessorTaskId: task.id },
+          where: { workspaceId, predecessorTaskId: currentTask.id },
           include: { successor: { include: { predecessorDeps: true } } },
         });
 
         for (const succ of successors) {
           const allPreds = succ.successor.predecessorDeps;
-          const otherPreds = allPreds.filter((p: any) => p.predecessorTaskId !== task.id);
+          const otherPreds = allPreds.filter((p: any) => p.predecessorTaskId !== currentTask.id);
           const otherPredTasks = await tx.task.findMany({
             where: { id: { in: otherPreds.map((p: any) => p.predecessorTaskId) } },
           });
@@ -306,9 +346,9 @@ export async function recordOutput(
       await tx.workflowEvent.create({
         data: {
           workspaceId,
-          instanceId: task.instanceId,
-          taskId: task.id,
-          fromStatus: task.status,
+          instanceId: currentTask.instanceId,
+          taskId: currentTask.id,
+          fromStatus: currentTask.status,
           toStatus: nextStatus,
           action: 'OUTPUT_RECORDED',
           actorUserId: principal.userId,

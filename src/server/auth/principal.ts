@@ -9,6 +9,8 @@ export interface Principal {
   roles: string[];
   customerId: string | null;
   technicianId: string | null;
+  facilityId?: string | null;
+  facilityIds?: string[];
 }
 
 export interface PrincipalJson {
@@ -22,6 +24,8 @@ export interface PrincipalJson {
   roles: string[];
   customerId: string | null;
   technicianId: string | null;
+  facilityId?: string | null;
+  facilityIds?: string[];
 }
 
 export function serializePrincipal(principal: Principal): PrincipalJson {

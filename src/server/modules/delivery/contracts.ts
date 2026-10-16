@@ -1,3 +1,4 @@
+import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
 
 export const ShipmentStatus = {
@@ -14,11 +15,7 @@ export const ShipmentLineInputSchema = z.object({
   sourceLocationId: z.string().uuid(),
   allocatedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
-    .transform((val) => {
-      if (typeof val === 'bigint') return val;
-      if (typeof val === 'number') return BigInt(Math.floor(val));
-      return BigInt(val);
-    })
+    .transform(parseAtomInput)
     .refine((val) => val > 0n, {
       message: 'Allocated atoms must be strictly positive (> 0)',
     }),

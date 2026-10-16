@@ -37,7 +37,7 @@ export interface PassportQcEvent {
   inspectionId: string;
   inspectionType: string;
   disposition: string;
-  inspectorName: string;
+  inspectorName: string | null;
   inspectedAt: string;
   checks: PassportInspectionCheck[];
   rework?: {
@@ -148,10 +148,27 @@ export class PassportService {
       },
     });
 
-    // If no passport record exists, check if serial table has it
-    let orderId = passportRecord?.orderId;
-    let itemId = passportRecord?.itemId;
-    let lotId = passportRecord?.lotId;
+    const isCustomerCaller = Boolean(principal.customerId);
+
+    // External customer portal policy: unreleased or unauthenticated passports cannot be accessed
+    if (isCustomerCaller) {
+      if (!passportRecord || passportRecord.status !== 'RELEASED') {
+        throw new NotFoundError(`Published passport for serial '${serialNumber}' not found`);
+      }
+      if (passportRecord.order && passportRecord.order.customerId !== principal.customerId) {
+        throw new ForbiddenError(
+          `Access denied: passport does not belong to customer account`
+        );
+      }
+    } else {
+      // Staff user
+      requireAnyPermission(principal, [
+        'traceability.read',
+        'quality.read',
+        'order.read',
+        'admin.access',
+      ]);
+    }
 
     if (!passportRecord) {
       const serialRecord = await this.prisma.serial.findFirst({
@@ -168,45 +185,33 @@ export class PassportService {
       if (!serialRecord) {
         throw new NotFoundError(`Passport for serial '${serialNumber}' not found`);
       }
-      itemId = serialRecord.itemId;
-      lotId = serialRecord.lotId;
-    }
-
-    // 2. Authorization
-    if (principal.customerId) {
-      // Customer user: Must own the originating order
-      if (!passportRecord?.order || passportRecord.order.customerId !== principal.customerId) {
-        throw new ForbiddenError(
-          `Access denied: passport does not belong to customer account`
-        );
-      }
-    } else {
-      // Staff user
-      requireAnyPermission(principal, [
-        'traceability.read',
-        'quality.read',
-        'order.read',
-        'admin.access',
-      ]);
     }
 
     // 3. Assemble genealogy
     const order = passportRecord?.order;
 
-    // Materials consumed
+    // Materials consumed: strictly scoped to this order's demands and tasks
     const materials: PassportMaterialInput[] = [];
     if (order) {
-      // Gather stock movements of type ISSUE_TO_WIP or PRODUCTION_CONSUME linked to this order/item
+      const taskIds = order.manufacturingOrders.flatMap((mo) =>
+        mo.jobsheets.flatMap((js) => js.tasks.map((t) => t.id))
+      );
+
       const movements = await this.prisma.stockMovement.findMany({
         where: {
           workspaceId: principal.workspaceId,
+          itemId: { in: order.demands.map((d: any) => d.itemId) },
           movementType: { in: ['ISSUE_TO_WIP', 'PRODUCTION_CONSUME'] },
+          OR: [
+            { referenceType: 'ORDER', referenceId: order.id },
+            { referenceType: 'TASK', referenceId: { in: taskIds } },
+          ],
         },
         include: {
           item: true,
           sourceLot: true,
         },
-        take: 10,
+        take: 50,
       });
 
       for (const m of movements) {
@@ -220,7 +225,7 @@ export class PassportService {
       }
     }
 
-    // Operation steps
+    // Operation steps: mask internal operator PII for customer callers
     const operations: PassportOperationStep[] = [];
     if (order) {
       for (const mo of order.manufacturingOrders) {
@@ -231,7 +236,9 @@ export class PassportService {
               nodeKey: task.nodeKey,
               title: `Operation ${task.nodeKey}`,
               machineName: task.assignedMachine?.name ?? null,
-              operatorName: latestSession?.technician?.name ?? task.assignedTechnician?.name ?? null,
+              operatorName: isCustomerCaller
+                ? null
+                : (latestSession?.technician?.name ?? task.assignedTechnician?.name ?? null),
               startedAt: task.startedAt?.toISOString() ?? null,
               completedAt: task.completedAt?.toISOString() ?? null,
               status: task.status,
@@ -241,7 +248,7 @@ export class PassportService {
       }
     }
 
-    // QC History
+    // QC History: mask inspector PII for customer callers
     const qcEvents: PassportQcEvent[] = [];
     if (order) {
       for (const mo of order.manufacturingOrders) {
@@ -254,7 +261,7 @@ export class PassportService {
                   inspectionId: insp.id,
                   inspectionType: insp.sourceType,
                   disposition: insp.disposition ?? 'PENDING',
-                  inspectorName: insp.inspectorUser?.name ?? 'QC Inspector',
+                  inspectorName: isCustomerCaller ? null : (insp.inspectorUser?.name ?? null),
                   inspectedAt: insp.updatedAt.toISOString(),
                   checks: insp.results.map((r) => ({
                     checkCode: r.checkCode,
@@ -268,7 +275,7 @@ export class PassportService {
                     ? {
                         attemptNumber: latestRework.attemptNumber,
                         instruction: latestRework.instruction,
-                        authorizedBy: latestRework.authorizedBy.name,
+                        authorizedBy: isCustomerCaller ? 'Authorized QC' : latestRework.authorizedBy.name,
                         status: latestRework.status,
                       }
                     : undefined,
@@ -280,24 +287,33 @@ export class PassportService {
       }
     }
 
-    // Shipment details
+    // Shipment Evidence
     let shipmentEvidence: PassportShipmentEvidence | null = null;
     if (order && order.shipments.length > 0) {
-      const sh = order.shipments.find((s) => s.status === 'DELIVERED') || order.shipments[0];
-      if (sh) {
+      const dispatchedShipment = order.shipments.find(
+        (s) => s.status === 'DISPATCHED' || s.status === 'DELIVERED'
+      );
+      if (dispatchedShipment) {
         shipmentEvidence = {
-          shipmentNumber: sh.shipmentNumber,
-          carrierName: sh.carrierName,
-          trackingNumber: sh.trackingNumber,
-          dispatchedAt: sh.dispatchedAt?.toISOString() ?? null,
-          deliveredAt: sh.deliveredAt?.toISOString() ?? null,
-          receivedBy: sh.receivedBy,
-          destinationAddress: sh.destinationAddress,
+          shipmentNumber: dispatchedShipment.shipmentNumber,
+          carrierName: dispatchedShipment.carrierName,
+          trackingNumber: dispatchedShipment.trackingNumber,
+          dispatchedAt: dispatchedShipment.dispatchedAt?.toISOString() ?? null,
+          deliveredAt: dispatchedShipment.deliveredAt?.toISOString() ?? null,
+          receivedBy: dispatchedShipment.receivedBy,
+          destinationAddress: dispatchedShipment.destinationAddress,
         };
       }
     }
 
-    // Deterministic digest
+    // Digest: never fabricate synthetic RELEASED status or fake evidence digest
+    const passportStatus = passportRecord?.status ?? 'DRAFT';
+    const computedDigest = passportRecord?.digestSha256;
+
+    if (!computedDigest && isCustomerCaller) {
+      throw new NotFoundError(`Published passport digest for serial '${serialNumber}' not found`);
+    }
+
     const digestSource = JSON.stringify({
       serialNumber,
       orderNumber: order?.orderNumber,
@@ -306,12 +322,11 @@ export class PassportService {
       qcEventsCount: qcEvents.length,
       operationsCount: operations.length,
     });
-    const computedDigest = passportRecord?.digestSha256 || crypto.createHash('sha256').update(digestSource).digest('hex');
 
     return {
       serialNumber,
-      status: passportRecord?.status ?? 'RELEASED',
-      digestSha256: computedDigest,
+      status: passportStatus,
+      digestSha256: computedDigest || crypto.createHash('sha256').update(digestSource).digest('hex'),
       publishedAt: passportRecord?.publishedAt.toISOString() ?? new Date().toISOString(),
       order: order
         ? {

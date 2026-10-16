@@ -71,3 +71,35 @@ export function formatQuantity(atoms: bigint): string {
   const fracStr = fracPart.toString().padStart(6, '0').replace(/0+$/, '');
   return `${intPart.toString()}.${fracStr}`;
 }
+
+
+/**
+ * Safely parses any atom-bearing input (bigint, decimal string, integer number) into bigint atoms.
+ * Prohibits silent floating-point flooring and non-finite numbers.
+ */
+export function parseAtomInput(val: unknown): bigint {
+  if (typeof val === 'bigint') {
+    if (val < 0n) throw new ValidationError('Atom quantity cannot be negative');
+    return val;
+  }
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val)) throw new ValidationError('Invalid quantity number');
+    if (!Number.isInteger(val)) {
+      throw new ValidationError(
+        `Fractional numeric values are prohibited for atoms. Provide a decimal quantity string or integer atoms, received: ${val}`
+      );
+    }
+    const b = BigInt(val);
+    if (b < 0n) throw new ValidationError('Atom quantity cannot be negative');
+    return b;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) throw new ValidationError('Quantity string cannot be empty');
+    if (/^\d+n?$/.test(trimmed)) {
+      return BigInt(trimmed.replace(/n$/, ''));
+    }
+    return parseQuantity(trimmed);
+  }
+  throw new ValidationError(`Unsupported quantity atom type: ${typeof val}`);
+}

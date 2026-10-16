@@ -73,6 +73,24 @@ paths:
         '401': { description: Authentication required }
         '403': { description: Missing permission or customer scope }
         '404': { description: Unknown list resource }
+  /api/planning/assignments:
+    post:
+      summary: Assign task resources with an optimistic task version check
+      description: Requires task.assign, planning.write or resource.manage. Task status, predecessor completion, qualifications, booking conflicts and expectedVersion are checked inside the command transaction. Resource booking insert/update triggers enforce exclusive intervals in SQLite.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignTask' }
+      responses:
+        '200': { description: 'Committed assignment and confirmed resource bookings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: 'Task or assigned resource is not in the current workspace' }
+        '409': { description: 'Stale task version, conflicting booking or inconsistent legacy booking windows' }
   /api/health:
     get:
       summary: Health check endpoint
@@ -145,6 +163,10 @@ paths:
                   reason:
                     type: string
                     nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/ai/recovery-options:
     post:
@@ -182,6 +204,10 @@ paths:
                   reason:
                     type: string
                     nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/ai/memory-recommend:
     post:
@@ -219,6 +245,10 @@ paths:
                   reason:
                     type: string
                     nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/ai/dispatch-rationale:
     post:
@@ -256,6 +286,10 @@ paths:
                   reason:
                     type: string
                     nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/ai/partner-fit:
     post:
@@ -295,6 +329,10 @@ paths:
                   reason:
                     type: string
                     nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/ai/brain-qa:
     post:
@@ -477,6 +515,10 @@ paths:
                   reason:
                     type: string
                     nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/me:
     get:
@@ -598,6 +640,656 @@ paths:
         '200': { description: 'Envelope containing data.customers and data.technicians with id, code and name' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/execution/tasks/{id}/start:
+    post:
+      summary: Start execution of an assigned task
+      description: Validates operator assignment ownership, checks predecessor completion, transitions task to RUNNING, and records work session.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                technicianId: { type: string }
+                overrideReason: { type: string }
+                notes: { type: string }
+      responses:
+        '200': { description: Task and active session details }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/execution/tasks/{id}/pause:
+    post:
+      summary: Pause an in-progress execution task
+      description: Closes active session, sets status to PAUSED, and records duration.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, default: BREAK }
+                notes: { type: string }
+      responses:
+        '200': { description: Task and paused session details }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/execution/tasks/{id}/resume:
+    post:
+      summary: Resume a paused execution task
+      description: Starts new work session and transitions task back to RUNNING.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes: { type: string }
+      responses:
+        '200': { description: Task and resumed session details }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/execution/tasks/{id}/output:
+    post:
+      summary: Record production output with integer atoms
+      description: Authoritatively consumes WIP material demand, guards against overproduction exceeding order atoms, records output units, and triggers double-entry stock movement into quarantine/destination location.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outputAtoms, destinationLocationId]
+              properties:
+                outputAtoms: { type: string, description: Integer 10^6 atoms }
+                destinationLocationId: { type: string }
+                lotNumber: { type: string }
+                serialNumber: { type: string }
+                isFinal: { type: boolean }
+                notes: { type: string }
+      responses:
+        '200': { description: Production output and movement envelope }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/facilities:
+    get:
+      summary: List all facilities in current workspace
+      description: Returns operating sites ordered by default status and code.
+      responses:
+        '200': { description: Array of facilities }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Create a new operating facility
+      description: Requires resource.manage or workspace.admin. Code must be unique within workspace.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string }
+                name: { type: string }
+                timezone: { type: string, default: Asia/Jakarta }
+                address: { type: string }
+                isDefault: { type: boolean, default: false }
+      responses:
+        '201': { description: Created facility }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/facilities/{id}:
+    get:
+      summary: Get facility details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Facility details }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Facility not found }
+    patch:
+      summary: Update facility configuration
+      description: Requires resource.manage or workspace.admin. Setting isDefault unsets prior default facility.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                timezone: { type: string }
+                address: { type: string }
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+                isDefault: { type: boolean }
+      responses:
+        '200': { description: Updated facility }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/facilities/grants:
+    post:
+      summary: Grant or revoke facility access for membership
+      description: Requires access.manage or workspace.admin. Controls user multi-site operational boundaries.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, membershipId, facilityId]
+              properties:
+                action: { type: string, enum: [GRANT, REVOKE] }
+                membershipId: { type: string }
+                facilityId: { type: string }
+      responses:
+        '200': { description: Grant or revoke result }
+        '201': { description: Created grant }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/notifications:
+    get:
+      summary: List user notification inbox
+      description: Returns durable inbox notifications with unread count and pagination.
+      parameters:
+        - name: unread
+          in: query
+          schema: { type: boolean }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200': { description: Notifications list and unread count }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Mark notifications as read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [MARK_READ, MARK_ALL_READ] }
+                notificationId: { type: string }
+      responses:
+        '200': { description: Success status }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/issue-reasons:
+    get:
+      summary: List configurable issue and blocker reasons
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string, enum: [PAUSE, SCRAP, REWORK, BLOCKER] }
+      responses:
+        '200': { description: Array of issue reasons }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Create a configurable issue or blocker reason
+      description: Requires resource.manage or planning.write.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, code, label]
+              properties:
+                category: { type: string, enum: [PAUSE, SCRAP, REWORK, BLOCKER] }
+                code: { type: string }
+                label: { type: string }
+                sortOrder: { type: integer, default: 0 }
+      responses:
+        '201': { description: Created issue reason }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/orders/{id}/lines:
+    get:
+      summary: List order lines for an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Array of order lines }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Add an order line dynamically to an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemId, orderedQuantity]
+              properties:
+                itemId: { type: string }
+                uomId: { type: string }
+                orderedQuantity: { type: number, minimum: 0 }
+                unitPriceCents: { type: integer, minimum: 0 }
+                requestedDate: { type: string, format: date-time }
+                promisedDate: { type: string, format: date-time }
+                notes: { type: string, maxLength: 1000 }
+      responses:
+        '201': { description: Created order line }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/orders/{id}/confirm:
+    post:
+      summary: Confirm an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      responses:
+        '200': { description: Confirmed order }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/orders/jobs/allocate:
+    post:
+      summary: Allocate a bounded job (ManufacturingOrder) against an order line
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderLineId, targetQuantity]
+              properties:
+                orderLineId: { type: string }
+                targetQuantity: { type: number, minimum: 0 }
+                moNumber: { type: string }
+                departmentId: { type: string }
+                workflowVersionId: { type: string }
+                engineeringRevisionId: { type: string }
+      responses:
+        '201': { description: Created manufacturing order and allocation remainder }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/engineering/drawings:
+    get:
+      summary: List drawing revisions for an item
+      parameters:
+        - name: itemId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Array of drawing revisions }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Release a new drawing revision (superseding previous released revision)
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [documentId, itemId, drawingNumber, revisionCode]
+              properties:
+                documentId: { type: string }
+                itemId: { type: string }
+                drawingNumber: { type: string }
+                revisionCode: { type: string }
+                notes: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Released drawing revision }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/technicians/{id}/skills:
+    post:
+      summary: Assess technician skill (0-4 scale)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [skillId, level]
+              properties:
+                skillId: { type: string }
+                level: { type: integer, minimum: 0, maximum: 4 }
+                assessmentStatus: { type: string, enum: [CLAIMED, OBSERVED, VERIFIED, REVOKED], default: VERIFIED }
+                validFrom: { type: string, format: date-time }
+                expiresAt: { type: string, format: date-time }
+                evidence: { type: string }
+                notes: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Assessed skill record }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      summary: Revoke technician skill
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: skillId
+          in: query
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      responses:
+        '200': { description: Revoked skill record }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/technicians/{id}/certifications:
+    post:
+      summary: Assign or renew technician certification
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [certificationId, issuedDate, validUntil]
+              properties:
+                certificationId: { type: string }
+                certificateNumber: { type: string }
+                scope: { type: string }
+                evidence: { type: string }
+                issuedDate: { type: string, format: date }
+                validUntil: { type: string, format: date }
+                notes: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Assigned certification record }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      summary: Revoke technician certification
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: certificationId
+          in: query
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      responses:
+        '200': { description: Revoked certification record }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/machines/{id}/downtimes:
+    get:
+      summary: List machine downtimes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Array of machine downtimes }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Schedule machine downtime
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, startAt, endAt]
+              properties:
+                reason: { type: string }
+                startAt: { type: string, format: date-time }
+                endAt: { type: string, format: date-time }
+                notes: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Created machine downtime }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/shifts/templates:
+    get:
+      summary: List shift templates
+      parameters:
+        - name: facilityId
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: Array of shift templates }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Create shift template
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name, startTime, endTime]
+              properties:
+                facilityId: { type: string }
+                code: { type: string }
+                name: { type: string }
+                startTime: { type: string, example: "08:00" }
+                endTime: { type: string, example: "16:30" }
+                breakMinutes: { type: integer, default: 60 }
+                isOvernight: { type: boolean, default: false }
+      responses:
+        '201': { description: Created shift template }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/roster/intervals:
+    get:
+      summary: List roster intervals
+      parameters:
+        - name: technicianId
+          in: query
+          schema: { type: string }
+        - name: machineId
+          in: query
+          schema: { type: string }
+        - name: facilityId
+          in: query
+          schema: { type: string }
+        - name: startAt
+          in: query
+          schema: { type: string, format: date-time }
+        - name: endAt
+          in: query
+          schema: { type: string, format: date-time }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: Array of roster intervals }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Publish batch of roster intervals
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [intervals]
+              properties:
+                intervals:
+                  type: array
+                  items:
+                    type: object
+                    required: [startAt, endAt]
+                    properties:
+                      facilityId: { type: string }
+                      technicianId: { type: string }
+                      machineId: { type: string }
+                      shiftTemplateId: { type: string }
+                      intervalType: { type: string, enum: [SHIFT, OVERTIME, TRAINING, LEAVE, MAINTENANCE, HOLIDAY], default: SHIFT }
+                      startAt: { type: string, format: date-time }
+                      endAt: { type: string, format: date-time }
+                      breakIntervals:
+                        type: array
+                        items:
+                          type: object
+                          required: [start, end]
+                          properties:
+                            start: { type: string }
+                            end: { type: string }
+                      notes: { type: string, maxLength: 500 }
+      responses:
+        '201': { description: Published roster intervals }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/planning/availability:
+    get:
+      summary: Query authoritative available working intervals
+      parameters:
+        - name: resourceType
+          in: query
+          required: true
+          schema: { type: string, enum: [TECHNICIAN, MACHINE] }
+        - name: resourceId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: startAt
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: endAt
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        '200': { description: Continuous working intervals after break, leave, and booking subtraction }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Verify technician eligibility, assessment status, and non-waivable certificates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [technicianId, slotStart, slotEnd]
+              properties:
+                technicianId: { type: string }
+                minSkillLevels:
+                  type: array
+                  items:
+                    type: object
+                    required: [skillId, minLevel]
+                    properties:
+                      skillId: { type: string }
+                      minLevel: { type: integer, minimum: 0, maximum: 4 }
+                requiredCertifications:
+                  type: array
+                  items:
+                    type: object
+                    required: [certificationId]
+                    properties:
+                      certificationId: { type: string }
+                      scope: { type: string }
+                requiredFacilityId: { type: string }
+                slotStart: { type: string, format: date-time }
+                slotEnd: { type: string, format: date-time }
+      responses:
+        '200': { description: Eligibility verdict and violation details }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
 components:
   parameters:
     AccessIdempotency:
@@ -625,6 +1317,17 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    AssignTask:
+      type: object
+      required: [taskId, expectedVersion]
+      properties:
+        taskId: { type: string, minLength: 1 }
+        expectedVersion: { type: integer, minimum: 1 }
+        technicianId: { type: string, nullable: true }
+        machineId: { type: string, nullable: true }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        notes: { type: string, maxLength: 500 }
     AccessScope:
       type: object
       required: [roleCodes]

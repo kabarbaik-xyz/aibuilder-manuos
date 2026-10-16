@@ -125,6 +125,7 @@ export async function resolvePrincipal(
       },
     },
     include: {
+      facilityGrants: true,
       roles: {
         include: {
           role: {
@@ -155,6 +156,16 @@ export async function resolvePrincipal(
     }
   }
 
+  const grantedFacilityIds = new Set<string>();
+  if (membership.facilityId) {
+    grantedFacilityIds.add(membership.facilityId);
+  }
+  if (membership.facilityGrants) {
+    for (const g of membership.facilityGrants) {
+      grantedFacilityIds.add(g.facilityId);
+    }
+  }
+
   return {
     userId: user.id,
     email: user.email,
@@ -166,6 +177,8 @@ export async function resolvePrincipal(
     roles: roleCodes,
     customerId: membership.customerId,
     technicianId: membership.technicianId,
+    facilityId: membership.facilityId,
+    facilityIds: Array.from(grantedFacilityIds),
   };
 }
 

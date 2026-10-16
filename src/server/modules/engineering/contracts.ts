@@ -11,6 +11,8 @@ export const bomLineDraftSchema = z.object({
 
 export const saveEngineeringDraftSchema = z.object({
   expectedVersion: z.number().int().min(1).optional(),
+  orderLineId: z.string().optional(),
+  drawingRevisionId: z.string().optional(),
   workflowVersionId: z.string().min(1).optional(),
   specs: z.record(z.any()).default({}),
   outputBasis: z.number().positive().default(1),
@@ -22,6 +24,15 @@ export const engineeringActionSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+export const releaseDrawingRevisionSchema = z.object({
+  documentId: z.string().min(1),
+  itemId: z.string().min(1),
+  drawingNumber: z.string().min(1).max(100),
+  revisionCode: z.string().min(1).max(20),
+  notes: z.string().max(500).optional(),
+});
+
 export type BomLineDraftInput = z.input<typeof bomLineDraftSchema>;
 export type SaveEngineeringDraftInput = z.input<typeof saveEngineeringDraftSchema>;
 export type EngineeringActionInput = z.input<typeof engineeringActionSchema>;
+export type ReleaseDrawingRevisionInput = z.input<typeof releaseDrawingRevisionSchema>;

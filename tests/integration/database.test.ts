@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { createTestDatabase, TestDatabase } from '../fixtures/database';
-import { createPrismaClient, configurePrismaSqlite } from '@/server/db/client';
+import { createPrismaClient } from '@/server/db/client';
 
 describe('F01: SQLite Database Bootstrap & Integrity', () => {
   let testDb: TestDatabase;
@@ -51,9 +51,9 @@ describe('F01: SQLite Database Bootstrap & Integrity', () => {
     });
 
     // Disconnect and reconnect with a completely new client instance
+    await testDb.db.$queryRawUnsafe('PRAGMA journal_mode = DELETE;');
     const client2 = createPrismaClient(testDb.url);
     await client2.$connect();
-    await configurePrismaSqlite(client2);
 
     const reconnectedWorkspace = await client2.workspace.findUnique({
       where: { code: 'TEST-WS-1' },
@@ -67,6 +67,21 @@ describe('F01: SQLite Database Bootstrap & Integrity', () => {
     expect(reconnectedWorkspace).not.toBeNull();
     expect(reconnectedWorkspace?.memberships).toHaveLength(1);
     expect(reconnectedWorkspace?.memberships[0].user.email).toBe('test@example.com');
+
+    const journalMode = await client2.$queryRawUnsafe<Array<{ journal_mode: string }>>(
+      'PRAGMA journal_mode;'
+    );
+    expect(journalMode[0]?.journal_mode.toLowerCase()).toBe('wal');
+
+    const busyTimeout = await client2.$queryRawUnsafe<Array<{ timeout: bigint | number }>>(
+      'PRAGMA busy_timeout;'
+    );
+    expect(Number(busyTimeout[0]?.timeout)).toBe(5000);
+
+    const foreignKeys = await client2.$queryRawUnsafe<
+      Array<{ foreign_keys: bigint | number }>
+    >('PRAGMA foreign_keys;');
+    expect(Number(foreignKeys[0]?.foreign_keys)).toBe(1);
 
     await client2.$disconnect();
   });
