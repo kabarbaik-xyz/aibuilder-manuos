@@ -454,6 +454,8 @@ paths:
               properties:
                 rfqText:
                   type: string
+                  minLength: 1
+                  maxLength: 20000
       responses:
         '200':
           description: Extracted structured RFQ
@@ -521,8 +523,12 @@ paths:
               properties:
                 orderTypeName:
                   type: string
+                  minLength: 1
+                  maxLength: 120
                 description:
                   type: string
+                  minLength: 1
+                  maxLength: 20000
                 companyProfile:
                   type: object
       responses:

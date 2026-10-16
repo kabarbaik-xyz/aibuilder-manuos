@@ -10,7 +10,10 @@ import { callGeminiStructured } from '@/server/ai/gemini-client';
 const requestSchema = z.object({
   orderTypeName: z.string().trim().min(1).max(120),
   description: z.string().trim().min(1).max(20_000),
-  companyProfile: z.record(z.unknown()).optional(),
+  companyProfile: z.record(z.unknown()).optional().refine(
+    (profile) => profile === undefined || JSON.stringify(profile).length <= 5_000,
+    'Company profile must be at most 5000 characters'
+  ),
 });
 
 export async function POST(req: NextRequest) {

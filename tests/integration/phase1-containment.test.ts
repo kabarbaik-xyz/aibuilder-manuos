@@ -62,6 +62,27 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
       { name: 'generate-workflow', handler: generateWorkflowHandler, body: { orderTypeName: 'Bracket', description: 'Machine a bracket.' } },
     ];
 
+    it('rejects oversized RFQ and workflow prompts before invoking Gemini', async () => {
+      const { alpha } = fixture;
+      const endpoints = [
+        { name: 'extract-rfq', handler: extractRfqHandler, body: { rfqText: 'x'.repeat(20_001) } },
+        { name: 'generate-workflow', handler: generateWorkflowHandler, body: { orderTypeName: 'Test', description: 'x'.repeat(20_001) } },
+      ];
+      for (const ep of endpoints) {
+        const req = new NextRequest(`http://localhost:3000/api/ai/${ep.name}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${alpha.users.owner.sessionToken}`,
+            'x-workspace-id': alpha.workspaceId,
+          },
+          body: JSON.stringify(ep.body),
+        });
+        const response = await ep.handler(req);
+        expect(response.status).toBe(400);
+      }
+    });
+
     for (const ep of aiEndpoints) {
       it(`rejects unauthenticated requests to ${ep.name} with 401`, async () => {
         const req = new NextRequest(`http://localhost:3000/api/ai/${ep.name}`, {
