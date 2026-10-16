@@ -1183,9 +1183,10 @@ paths:
           schema: { type: boolean }
         - name: limit
           in: query
-          schema: { type: integer, default: 50 }
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         '200': { description: Notifications list and unread count }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       summary: Mark notifications as read

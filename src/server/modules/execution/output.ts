@@ -173,6 +173,7 @@ export async function recordOutput(
         where: { workspaceId_id: { workspaceId, id: input.taskId } },
         include: {
           successorDeps: true,
+          jobsheet: { include: { manufacturingOrder: true } },
         },
       });
       if (!currentTask) {
@@ -188,6 +189,45 @@ export async function recordOutput(
         );
       }
 
+      const taskOutputs = await tx.productionOutput.findMany({
+        where: {
+          workspaceId,
+          taskId: currentTask.id,
+          attemptNumber: currentTask.attemptNumber,
+          status: { not: 'REJECTED' },
+        },
+        select: { outputAtoms: true },
+      });
+      const priorTaskOutputAtoms = taskOutputs.reduce(
+        (total: bigint, output: { outputAtoms: bigint }) => total + output.outputAtoms,
+        0n
+      );
+      const isFinalOp = currentTask.successorDeps.length === 0 || input.isFinal;
+      const currentOrder = await tx.order.findUnique({
+        where: { workspaceId_id: { workspaceId, id: order.id } },
+        include: { lines: true },
+      });
+      if (!currentOrder) throw new NotFoundError(`Order '${order.id}' not found`);
+      const matchingLines = currentOrder.lines.filter((line: { itemId: string; orderedAtoms: bigint }) => line.itemId === targetItemId);
+      const orderedForItem = matchingLines.length
+        ? matchingLines.reduce((total: bigint, line: { orderedAtoms: bigint }) => total + line.orderedAtoms, 0n)
+        : targetItemId === currentOrder.itemId
+          ? currentOrder.orderedAtoms
+          : 0n;
+      if (orderedForItem <= 0n) {
+        throw new BadRequestError(`Output item '${targetItemId}' is not part of order '${currentOrder.id}'.`);
+      }
+      const taskTargetAtoms = currentTask.targetAtoms > 0n
+        ? currentTask.targetAtoms
+        : currentTask.jobsheet?.manufacturingOrder?.targetAtoms ?? orderedForItem;
+      const nextTaskOutputAtoms = priorTaskOutputAtoms + input.outputAtoms;
+      if (nextTaskOutputAtoms > taskTargetAtoms) {
+        throw new BadRequestError(
+          `Overproduction rejected: task '${currentTask.nodeKey}' would reach ${nextTaskOutputAtoms} atoms, above its target of ${taskTargetAtoms} atoms.`
+        );
+      }
+      const taskOutputComplete = nextTaskOutputAtoms === taskTargetAtoms;
+
       const existingOutputs = await tx.productionOutput.findMany({
         where: {
           workspaceId,
@@ -197,22 +237,7 @@ export async function recordOutput(
           task: { instance: { orderId: order.id } },
         },
       });
-      const isFinalOp = currentTask.successorDeps.length === 0 || input.isFinal;
       if (isFinalOp) {
-        const currentOrder = await tx.order.findUnique({
-          where: { workspaceId_id: { workspaceId, id: order.id } },
-          include: { lines: true },
-        });
-        if (!currentOrder) throw new NotFoundError(`Order '${order.id}' not found`);
-        const matchingLines = currentOrder.lines.filter((line: { itemId: string; orderedAtoms: bigint }) => line.itemId === targetItemId);
-        const orderedForItem = matchingLines.length
-          ? matchingLines.reduce((total: bigint, line: { orderedAtoms: bigint }) => total + line.orderedAtoms, 0n)
-          : targetItemId === currentOrder.itemId
-            ? currentOrder.orderedAtoms
-            : 0n;
-        if (orderedForItem === 0n) {
-          throw new BadRequestError(`Output item '${targetItemId}' is not part of order '${currentOrder.id}'.`);
-        }
         const finalOutputAtoms = existingOutputs.reduce(
           (total: bigint, output: { outputAtoms: bigint }) => total + output.outputAtoms,
           0n
@@ -243,7 +268,16 @@ export async function recordOutput(
       );
 
       // Reconcile and consume remaining WIP for this task if BOM demands exist
-      const demands = order.demands.filter((d) => !d.taskId || d.taskId === currentTask.id);
+      const unassignedDemands = order.demands.filter((d) => !d.taskId);
+      if (unassignedDemands.length > 0) {
+        const taskCount = await tx.task.count({ where: { workspaceId, instanceId: currentTask.instanceId } });
+        if (taskCount > 1) {
+          throw new BadRequestError(
+            `Order contains ${unassignedDemands.length} material demand(s) without an operation assignment. Bind each BOM line to a workflow operation before recording multi-step output.`
+          );
+        }
+      }
+      const demands = order.demands.filter((d) => d.taskId === currentTask.id || (!d.taskId && unassignedDemands.length > 0));
       for (const demand of demands) {
         const wipBalances = await tx.stockBalance.findMany({
           where: {
@@ -255,9 +289,9 @@ export async function recordOutput(
         });
 
         // Compute proportional consumption
-        const proportionalRequired =
-          (input.outputAtoms * demand.requiredAtoms) /
-          (order.orderedAtoms > 0n ? order.orderedAtoms : 1n);
+        const consumedBefore = (priorTaskOutputAtoms * demand.requiredAtoms) / taskTargetAtoms;
+        const consumedAfter = (nextTaskOutputAtoms * demand.requiredAtoms) / taskTargetAtoms;
+        const proportionalRequired = consumedAfter - consumedBefore;
 
         let remainingToConsume = proportionalRequired;
         for (const bal of wipBalances) {
@@ -320,7 +354,11 @@ export async function recordOutput(
       });
 
       // Update Task status
-      const nextStatus = isFinalOp ? 'WAITING_QC' : 'COMPLETED';
+      const nextStatus = isFinalOp
+        ? 'WAITING_QC'
+        : taskOutputComplete
+          ? 'COMPLETED'
+          : currentTask.status;
       const updatedTask = await tx.task.update({
         where: {
           workspaceId_id: {
@@ -330,13 +368,13 @@ export async function recordOutput(
         },
         data: {
           status: nextStatus,
-          completedAt: isFinalOp ? undefined : now,
+          completedAt: !isFinalOp && taskOutputComplete ? now : undefined,
           version: { increment: 1 },
         },
       });
 
       // If successor tasks exist and this task COMPLETED, promote successors with all predecessors completed to READY
-      if (!isFinalOp) {
+      if (!isFinalOp && taskOutputComplete) {
         const successors = await tx.taskDependency.findMany({
           where: { workspaceId, predecessorTaskId: currentTask.id },
           include: { successor: { include: { predecessorDeps: true } } },

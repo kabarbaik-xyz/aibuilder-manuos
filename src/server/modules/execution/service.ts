@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission, hasPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
@@ -703,11 +703,12 @@ export class ExecutionService {
     requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.write']);
     const input = CreateTaskIssueSchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
+    const commandKey = idempotencyKey || randomUUID();
 
     return executeCommand({
       principal,
       commandType: 'task.issue.create',
-      idempotencyKey: idempotencyKey || randomUUID(),
+      idempotencyKey: commandKey,
       payload: input,
       prismaClient: this.db,
       handler: async (tx) => {
@@ -773,16 +774,13 @@ export class ExecutionService {
         });
 
         if (input.ownerUserId) {
-          await tx.notificationInbox.create({
-            data: {
-              workspaceId,
-              userId: input.ownerUserId,
-              title: `Issue Assigned: ${input.title}`,
-              body: `New ${input.severity} severity issue raised on task ${task.nodeKey}: ${input.title}`,
-              subjectType: 'TASK_ISSUE',
-              subjectId: issue.id,
-              status: 'UNREAD',
-            },
+          await new NotificationService(tx).sendNotification(workspaceId, {
+            userId: input.ownerUserId,
+            title: `Issue Assigned: ${input.title}`,
+            body: `New ${input.severity} severity issue raised on task ${task.nodeKey}: ${input.title}`,
+            subjectType: 'TASK_ISSUE',
+            subjectId: issue.id,
+            dedupeKey: `cmd:${createHash('sha256').update(commandKey).digest('hex')}:issue-owner:${input.ownerUserId}`,
           });
         }
 

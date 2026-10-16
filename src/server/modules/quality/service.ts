@@ -443,42 +443,60 @@ export async function finalizeInspection(
           },
         });
 
-        // If the task was WAITING_QC and has passed units, complete the task
+        // A partial final output can be inspected in multiple batches. Keep the task
+        // in WAITING_QC until accepted quantity reaches the task target.
         if (output.task && output.task.status === 'WAITING_QC') {
           if (input.passedAtoms > 0n || disposition === 'PASSED') {
-            await tx.task.update({
+            const finalizedInspections = await tx.inspection.aggregate({
               where: {
-                workspaceId_id: {
-                  workspaceId,
-                  id: output.task.id,
+                workspaceId,
+                status: 'FINALIZED',
+                productionOutput: {
+                  taskId: output.task.id,
+                  attemptNumber: output.task.attemptNumber,
                 },
               },
-              data: {
-                status: 'COMPLETED',
-                completedAt: new Date(),
-                version: { increment: 1 },
-              },
+              _sum: { passedAtoms: true },
             });
+            const cumulativePassedAtoms = finalizedInspections._sum.passedAtoms ?? 0n;
+            const taskComplete =
+              output.task.targetAtoms <= 0n || cumulativePassedAtoms >= output.task.targetAtoms;
 
-            // Promote any pending successors whose predecessors are all completed
-            const successors = await tx.taskDependency.findMany({
-              where: { workspaceId, predecessorTaskId: output.task.id },
-              include: { successor: { include: { predecessorDeps: true } } },
-            });
-
-            for (const succ of successors) {
-              const allPreds = succ.successor.predecessorDeps;
-              const otherPreds = allPreds.filter((p: any) => p.predecessorTaskId !== output.task.id);
-              const otherPredTasks = await tx.task.findMany({
-                where: { id: { in: otherPreds.map((p: any) => p.predecessorTaskId) } },
+            if (taskComplete) {
+              await tx.task.update({
+                where: {
+                  workspaceId_id: {
+                    workspaceId,
+                    id: output.task.id,
+                  },
+                },
+                data: {
+                  status: 'COMPLETED',
+                  completedAt: new Date(),
+                  version: { increment: 1 },
+                },
               });
-              const allOtherCompleted = otherPredTasks.every((p: any) => p.status === 'COMPLETED');
 
-              if (allOtherCompleted && succ.successor.status === 'PENDING') {
-                await tx.task.update({
-                  where: { id: succ.successor.id },
-                  data: { status: 'READY', version: { increment: 1 } },
+              // Promote any pending successors whose predecessors are all completed
+              const successors = await tx.taskDependency.findMany({
+                where: { workspaceId, predecessorTaskId: output.task.id },
+                include: { successor: { include: { predecessorDeps: true } } },
+              });
+
+              for (const succ of successors) {
+                const allPreds = succ.successor.predecessorDeps;
+                const otherPreds = allPreds.filter((p: any) => p.predecessorTaskId !== output.task.id);
+                const otherPredTasks = await tx.task.findMany({
+                  where: { id: { in: otherPreds.map((p: any) => p.predecessorTaskId) } },
                 });
+                const allOtherCompleted = otherPredTasks.every((p: any) => p.status === 'COMPLETED');
+
+                if (allOtherCompleted && succ.successor.status === 'PENDING') {
+                  await tx.task.update({
+                    where: { id: succ.successor.id },
+                    data: { status: 'READY', version: { increment: 1 } },
+                  });
+                }
               }
             }
           }

@@ -16,7 +16,11 @@ export async function GET(req: NextRequest) {
     const service = new NotificationService();
     const url = new URL(req.url);
     const unreadOnly = url.searchParams.get('unread') === 'true';
-    const limit = url.searchParams.has('limit') ? parseInt(url.searchParams.get('limit')!, 10) : 50;
+    const parsedLimit = z.coerce.number().int().min(1).max(100).safeParse(url.searchParams.get('limit') ?? '50');
+    if (!parsedLimit.success) {
+      return NextResponse.json({ error: 'limit must be an integer from 1 to 100' }, { status: 400 });
+    }
+    const limit = parsedLimit.data;
 
     const [items, unreadCount] = await Promise.all([
       service.listNotifications(principal, { unreadOnly, limit }),

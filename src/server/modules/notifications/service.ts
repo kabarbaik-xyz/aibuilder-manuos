@@ -1,24 +1,43 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { db as defaultDb } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
 import { NotFoundError } from '@/domain/errors';
 import { SendNotificationInput, SendNotificationSchema, NotificationDTO } from './contracts';
 
 export class NotificationService {
-  constructor(private readonly prisma: PrismaClient = defaultDb) {}
+  constructor(private readonly prisma: PrismaClient | Prisma.TransactionClient = defaultDb) {}
 
   async sendNotification(workspaceId: string, input: SendNotificationInput) {
     const validated = SendNotificationSchema.parse(input);
-    return await this.prisma.notificationInbox.create({
-      data: {
+    const recipient = await this.prisma.membership.findFirst({
+      where: { workspaceId, userId: validated.userId },
+      select: { id: true },
+    });
+    if (!recipient) {
+      throw new NotFoundError(`Notification recipient '${validated.userId}' is not a member of workspace '${workspaceId}'`);
+    }
+    const data = {
         workspaceId,
         userId: validated.userId,
         title: validated.title,
         body: validated.body ?? null,
         subjectType: validated.subjectType ?? null,
         subjectId: validated.subjectId ?? null,
+        dedupeKey: validated.dedupeKey ?? null,
         metadataJson: validated.metadata ? JSON.stringify(validated.metadata) : null,
+      };
+    if (!validated.dedupeKey) return this.prisma.notificationInbox.create({ data });
+
+    return this.prisma.notificationInbox.upsert({
+      where: {
+        workspaceId_userId_dedupeKey: {
+          workspaceId,
+          userId: validated.userId,
+          dedupeKey: validated.dedupeKey,
+        },
       },
+      create: data,
+      update: {},
     });
   }
 

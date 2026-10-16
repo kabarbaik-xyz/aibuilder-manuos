@@ -6,6 +6,7 @@ export const SendNotificationSchema = z.object({
   body: z.string().max(2000).optional(),
   subjectType: z.string().max(50).optional(),
   subjectId: z.string().max(100).optional(),
+  dedupeKey: z.string().min(1).max(200).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 

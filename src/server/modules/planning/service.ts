@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
@@ -21,6 +21,7 @@ import {
   TaskDispatchReadinessDTO,
 } from './contracts';
 import { NotificationService } from '../notifications/service';
+import { ConsumptionService } from '../inventory/consumption';
 import {
   scheduleTasks as runScheduleEngine,
   addWorkingMinutes,
@@ -390,13 +391,14 @@ export class PlanningService {
     requireAnyPermission(principal, ['task.assign', 'planning.write', 'resource.manage']);
     const input: AssignTaskInput = AssignTaskSchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
+    const commandKey = idempotencyKey || randomUUID();
 
     this.validateAssignmentWindow(input.startAt, input.endAt);
 
     return executeCommand<any, any>({
       principal,
       commandType: 'task.assign',
-      idempotencyKey: idempotencyKey || randomUUID(),
+      idempotencyKey: commandKey,
       expectedVersion: input.expectedVersion,
       payload: input,
       prismaClient: this.db,
@@ -563,16 +565,13 @@ export class PlanningService {
               where: { id: assignedTech.membershipId, workspaceId },
             });
             if (member?.userId) {
-              await tx.notificationInbox.create({
-                data: {
-                  workspaceId,
-                  userId: member.userId,
-                  title: `Task Assigned: ${task.nodeKey}`,
-                  body: `You have been assigned to task ${task.nodeKey} (${startAt.toISOString().slice(11, 16)} - ${endAt.toISOString().slice(11, 16)})`,
-                  subjectType: 'TASK',
-                  subjectId: task.id,
-                  status: 'UNREAD',
-                },
+              await new NotificationService(tx).sendNotification(workspaceId, {
+                userId: member.userId,
+                title: `Task Assigned: ${task.nodeKey}`,
+                body: `You have been assigned to task ${task.nodeKey} (${startAt.toISOString().slice(11, 16)} - ${endAt.toISOString().slice(11, 16)})`,
+                subjectType: 'TASK',
+                subjectId: task.id,
+                dedupeKey: `cmd:${createHash('sha256').update(commandKey).digest('hex')}:task-assignee:${member.userId}`,
               });
             }
           }
@@ -981,31 +980,14 @@ export class PlanningService {
         status: d.predecessor.status,
       }));
 
-    const demands = await this.db.materialDemand.findMany({
-      where: { workspaceId, taskId: task.id },
-      include: { reservations: true },
-    });
-    const uncoveredDemands = demands
-      .map((d) => {
-        const allocatedAtoms = d.reservations
-          .filter((r) => r.status === 'ACTIVE')
-          .reduce((sum, r) => sum + r.reservedAtoms, 0n);
-        const isCovered =
-          d.status === 'ALLOCATED' || d.status === 'ISSUED' || allocatedAtoms >= d.requiredAtoms;
-        return {
-          id: d.id,
-          itemId: d.itemId,
-          requiredAtoms: d.requiredAtoms.toString(),
-          allocatedAtoms: allocatedAtoms.toString(),
-          isCovered,
-        };
-      })
-      .filter((d) => !d.isCovered)
-      .map(({ id, itemId, requiredAtoms, allocatedAtoms }) => ({
-        id,
-        itemId,
-        requiredAtoms,
-        allocatedAtoms,
+    const materialReadiness = await new ConsumptionService(this.db).getTaskMaterialReadiness(principal, task.id);
+    const uncoveredDemands = materialReadiness.demands
+      .filter((d) => d.issuedAtoms + d.reservedAtoms + d.availableInWarehouseAtoms < d.requiredAtoms)
+      .map((d) => ({
+        id: d.demandId,
+        itemId: d.itemId,
+        requiredAtoms: d.requiredAtoms.toString(),
+        allocatedAtoms: (d.issuedAtoms + d.reservedAtoms + d.availableInWarehouseAtoms).toString(),
       }));
 
     const evaluation = await this.evaluateAssignmentWithClient(this.db, principal, {
@@ -1017,9 +999,9 @@ export class PlanningService {
     let readinessStatus: TaskDispatchReadinessDTO['readinessStatus'] = 'READY';
     if (task.status === 'RUNNING') readinessStatus = 'IN_PROGRESS';
     else if (task.status === 'COMPLETED') readinessStatus = 'COMPLETED';
-    else if (task.status === 'ASSIGNED') readinessStatus = 'ASSIGNED';
     else if (uncompletedPreds.length > 0) readinessStatus = 'WAITING_PREDECESSOR';
     else if (uncoveredDemands.length > 0) readinessStatus = 'BLOCKED_MATERIAL';
+    else if (task.status === 'ASSIGNED') readinessStatus = 'ASSIGNED';
 
     return {
       taskId: task.id,
