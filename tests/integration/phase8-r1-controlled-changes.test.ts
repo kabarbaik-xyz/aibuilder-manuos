@@ -9,6 +9,8 @@ import { EngineeringService } from '@/server/modules/engineering/service';
 import { WorkflowService } from '@/server/modules/workflow/service';
 import { releaseOrder } from '@/server/modules/orders/release';
 import { BadRequestError, NotFoundError } from '@/domain/errors';
+import { NextRequest } from 'next/server';
+import { GET as getPublishedSchedulesRoute, POST as postPublishedScheduleRoute } from '@/app/api/planning/published-schedules/route';
 
 describe('Phase 8: R1 Controlled Changes, Published Schedules & Connected Traceability', () => {
   let fixture: FactoryFixture;
@@ -355,5 +357,38 @@ describe('Phase 8: R1 Controlled Changes, Published Schedules & Connected Tracea
     const history = await scheduleService.getPublishedSchedules(planner);
     expect(history.length).toBeGreaterThanOrEqual(2);
     expect(history[0].revisionNumber).toBe(2);
+  });
+  it("exposes published schedule API with tenant scoping and authentication", async () => {
+    const planner = fixture.alpha.users.planner;
+    const postReq = new NextRequest("http://localhost:3000/api/planning/published-schedules", {
+      method: "POST",
+      headers: {
+        cookie: planner.cookie,
+        "x-workspace-id": fixture.alpha.workspaceId,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        title: "API Published Schedule Test",
+        periodStart: "2026-11-01T00:00:00.000Z",
+        periodEnd: "2026-11-07T23:59:59.000Z",
+      }),
+    });
+    const postRes = await postPublishedScheduleRoute(postReq);
+    expect(postRes.status).toBe(201);
+    const postData = await postRes.json();
+    expect(postData.data.title).toBe("API Published Schedule Test");
+
+    const getReq = new NextRequest("http://localhost:3000/api/planning/published-schedules", {
+      method: "GET",
+      headers: {
+        cookie: planner.cookie,
+        "x-workspace-id": fixture.alpha.workspaceId,
+      },
+    });
+    const getRes = await getPublishedSchedulesRoute(getReq);
+    expect(getRes.status).toBe(200);
+    const getData = await getRes.json();
+    expect(getData.data.length).toBeGreaterThanOrEqual(1);
+    expect(getData.data[0].title).toBe("API Published Schedule Test");
   });
 });

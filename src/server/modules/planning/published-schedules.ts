@@ -100,3 +100,6 @@ export class PublishedScheduleService {
     });
   }
 }
+
+import { db } from "@/server/db/client";
+export const publishedScheduleService = new PublishedScheduleService(db);

@@ -1733,6 +1733,37 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/planning/published-schedules:
+    get:
+      summary: Retrieve published master schedule revisions
+      description: Returns all published schedule revisions in descending order. Requires planning.read or order.read.
+      responses:
+        '200':
+          description: Array of PublishedSchedule records
+        '401': { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Publish an authoritative master schedule snapshot
+      description: Takes an authoritative snapshot of confirmed bookings for the period, superseding earlier revisions.
+      parameters:
+        - $ref: "#/components/parameters/AccessIdempotency"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, periodStart, periodEnd]
+              properties:
+                title: { type: string }
+                periodStart: { type: string, format: date-time }
+                periodEnd: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Created PublishedSchedule envelope
+        '400': { $ref: "#/components/responses/BadRequest" }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+        '403': { $ref: "#/components/responses/Forbidden" }
+
 components:
   parameters:
     AccessIdempotency:

@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import React, { useState } from 'react';
 import { useTechnicians, useMachines } from '@/features/masters/hooks';
-import { useAssignTask, useTaskReadiness, useEvaluateAssignment } from '../hooks';
+import { useAssignTask, useTaskReadiness, useEvaluateAssignment, usePublishedSchedules, usePublishSchedule } from '../hooks';
 import type { AssignmentEvaluationResult } from '@/server/modules/planning/contracts';
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +34,13 @@ export function PlanningScheduleView() {
   const { data: readiness, isLoading: isReadinessLoading } = useTaskReadiness(selectedTaskId);
   const evaluateMutation = useEvaluateAssignment();
   const [evaluation, setEvaluation] = useState<AssignmentEvaluationResult | null>(null);
+  const { data: publishedSchedules, refetch: refetchPublished } = usePublishedSchedules();
+  const publishMutation = usePublishSchedule();
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [publishTitle, setPublishTitle] = useState("");
+  const [publishPeriodStart, setPublishPeriodStart] = useState(new Date().toISOString().slice(0, 10));
+  const [publishPeriodEnd, setPublishPeriodEnd] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   // Trigger qualification evaluation on resource selection
   React.useEffect(() => {
@@ -97,8 +104,40 @@ export function PlanningScheduleView() {
 
   return (
     <div className="page-stack">
-      <PageHeader title="Planning" description="Review the production schedule, critical work and resource assignments." actions={<Button onClick={() => refetch()} icon="reset">Recalculate</Button>} />
+      <PageHeader title="Planning" description="Review the production schedule, critical work and resource assignments." actions={
+        <div className="flex items-center gap-2">
+          <Button onClick={() => refetch()} icon="reset">
+            Recalculate
+          </Button>
+          <PermissionGate permission={["planning.write", "order.release"]}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setPublishTitle(`Master Schedule ${new Date().toISOString().slice(0, 10)}`);
+                setPublishError(null);
+                setShowPublishModal(true);
+              }}
+            >
+              Publish Schedule
+            </Button>
+          </PermissionGate>
+        </div>
+      } />
       {/* Top Metric Cards */}
+      {publishedSchedules && publishedSchedules.length > 0 && (
+        <div className="p-3 bg-surface border border-line rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <Badge variant="success">Rev #{publishedSchedules[0].revisionNumber} Published</Badge>
+            <strong className="text-ink">{publishedSchedules[0].title}</strong>
+            <span className="text-muted">
+              Covering {new Date(publishedSchedules[0].periodStart).toLocaleDateString()} – {new Date(publishedSchedules[0].periodEnd).toLocaleDateString()}
+            </span>
+          </div>
+          <span className="text-muted">
+            Published {new Date(publishedSchedules[0].createdAt).toLocaleString()}
+          </span>
+        </div>
+      )}
       <div className="planning-metrics">
         <div className="planning-metric">
           <span className="text-xs font-semibold text-muted tracking-wider uppercase">Scheduled duration</span>

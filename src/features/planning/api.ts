@@ -50,3 +50,15 @@ export async function rescheduleAssignment(assignmentId: string, input: { startA
     body: JSON.stringify(input),
   });
 }
+
+export async function fetchPublishedSchedules() {
+  const res = await apiRequest<{ data: any[] }>("/api/planning/published-schedules");
+  return res.data;
+}
+
+export async function publishSchedule(input: { title: string; periodStart: string; periodEnd: string }) {
+  return apiRequest("/api/planning/published-schedules", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}

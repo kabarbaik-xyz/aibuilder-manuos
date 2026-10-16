@@ -30,6 +30,8 @@ import {
   fetchTaskReadiness,
   cancelAssignment,
   rescheduleAssignment,
+  fetchPublishedSchedules,
+  publishSchedule,
 } from "./api";
 
 export function useTaskReadiness(taskId: string | null) {
@@ -60,6 +62,25 @@ export function useRescheduleAssignment() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["planning"] });
       queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
+  });
+}
+
+export function usePublishedSchedules() {
+  return useQuery({
+    queryKey: ["planning", "published-schedules"],
+    queryFn: () => fetchPublishedSchedules(),
+  });
+}
+
+export function usePublishSchedule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { title: string; periodStart: string; periodEnd: string }) =>
+      publishSchedule(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planning", "published-schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["planning"] });
     },
   });
 }
