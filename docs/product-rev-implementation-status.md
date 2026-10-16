@@ -14,7 +14,7 @@ Current inline verification adds: order draft facility-grant and decimal-precisi
 
 ### Session evidence — 2026-10-16 (after `c815f4c`)
 
-Scope: SFL-05 scan entry, SFL-04/scan authorization, QLT-01 readings gate, CUS-01 intake milestone truth. All evidence below is local source/service/Vitest/build level; browser, operational-database and pilot gates remain open.
+Scope: SFL-05 scan entry, SFL-04/scan authorization, MAT-01 start coverage, QLT-01 readings gate, CUS-01 intake milestone truth. All evidence below is local source/service/Vitest/build level; browser, operational-database and pilot gates remain open.
 
 - **QR/manual scan entry completed (SFL-05, phase 6):**
   - `src/features/execution/components/ShopFloorTaskListView.tsx`: scan/manual code form on My Work with loading, recognised-code and error states in consistent English copy; opens task/job through `/shop-floor/tasks/{id}` and orders through `/orders/{id}` only when the principal holds `order.read`; the server re-authorizes on open.
@@ -27,6 +27,9 @@ Scope: SFL-05 scan entry, SFL-04/scan authorization, QLT-01 readings gate, CUS-0
   - Task lookups stay restricted to assigned technicians unless the caller holds supervisor-level permissions.
   - Regression coverage added to `tests/integration/phase6-evidenced-execution.test.ts`: operator scanning another role's QC task → `NotFoundError`; operator scanning an order code → `NotFoundError`; operator scanning the MO number resolves their assigned active task; `order.read`-only buyer receives JOB without `taskId`.
   - `contracts/openapi.yaml`: `/api/execution/scan` description now documents these disclosure rules and the `ScanResultDTO` shape.
+- **Full material coverage required at task start (MAT-01/G06, phase 5/6):**
+  - `src/server/modules/execution/service.ts`: `startTask` no longer accepts "any one demand has some stock"; every material demand must now be fully covered by issued WIP plus active reservations plus unreserved warehouse stock (exact bigint atoms). Under-covered demands are named in the rejection with required vs covered atoms.
+  - Regression added to `tests/integration/task-execution.test.ts`: posting only half the required stock rejects start with `lack full coverage`; the existing zero-stock rejection and full-coverage success tests still pass (13/13 in that suite). All seven material-dependent suites (67 tests) pass.
 - **QC pinned-plan readings gate (QLT-01, phase 6):**
   - `src/server/modules/quality/service.ts`: `finalizeInspection` and `recordReinspection` now enforce the pinned checklist — required checks must be recorded, MEASUREMENT/GAUGE checks must carry a numeric decimal reading, and a passing reading must sit inside the published `limitsJson` range compared as exact bigint atoms (signed decimals supported for tolerances; no floating point). Failing readings may sit outside limits as defect evidence.
   - New `tests/integration/qc-checklist-readings.test.ts` (4/4): missing measurement reading rejected; passing reading above max / below negative min rejected; out-of-range accepted only with `isPassed: false` defect evidence; reinspection requires the pinned plan readings again and conserves 10 atoms to FG with quarantine emptied.
@@ -34,7 +37,7 @@ Scope: SFL-05 scan entry, SFL-04/scan authorization, QLT-01 readings gate, CUS-0
   - `src/server/modules/portal/repository.ts`: `INTAKE` milestone is now settled only by `confirmedAt` (or a non-DRAFT/REVIEW status); draft orders project `PENDING` instead of a fabricated "Order Confirmed & Planned" completion. `PortalOrderDetailView` labels the promised date as an estimate until the customer acknowledges.
   - Regression assertions added to the phase 6 milestone test: released order INTAKE `COMPLETED`, draft order INTAKE `PENDING`.
 
-Verification this session: `npm run typecheck` passed; focused suites passed (phase6 5/5, scan-routing 3/3, qc-checklist-readings 4/4); after the QC/milestone changes the full local run passed again: `npm test` 71 files / 365 tests, `npm run typecheck` clean, `npm run build` exit 0. These remain local Vitest/service/compiler/build checks — not browser, operational-database, or pilot evidence.
+Verification this session: `npm run typecheck` passed; focused suites passed (phase6 5/5, scan-routing 3/3, qc-checklist-readings 4/4, task-execution 13/13); after the coverage-gate change the full local run passed again: `npm test` 71 files / 366 tests, `npm run typecheck` clean, `npm run build` exit 0. These remain local Vitest/service/compiler/build checks — not browser, operational-database, or pilot evidence.
 
 ## Phase 0 — baseline and contracts
 

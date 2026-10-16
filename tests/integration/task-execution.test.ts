@@ -617,6 +617,30 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
     ).rejects.toThrow(BadRequestError);
   });
 
+  it('rejects starting task when material coverage is partial', async () => {
+    const { alpha } = fixture;
+
+    // Only half of the required 20 units is available in the warehouse.
+    await inventoryService.postOpeningBalance(
+      alpha.users.owner.principal,
+      {
+        itemId: alpha.masters.rawItemId,
+        locationId: alpha.masters.rawLocationId,
+        lotNumber: 'LOT-RAW-PARTIAL',
+        atoms: 10000000n, // 10 units
+      },
+      'cmd-opening-raw-partial'
+    );
+
+    await expect(
+      executionService.startTask(
+        alpha.users.operator.principal,
+        { taskId: op10TaskId },
+        'cmd-start-op10-partial'
+      )
+    ).rejects.toThrow(/lack full coverage/);
+  });
+
   it('starts task, transitions status to RUNNING, and records work session', async () => {
     const { alpha } = fixture;
 

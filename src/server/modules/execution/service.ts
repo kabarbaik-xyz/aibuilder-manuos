@@ -133,20 +133,29 @@ export class ExecutionService {
       );
     }
 
-    // 4. Material Readiness check
+    // 4. Material Readiness check — every demand must be fully covered by
+    // issued WIP, active reservations, or unreserved warehouse stock. Starting
+    // on "any one demand has some stock" silently green-lights short starts.
     const readiness = await this.consumptionService.getTaskMaterialReadiness(
       principal,
       task.id
     );
 
     if (readiness.demands.length > 0) {
-      // Ensure that not all demands are completely unreserved and unissued
-      const hasAnyStockReady = readiness.demands.some(
-        (d) => d.issuedAtoms > 0n || d.reservedAtoms > 0n || d.availableInWarehouseAtoms > 0n
+      const undercovered = readiness.demands.filter(
+        (d) => d.issuedAtoms + d.reservedAtoms + d.availableInWarehouseAtoms < d.requiredAtoms
       );
-      if (!hasAnyStockReady) {
+      if (undercovered.length > 0) {
+        const detail = undercovered
+          .map(
+            (d) =>
+              `${d.itemCode} requires ${d.requiredAtoms} atoms, only ${(
+                d.issuedAtoms + d.reservedAtoms + d.availableInWarehouseAtoms
+              )} covered`
+          )
+          .join('; ');
         throw new BadRequestError(
-          `Cannot start task '${task.nodeKey}': material demands have zero available, reserved, or issued stock.`
+          `Cannot start task '${task.nodeKey}': material demands lack full coverage (${detail}).`
         );
       }
     }
