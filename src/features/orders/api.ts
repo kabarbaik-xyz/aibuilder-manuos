@@ -11,6 +11,7 @@ export interface OrderDto {
   orderedAtoms: string | number | bigint;
   requestedDate: string;
   promisedDate: string | null;
+  deliveryAddress?: string | null;
   confirmedAt?: string | null;
   status: string;
   customerAcknowledged?: boolean;

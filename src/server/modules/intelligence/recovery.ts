@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
-import { executeCommand } from '@/server/db/transaction';
 import { BadRequestError, NotFoundError } from '@/domain/errors';
 import {
   ApproveRecoveryInput,
@@ -14,22 +13,6 @@ import {
 import { generateRecoveryOptions } from '@/engines/recovery';
 import { addWorkDays, DEFAULT_CALENDAR } from '@/engines/calendar';
 
-
-interface PersistedRecoveryProposal extends RecoveryProposalDTO {
-  workspaceId: string;
-}
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __manuos_recovery_proposals: Map<string, PersistedRecoveryProposal> | undefined;
-}
-
-function getRecoveryStore(): Map<string, PersistedRecoveryProposal> {
-  if (!globalThis.__manuos_recovery_proposals) {
-    globalThis.__manuos_recovery_proposals = new Map<string, PersistedRecoveryProposal>();
-  }
-  return globalThis.__manuos_recovery_proposals;
-}
 
 export class RecoveryService {
   constructor(private readonly db: PrismaClient) {}
@@ -59,6 +42,7 @@ export class RecoveryService {
       },
       include: {
         item: true,
+        lines: true,
         manufacturingOrders: {
           include: {
             jobsheets: {
@@ -89,6 +73,9 @@ export class RecoveryService {
       for (const js of mo.jobsheets) {
         for (const task of js.tasks) {
           for (const out of task.productionOutputs) {
+            // Recovery is a customer-delivery decision. Intermediate-operation QC
+            // does not represent finished goods that can be promised for shipment.
+            if (!out.isFinal) continue;
             for (const insp of out.inspections) {
               if (insp.status === 'FINALIZED') {
                 passedAtoms += insp.passedAtoms;
@@ -99,8 +86,26 @@ export class RecoveryService {
       }
     }
 
-    const readyQcPassedQty = Number(passedAtoms / 1_000_000n);
-    const totalQty = Number(order.orderedAtoms / 1_000_000n);
+    if (order.lines.length > 1) {
+      throw new BadRequestError(
+        'Recovery proposals currently support single-line orders only; per-line schedule and shipment allocation is required for multi-line orders.'
+      );
+    }
+    if (passedAtoms % 1_000_000n !== 0n || order.orderedAtoms % 1_000_000n !== 0n) {
+      throw new BadRequestError(
+        'Recovery proposals currently support whole-unit quantities only; fractional quantities cannot be represented safely by this simulator.'
+      );
+    }
+    const readyQtyAtoms = passedAtoms / 1_000_000n;
+    const totalQtyAtoms = order.orderedAtoms / 1_000_000n;
+    if (readyQtyAtoms > BigInt(Number.MAX_SAFE_INTEGER) || totalQtyAtoms > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new BadRequestError('Order quantities exceed the safe range supported by this recovery simulator.');
+    }
+    if (readyQtyAtoms > totalQtyAtoms) {
+      throw new BadRequestError('Final QC-passed quantity cannot exceed the order quantity. Reconcile QC evidence before proposing recovery.');
+    }
+    const readyQcPassedQty = Number(readyQtyAtoms);
+    const totalQty = Number(totalQtyAtoms);
     const originalPromisedDate = order.promisedDate
       ? order.promisedDate.toISOString().slice(0, 10)
       : new Date().toISOString().slice(0, 10);
@@ -126,9 +131,8 @@ export class RecoveryService {
     });
 
     const proposalId = crypto.randomUUID();
-    const proposal: PersistedRecoveryProposal = {
+    const proposal: RecoveryProposalDTO = {
       id: proposalId,
-      workspaceId,
       orderId: order.id,
       orderNumber: order.orderNumber,
       totalQty,
@@ -139,7 +143,15 @@ export class RecoveryService {
       createdAt: new Date().toISOString(),
     };
 
-    getRecoveryStore().set(proposalId, proposal);
+    await this.db.recoveryProposal.create({
+      data: {
+        id: proposalId,
+        workspaceId,
+        orderId: order.id,
+        orderVersion: order.version,
+        proposalJson: JSON.stringify(proposal),
+      },
+    });
     return proposal;
   }
 
@@ -150,7 +162,7 @@ export class RecoveryService {
   async approveRecovery(
     principal: Principal,
     rawInput: unknown,
-    idempotencyKey?: string
+    _idempotencyKey?: string
   ) {
     requireAnyPermission(principal, [
       'planning.write',
@@ -180,10 +192,21 @@ export class RecoveryService {
     }
 
     // Resolve and re-validate persisted recovery proposal
-    const proposal = getRecoveryStore().get(input.proposalId);
-    if (!proposal || proposal.workspaceId !== workspaceId) {
+    const persistedProposal = await this.db.recoveryProposal.findFirst({
+      where: { id: input.proposalId, workspaceId, orderId: input.orderId },
+    });
+    if (!persistedProposal) {
       throw new NotFoundError(`Recovery proposal '${input.proposalId}' not found or expired`);
     }
+    if (persistedProposal.status !== 'PROPOSED') {
+      throw new BadRequestError(`Recovery proposal '${input.proposalId}' is already ${persistedProposal.status.toLowerCase()}`);
+    }
+    if (persistedProposal.orderVersion !== preOrder.version) {
+      throw new BadRequestError(
+        `Recovery proposal '${input.proposalId}' is stale because order '${input.orderId}' changed after it was generated.`
+      );
+    }
+    const proposal = JSON.parse(persistedProposal.proposalJson) as RecoveryProposalDTO;
     if (proposal.orderId !== input.orderId) {
       throw new BadRequestError(`Recovery proposal does not match order '${input.orderId}'`);
     }
@@ -198,6 +221,18 @@ export class RecoveryService {
       );
     }
 
+    if (!chosenOption.allocation) {
+      throw new BadRequestError(`Recovery option '${input.optionId}' has no persisted tranche allocation`);
+    }
+    if (
+      input.tranche1Qty !== chosenOption.allocation.tranche1Qty ||
+      input.tranche1Date !== chosenOption.allocation.tranche1Date ||
+      (input.tranche2Qty ?? 0) !== chosenOption.allocation.tranche2Qty ||
+      (input.tranche2Date ?? '') !== chosenOption.allocation.tranche2Date
+    ) {
+      throw new BadRequestError('Approved recovery tranches must exactly match the selected persisted option.');
+    }
+
     const totalTranches = input.tranche1Qty + (input.tranche2Qty || 0);
     if (totalTranches !== proposal.totalQty) {
       throw new BadRequestError(
@@ -205,56 +240,8 @@ export class RecoveryService {
       );
     }
 
-    return executeCommand<any, any>({
-      principal,
-      commandType: 'recovery.plan.approve',
-      idempotencyKey: idempotencyKey || crypto.randomUUID(),
-      payload: input,
-      prismaClient: this.db,
-      handler: async (tx, { requestId }) => {
-        // Re-validate order presence
-        const order = await tx.order.findUnique({
-          where: {
-            workspaceId_id: {
-              workspaceId,
-              id: input.orderId,
-            },
-          },
-        });
-
-        if (!order) {
-          throw new NotFoundError(`Order '${input.orderId}' not found for recovery approval`);
-        }
-
-        if (order.status === 'DELIVERED' || order.status === 'CANCELLED') {
-          throw new BadRequestError(`Cannot approve recovery for order in status ${order.status}`);
-        }
-
-        // Update order promise date to reflect the initial tranche recovery
-        const updatedOrder = await tx.order.update({
-          where: { id: order.id },
-          data: {
-            promisedDate: new Date(input.tranche1Date),
-            customerAcknowledged: false, // Reset acknowledgment for customer to re-confirm
-            customerAcknowledgedAt: null,
-          },
-        });
-
-        return {
-          data: {
-            orderId: updatedOrder.id,
-            status: 'APPLIED',
-            approvedTranche1Qty: input.tranche1Qty,
-            approvedTranche1Date: input.tranche1Date,
-            approvedTranche2Qty: input.tranche2Qty,
-            approvedTranche2Date: input.tranche2Date,
-            notes: input.notes,
-          },
-          aggregateType: 'ORDER',
-          aggregateId: updatedOrder.id,
-          resourceVersion: updatedOrder.version,
-        };
-      },
-    });
+    throw new BadRequestError(
+      `Recovery proposal '${proposal.id}' is saved for review, but it cannot be applied because this service does not yet create a schedule change or shipment reservation.`
+    );
   }
 }

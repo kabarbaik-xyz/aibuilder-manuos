@@ -158,6 +158,7 @@ model Workspace {
   inspectionResults InspectionResult[]
   reworkAttempts    ReworkAttempt[]
   shipments         Shipment[]
+  recoveryProposals RecoveryProposal[]
   shipmentLines     ShipmentLine[]
   documents         Document[]
   documentLinks     DocumentLink[]
@@ -928,6 +929,7 @@ model Order {
   demands              MaterialDemand[]
   reservations         StockReservation[]
   shipments            Shipment[]
+  recoveryProposals    RecoveryProposal[]
   passports            Passport[]
   changeRequests       OrderChangeRequest[]
   jobCostEntries       JobCostEntry[]
@@ -1692,6 +1694,7 @@ model ShipmentLine {
   id               String    @id @default(uuid())
   workspaceId      String    @map("workspace_id")
   shipmentId       String    @map("shipment_id")
+  orderLineId      String?   @map("order_line_id")
   itemId           String    @map("item_id")
   lotId            String?   @map("lot_id")
   sourceLocationId String    @map("source_location_id")
@@ -1705,13 +1708,33 @@ model ShipmentLine {
 
   workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   shipment         Shipment  @relation(fields: [workspaceId, shipmentId], references: [workspaceId, id], onDelete: Cascade)
+  orderLine        OrderLine? @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
   item             Item      @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
   lot              Lot?      @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
   sourceLocation   Location  @relation(fields: [workspaceId, sourceLocationId], references: [workspaceId, id])
 
   @@unique([workspaceId, id])
   @@index([workspaceId, shipmentId])
+  @@index([orderLineId])
   @@map("shipment_lines")
+}
+
+model RecoveryProposal {
+  id              String   @id @default(uuid())
+  workspaceId     String   @map("workspace_id")
+  orderId         String   @map("order_id")
+  orderVersion    Int      @map("order_version")
+  proposalJson    String   @map("proposal_json")
+  status          String   @default("PROPOSED") // PROPOSED | APPROVED | SUPERSEDED
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order           Order     @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, orderId, status])
+  @@map("recovery_proposals")
 }
 
 // -------------------------------------------------------------
@@ -2038,6 +2061,7 @@ model OrderLine {
   uom             Uom?        @relation(fields: [workspaceId, uomId], references: [workspaceId, id])
   manufacturingOrders ManufacturingOrder[]
   engineeringRevisions EngineeringRevision[]
+  shipmentLines   ShipmentLine[]
 
   @@unique([workspaceId, id])
   @@unique([workspaceId, orderId, lineNumber])

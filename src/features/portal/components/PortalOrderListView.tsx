@@ -86,24 +86,19 @@ export function PortalOrderListView() {
                     )}
                   </div>
                   <h3 className="font-medium text-ink text-sm">
-                    {order.itemName}
-                    <span className="text-xs text-muted font-normal ml-2">
-                      ({order.itemCode})
-                    </span>
+                    {order.lines.length === 1 ? order.lines[0].itemName : `${order.lines.length} product lines`}
                   </h3>
+                  <div className="space-y-1.5 text-xs text-muted">
+                    {order.lines.map((line) => (
+                      <div key={line.orderLineId} className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span className="font-medium text-ink">{line.itemCode} · {line.itemName}</span>
+                        <span>Ordered: <strong className="text-ink font-semibold">{line.orderedQuantity}</strong></span>
+                        <span>QC passed: <strong className="text-ink font-semibold">{line.qcPassedQuantity}</strong></span>
+                        <span>{line.progressPct}% QC</span>
+                      </div>
+                    ))}
+                  </div>
                   <div className="flex items-center gap-4 text-xs text-muted">
-                    <span>
-                      Ordered:{" "}
-                      <strong className="text-ink font-semibold">
-                        {order.orderedQuantity}
-                      </strong>
-                    </span>
-                    <span>
-                      QC Passed:{" "}
-                      <strong className="text-ink font-semibold">
-                        {order.qcPassedQuantity}
-                      </strong>
-                    </span>
                     {order.promisedDate && (
                       <span>
                         Promised:{" "}
@@ -114,21 +109,9 @@ export function PortalOrderListView() {
                     )}
                   </div>
 
-                  {/* Progress bar */}
-                  <div className="w-full max-w-md pt-1.5">
-                    <div className="flex justify-between text-xs text-muted mb-1">
-                      <span>Verified Progress</span>
-                      <span className="font-semibold text-ink">
-                        {order.progressPct}%
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-surface-muted rounded-full overflow-hidden border border-line">
-                      <div
-                        className="h-full bg-primary rounded-full transition-all duration-300"
-                        style={{ width: `${order.progressPct}%` }}
-                      />
-                    </div>
-                  </div>
+                  {order.lines.length > 1 && (
+                    <p className="text-xs text-muted">Quality progress is shown separately for each product line.</p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3">

@@ -38,4 +38,20 @@ describe('Recovery Simulation Engine', () => {
     expect(shiftOption?.feasible).toBe(false);
     expect(shiftOption?.infeasibleReason).toContain('Physical material shortage');
   });
+
+  it('does not promise a split tranche without enough final QC-passed units', () => {
+    const options = generateRecoveryOptions({
+      orderId: 'ORD-2026-089',
+      totalQty: 120,
+      readyQcPassedQty: 20,
+      disruptionType: 'MACHINE_FAILURE',
+      materialArrivesDate: '2026-11-27',
+      originalPromisedDate: '2026-11-25',
+      projectedDelayedDate: '2026-11-28',
+    });
+
+    const splitOption = options.find((option) => option.type === 'SPLIT_BATCH');
+    expect(splitOption?.feasible).toBe(false);
+    expect(splitOption?.infeasibleReason).toContain('Final QC-passed quantity');
+  });
 });

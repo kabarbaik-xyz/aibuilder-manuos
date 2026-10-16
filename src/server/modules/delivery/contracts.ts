@@ -10,6 +10,7 @@ export const ShipmentStatus = {
 export type ShipmentStatus = (typeof ShipmentStatus)[keyof typeof ShipmentStatus];
 
 export const ShipmentLineInputSchema = z.object({
+  orderLineId: z.string().uuid().optional(),
   itemId: z.string().uuid(),
   lotId: z.string().uuid().optional(),
   sourceLocationId: z.string().uuid(),

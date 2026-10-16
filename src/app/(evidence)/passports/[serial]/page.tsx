@@ -137,7 +137,9 @@ export default function PassportPage() {
                       Certified unit credentials and production batch provenance
                     </p>
                   </div>
-                  <Badge variant="success">Factual Verification</Badge>
+                  <Badge variant={passport.status === "RELEASED" ? "success" : "warning"}>
+                    {passport.status === "RELEASED" ? "Published Evidence" : "Internal Draft · Not Published"}
+                  </Badge>
                 </div>
 
                 <div className="panel-body">
@@ -176,13 +178,13 @@ export default function PassportPage() {
                   <div className="spec-row">
                     <span>Cryptographic Evidence Hash</span>
                     <code className="bg-(--surface-muted) px-1.5 py-0.5 rounded text-xs border border-line font-mono">
-                      sha256:{passport.digestSha256}
+                      {passport.digestSha256 ? `sha256:${passport.digestSha256}` : "No published evidence digest"}
                     </code>
                   </div>
                   <div className="spec-row">
                     <span>Publication Date</span>
                     <strong>
-                      {new Date(passport.publishedAt).toLocaleDateString()}
+                      {passport.publishedAt ? new Date(passport.publishedAt).toLocaleDateString() : "Not published"}
                     </strong>
                   </div>
                 </div>
@@ -321,18 +323,18 @@ export default function PassportPage() {
                     })}
 
                     {/* Final Sign-off */}
-                    <li>
+                    {passport.status === "RELEASED" && <li>
                       <div className="between">
                         <h3>Quality Assurance Final Release</h3>
                         <time>
-                          {new Date(passport.publishedAt).toLocaleDateString()}
+                          {passport.publishedAt ? new Date(passport.publishedAt).toLocaleDateString() : "Publication date unavailable"}
                         </time>
                       </div>
                       <p>
                         Certified unit released for customer delivery with
                         cryptographic authenticity seal.
                       </p>
-                    </li>
+                    </li>}
                   </ol>
                 </div>
               </div>
@@ -358,7 +360,7 @@ export default function PassportPage() {
                         Verifiable Audit Anchor
                       </strong>
                       <p className="text-xs text-muted break-all font-mono mt-1">
-                        {passport.digestSha256}
+                        {passport.digestSha256 || "No published evidence digest"}
                       </p>
                     </div>
                   </div>

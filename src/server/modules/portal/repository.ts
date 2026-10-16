@@ -10,7 +10,86 @@ import {
   CustomerMilestoneDTO,
   CustomerDrawingDTO,
   CustomerChangeRequestDTO,
+  CustomerOrderLineSummaryDTO,
 } from './contracts';
+
+type ProjectedOrderLine = CustomerOrderLineSummaryDTO & {
+  orderedAtoms: bigint;
+  qcPassedAtoms: bigint;
+  dispatchedAtoms: bigint;
+  deliveredAtoms: bigint;
+};
+
+function projectOrderLines(order: any): ProjectedOrderLine[] {
+  const orderLines = order.lines?.length
+    ? order.lines
+    : [{ id: `legacy:${order.id}`, lineNumber: 1, itemId: order.itemId, orderedAtoms: order.orderedAtoms, item: order.item, allocatedAtoms: 0n }];
+  const matchingLineCounts = new Map<string, number>();
+  for (const line of orderLines) matchingLineCounts.set(line.itemId, (matchingLineCounts.get(line.itemId) ?? 0) + 1);
+
+  return orderLines.map((line: any): ProjectedOrderLine => {
+    let qcPassedAtoms = 0n;
+    for (const manufacturingOrder of order.manufacturingOrders ?? []) {
+      const lineIsUnambiguouslyMatched =
+        manufacturingOrder.orderLineId === line.id ||
+        (!manufacturingOrder.orderLineId && matchingLineCounts.get(line.itemId) === 1);
+      if (!lineIsUnambiguouslyMatched) continue;
+      for (const jobsheet of manufacturingOrder.jobsheets ?? []) {
+        for (const task of jobsheet.tasks ?? []) {
+          for (const output of task.productionOutputs ?? []) {
+            if (output.itemId !== line.itemId || !output.isFinal) continue;
+            for (const inspection of output.inspections ?? []) {
+              if (inspection.status === 'FINALIZED') qcPassedAtoms += inspection.passedAtoms;
+            }
+          }
+        }
+      }
+    }
+
+    let dispatchedAtoms = 0n;
+    let deliveredAtoms = 0n;
+    for (const shipment of order.shipments ?? []) {
+      if (shipment.status === 'CANCELLED') continue;
+      for (const shipmentLine of shipment.lines ?? []) {
+        const lineIsUnambiguouslyMatched =
+          (shipmentLine.orderLineId === line.id && shipmentLine.itemId === line.itemId) ||
+          (!shipmentLine.orderLineId && matchingLineCounts.get(line.itemId) === 1);
+        if (!lineIsUnambiguouslyMatched) continue;
+        if (shipment.status === 'DISPATCHED' || shipment.status === 'DELIVERED') {
+          dispatchedAtoms += shipmentLine.dispatchedAtoms;
+        }
+        if (shipment.status === 'DELIVERED') deliveredAtoms += shipmentLine.deliveredAtoms;
+      }
+    }
+
+    const progressPct = line.orderedAtoms > 0n
+      ? Math.min(100, Number((qcPassedAtoms * 100n) / line.orderedAtoms))
+      : 0;
+    return {
+      orderLineId: line.id,
+      lineNumber: line.lineNumber,
+      itemName: line.item.name,
+      itemCode: line.item.code,
+      orderedAtoms: line.orderedAtoms,
+      qcPassedAtoms,
+      dispatchedAtoms,
+      deliveredAtoms,
+      orderedQuantity: formatQuantity(line.orderedAtoms),
+      qcPassedQuantity: formatQuantity(qcPassedAtoms),
+      dispatchedQuantity: formatQuantity(dispatchedAtoms),
+      deliveredQuantity: formatQuantity(deliveredAtoms),
+      progressPct,
+    };
+  });
+}
+
+function hasReachedEveryLine(orderLines: ReturnType<typeof projectOrderLines>, field: 'qcPassedAtoms' | 'dispatchedAtoms' | 'deliveredAtoms') {
+  return orderLines.length > 0 && orderLines.every((line) => line[field] >= line.orderedAtoms);
+}
+
+function hasAnyLineQuantity(orderLines: ReturnType<typeof projectOrderLines>, field: 'qcPassedAtoms' | 'dispatchedAtoms' | 'deliveredAtoms') {
+  return orderLines.some((line) => line[field] > 0n);
+}
 
 export class PortalRepository {
   constructor(private readonly prisma: PrismaClient | Prisma.TransactionClient = defaultDb) {}
@@ -27,10 +106,18 @@ export class PortalRepository {
       where: {
         workspaceId,
         customerId,
-        ...(search ? { OR: [{ orderNumber: { contains: search } }, { item: { name: { contains: search } } }, { item: { code: { contains: search } } }] } : {}),
+        ...(search ? { OR: [
+          { orderNumber: { contains: search } },
+          { item: { name: { contains: search } } },
+          { item: { code: { contains: search } } },
+          { lines: { some: { item: { name: { contains: search } } } } },
+          { lines: { some: { item: { code: { contains: search } } } } },
+        ] } : {}),
       },
       include: {
         item: true,
+        lines: { include: { item: true }, orderBy: { lineNumber: 'asc' } },
+        shipments: { include: { lines: true } },
         manufacturingOrders: {
           include: {
             jobsheets: {
@@ -53,41 +140,16 @@ export class PortalRepository {
     });
 
     return orders.map((o) => {
-      // Calculate QC-passed atoms on final production outputs
-      let qcPassedAtoms = 0n;
-      const allOutputs = o.manufacturingOrders.flatMap((mo) =>
-        mo.jobsheets.flatMap((js) => js.tasks.flatMap((t) => t.productionOutputs))
-      );
-      const hasFinalOutputs = allOutputs.some((out) => out.isFinal);
-      for (const out of allOutputs) {
-        if (!hasFinalOutputs || out.isFinal) {
-          for (const insp of out.inspections) {
-            if (insp.status === 'FINALIZED') {
-              qcPassedAtoms += insp.passedAtoms;
-            }
-          }
-        }
-      }
-
-      const ordered = o.orderedAtoms > 0n ? o.orderedAtoms : 1n;
-      const progressPct = Math.min(
-        100,
-        Math.round(Number((qcPassedAtoms * 100n) / ordered))
-      );
-
+      const lines = projectOrderLines(o);
       return {
         id: o.id,
         orderNumber: o.orderNumber,
-        itemName: o.item.name,
-        itemCode: o.item.code,
-        orderedQuantity: formatQuantity(o.orderedAtoms),
-        orderedAtoms: o.orderedAtoms.toString(),
+        lines: lines.map(({ orderLineId, lineNumber, itemName, itemCode, orderedQuantity, qcPassedQuantity, dispatchedQuantity, deliveredQuantity, progressPct }) => ({
+          orderLineId, lineNumber, itemName, itemCode, orderedQuantity, qcPassedQuantity, dispatchedQuantity, deliveredQuantity, progressPct,
+        })),
         requestedDate: o.requestedDate.toISOString(),
         promisedDate: o.promisedDate ? o.promisedDate.toISOString() : null,
         status: o.status,
-        progressPct,
-        qcPassedQuantity: formatQuantity(qcPassedAtoms),
-        qcPassedAtoms: qcPassedAtoms.toString(),
         customerAcknowledged: o.customerAcknowledged,
         customerAcknowledgedAt: o.customerAcknowledgedAt?.toISOString() ?? null,
         customerAcknowledgedBy: o.customerAcknowledgedBy,
@@ -108,6 +170,7 @@ export class PortalRepository {
       },
       include: {
         item: true,
+        lines: { include: { item: true }, orderBy: { lineNumber: 'asc' } },
         manufacturingOrders: {
           include: {
             jobsheets: {
@@ -126,6 +189,7 @@ export class PortalRepository {
           },
         },
         shipments: {
+          where: { status: { in: ['DISPATCHED', 'DELIVERED'] } },
           include: {
             lines: {
               include: {
@@ -144,16 +208,10 @@ export class PortalRepository {
 
     if (!order) return null;
 
-    // Calculate QC-passed atoms
-    let qcPassedAtoms = 0n;
+    const orderLines = projectOrderLines(order);
     let anyTaskStarted = false;
     let allTasksCompleted = true;
     let taskCount = 0;
-
-    const allOutputs = order.manufacturingOrders.flatMap((mo) =>
-      mo.jobsheets.flatMap((js) => js.tasks.flatMap((t) => t.productionOutputs))
-    );
-    const hasFinalOutputs = allOutputs.some((out) => out.isFinal);
 
     for (const mo of order.manufacturingOrders) {
       for (const js of mo.jobsheets) {
@@ -169,23 +227,7 @@ export class PortalRepository {
       }
     }
 
-    for (const out of allOutputs) {
-      if (!hasFinalOutputs || out.isFinal) {
-        for (const insp of out.inspections) {
-          if (insp.status === 'FINALIZED') {
-            qcPassedAtoms += insp.passedAtoms;
-          }
-        }
-      }
-    }
-
     if (taskCount === 0) allTasksCompleted = false;
-
-    const ordered = order.orderedAtoms > 0n ? order.orderedAtoms : 1n;
-    const progressPct = Math.min(
-      100,
-      Math.round(Number((qcPassedAtoms * 100n) / ordered))
-    );
 
     // Fetch customer visible documents linked to this order
     const documentLinks = await this.prisma.documentLink.findMany({
@@ -222,9 +264,9 @@ export class PortalRepository {
       receivedBy: s.receivedBy,
       proofOfDelivery: s.proofOfDelivery,
       lines: s.lines.map((l) => ({
+        orderLineId: l.orderLineId,
         itemCode: l.item.code,
         itemName: l.item.name,
-        allocatedQuantity: formatQuantity(l.allocatedAtoms),
         dispatchedQuantity: formatQuantity(l.dispatchedAtoms),
         deliveredQuantity: formatQuantity(l.deliveredAtoms),
       })),
@@ -238,23 +280,12 @@ export class PortalRepository {
     }));
 
     // Derive truthful milestones based on settled atom quantities
-    const totalDeliveredAtoms = order.shipments
-      .filter((s) => s.status === 'DELIVERED')
-      .flatMap((s) => s.lines)
-      .reduce((sum, l) => sum + l.deliveredAtoms, 0n);
-
-    const isFullyDelivered = totalDeliveredAtoms >= order.orderedAtoms && order.orderedAtoms > 0n;
-    const isPartiallyDelivered = totalDeliveredAtoms > 0n;
-
-    const totalDispatchedAtoms = order.shipments
-      .filter((s) => s.status === 'DISPATCHED' || s.status === 'DELIVERED')
-      .flatMap((s) => s.lines)
-      .reduce((sum, l) => sum + l.dispatchedAtoms, 0n);
-
-    const isFullyDispatched = totalDispatchedAtoms >= order.orderedAtoms && order.orderedAtoms > 0n;
-    const isPartiallyDispatched = totalDispatchedAtoms > 0n;
-
-    const hasQcPassed = qcPassedAtoms > 0n;
+    const isFullyDelivered = hasReachedEveryLine(orderLines, 'deliveredAtoms');
+    const isPartiallyDelivered = hasAnyLineQuantity(orderLines, 'deliveredAtoms');
+    const isFullyDispatched = hasReachedEveryLine(orderLines, 'dispatchedAtoms');
+    const isPartiallyDispatched = hasAnyLineQuantity(orderLines, 'dispatchedAtoms');
+    const isFullyQcPassed = hasReachedEveryLine(orderLines, 'qcPassedAtoms');
+    const hasQcPassed = hasAnyLineQuantity(orderLines, 'qcPassedAtoms');
 
     // Intake counts as settled only once the order is confirmed (release confirms
     // authoritatively); a DRAFT/REVIEW order must not read as confirmed work.
@@ -280,7 +311,7 @@ export class PortalRepository {
         key: 'QC',
         title: 'Quality Inspection & Verification',
         status:
-          qcPassedAtoms >= order.orderedAtoms && order.orderedAtoms > 0n
+          isFullyQcPassed
             ? 'COMPLETED'
             : hasQcPassed
             ? 'IN_PROGRESS'
@@ -310,11 +341,12 @@ export class PortalRepository {
     const drawingRevisions = await this.prisma.drawingRevision.findMany({
       where: {
         workspaceId,
-        itemId: order.itemId,
+        itemId: { in: Array.from(new Set(orderLines.map((line) => order.lines.find((candidate) => candidate.id === line.orderLineId)?.itemId ?? order.itemId))) },
         status: 'RELEASED',
       },
       include: {
         document: true,
+        item: true,
       },
       orderBy: { revisionCode: 'desc' },
     });
@@ -345,6 +377,8 @@ export class PortalRepository {
       }
       return {
         id: dwg.id,
+        itemCode: dwg.item.code,
+        itemName: dwg.item.name,
         drawingNumber: dwg.drawingNumber,
         revisionCode: dwg.revisionCode,
         status: dwg.status,
@@ -379,16 +413,12 @@ export class PortalRepository {
     return {
       id: order.id,
       orderNumber: order.orderNumber,
-      itemName: order.item.name,
-      itemCode: order.item.code,
-      orderedQuantity: formatQuantity(order.orderedAtoms),
-      orderedAtoms: order.orderedAtoms.toString(),
+      lines: orderLines.map(({ orderLineId, lineNumber, itemName, itemCode, orderedQuantity, qcPassedQuantity, dispatchedQuantity, deliveredQuantity, progressPct }) => ({
+        orderLineId, lineNumber, itemName, itemCode, orderedQuantity, qcPassedQuantity, dispatchedQuantity, deliveredQuantity, progressPct,
+      })),
       requestedDate: order.requestedDate.toISOString(),
       promisedDate: order.promisedDate ? order.promisedDate.toISOString() : null,
       status: order.status,
-      progressPct,
-      qcPassedQuantity: formatQuantity(qcPassedAtoms),
-      qcPassedAtoms: qcPassedAtoms.toString(),
       customerAcknowledged: order.customerAcknowledged,
       customerAcknowledgedAt: order.customerAcknowledgedAt?.toISOString() ?? null,
       customerAcknowledgedBy: order.customerAcknowledgedBy,

@@ -1,222 +1,138 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { ordersApi, type OrderDto } from '@/features/orders/api';
+import { proposeRecovery } from './api';
+import type { RecoveryProposalDTO } from '@/server/modules/intelligence/recovery-contracts';
 import { useGraphStore } from '../../store/graph-store';
-import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
+import { Input } from '../../components/ui/input';
+import { Select } from '../../components/ui/select';
+import { Panel } from '../../components/ui/panel';
 
 export function RecoveryStudio() {
-  const store = useGraphStore();
-  const {
-    activeRecovery,
-    disruption,
-    approveRecoveryOption,
-    closeModal,
-    setScreen,
-  } = store;
+  const closeModal = useGraphStore((state) => state.closeModal);
+  const [orders, setOrders] = useState<OrderDto[]>([]);
+  const [orderId, setOrderId] = useState('');
+  const [disruptionType, setDisruptionType] = useState('MATERIAL_DELAY');
+  const [delayDays, setDelayDays] = useState('3');
+  const [proposal, setProposal] = useState<RecoveryProposalDTO | null>(null);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [selectedOption, setSelectedOption] = useState<'split' | 'shift' | 'outsource'>('split');
+  useEffect(() => {
+    let active = true;
+    void ordersApi.listOrders().then((rows) => {
+      if (!active) return;
+      const eligible = rows.filter((row) => !['DRAFT', 'REVIEW', 'CANCELLED', 'DELIVERED'].includes(row.status));
+      setOrders(eligible);
+      setOrderId((current) => current || eligible[0]?.id || '');
+    }).catch((reason: unknown) => {
+      if (active) setError(reason instanceof Error ? reason.message : 'Could not load orders.');
+    }).finally(() => {
+      if (active) setLoadingOrders(false);
+    });
+    return () => { active = false; };
+  }, []);
 
-  const isApproved = activeRecovery?.status === 'APPLIED';
-
-  if (isApproved) {
-    return (
-      <div>
-        <div className="recovery-context">
-          <Icon name="check" />
-          <div>
-            <strong>Split delivery · approved by Alex Rahman</strong>
-            <p>40 units Nov 25 · 80 units Nov 28 · +0.8% cost impact</p>
-          </div>
-        </div>
-
-        <div className="dialog-section">
-          <h3>What changed</h3>
-          <ul className="change-list">
-            <li>
-              <Icon name="check" />
-              <span>40 verified ready units reserved for first delivery (Nov 25)</span>
-            </li>
-            <li>
-              <Icon name="check" />
-              <span>Remaining 80 units scheduled for Nov 28 after terminal block arrival</span>
-            </li>
-            <li>
-              <Icon name="check" />
-              <span>Customer promise updated in customer portal with acknowledgment required</span>
-            </li>
-            <li>
-              <Icon name="check" />
-              <span>Decision and cost allocation logged in activity audit log</span>
-            </li>
-          </ul>
-        </div>
-
-        <p className="approval-note">
-          78 units have passed QC. Approval reallocated ready units to Tranche 1 without manufacturing or fabricating new QC passes.
-        </p>
-
-        <div className="dialog-actions mt">
-          <Button
-            variant="primary"
-            fullWidth
-            iconRight="arrow"
-            onClick={() => {
-              closeModal();
-              setScreen('customer');
-            }}
-          >
-            Open customer portal
-          </Button>
-        </div>
-      </div>
-    );
+  async function handlePropose(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setProposal(null);
+    const parsedDelay = Number(delayDays);
+    if (!orderId || !Number.isSafeInteger(parsedDelay) || parsedDelay < 1) {
+      setError('Choose an order and enter a whole-number delay of at least one day.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      setProposal(await proposeRecovery({ orderId, disruptionType, delayDays: parsedDelay }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not generate a recovery proposal.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
+  const selectedOrder = orders.find((order) => order.id === orderId);
+
   return (
-    <div>
-      <div className="recovery-context">
-        <Icon name="alert" />
-        <div>
-          <strong>Expected delivery has moved to Nov 28 (+3 days)</strong>
-          <p>3 tasks blocked. Machining and internal assembly can continue.</p>
-        </div>
-      </div>
-
-      <div className="dialog-section">
-        <div className="between" style={{ marginBottom: 13 }}>
-          <h3>Choose a recovery plan</h3>
-          <Badge variant="blue">Engine Evaluation</Badge>
-        </div>
-
-        {/* Option 1: Split Batch */}
-        <label
-          className={`option ${selectedOption === 'split' ? 'selected' : ''}`}
-          onClick={() => setSelectedOption('split')}
-        >
-          <div className="option-header">
-            <span className="option-title">
-              <input
-                type="radio"
-                name="recovery-opt"
-                checked={selectedOption === 'split'}
-                onChange={() => setSelectedOption('split')}
-              />
-              Split batch delivery
-            </span>
-            <Badge variant="success">Recommended</Badge>
+    <div className="space-y-4">
+      <Panel className="p-4 space-y-3">
+        <p className="text-xs text-muted">
+          Generate a persisted, order-scoped proposal from current QC evidence. Proposal estimates are not a published schedule or a committed customer promise.
+        </p>
+        <form onSubmit={handlePropose} className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-xs font-medium text-ink" htmlFor="recovery-order">Order</label>
+            <Select id="recovery-order" required value={orderId} disabled={loadingOrders || submitting} onChange={(event) => { setOrderId(event.target.value); setProposal(null); }}>
+              <option value="">Select a released order</option>
+              {orders.map((order) => <option key={order.id} value={order.id}>{order.orderNumber} · {order.customer?.name}</option>)}
+            </Select>
           </div>
-          <p>
-            Ship 40 ready units on Nov 25. Deliver remaining 80 on Nov 28 after final inspection.
-          </p>
-          <div className="option-facts">
-            <div>
-              <strong>40 / 80</strong>
-              <span>Delivery split</span>
-            </div>
-            <div>
-              <strong>Nov 25 / 28</strong>
-              <span>Delivery dates</span>
-            </div>
-            <div>
-              <strong>+0.8%</strong>
-              <span>Cost impact</span>
-            </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink" htmlFor="recovery-disruption">Disruption</label>
+            <Select id="recovery-disruption" value={disruptionType} disabled={submitting} onChange={(event) => { setDisruptionType(event.target.value); setProposal(null); }}>
+              <option value="MATERIAL_DELAY">Material delay</option>
+              <option value="MACHINE_FAILURE">Machine failure</option>
+              <option value="UNPLANNED_ABSENCE">Unplanned absence</option>
+            </Select>
           </div>
-        </label>
-
-        {/* Option 2: Additional Shift (Infeasible) */}
-        <label className="option disabled">
-          <div className="option-header">
-            <span className="option-title">
-              <input type="radio" disabled name="recovery-opt" />
-              Additional shift (Overtime)
-            </span>
-            <Badge variant="warning">Not feasible</Badge>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink" htmlFor="recovery-delay">Expected delay (workdays)</label>
+            <Input id="recovery-delay" type="number" min="1" step="1" value={delayDays} disabled={submitting} onChange={(event) => { setDelayDays(event.target.value); setProposal(null); }} />
           </div>
-          <p>
-            An overtime shift cannot resolve missing physical components.
-          </p>
-          <div className="option-facts">
-            <div>
-              <strong>+4.2%</strong>
-              <span>Illustrative cost</span>
-            </div>
-            <div>
-              <strong>No recovery</strong>
-              <span>Until TB-24 arrives</span>
-            </div>
-          </div>
-          <div className="option-reason">
-            Constraint violation: TB-24 terminal blocks arrive Nov 27. Overtime labor cannot assemble without parts.
-          </div>
-        </label>
-
-        {/* Option 3: Outsource Assembly */}
-        <div className="option">
-          <div className="option-header">
-            <span className="option-title">
-              <Icon name="network" /> Outsource assembly
-            </span>
-            <Badge variant="default">Partner review</Badge>
-          </div>
-          <p>Validate partner capability and obtain bilateral acceptance.</p>
-          <div className="between" style={{ margin: '13px 0 0 25px' }}>
-            <span className="small muted">Estimated cost +7.5%</span>
-            <Button
-              variant="text"
-              iconRight="arrow"
-              onClick={() => {
-                closeModal();
-                setScreen('network');
-              }}
-            >
-              View partner match
+          <div className="sm:col-span-2 flex justify-end">
+            <Button type="submit" variant="primary" disabled={loadingOrders || submitting || !orderId}>
+              {submitting ? 'Generating…' : 'Generate proposal'}
             </Button>
           </div>
-        </div>
-      </div>
+        </form>
+      </Panel>
 
-      <div className="dialog-section">
-        <h3>On approval</h3>
-        <ul className="change-list">
-          <li>
-            <Icon name="check" />
-            <span>Reserve 40 ready units for Nov 25 dispatch</span>
-          </li>
-          <li>
-            <Icon name="check" />
-            <span>Plan the remaining 80 for Nov 28 release</span>
-          </li>
-          <li>
-            <Icon name="check" />
-            <span>Update customer commitment and log decision</span>
-          </li>
-        </ul>
-      </div>
+      {error && <Panel className="border border-danger/30 p-3 text-xs text-danger" role="alert">{error}</Panel>}
+      {!loadingOrders && orders.length === 0 && !error && (
+        <Panel className="p-4 text-xs text-muted">No released orders are available to evaluate.</Panel>
+      )}
 
-      <p className="approval-note">
-        78 units have passed QC. Approving this plan changes shipment allocation, not production quantities.
-      </p>
-
-      <div className="dialog-actions">
-        <p className="text-left">
-          Alex Rahman · Owner
-          <br />
-          <span className="font-bold text-ink">Approval required</span>
-        </p>
-        <Button
-          variant="primary"
-          icon="check"
-          onClick={() => {
-            approveRecoveryOption('opt-split-batch', 'Alex Rahman');
-            closeModal();
-          }}
-        >
-          Approve split batch
-        </Button>
-      </div>
+      {proposal && (
+        <Panel className="p-4 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-ink">Proposal for {proposal.orderNumber}</h3>
+              <p className="text-xs text-muted">Created {new Date(proposal.createdAt).toLocaleString()} · delayed date {proposal.projectedDelayedDate}</p>
+            </div>
+            <Badge variant="warning">Review only</Badge>
+          </div>
+          <div className="grid gap-2 text-xs text-muted sm:grid-cols-2">
+            <p>Ordered quantity: <strong className="text-ink">{proposal.totalQty}</strong></p>
+            <p>Final QC passed: <strong className="text-ink">{proposal.readyQcPassedQty}</strong></p>
+            {selectedOrder?.lines?.length ? <p className="sm:col-span-2">This proposal evaluates the order as a whole; line-specific planning remains unavailable.</p> : null}
+          </div>
+          <div className="space-y-2">
+            {proposal.options.map((option) => (
+              <article key={option.id} className="rounded-lg border border-line bg-surface p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-xs font-semibold text-ink">{option.title}</h4>
+                  <Badge variant={option.feasible ? 'success' : 'warning'}>{option.feasible ? 'Feasible in model' : 'Not feasible'}</Badge>
+                </div>
+                <p className="text-xs text-muted">{option.description}</p>
+                {option.infeasibleReason && <p className="text-xs text-danger">{option.infeasibleReason}</p>}
+                {option.allocation && <p className="text-xs text-muted">Tranches: {option.allocation.tranche1Qty} on {option.allocation.tranche1Date}; {option.allocation.tranche2Qty} on {option.allocation.tranche2Date}</p>}
+                <p className="text-xs text-muted">Cost impact ({option.costImpactPct}%): illustrative model value, not measured job cost.</p>
+              </article>
+            ))}
+          </div>
+          <div className="rounded-lg border border-line bg-surface-muted p-3 text-xs text-muted">
+            Applying a recovery plan is unavailable. This service can create and validate proposals, but it does not yet reserve shipment tranches or publish a revised production schedule.
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={closeModal}>Close</Button>
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }

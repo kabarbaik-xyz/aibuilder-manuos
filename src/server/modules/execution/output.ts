@@ -208,18 +208,32 @@ export async function recordOutput(
         include: { lines: true },
       });
       if (!currentOrder) throw new NotFoundError(`Order '${order.id}' not found`);
-      const matchingLines = currentOrder.lines.filter((line: { itemId: string; orderedAtoms: bigint }) => line.itemId === targetItemId);
-      const orderedForItem = matchingLines.length
-        ? matchingLines.reduce((total: bigint, line: { orderedAtoms: bigint }) => total + line.orderedAtoms, 0n)
-        : targetItemId === currentOrder.itemId
-          ? currentOrder.orderedAtoms
-          : 0n;
+      const matchingLines = currentOrder.lines.filter((line: { id: string; itemId: string; orderedAtoms: bigint }) => line.itemId === targetItemId);
+      const manufacturingOrderLineId = currentTask.jobsheet?.manufacturingOrder?.orderLineId;
+      let targetOrderLine = manufacturingOrderLineId
+        ? matchingLines.find((line: { id: string }) => line.id === manufacturingOrderLineId)
+        : matchingLines.length === 1
+          ? matchingLines[0]
+          : undefined;
+      if (matchingLines.length > 1 && !manufacturingOrderLineId) {
+        throw new BadRequestError(
+          `Task '${currentTask.nodeKey}' is not linked to a specific order line for item '${targetItemId}'.`
+        );
+      }
+      if (manufacturingOrderLineId && !targetOrderLine) {
+        throw new BadRequestError(
+          `Task '${currentTask.nodeKey}' is linked to order line '${manufacturingOrderLineId}', which does not contain item '${targetItemId}'.`
+        );
+      }
+      const orderedForItem = targetOrderLine?.orderedAtoms ??
+        (currentOrder.lines.length === 0 && targetItemId === currentOrder.itemId ? currentOrder.orderedAtoms : 0n);
       if (orderedForItem <= 0n) {
         throw new BadRequestError(`Output item '${targetItemId}' is not part of order '${currentOrder.id}'.`);
       }
-      const taskTargetAtoms = currentTask.targetAtoms > 0n
+      const configuredTaskTarget = currentTask.targetAtoms > 0n
         ? currentTask.targetAtoms
         : currentTask.jobsheet?.manufacturingOrder?.targetAtoms ?? orderedForItem;
+      const taskTargetAtoms = configuredTaskTarget > orderedForItem ? orderedForItem : configuredTaskTarget;
       const nextTaskOutputAtoms = priorTaskOutputAtoms + input.outputAtoms;
       if (nextTaskOutputAtoms > taskTargetAtoms) {
         throw new BadRequestError(
@@ -236,12 +250,18 @@ export async function recordOutput(
           status: { not: 'REJECTED' },
           task: { instance: { orderId: order.id } },
         },
+        include: {
+          task: { include: { jobsheet: { include: { manufacturingOrder: true } } } },
+        },
       });
       if (isFinalOp) {
-        const finalOutputAtoms = existingOutputs.reduce(
-          (total: bigint, output: { outputAtoms: bigint }) => total + output.outputAtoms,
-          0n
-        );
+        const finalOutputAtoms = existingOutputs.reduce((total: bigint, output: any) => {
+          const outputOrderLineId = output.task.jobsheet?.manufacturingOrder?.orderLineId;
+          const belongsToLine = targetOrderLine
+            ? outputOrderLineId === targetOrderLine.id || (!outputOrderLineId && matchingLines.length === 1)
+            : !outputOrderLineId;
+          return belongsToLine ? total + output.outputAtoms : total;
+        }, 0n);
         if (finalOutputAtoms + input.outputAtoms > orderedForItem) {
           throw new BadRequestError(
             `Overproduction rejected: final output for item '${targetItemId}' (${finalOutputAtoms + input.outputAtoms} atoms) exceeds ordered quantity (${orderedForItem} atoms).`
@@ -279,6 +299,39 @@ export async function recordOutput(
       }
       const demands = order.demands.filter((d) => d.taskId === currentTask.id || (!d.taskId && unassignedDemands.length > 0));
       for (const demand of demands) {
+        const orderTasks = await tx.task.findMany({
+          where: { workspaceId, instance: { orderId: order.id } },
+          select: { id: true },
+        });
+        const taskIds = orderTasks.map((task: { id: string }) => task.id);
+        const [issuedMoves, returnedMoves, consumedMoves] = await Promise.all([
+          tx.stockMovement.findMany({
+            where: { workspaceId, movementType: MovementType.ISSUE_TO_WIP, itemId: demand.itemId, referenceId: order.id },
+            select: { destinationLocationId: true, destinationLotId: true, atoms: true },
+          }),
+          tx.stockMovement.findMany({
+            where: { workspaceId, movementType: MovementType.RETURN_FROM_WIP, itemId: demand.itemId, referenceId: order.id },
+            select: { sourceLocationId: true, sourceLotId: true, atoms: true },
+          }),
+          taskIds.length
+            ? tx.stockMovement.findMany({
+                where: { workspaceId, movementType: MovementType.PRODUCTION_CONSUME, itemId: demand.itemId, referenceId: { in: taskIds } },
+                select: { sourceLocationId: true, sourceLotId: true, atoms: true },
+              })
+            : Promise.resolve([]),
+        ]);
+        const bucketKey = (locationId: string | null, lotId: string | null) => `${locationId ?? ''}:${lotId ?? ''}`;
+        const issuedByBucket = new Map<string, bigint>();
+        for (const movement of issuedMoves) {
+          if (movement.destinationLocationId) {
+            const key = bucketKey(movement.destinationLocationId, movement.destinationLotId);
+            issuedByBucket.set(key, (issuedByBucket.get(key) ?? 0n) + movement.atoms);
+          }
+        }
+        for (const movement of [...returnedMoves, ...consumedMoves] as Array<{ sourceLocationId: string | null; sourceLotId: string | null; atoms: bigint }>) {
+          const key = bucketKey(movement.sourceLocationId, movement.sourceLotId);
+          issuedByBucket.set(key, (issuedByBucket.get(key) ?? 0n) - movement.atoms);
+        }
         const wipBalances = await tx.stockBalance.findMany({
           where: {
             workspaceId,
@@ -296,8 +349,10 @@ export async function recordOutput(
         let remainingToConsume = proportionalRequired;
         for (const bal of wipBalances) {
           if (remainingToConsume <= 0n) break;
-          const consumeFromThis =
-            bal.onHandAtoms >= remainingToConsume ? remainingToConsume : bal.onHandAtoms;
+          const attributedAvailable = issuedByBucket.get(bucketKey(bal.locationId, bal.lotId)) ?? 0n;
+          const available = [bal.onHandAtoms, attributedAvailable].reduce((minimum, amount) => amount < minimum ? amount : minimum);
+          const consumeFromThis = available >= remainingToConsume ? remainingToConsume : available;
+          if (consumeFromThis <= 0n) continue;
 
           await postMovement(
             tx,

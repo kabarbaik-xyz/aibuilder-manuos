@@ -15,7 +15,7 @@ export async function GET(
     const { id } = await params;
 
     const order = await portalService.getCustomerOrder(principal, id);
-    return jsonResponse(order, { status: 200 });
+    return jsonResponse({ data: order }, { status: 200 });
   } catch (err) {
     return formatErrorResponse(err);
   }

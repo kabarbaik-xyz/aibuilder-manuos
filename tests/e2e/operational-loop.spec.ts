@@ -31,6 +31,7 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
   let passportService: PassportService;
 
   let orderId: string;
+  let orderLineId: string;
   let taskId: string;
   let productionOutputId: string;
   let inspectionId: string;
@@ -142,6 +143,7 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
     expect(orderRes.status).toBe(201);
     const orderJson = await orderRes.json();
     orderId = orderJson.data.id;
+    orderLineId = orderJson.data.lines[0].id;
     const revId = orderJson.data.engineeringRevisions[0].id;
 
     // Approve BOM
@@ -321,6 +323,7 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
         orderId,
         lines: [
           {
+            orderLineId,
             itemId: alpha.masters.fgItemId,
             lotId: fgLotId,
             sourceLocationId: alpha.masters.fgLocationId,
@@ -397,8 +400,9 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
     const portalRes = await getPortalOrder(portalReq, { params: Promise.resolve({ id: orderId }) });
     expect(portalRes.status).toBe(200);
     const portalJson = await portalRes.json();
-    expect(portalJson.id).toBe(orderId);
-    expect(portalJson.orderedQuantity).toBe('10');
+    expect(portalJson.data.id).toBe(orderId);
+    expect(portalJson.data.lines).toHaveLength(1);
+    expect(portalJson.data.lines[0].orderedQuantity).toBe('10');
 
     // 2. Customer acknowledges delivery plan via HTTP POST
     const ackReq = new NextRequest(`http://localhost:3000/api/portal/orders/${orderId}/acknowledge`, {
@@ -408,7 +412,7 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
     const ackRes = await acknowledgePromiseRoute(ackReq, { params: Promise.resolve({ id: orderId }) });
     expect(ackRes.status).toBe(200);
     const ackJson = await ackRes.json();
-    expect(ackJson.customerAcknowledged).toBe(true);
+    expect(ackJson.data.customerAcknowledged).toBe(true);
 
     // 3. Query digital passport via HTTP GET
     const passReq = new NextRequest(`http://localhost:3000/api/passports/${unitSerial}`, {

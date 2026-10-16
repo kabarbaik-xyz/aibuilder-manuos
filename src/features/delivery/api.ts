@@ -35,6 +35,7 @@ export interface ShipmentDTO {
   };
   lines: Array<{
     id: string;
+    orderLineId?: string | null;
     itemId: string;
     lotId?: string | null;
     sourceLocationId: string;
@@ -69,6 +70,7 @@ export async function fetchShipmentById(id: string): Promise<ShipmentDTO> {
 export interface AllocateShipmentInput {
   orderId: string;
   lines: Array<{
+    orderLineId?: string;
     itemId: string;
     lotId?: string;
     sourceLocationId: string;

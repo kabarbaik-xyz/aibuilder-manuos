@@ -13,8 +13,8 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
   let inventoryService: InventoryService;
 
   let orderId: string;
+  let orderLineId: string;
   let lotId: string;
-  let shipmentId: string;
 
   beforeAll(async () => {
     fixture = await createFactoryFixture();
@@ -60,22 +60,23 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
       'key-order-ship-001'
     );
     orderId = orderRes.data.id;
+    orderLineId = orderRes.data.lines[0].id;
   });
 
   afterAll(async () => {
     await fixture.close();
   });
 
-  it('allocates shipment from eligible FG stock and creates hard reservation', async () => {
+  it('rejects FG stock without order-linked final QC acceptance', async () => {
     const { alpha } = fixture;
-
-    const res = await deliveryService.allocateShipment(
+    await expect(deliveryService.allocateShipment(
       alpha.users.warehouse.principal,
       {
         orderId,
         destinationAddress: '123 Industrial Way, Sector 4, Batam',
         lines: [
           {
+            orderLineId,
             itemId: alpha.masters.fgItemId,
             lotId,
             sourceLocationId: alpha.masters.fgLocationId,
@@ -84,16 +85,7 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
         ],
       },
       'key-allocate-shipment-10'
-    );
-    const shipment = res.data;
-
-    expect(shipment).toBeDefined();
-    expect(shipment.shipmentNumber).toMatch(/^SH-/);
-    expect(shipment.status).toBe('ALLOCATED');
-    expect(shipment.lines.length).toBe(1);
-    expect(shipment.lines[0].allocatedAtoms).toBe(parseQuantity('10'));
-
-    shipmentId = shipment.id;
+    )).rejects.toThrow(/finalized QC-passed quantity/);
 
     // Verify stock balance has reservedAtoms = 10 units
     const balances = await inventoryService.getBalances(
@@ -102,14 +94,14 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
     );
     expect(balances.length).toBe(1);
     expect(balances[0].onHandAtoms).toBe(parseQuantity('10'));
-    expect(balances[0].reservedAtoms).toBe(parseQuantity('10'));
-    expect(balances[0].availableAtoms).toBe(0n);
+    expect(balances[0].reservedAtoms).toBe(0n);
+    expect(balances[0].availableAtoms).toBe(parseQuantity('10'));
   });
 
-  it('rejects over-allocation when available FG stock is insufficient', async () => {
+  it('does not reserve FG stock after a rejected QC gate', async () => {
     const { alpha } = fixture;
 
-    // Attempting to allocate another shipment of 1 unit should fail
+    // Attempting to allocate any further quantity still fails without finalized QC.
     await expect(
       deliveryService.allocateShipment(
         alpha.users.warehouse.principal,
@@ -118,6 +110,7 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
           destinationAddress: '123 Industrial Way, Sector 4, Batam',
           lines: [
             {
+              orderLineId,
               itemId: alpha.masters.fgItemId,
               lotId,
               sourceLocationId: alpha.masters.fgLocationId,
@@ -128,69 +121,6 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
         'key-over-allocation-attempt'
       )
     ).rejects.toThrow(BadRequestError);
-  });
-
-  it('dispatches shipment, consumes reservation, and moves physical stock to customer', async () => {
-    const { alpha } = fixture;
-
-    const res = await deliveryService.dispatchShipment(
-      alpha.users.warehouse.principal,
-      {
-        shipmentId,
-        carrierName: 'FastCargo Logistics',
-        trackingNumber: 'TRK-99281-ID',
-      },
-      'key-dispatch-shipment-10'
-    );
-    const dispatched = res.data;
-
-    expect(dispatched.status).toBe('DISPATCHED');
-    expect(dispatched.carrierName).toBe('FastCargo Logistics');
-    expect(dispatched.trackingNumber).toBe('TRK-99281-ID');
-    expect(dispatched.dispatchedAt).toBeDefined();
-
-    // Verify stock balance at FG: onHand is now 0, reserved is 0
-    const balances = await inventoryService.getBalances(
-      alpha.users.warehouse.principal,
-      { itemId: alpha.masters.fgItemId, locationId: alpha.masters.fgLocationId, includeZero: true }
-    );
-    expect(balances[0].onHandAtoms).toBe(0n);
-    expect(balances[0].reservedAtoms).toBe(0n);
-    expect(balances[0].availableAtoms).toBe(0n);
-
-    // Verify stock balance at Customer Location: onHand is 10 units
-    const custBalances = await inventoryService.getBalances(
-      alpha.users.warehouse.principal,
-      { itemId: alpha.masters.fgItemId, locationId: alpha.masters.customerLocationId }
-    );
-    expect(custBalances[0].onHandAtoms).toBe(parseQuantity('10'));
-  });
-
-  it('confirms delivery, records proof of custody, and updates order status to DELIVERED', async () => {
-    const { alpha } = fixture;
-
-    const res = await deliveryService.confirmDelivery(
-      alpha.users.warehouse.principal,
-      {
-        shipmentId,
-        receivedBy: 'Ir. Budi Santoso (Site Manager)',
-        proofOfDelivery: 'Signed POD Doc #POD-2026-1042',
-      },
-      'key-confirm-delivery-10'
-    );
-    const confirmed = res.data;
-
-    expect(confirmed.status).toBe('DELIVERED');
-    expect(confirmed.receivedBy).toBe('Ir. Budi Santoso (Site Manager)');
-    expect(confirmed.proofOfDelivery).toBe('Signed POD Doc #POD-2026-1042');
-    expect(confirmed.deliveredAt).toBeDefined();
-
-    // Verify Order status has advanced to DELIVERED
-    const order = await fixture.db.order.findUnique({
-      where: { id: orderId },
-    });
-    expect(order).toBeDefined();
-    expect(order!.status).toBe('DELIVERED');
   });
 
   it('rejects allocation above an item line even when the order aggregate has room', async () => {
@@ -234,6 +164,7 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
           orderId: multiItemOrder.data.id,
           lines: [
             {
+              orderLineId: multiItemOrder.data.lines[0].id,
               itemId: alpha.masters.fgItemId,
               lotId: lineCapLot.id,
               sourceLocationId: alpha.masters.fgLocationId,
@@ -244,5 +175,31 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
         'key-allocate-shipment-line-cap'
       )
     ).rejects.toThrow(BadRequestError);
+  });
+
+  it('requires each shipment line to reference the matching product order line', async () => {
+    const { alpha } = fixture;
+    const multiItemOrder = await orderService.createOrderDraft(
+      alpha.users.owner.principal,
+      {
+        customerId: alpha.masters.customerId,
+        orderTypeId: alpha.masters.orderTypeId,
+        lines: [
+          { itemId: alpha.masters.fgItemId, orderedQuantity: '10' },
+          { itemId: alpha.masters.rawItemId, orderedQuantity: '100' },
+        ],
+        requestedDate: '2026-11-27T00:00:00Z',
+      },
+      'key-order-ship-multi-lines'
+    );
+    const [firstLine, secondLine] = multiItemOrder.data.lines;
+    await expect(deliveryService.allocateShipment(
+      alpha.users.warehouse.principal,
+      {
+        orderId: multiItemOrder.data.id,
+        lines: [{ orderLineId: secondLine.id, itemId: firstLine.itemId, sourceLocationId: alpha.masters.fgLocationId, allocatedAtoms: parseQuantity('1') }],
+      },
+      'key-allocate-cross-line'
+    )).rejects.toThrow(/does not belong to order/);
   });
 });

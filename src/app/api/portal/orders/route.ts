@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   try {
     const principal = await requirePrincipal(req);
     const orders = await portalService.listCustomerOrders(principal);
-    return jsonResponse(orders, { status: 200 });
+    return jsonResponse({ data: orders }, { status: 200 });
   } catch (err) {
     return formatErrorResponse(err);
   }

@@ -1,25 +1,31 @@
 export interface CustomerOrderSummaryDTO {
   id: string;
   orderNumber: string;
-  itemName: string;
-  itemCode: string;
-  orderedQuantity: string;
-  orderedAtoms: string;
+  lines: CustomerOrderLineSummaryDTO[];
   requestedDate: string;
   promisedDate: string | null;
   status: string;
-  progressPct: number;
-  qcPassedQuantity: string;
-  qcPassedAtoms: string;
   customerAcknowledged: boolean;
   customerAcknowledgedAt: string | null;
   customerAcknowledgedBy: string | null;
 }
 
+export interface CustomerOrderLineSummaryDTO {
+  orderLineId: string;
+  lineNumber: number;
+  itemName: string;
+  itemCode: string;
+  orderedQuantity: string;
+  qcPassedQuantity: string;
+  dispatchedQuantity: string;
+  deliveredQuantity: string;
+  progressPct: number;
+}
+
 export interface CustomerShipmentLineDTO {
+  orderLineId: string | null;
   itemCode: string;
   itemName: string;
-  allocatedQuantity: string;
   dispatchedQuantity: string;
   deliveredQuantity: string;
 }
@@ -64,6 +70,8 @@ export interface CustomerMilestoneDTO {
 
 export interface CustomerDrawingDTO {
   id: string;
+  itemCode: string;
+  itemName: string;
   drawingNumber: string;
   revisionCode: string;
   status: string;

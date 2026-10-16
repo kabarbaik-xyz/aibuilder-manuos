@@ -1,12 +1,15 @@
 import { z } from 'zod';
+import { parseQuantity } from '@/domain/quantity';
 
-const positiveQuantitySchema = z.union([
-  z.number().positive(),
-  z.string().max(80).regex(/^\d+(\.\d+)?$/, 'Quantity must be a positive decimal string').refine(
-    (value) => /[1-9]/.test(value),
-    'Quantity must be greater than zero'
-  ),
-]);
+const positiveQuantitySchema = z.union([z.number().finite().positive(), z.string().max(80)])
+  .transform((value) => String(value))
+  .refine((value) => {
+    try {
+      return parseQuantity(value) > 0n;
+    } catch {
+      return false;
+    }
+  }, 'Quantity must be a positive decimal with at most six fractional digits');
 
 export const createOrderLineSchema = z.object({
   itemId: z.string().min(1),

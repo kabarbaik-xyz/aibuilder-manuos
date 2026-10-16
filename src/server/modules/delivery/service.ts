@@ -17,6 +17,94 @@ import {
   getNextShipmentNumber,
 } from './repository';
 
+function resolveOrderLine(order: any, shipmentLine: { orderLineId?: string; itemId: string }) {
+  if (order.lines.length > 0) {
+    if (!shipmentLine.orderLineId) {
+      throw new BadRequestError('Each shipment allocation must identify its customer order line.');
+    }
+    const orderLine = order.lines.find(
+      (candidate: { id: string; itemId: string }) =>
+        candidate.id === shipmentLine.orderLineId && candidate.itemId === shipmentLine.itemId
+    );
+    if (!orderLine) {
+      throw new BadRequestError(
+        `Order line '${shipmentLine.orderLineId}' does not belong to order '${order.id}' or item '${shipmentLine.itemId}'.`
+      );
+    }
+    return orderLine;
+  }
+
+  if (shipmentLine.orderLineId) {
+    throw new BadRequestError(`Order '${order.id}' has no customer order lines.`);
+  }
+  if (shipmentLine.itemId !== order.itemId) {
+    throw new BadRequestError(`Item '${shipmentLine.itemId}' is not part of order '${order.id}'.`);
+  }
+  return { id: null, itemId: order.itemId, orderedAtoms: order.orderedAtoms };
+}
+
+function addQuantity(totals: Map<string, bigint>, key: string, atoms: bigint) {
+  totals.set(key, (totals.get(key) ?? 0n) + atoms);
+}
+
+async function getFinalQcPassedAtoms(tx: any, order: any, orderLine: any) {
+  const lineMatch = orderLine.id
+    ? order.lines.filter((line: { itemId: string }) => line.itemId === orderLine.itemId).length === 1
+      ? { OR: [{ orderLineId: orderLine.id }, { orderLineId: null }] }
+      : { orderLineId: orderLine.id }
+    : {};
+  const inspections = await tx.inspection.findMany({
+    where: {
+      workspaceId: order.workspaceId,
+      status: 'FINALIZED',
+      productionOutput: {
+        isFinal: true,
+        itemId: orderLine.itemId,
+        task: {
+          jobsheet: {
+            manufacturingOrder: {
+              orderId: order.id,
+              ...lineMatch,
+            },
+          },
+        },
+      },
+    },
+    select: { passedAtoms: true },
+  });
+  return inspections.reduce((sum: bigint, inspection: { passedAtoms: bigint }) => sum + inspection.passedAtoms, 0n);
+}
+
+function isOrderFullyDelivered(order: any, shipmentLines: Array<any>) {
+  if (order.lines.length === 0) {
+    const deliveredAtoms = shipmentLines.reduce((total, line) => total + line.deliveredAtoms, 0n);
+    return order.orderedAtoms > 0n && deliveredAtoms >= order.orderedAtoms;
+  }
+
+  const deliveredByLine = new Map<string, bigint>();
+  const ambiguousByItem = new Set<string>();
+  for (const shipmentLine of shipmentLines) {
+    if (shipmentLine.orderLineId) {
+      const orderLine = order.lines.find((line: { id: string; itemId: string }) => line.id === shipmentLine.orderLineId);
+      if (orderLine && orderLine.itemId === shipmentLine.itemId) {
+        addQuantity(deliveredByLine, orderLine.id, shipmentLine.deliveredAtoms);
+      }
+      continue;
+    }
+
+    const matchingLines = order.lines.filter((line: { itemId: string }) => line.itemId === shipmentLine.itemId);
+    if (matchingLines.length === 1) {
+      addQuantity(deliveredByLine, matchingLines[0].id, shipmentLine.deliveredAtoms);
+    } else if (matchingLines.length > 1 && shipmentLine.deliveredAtoms > 0n) {
+      ambiguousByItem.add(shipmentLine.itemId);
+    }
+  }
+
+  return order.lines.length > 0 && order.lines.every((line: { id: string; itemId: string; orderedAtoms: bigint }) =>
+    !ambiguousByItem.has(line.itemId) && (deliveredByLine.get(line.id) ?? 0n) >= line.orderedAtoms
+  );
+}
+
 export class DeliveryService {
   constructor(private readonly db: PrismaClient) {}
 
@@ -58,15 +146,7 @@ export class DeliveryService {
 
     // 2. Verify all lines have eligible Finished Goods (FG) stock
     for (const line of input.lines) {
-      const matchingOrderLines = order.lines.filter((orderLine) => orderLine.itemId === line.itemId);
-      const orderedForItem = matchingOrderLines.length
-        ? matchingOrderLines.reduce((total: bigint, orderLine: { orderedAtoms: bigint }) => total + orderLine.orderedAtoms, 0n)
-        : line.itemId === order.itemId
-          ? order.orderedAtoms
-          : 0n;
-      if (orderedForItem === 0n) {
-        throw new BadRequestError(`Item '${line.itemId}' is not part of order '${order.id}'.`);
-      }
+      resolveOrderLine(order, line);
 
       const loc = await this.db.location.findUnique({
         where: {
@@ -137,40 +217,74 @@ export class DeliveryService {
           include: { lines: true },
         });
         if (!currentOrder) throw new NotFoundError(`Order '${order.id}' not found`);
+        if (currentOrder.status === 'CANCELLED' || currentOrder.status === 'DELIVERED') {
+          throw new BadRequestError(`Cannot allocate shipment for order in status '${currentOrder.status}'`);
+        }
         const existingLines = await tx.shipmentLine.findMany({
           where: {
             workspaceId,
             shipment: { orderId: order.id, status: { not: 'CANCELLED' } },
           },
         });
-        const allocatedByItem = new Map<string, bigint>();
+        const allocatedByLine = new Map<string, bigint>();
+        const ambiguousLegacyByItem = new Map<string, bigint>();
         for (const line of existingLines) {
-          allocatedByItem.set(
-            line.itemId,
-            (allocatedByItem.get(line.itemId) ?? 0n) + line.allocatedAtoms
+          if (currentOrder.lines.length === 0) {
+            addQuantity(allocatedByLine, `item:${line.itemId}`, line.allocatedAtoms);
+            continue;
+          }
+
+          if (line.orderLineId) {
+            const orderLine = currentOrder.lines.find(
+              (candidate: { id: string; itemId: string }) => candidate.id === line.orderLineId
+            );
+            if (!orderLine || orderLine.itemId !== line.itemId) {
+              throw new BadRequestError(`Existing shipment line '${line.id}' has an invalid order-line link.`);
+            }
+            addQuantity(allocatedByLine, `line:${orderLine.id}`, line.allocatedAtoms);
+            continue;
+          }
+
+          const candidates = currentOrder.lines.filter(
+            (candidate: { itemId: string }) => candidate.itemId === line.itemId
           );
+          if (candidates.length === 1) {
+            addQuantity(allocatedByLine, `line:${candidates[0].id}`, line.allocatedAtoms);
+          } else if (candidates.length > 1) {
+            addQuantity(ambiguousLegacyByItem, line.itemId, line.allocatedAtoms);
+          }
         }
         for (const line of input.lines) {
-          const matchingOrderLines = currentOrder.lines.filter((orderLine: { itemId: string; orderedAtoms: bigint }) => orderLine.itemId === line.itemId);
-          const orderedForItem = matchingOrderLines.length
-            ? matchingOrderLines.reduce((total: bigint, orderLine: { itemId: string; orderedAtoms: bigint }) => total + orderLine.orderedAtoms, 0n)
-            : line.itemId === currentOrder.itemId
-              ? currentOrder.orderedAtoms
-              : 0n;
-          if (orderedForItem === 0n) {
-            throw new BadRequestError(`Item '${line.itemId}' is not part of order '${currentOrder.id}'.`);
-          }
-          const nextAllocated = (allocatedByItem.get(line.itemId) ?? 0n) + line.allocatedAtoms;
-          if (nextAllocated > orderedForItem) {
+          const orderLine = resolveOrderLine(currentOrder, line);
+          if (orderLine.id && (ambiguousLegacyByItem.get(line.itemId) ?? 0n) > 0n) {
             throw new BadRequestError(
-              `Shipment allocation for item '${line.itemId}' exceeds its ordered quantity (${orderedForItem} atoms).`
+              `Existing shipment quantities for item '${line.itemId}' cannot be attributed to a specific order line. Reconcile those historical shipment lines before allocating more of this item.`
             );
           }
-          allocatedByItem.set(line.itemId, nextAllocated);
+          const allocationKey = orderLine.id ? `line:${orderLine.id}` : `item:${line.itemId}`;
+          const nextAllocated = (allocatedByLine.get(allocationKey) ?? 0n) + line.allocatedAtoms;
+          if (nextAllocated > orderLine.orderedAtoms) {
+            throw new BadRequestError(
+              `Shipment allocation for order line '${orderLine.id ?? line.itemId}' exceeds its ordered quantity (${orderLine.orderedAtoms} atoms).`
+            );
+          }
+          const finalQcPassedAtoms = await getFinalQcPassedAtoms(tx, currentOrder, orderLine);
+          if (nextAllocated > finalQcPassedAtoms) {
+            throw new BadRequestError(
+              `Shipment allocation for order line '${orderLine.id ?? line.itemId}' exceeds finalized QC-passed quantity (${finalQcPassedAtoms} atoms).`
+            );
+          }
+          allocatedByLine.set(allocationKey, nextAllocated);
         }
 
         // Create shipment lines and stock reservations
         for (const line of input.lines) {
+          const sourceLocation = await tx.location.findFirst({
+            where: { id: line.sourceLocationId, workspaceId, isActive: true, archivedAt: null },
+          });
+          if (!sourceLocation || sourceLocation.kind !== 'FG') {
+            throw new BadRequestError('Shipment source must remain an active Finished Goods location at commit time.');
+          }
           const bucketKey = getBucketKey(line.itemId, line.sourceLocationId, line.lotId);
           const balance = await tx.stockBalance.findUnique({
             where: {
@@ -221,6 +335,7 @@ export class DeliveryService {
             data: {
               workspaceId,
               shipmentId: shipment.id,
+              orderLineId: resolveOrderLine(currentOrder, line).id,
               itemId: line.itemId,
               lotId: line.lotId,
               sourceLocationId: line.sourceLocationId,
@@ -297,6 +412,7 @@ export class DeliveryService {
 
         const currentShipment = await tx.shipment.findUnique({
           where: { id: input.shipmentId },
+          include: { lines: true },
         });
         if (!currentShipment || currentShipment.status !== ShipmentStatus.ALLOCATED) {
           throw new BadRequestError(
@@ -304,7 +420,25 @@ export class DeliveryService {
           );
         }
 
-        for (const line of shipment.lines) {
+        for (const line of currentShipment.lines) {
+          const sourceBucketKey = getBucketKey(line.itemId, line.sourceLocationId, line.lotId);
+          const reservedBalance = await tx.stockBalance.findUnique({
+            where: { workspaceId_bucketKey: { workspaceId, bucketKey: sourceBucketKey } },
+          });
+          if (!reservedBalance || reservedBalance.reservedAtoms < line.allocatedAtoms) {
+            throw new BadRequestError(
+              `Shipment line '${line.id}' no longer has its full stock reservation; dispatch was cancelled.`
+            );
+          }
+          if (line.reservationId) {
+            const reservation = await tx.stockReservation.findUnique({ where: { id: line.reservationId } });
+            if (!reservation || reservation.status !== 'ACTIVE' || reservation.reservedAtoms < line.allocatedAtoms) {
+              throw new BadRequestError(
+                `Shipment line '${line.id}' has no active reservation for its allocated quantity.`
+              );
+            }
+          }
+
           // 1. Post physical shipment movement
           const movement = await postMovement(
             tx,
@@ -362,6 +496,12 @@ export class DeliveryService {
               movementId: movement.id,
             },
           });
+          if (line.orderLineId) {
+            await tx.orderLine.update({
+              where: { id: line.orderLineId },
+              data: { shippedAtoms: { increment: line.allocatedAtoms } },
+            });
+          }
         }
 
         // 5. Update shipment record
@@ -440,6 +580,7 @@ export class DeliveryService {
 
         const currentShipment = await tx.shipment.findUnique({
           where: { id: input.shipmentId },
+          include: { lines: true },
         });
         if (!currentShipment || currentShipment.status !== ShipmentStatus.DISPATCHED) {
           throw new BadRequestError(
@@ -448,7 +589,7 @@ export class DeliveryService {
         }
 
         // Update line delivered atoms
-        for (const line of shipment.lines) {
+        for (const line of currentShipment.lines) {
           await tx.shipmentLine.update({
             where: { id: line.id },
             data: {
@@ -486,14 +627,12 @@ export class DeliveryService {
           },
           include: { lines: true },
         });
+        const currentOrder = await tx.order.findUnique({
+          where: { workspaceId_id: { workspaceId, id: shipment.orderId } },
+          include: { lines: true },
+        });
 
-        const totalDeliveredAtoms = allShipments.reduce(
-          (acc: bigint, s: any) =>
-            acc + s.lines.reduce((lAcc: bigint, l: any) => lAcc + l.deliveredAtoms, 0n),
-          0n
-        );
-
-        if (totalDeliveredAtoms >= shipment.order.orderedAtoms) {
+        if (currentOrder && isOrderFullyDelivered(currentOrder, allShipments.flatMap((s: any) => s.lines))) {
           await tx.order.update({
             where: { id: shipment.orderId },
             data: {

@@ -61,8 +61,8 @@ export interface PassportShipmentEvidence {
 export interface UnitPassportDTO {
   serialNumber: string;
   status: string;
-  digestSha256: string;
-  publishedAt: string;
+  digestSha256: string | null;
+  publishedAt: string | null;
   order: {
     id: string;
     orderNumber: string;
@@ -314,20 +314,11 @@ export class PassportService {
       throw new NotFoundError(`Published passport digest for serial '${serialNumber}' not found`);
     }
 
-    const digestSource = JSON.stringify({
-      serialNumber,
-      orderNumber: order?.orderNumber,
-      itemCode: passportRecord?.item.code,
-      lotNumber: passportRecord?.lot?.lotNumber,
-      qcEventsCount: qcEvents.length,
-      operationsCount: operations.length,
-    });
-
     return {
       serialNumber,
       status: passportStatus,
-      digestSha256: computedDigest || crypto.createHash('sha256').update(digestSource).digest('hex'),
-      publishedAt: passportRecord?.publishedAt.toISOString() ?? new Date().toISOString(),
+      digestSha256: computedDigest ?? null,
+      publishedAt: passportRecord?.publishedAt.toISOString() ?? null,
       order: order
         ? {
             id: order.id,

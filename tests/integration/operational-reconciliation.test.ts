@@ -428,6 +428,9 @@ describe('O09: Full Operational Loop & Double-Entry Ledger Reconciliation', () =
 
   it('Step 5: Shipment Allocation, Dispatch & Delivery Confirmation', async () => {
     const { alpha } = fixture;
+    const customerOrderLine = await fixture.db.orderLine.findFirstOrThrow({
+      where: { workspaceId: alpha.workspaceId, orderId: customerOrderId },
+    });
 
     // 1. Allocate 10 Finished Goods to customer order
     const alloc = await deliveryService.allocateShipment(
@@ -436,6 +439,7 @@ describe('O09: Full Operational Loop & Double-Entry Ledger Reconciliation', () =
         orderId: customerOrderId,
         lines: [
           {
+            orderLineId: customerOrderLine.id,
             itemId: alpha.masters.fgItemId,
             lotId: fgLotId,
             sourceLocationId: alpha.masters.fgLocationId,
@@ -500,7 +504,7 @@ describe('O09: Full Operational Loop & Double-Entry Ledger Reconciliation', () =
       customerOrderId
     );
     expect(portalOrder.id).toBe(customerOrderId);
-    expect(portalOrder.orderedQuantity).toBe('10');
+    expect(portalOrder.lines[0].orderedQuantity).toBe('10');
     expect(['RELEASED', 'IN_PRODUCTION', 'SHIPPED', 'DELIVERED']).toContain(portalOrder.status);
 
     // 3. Customer user acknowledges delivery plan

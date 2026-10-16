@@ -7,6 +7,7 @@ import { ExecutionService } from '@/server/modules/execution/service';
 import { InventoryService } from '@/server/modules/inventory/service';
 import { MastersService } from '@/server/modules/masters/service';
 import { PortalService } from '@/server/modules/portal/service';
+import { PortalRepository } from '@/server/modules/portal/repository';
 import { releaseOrder } from '@/server/modules/orders/release';
 import { recordOutput } from '@/server/modules/execution/output';
 import { createInspection, finalizeInspection } from '@/server/modules/quality/service';
@@ -40,7 +41,7 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
     executionService = new ExecutionService(fixture.db);
     inventoryService = new InventoryService(fixture.db);
     mastersService = new MastersService(fixture.db);
-    portalService = new PortalService();
+    portalService = new PortalService(new PortalRepository(fixture.db), fixture.db);
 
     const { alpha } = fixture;
     const owner = alpha.users.owner.principal;
@@ -499,8 +500,8 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
 
     // 1. Customer order view shows 80% QC progress (8 passed / 10 ordered)
     const orderDetail = await portalService.getCustomerOrder(customerUser, orderId);
-    expect(orderDetail.progressPct).toBe(80);
-    expect(orderDetail.qcPassedAtoms).toBe(parseQuantity('8').toString());
+    expect(orderDetail.lines[0].progressPct).toBe(80);
+    expect(orderDetail.lines[0].qcPassedQuantity).toBe('8');
 
     // Released order was confirmed during release: intake milestone is settled.
     const intakeMilestone = orderDetail.milestones.find((m) => m.key === 'INTAKE');
@@ -580,6 +581,77 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
     const orderAfterFull = await portalService.getCustomerOrder(customerUser, orderId);
     const fullDeliveryMilestone = orderAfterFull.milestones.find((m) => m.key === 'DELIVERY');
     expect(fullDeliveryMilestone?.status).toBe('COMPLETED');
+  });
+
+  it('projects QC and delivery quantities separately for every customer order line', async () => {
+    const { alpha } = fixture;
+    const customerUser = alpha.users.customerUser.principal;
+    const multiOrder = await orderService.createOrderDraft(
+      alpha.users.owner.principal,
+      {
+        customerId: alpha.masters.customerId,
+        orderTypeId: alpha.masters.orderTypeId,
+        lines: [
+          { itemId: alpha.masters.fgItemId, orderedQuantity: '10' },
+          { itemId: alpha.masters.rawItemId, orderedQuantity: '40' },
+        ],
+        requestedDate: '2026-12-21T00:00:00Z',
+      },
+      'idemp-order-phase6-multi-line-portal'
+    );
+    const [firstLine, secondLine] = multiOrder.data.lines;
+
+    await fixture.db.shipment.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        shipmentNumber: 'SHIP-P6-MULTI-LINE-001',
+        orderId: multiOrder.data.id,
+        customerId: alpha.masters.customerId,
+        status: 'DELIVERED',
+        deliveredAt: new Date(),
+        lines: {
+          create: [{
+            orderLineId: firstLine.id,
+            itemId: firstLine.itemId,
+            sourceLocationId: alpha.masters.fgLocationId,
+            allocatedAtoms: BigInt(firstLine.orderedAtoms),
+            dispatchedAtoms: BigInt(firstLine.orderedAtoms),
+            deliveredAtoms: BigInt(firstLine.orderedAtoms),
+          }],
+        },
+      },
+    });
+
+    const partiallyDelivered = await portalService.getCustomerOrder(customerUser, multiOrder.data.id);
+    expect(partiallyDelivered.lines.map((line) => [line.itemCode, line.deliveredQuantity])).toEqual([
+      [firstLine.item.code, '10'],
+      [secondLine.item.code, '0'],
+    ]);
+    expect(partiallyDelivered.milestones.find((milestone) => milestone.key === 'DELIVERY')?.status).toBe('IN_PROGRESS');
+
+    await fixture.db.shipment.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        shipmentNumber: 'SHIP-P6-MULTI-LINE-002',
+        orderId: multiOrder.data.id,
+        customerId: alpha.masters.customerId,
+        status: 'DELIVERED',
+        deliveredAt: new Date(),
+        lines: {
+          create: [{
+            orderLineId: secondLine.id,
+            itemId: secondLine.itemId,
+            sourceLocationId: alpha.masters.fgLocationId,
+            allocatedAtoms: BigInt(secondLine.orderedAtoms),
+            dispatchedAtoms: BigInt(secondLine.orderedAtoms),
+            deliveredAtoms: BigInt(secondLine.orderedAtoms),
+          }],
+        },
+      },
+    });
+
+    const fullyDelivered = await portalService.getCustomerOrder(customerUser, multiOrder.data.id);
+    expect(fullyDelivered.milestones.find((milestone) => milestone.key === 'DELIVERY')?.status).toBe('COMPLETED');
   });
   it("retrieves technician profile with verified skills, levels, and active certifications", async () => {
     const operator = fixture.alpha.users.operator.principal;

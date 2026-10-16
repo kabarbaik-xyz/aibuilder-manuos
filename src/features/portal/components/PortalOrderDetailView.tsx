@@ -18,11 +18,13 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Icon } from "@/components/icons";
 
 export function PortalOrderDetailView({ orderId }: { orderId: string }) {
   const { order, loading, error, refresh, acknowledge } = usePortalOrderDetail(orderId);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Drawing Approval state
   const [selectedDrawing, setSelectedDrawing] = useState<{ id: string; drawingNumber: string; revisionCode: string } | null>(null);
@@ -33,6 +35,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
   // Change Request state
   const [showOcrModal, setShowOcrModal] = useState(false);
   const [ocrChangeType, setOcrChangeType] = useState<"DATE" | "QUANTITY" | "SPECIFICATION" | "CANCEL">("DATE");
+  const [ocrOrderLineId, setOcrOrderLineId] = useState("");
   const [ocrRequestedDate, setOcrRequestedDate] = useState("");
   const [ocrRequestedQuantity, setOcrRequestedQuantity] = useState("");
   const [ocrReason, setOcrReason] = useState("");
@@ -45,7 +48,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
       setDownloadingId(docId);
       await downloadPortalDocument(docId, fileName);
     } catch (err: any) {
-      alert(err?.message || "Failed to download document");
+      setActionError(err?.message || "Failed to download document");
     } finally {
       setDownloadingId(null);
     }
@@ -79,7 +82,13 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
       if (ocrChangeType === "DATE" && ocrRequestedDate) {
         requestedChanges.requestedDate = new Date(ocrRequestedDate).toISOString();
       } else if (ocrChangeType === "QUANTITY" && ocrRequestedQuantity) {
-        requestedChanges.orderedQuantity = Number(ocrRequestedQuantity);
+        if (!ocrOrderLineId) {
+          setOcrError("Select the product line this quantity request applies to.");
+          setOcrSubmitting(false);
+          return;
+        }
+        requestedChanges.orderLineId = ocrOrderLineId;
+        requestedChanges.orderedQuantity = ocrRequestedQuantity;
       } else if (ocrChangeType === "CANCEL") {
         requestedChanges.cancelOrder = true;
       }
@@ -95,6 +104,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
       setOcrReason("");
       setOcrRequestedDate("");
       setOcrRequestedQuantity("");
+      setOcrOrderLineId("");
       await refresh();
     } catch (err: any) {
       setOcrError(err?.message || "Failed to submit change request");
@@ -109,7 +119,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
       await approveCustomerChangeRequest(ocrId);
       await refresh();
     } catch (err: any) {
-      alert(err?.message || "Failed to approve change request");
+      setActionError(err?.message || "Failed to approve change request");
     } finally {
       setApprovingOcrId(null);
     }
@@ -155,7 +165,9 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
 
       <PageHeader
         title={`Order ${order.orderNumber}`}
-        description={`${order.itemName} (${order.itemCode}) · ${order.orderedQuantity} units ordered`}
+        description={order.lines.length === 1
+          ? `${order.lines[0].itemName} (${order.lines[0].itemCode}) · ${order.lines[0].orderedQuantity} units ordered`
+          : `${order.lines.length} product lines · each line tracks its own quality and delivery quantities`}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -184,6 +196,15 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
           </div>
         }
       />
+
+      {actionError && (
+        <Panel className="border border-danger/30 p-3 text-xs text-danger" role="alert">
+          <div className="flex items-center justify-between gap-3">
+            <span>{actionError}</span>
+            <Button type="button" onClick={() => setActionError(null)}>Dismiss</Button>
+          </div>
+        </Panel>
+      )}
 
       {/* Attention banner if acknowledgement required */}
       {showAckBanner && (
@@ -217,26 +238,21 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
         </div>
       )}
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        <Panel className="p-4">
-          <span className="text-xs font-medium text-muted block mb-1">
-            Manufacturing Progress
-          </span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-ink">
-              {order.progressPct}%
-            </span>
-            <span className="text-xs text-muted">
-              ({order.qcPassedQuantity} / {order.orderedQuantity} verified)
-            </span>
-          </div>
-          <div className="w-full bg-line rounded-full h-1.5 mt-3 overflow-hidden">
-            <div
-              className="bg-primary h-1.5 rounded-full transition-all duration-300"
-              style={{ width: `${order.progressPct}%` }}
-            />
-          </div>
+      {/* Product line progress stays separated because different items have distinct quantity scales. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_repeat(3,minmax(0,220px))] gap-4">
+        <Panel className="p-4 space-y-3">
+          <span className="text-xs font-medium text-muted block">Quality progress by product line</span>
+          {order.lines.map((line) => (
+            <div key={line.orderLineId} className="space-y-1.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                <span className="font-semibold text-ink">{line.itemCode} · {line.itemName}</span>
+                <span className="text-muted">QC passed {line.qcPassedQuantity} / {line.orderedQuantity} · {line.progressPct}%</span>
+              </div>
+              <div className="w-full bg-surface-muted rounded-full h-1.5 overflow-hidden border border-line">
+                <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${line.progressPct}%` }} />
+              </div>
+            </div>
+          ))}
         </Panel>
 
         <Panel className="p-4">
@@ -268,7 +284,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
             Dispatched Shipments
           </span>
           <span className="text-2xl font-bold text-ink">
-            {order.shipments.length}
+            {order.shipments.filter((shipment) => shipment.status === 'DISPATCHED' || shipment.status === 'DELIVERED').length}
           </span>
           <span className="text-xs text-muted block mt-1">Physical consignments</span>
         </Panel>
@@ -301,6 +317,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
                     <span className="font-semibold text-ink text-xs font-mono">
                       {dwg.drawingNumber}
                     </span>
+                    <Badge variant="default">{dwg.itemCode}</Badge>
                     <Badge variant="blue">Rev {dwg.revisionCode}</Badge>
                     <Badge variant={dwg.status === "RELEASED" ? "success" : "default"}>
                       {dwg.status}
@@ -549,9 +566,11 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
                   <div>
                     <span className="text-muted block text-xs">Delivery Status</span>
                     <strong className="text-ink">
-                      {shipment.deliveredAt
+                      {shipment.status === 'DELIVERED' && shipment.deliveredAt
                         ? `Delivered on ${new Date(shipment.deliveredAt).toLocaleDateString()}`
-                        : "In Transit"}
+                        : shipment.status === 'DISPATCHED'
+                          ? "In Transit"
+                          : "Not dispatched"}
                     </strong>
                   </div>
                   <div>
@@ -570,7 +589,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
                     <div className="flex items-center gap-3">
                       {shipment.lines.map((line, idx) => (
                         <span key={idx} className="bg-surface px-2 py-0.5 border border-line rounded">
-                          {line.itemName}: <strong>{line.deliveredQuantity || line.dispatchedQuantity || line.allocatedQuantity} units</strong>
+                          {line.itemName}: <strong>{line.deliveredQuantity || line.dispatchedQuantity} units</strong>
                         </span>
                       ))}
                     </div>
@@ -752,30 +771,47 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
                 <label className="block text-xs font-medium text-ink mb-1">
                   Proposed Delivery Date
                 </label>
-                <Input
-                  type="date"
-                  required
-                  value={ocrRequestedDate}
-                  onChange={(e) => setOcrRequestedDate(e.target.value)}
-                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
-                />
+                <DatePicker required value={ocrRequestedDate} onChange={setOcrRequestedDate} />
               </div>
             )}
 
             {ocrChangeType === "QUANTITY" && (
-              <div>
-                <label className="block text-xs font-medium text-ink mb-1">
-                  Proposed Total Quantity (Units)
-                </label>
-                <Input
-                  type="number"
-                  min="1"
-                  required
-                  value={ocrRequestedQuantity}
-                  onChange={(e) => setOcrRequestedQuantity(e.target.value)}
-                  placeholder={`Current: ${order.orderedQuantity}`}
-                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
-                />
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-ink mb-1" htmlFor="ocr-order-line">
+                    Product line
+                  </label>
+                  <Select
+                    id="ocr-order-line"
+                    required
+                    value={ocrOrderLineId}
+                    onChange={(e) => setOcrOrderLineId(e.target.value)}
+                    className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                  >
+                    <option value="">Select a product line</option>
+                    {order.lines.map((line) => (
+                      <option key={line.orderLineId} value={line.orderLineId}>
+                        {line.itemCode} · {line.itemName} · current {line.orderedQuantity}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-ink mb-1" htmlFor="ocr-requested-quantity">
+                    Proposed quantity (units)
+                  </label>
+                  <Input
+                    id="ocr-requested-quantity"
+                    type="number"
+                    min="0.000001"
+                    step="any"
+                    required
+                    value={ocrRequestedQuantity}
+                    onChange={(e) => setOcrRequestedQuantity(e.target.value)}
+                    placeholder="Enter the proposed quantity for this line"
+                    className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                  />
+                </div>
               </div>
             )}
 

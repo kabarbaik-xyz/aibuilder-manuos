@@ -4,12 +4,26 @@ import React, { useState, useEffect } from 'react';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ordersApi, OrderDto } from '@/features/orders/api';
 import { fetchStockBalances } from '@/features/inventory/api';
+import { fetchShipments } from '../api';
 import { StockBalanceDTO } from '@/server/modules/inventory/contracts';
 import { useAllocateShipment } from '../hooks';
 import { formatQuantity, parseQuantity } from '@/domain/quantity';
+
+interface ShipmentAllocationRow {
+  orderLineId?: string;
+  itemId: string;
+  itemName: string;
+  itemCode: string;
+  orderedAtoms: bigint;
+  alreadyAllocatedAtoms: bigint;
+  balances: StockBalanceDTO[];
+  selectedBalanceId: string;
+  quantity: string;
+}
 
 export interface ShipmentCreateModalProps {
   isOpen: boolean;
@@ -30,9 +44,8 @@ export function ShipmentCreateModal({
   const [selectedOrderId, setSelectedOrderId] = useState<string>(preselectedOrderId || '');
   const [selectedOrder, setSelectedOrder] = useState<OrderDto | null>(null);
 
-  const [fgBalances, setFgBalances] = useState<StockBalanceDTO[]>([]);
-  const [selectedBalanceId, setSelectedBalanceId] = useState<string>('');
-  const [allocateQty, setAllocateQty] = useState('');
+  const [allocationRows, setAllocationRows] = useState<ShipmentAllocationRow[]>([]);
+  const [loadingBalances, setLoadingBalances] = useState(false);
   const [carrierName, setCarrierName] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
@@ -61,30 +74,76 @@ export function ShipmentCreateModal({
   useEffect(() => {
     if (!selectedOrderId) {
       setSelectedOrder(null);
-      setFgBalances([]);
+      setAllocationRows([]);
       return;
     }
 
     const order = orders.find((o) => o.id === selectedOrderId);
     if (order) {
       setSelectedOrder(order);
-      setDestinationAddress(order.customer ? 'Customer Address' : '');
+      setDestinationAddress(order.deliveryAddress || '');
+      setLoadingBalances(true);
+      let cancelled = false;
+      const orderLines = order.lines?.length
+        ? order.lines.map((line) => ({
+            orderLineId: line.id,
+            itemId: line.itemId,
+            itemName: line.item?.name || line.itemId,
+            itemCode: line.item?.code || line.itemId,
+            orderedAtoms: BigInt(line.orderedAtoms),
+          }))
+        : [{
+            orderLineId: undefined,
+            itemId: order.itemId,
+            itemName: order.item?.name || order.itemId,
+            itemCode: order.item?.code || order.itemId,
+            orderedAtoms: BigInt(order.orderedAtoms),
+          }];
 
-      // Fetch FG balances for order item
-      fetchStockBalances({ itemId: order.itemId, isPositiveOnly: true }).then((balances) => {
-        const eligibleFg = balances.filter(
-          (b) => b.locationKind === 'FG' && b.availableAtoms > 0n
-        );
-        setFgBalances(eligibleFg);
-        if (eligibleFg.length > 0) {
-          setSelectedBalanceId(eligibleFg[0].id);
-          const avail = eligibleFg[0].availableAtoms;
-          setAllocateQty(formatQuantity(avail));
-        } else {
-          setSelectedBalanceId('');
-          setAllocateQty('0');
+      void Promise.all([
+        fetchShipments({ orderId: order.id }),
+        Promise.all(orderLines.map(async (line) => {
+          const balances = await fetchStockBalances({ itemId: line.itemId, isPositiveOnly: true });
+          return { ...line, balances: balances.filter((balance) => balance.locationKind === 'FG' && balance.availableAtoms > 0n) };
+        })),
+      ]).then(([shipments, linesWithBalances]) => {
+        if (cancelled) return;
+        const allocatedByOrderLine = new Map<string, bigint>();
+        const unmatchedLegacyByItem = new Map<string, bigint>();
+        for (const shipment of shipments) {
+          if (shipment.status === 'CANCELLED') continue;
+          for (const shipmentLine of shipment.lines) {
+            if (shipmentLine.orderLineId) {
+              allocatedByOrderLine.set(
+                shipmentLine.orderLineId,
+                (allocatedByOrderLine.get(shipmentLine.orderLineId) || 0n) + shipmentLine.allocatedAtoms,
+              );
+            } else {
+              unmatchedLegacyByItem.set(
+                shipmentLine.itemId,
+                (unmatchedLegacyByItem.get(shipmentLine.itemId) || 0n) + shipmentLine.allocatedAtoms,
+              );
+            }
+          }
         }
+        setAllocationRows(linesWithBalances.map((line) => {
+          const matchingLines = linesWithBalances.filter((candidate) => candidate.itemId === line.itemId);
+          const ambiguousLegacyAtoms = matchingLines.length === 1 ? (unmatchedLegacyByItem.get(line.itemId) || 0n) : 0n;
+          return {
+            ...line,
+            alreadyAllocatedAtoms: (allocatedByOrderLine.get(line.orderLineId || '') || 0n) + ambiguousLegacyAtoms,
+            selectedBalanceId: line.balances[0]?.id || '',
+            quantity: '',
+          };
+        }));
+        setLoadingBalances(false);
+      }).catch((err) => {
+        if (cancelled) return;
+        setAllocationRows([]);
+        setErrorMsg(err instanceof Error ? err.message : 'Could not load order-line inventory.');
+        setLoadingBalances(false);
       });
+      return () => { cancelled = true; };
     }
   }, [selectedOrderId, orders]);
 
@@ -97,25 +156,31 @@ export function ShipmentCreateModal({
       return;
     }
 
-    const chosenBalance = fgBalances.find((b) => b.id === selectedBalanceId);
-    if (!chosenBalance) {
-      setErrorMsg('Please select an eligible Finished Goods inventory bucket with available stock');
-      return;
-    }
-
     try {
-      const atoms = parseQuantity(allocateQty, 0);
+      const submittedRows = allocationRows.filter((row) => row.quantity.trim());
+      if (submittedRows.length === 0) {
+        throw new Error('Enter an allocation quantity for at least one product line.');
+      }
+      const lines = submittedRows.map((row) => {
+        const chosenBalance = row.balances.find((balance) => balance.id === row.selectedBalanceId);
+        if (!chosenBalance) throw new Error(`Select eligible Finished Goods stock for ${row.itemCode}.`);
+        const atoms = parseQuantity(row.quantity, 6);
+        if (atoms <= 0n) throw new Error(`Enter a positive quantity for ${row.itemCode}.`);
+        const remainingAtoms = row.orderedAtoms - row.alreadyAllocatedAtoms;
+        if (atoms > remainingAtoms) throw new Error(`${row.itemCode} allocation exceeds the remaining order-line quantity.`);
+        if (atoms > chosenBalance.availableAtoms) throw new Error(`${row.itemCode} allocation exceeds available Finished Goods stock.`);
+        return {
+          ...(row.orderLineId ? { orderLineId: row.orderLineId } : {}),
+          itemId: chosenBalance.itemId,
+          lotId: chosenBalance.lotId || undefined,
+          sourceLocationId: chosenBalance.locationId,
+          allocatedAtoms: atoms,
+        };
+      });
 
       await allocateMutation.mutateAsync({
         orderId: selectedOrder.id,
-        lines: [
-          {
-            itemId: chosenBalance.itemId,
-            lotId: chosenBalance.lotId || undefined,
-            sourceLocationId: chosenBalance.locationId,
-            allocatedAtoms: atoms,
-          },
-        ],
+        lines,
         carrierName: carrierName.trim() || undefined,
         trackingNumber: trackingNumber.trim() || undefined,
         destinationAddress: destinationAddress.trim() || undefined,
@@ -156,52 +221,74 @@ export function ShipmentCreateModal({
           >
             {orders.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.orderNumber} — {o.item?.name} ({o.customer?.name})
+                {o.orderNumber} — {o.lines?.length || 1} product line(s) ({o.customer?.name})
               </option>
             ))}
           </Select>
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-ink mb-1">
-            Eligible Finished Goods Stock
-          </label>
-          {fgBalances.length === 0 ? (
-            <div className="p-3 bg-surface-muted border border-line rounded text-xs text-muted">
-              No released Finished Goods available for this order item. Ensure QC inspections have passed outputs into FG.
-            </div>
-          ) : (
-            <Select
-              value={selectedBalanceId}
-              onChange={(e) => setSelectedBalanceId(e.target.value)}
-              className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
-            >
-              {fgBalances.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.locationName} · Lot: {b.lotNumber || 'NO-LOT'} · Avail: {formatQuantity(b.availableAtoms)} units
-                </option>
-              ))}
-            </Select>
-          )}
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-ink mb-1">
-            Quantity to Allocate (units)
-          </label>
-          <input
-            type="number"
-            step="any"
-            min="0.000001"
-            required
-            value={allocateQty}
-            onChange={(e) => setAllocateQty(e.target.value)}
-            className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
-            placeholder="e.g. 10"
-          />
-          <span className="text-xs text-muted block mt-1">
-            Hard-reserves this stock in Finished Goods so it cannot be double-allocated.
-          </span>
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Allocate by product line</h3>
+            <p className="text-xs text-muted">Each quantity is capped against its own customer order line and eligible finished goods stock.</p>
+          </div>
+          {loadingBalances ? (
+            <div className="p-4 bg-surface-muted border border-line rounded-lg text-xs text-muted" role="status">Loading line inventory…</div>
+          ) : allocationRows.length === 0 ? (
+            <div className="p-4 bg-surface-muted border border-line rounded-lg text-xs text-muted">Select an order with at least one customer product line.</div>
+          ) : allocationRows.map((row, index) => {
+            const remainingAtoms = row.orderedAtoms > row.alreadyAllocatedAtoms ? row.orderedAtoms - row.alreadyAllocatedAtoms : 0n;
+            const updateRow = (patch: Partial<ShipmentAllocationRow>) => {
+              setAllocationRows((current) => current.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, ...patch } : candidate));
+            };
+            return (
+              <div key={row.orderLineId || row.itemId} className="rounded-lg border border-line bg-surface p-4 space-y-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{row.itemCode} · {row.itemName}</p>
+                    <p className="text-xs text-muted">Ordered {formatQuantity(row.orderedAtoms)} · already allocated {formatQuantity(row.alreadyAllocatedAtoms)} · remaining {formatQuantity(remainingAtoms)}</p>
+                  </div>
+                  {row.orderLineId && <span className="text-xs text-muted">Line {index + 1}</span>}
+                </div>
+                {row.balances.length === 0 ? (
+                  <p className="rounded-md bg-surface-muted px-3 py-2 text-xs text-muted">No released finished goods stock is available for this product line.</p>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-medium text-ink mb-1" htmlFor={`shipment-stock-${index}`}>Finished goods bucket</label>
+                      <Select
+                        id={`shipment-stock-${index}`}
+                        value={row.selectedBalanceId}
+                        onChange={(e) => updateRow({ selectedBalanceId: e.target.value })}
+                        className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                      >
+                        {row.balances.map((balance) => (
+                          <option key={balance.id} value={balance.id}>
+                            {balance.locationName} · Lot {balance.lotNumber || 'NO-LOT'} · available {formatQuantity(balance.availableAtoms)}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-ink mb-1" htmlFor={`shipment-quantity-${index}`}>Quantity to allocate (units)</label>
+                      <Input
+                        id={`shipment-quantity-${index}`}
+                        type="number"
+                        inputMode="decimal"
+                        step="any"
+                        min="0.000001"
+                        max={formatQuantity(remainingAtoms)}
+                        value={row.quantity}
+                        onChange={(e) => updateRow({ quantity: e.target.value })}
+                        placeholder="Enter a quantity"
+                        disabled={remainingAtoms <= 0n}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -247,6 +334,7 @@ export function ShipmentCreateModal({
 
         <div className="dialog-actions">
           <Button
+            type="button"
             onClick={onClose}
           >
             Cancel
@@ -254,7 +342,7 @@ export function ShipmentCreateModal({
           <Button
             type="submit"
             variant="primary"
-            disabled={fgBalances.length === 0 || allocateMutation.isPending}
+            disabled={loadingBalances || allocationRows.every((row) => row.balances.length === 0) || allocateMutation.isPending}
           >
             {allocateMutation.isPending ? 'Allocating...' : 'Allocate Shipment'}
           </Button>

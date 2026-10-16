@@ -131,23 +131,24 @@ describe('Phase 12: R3 Controlled Recovery & Advanced Capabilities', () => {
       }
     });
 
-    it('approves a recovery option and settles proposal atomically', async () => {
+    it('rejects a split proposal when no final QC-passed quantity exists', async () => {
       const { alpha } = fixture;
       const owner = alpha.users.owner.principal;
 
-      const approval = await recoveryService.approveRecovery(owner, {
+      await expect(recoveryService.approveRecovery(owner, {
         orderId: testOrderId,
         proposalId,
         optionId: selectedOption.id,
-        tranche1Qty: selectedOption.allocation?.tranche1Qty || 5,
-        tranche1Date: selectedOption.allocation?.tranche1Date || new Date().toISOString(),
-        tranche2Qty: selectedOption.allocation?.tranche2Qty || 5,
-        tranche2Date: selectedOption.allocation?.tranche2Date || new Date().toISOString(),
-        notes: 'Approved overtime shift recovery.',
+        tranche1Qty: selectedOption.allocation!.tranche1Qty,
+        tranche1Date: selectedOption.allocation!.tranche1Date,
+        tranche2Qty: selectedOption.allocation!.tranche2Qty,
+        tranche2Date: selectedOption.allocation!.tranche2Date,
+        notes: 'Approval must not claim success without applying reservations.',
+      })).rejects.toThrow(/Final QC-passed quantity is insufficient/);
+      const persisted = await fixture.db.recoveryProposal.findUniqueOrThrow({
+        where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: proposalId } },
       });
-
-      expect(approval.data.status).toBe('APPLIED');
-      expect(approval.data.orderId).toBe(testOrderId);
+      expect(persisted.status).toBe('PROPOSED');
     });
 
     it('rejects recovery approval on terminal or cancelled orders', async () => {
@@ -222,7 +223,8 @@ describe('Phase 12: R3 Controlled Recovery & Advanced Capabilities', () => {
 
       expect(passport.serialNumber).toBe(testSerialNumber);
       expect(passport.digestSha256).toBeDefined();
-      expect(passport.digestSha256.length).toBe(64);
+      expect(passport.digestSha256).not.toBeNull();
+      expect(passport.digestSha256!).toHaveLength(64);
       expect(passport.order?.orderNumber).toBeDefined();
     });
   });

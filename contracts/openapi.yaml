@@ -825,7 +825,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
       summary: Allocate finished goods to an order shipment
-      description: Requires delivery.dispatch, order.create or owner. Allocation is revalidated transactionally and capped against each matching order item line; an item not on the order cannot be allocated. Stock reservations and shipment lines are created atomically.
+      description: Requires delivery.dispatch, order.create or owner. Each multi-item shipment line identifies its orderLineId and matching itemId. Allocation is revalidated transactionally and capped against that exact customer line; ambiguous historical shipment lines block further allocation until reconciled. Stock reservations and shipment lines are created atomically.
       parameters:
         - $ref: '#/components/parameters/AccessIdempotency'
       requestBody:
@@ -844,6 +844,7 @@ paths:
                     type: object
                     required: [itemId, sourceLocationId, allocatedAtoms]
                     properties:
+                      orderLineId: { type: string, format: uuid, description: Required for orders with customer order lines; omitted only for legacy orders without order lines }
                       itemId: { type: string, format: uuid }
                       lotId: { type: string, format: uuid }
                       sourceLocationId: { type: string, format: uuid }
@@ -1851,6 +1852,45 @@ paths:
           description: Approved published overtime interval
         '400': { $ref: "#/components/responses/BadRequest" }
         '401': { $ref: "#/components/responses/Unauthorized" }
+        '404': { $ref: "#/components/responses/NotFound" }
+
+  /api/portal/orders:
+    get:
+      summary: List customer-visible orders and per-line progress
+      description: Requires customer_order.read_own, order.read or admin.access. The response envelope contains separate quality and delivery quantities for each order line; quantities from different items are never combined into an order-level atom total.
+      responses:
+        '200': { description: Customer order list envelope with per-order lines array }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+        '403': { $ref: "#/components/responses/Forbidden" }
+
+  /api/portal/orders/{id}:
+    get:
+      summary: Read customer-visible order detail and verified milestones
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Customer order detail envelope; quality, allocated, dispatched and delivered quantities are reported per order line }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+        '403': { $ref: "#/components/responses/Forbidden" }
+        '404': { $ref: "#/components/responses/NotFound" }
+
+  /api/portal/orders/{id}/acknowledge:
+    post:
+      summary: Acknowledge a customer-visible delivery promise
+      description: Requires customer_order.acknowledge_own or admin.access and persists an audited command receipt.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/AccessIdempotency"
+      responses:
+        '200': { description: Updated customer order detail envelope }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+        '403': { $ref: "#/components/responses/Forbidden" }
         '404': { $ref: "#/components/responses/NotFound" }
 
   /api/portal/orders/{id}/drawing-approval:

@@ -209,7 +209,13 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       case 'portal-orders': {
         requireAnyPermission(principal, ['customer_order.read_own']);
         if (!principal.customerId) throw new ForbiddenError('A customer account is required');
-        const where: Prisma.OrderWhereInput = { workspaceId, customerId: principal.customerId, ...(search ? { OR: [{ orderNumber: { contains: search } }, { item: { name: { contains: search } } }, { item: { code: { contains: search } } }] } : {}) };
+        const where: Prisma.OrderWhereInput = { workspaceId, customerId: principal.customerId, ...(search ? { OR: [
+          { orderNumber: { contains: search } },
+          { item: { name: { contains: search } } },
+          { item: { code: { contains: search } } },
+          { lines: { some: { item: { name: { contains: search } } } } },
+          { lines: { some: { item: { code: { contains: search } } } } },
+        ] } : {}) };
         const repository = new PortalRepository(tx);
         return page(() => tx.order.count({ where }), (skip, take) => repository.listCustomerOrders(workspaceId, principal.customerId!, { skip, take, search }));
       }

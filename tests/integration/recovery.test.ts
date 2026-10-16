@@ -91,7 +91,7 @@ describe('I03: Self-Healing Recovery Simulations & Atomic Approval', () => {
     ).rejects.toThrow(NotFoundError);
   });
 
-  it('commits atomic recovery approval and updates order promise with audit trail', async () => {
+  it('persists review proposals across service instances and does not claim unsupported recovery as applied', async () => {
     const { alpha } = fixture;
 
     const proposal = await recoveryService.proposeRecovery(
@@ -103,42 +103,33 @@ describe('I03: Self-Healing Recovery Simulations & Atomic Approval', () => {
       }
     );
 
-    const approveRes = await recoveryService.approveRecovery(
+    const selectedOption = proposal.options.find((option) => option.id === 'opt-split-batch')!;
+    expect(selectedOption.feasible).toBe(false);
+
+    const reloadedService = new RecoveryService(fixture.db);
+    await expect(reloadedService.approveRecovery(
       alpha.users.owner.principal,
       {
         orderId: testOrderId,
         proposalId: proposal.id,
         optionId: 'opt-split-batch',
-        tranche1Qty: 40,
-        tranche1Date: '2026-11-25',
-        tranche2Qty: 80,
-        tranche2Date: '2026-11-28',
-        notes: 'Approved split delivery: 40 units Nov 25, 80 units Nov 28',
+        tranche1Qty: selectedOption.allocation!.tranche1Qty,
+        tranche1Date: selectedOption.allocation!.tranche1Date,
+        tranche2Qty: selectedOption.allocation!.tranche2Qty,
+        tranche2Date: selectedOption.allocation!.tranche2Date,
       },
       'key-approve-recovery-101'
-    );
+    )).rejects.toThrow(BadRequestError);
 
-    expect(approveRes.data.status).toBe('APPLIED');
-    expect(approveRes.data.approvedTranche1Qty).toBe(40);
-    expect(approveRes.data.approvedTranche2Qty).toBe(80);
-
-    // Verify order was updated in DB
-    const updatedOrder = await fixture.db.order.findUnique({
-      where: { id: testOrderId },
+    const persisted = await fixture.db.recoveryProposal.findUniqueOrThrow({
+      where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: proposal.id } },
     });
-    expect(updatedOrder).toBeDefined();
-    expect(updatedOrder!.promisedDate?.toISOString().slice(0, 10)).toBe('2026-11-25');
-    expect(updatedOrder!.customerAcknowledged).toBe(false);
-
-    // Verify audit event entry
-    const audit = await fixture.db.auditEvent.findFirst({
-      where: {
-        workspaceId: alpha.workspaceId,
-        action: 'recovery.plan.approve',
-        aggregateId: testOrderId,
-      },
-    });
-    expect(audit).toBeDefined();
+    expect(persisted.status).toBe('PROPOSED');
+    const unchangedOrder = await fixture.db.order.findUniqueOrThrow({ where: { id: testOrderId } });
+    expect(unchangedOrder.promisedDate?.toISOString().slice(0, 10)).toBe('2026-11-25');
+    expect(await fixture.db.auditEvent.count({
+      where: { workspaceId: alpha.workspaceId, action: 'recovery.plan.approve', aggregateId: testOrderId },
+    })).toBe(0);
   });
 
   it('rejects approval on delivered or cancelled orders', async () => {

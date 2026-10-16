@@ -130,14 +130,15 @@ export class PortalService {
 
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, workspaceId: principal.workspaceId, customerId },
-      include: { item: true },
+      include: { item: true, lines: { select: { itemId: true } } },
     });
     if (!order) {
       throw new NotFoundError(`Customer order '${orderId}' not found`);
     }
 
+    const orderItemIds = Array.from(new Set([order.itemId, ...order.lines.map((line) => line.itemId)]));
     const drawing = await this.prisma.drawingRevision.findFirst({
-      where: { id: drawingRevisionId, workspaceId: principal.workspaceId, itemId: order.itemId },
+      where: { id: drawingRevisionId, workspaceId: principal.workspaceId, itemId: { in: orderItemIds } },
     });
     if (!drawing) {
       throw new NotFoundError(`Drawing revision '${drawingRevisionId}' not found for order item`);

@@ -28,8 +28,8 @@ export function generateRecoveryOptions(
   const tranche1Qty = totalQty >= 80 ? 40 : Math.max(1, Math.floor(totalQty / 2));
   const tranche2Qty = Math.max(0, totalQty - tranche1Qty);
 
-  // Split Batch is feasible if we already have at least tranche1Qty passed by QC
-  const splitFeasible = totalQty >= tranche1Qty;
+  // A tranche can be promised only when the same number of units has passed final QC.
+  const splitFeasible = readyQcPassedQty >= tranche1Qty;
 
   const splitOption: RecoveryOption = {
     id: 'opt-split-batch',
@@ -46,7 +46,7 @@ export function generateRecoveryOptions(
     feasible: splitFeasible,
     infeasibleReason: splitFeasible
       ? undefined
-      : `Ordered quantity insufficient for split tranche (${totalQty} < ${tranche1Qty})`,
+      : `Final QC-passed quantity is insufficient for split tranche (${readyQcPassedQty} < ${tranche1Qty})`,
     isRecommended: true,
     allocation: {
       tranche1Qty,

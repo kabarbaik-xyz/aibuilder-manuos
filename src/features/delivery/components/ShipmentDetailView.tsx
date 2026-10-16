@@ -114,25 +114,6 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
     }
   };
 
-  const totalAllocatedAtoms = shipment.lines.reduce(
-    (acc, l) => acc + l.allocatedAtoms,
-    0n,
-  );
-  const totalDispatchedAtoms = shipment.lines.reduce(
-    (acc, l) => acc + l.dispatchedAtoms,
-    0n,
-  );
-  const totalDeliveredAtoms = shipment.lines.reduce(
-    (acc, l) => acc + l.deliveredAtoms,
-    0n,
-  );
-
-  const orderTotalAtoms = shipment.order?.orderedAtoms || 0n;
-  const fulfillmentPct =
-    orderTotalAtoms > 0n
-      ? Number((totalAllocatedAtoms * 100n) / orderTotalAtoms)
-      : 100;
-
   // Determine current lifecycle step index (0: Allocated, 1: Dispatched, 2: Delivered)
   const isDelivered = shipment.status === "DELIVERED";
   const isDispatched = shipment.status === "DISPATCHED" || isDelivered;
@@ -388,16 +369,16 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
           <div className="p-6 flex flex-col justify-between">
             <div className="text-xs font-semibold text-muted uppercase tracking-wider flex items-center gap-1.5 mb-3">
               <Boxes className="w-3.5 h-3.5 text-muted" />
-              Quantity Shipped
+              Shipment Lines
             </div>
             <div className="my-1">
               <div className="text-2xl font-bold text-ink font-mono tracking-tight flex items-baseline gap-1.5">
-                <span>{formatQuantity(totalAllocatedAtoms)}</span>
-                <span className="text-xs font-normal text-muted font-sans">units</span>
+                <span>{shipment.lines.length}</span>
+                <span className="text-xs font-normal text-muted font-sans">product allocation(s)</span>
               </div>
             </div>
             <p className="text-xs text-muted mt-2">
-              Order Total: {orderTotalAtoms > 0n ? formatQuantity(orderTotalAtoms) : '—'} units ({fulfillmentPct}% fulfilled)
+              Quantities are tracked separately for each product line below.
             </p>
           </div>
 
@@ -673,17 +654,8 @@ export function ShipmentDetailView({ shipmentId }: ShipmentDetailViewProps) {
               </table>
             </div>
 
-            <div className="panel-footer bg-surface-muted/20">
-              <span className="font-medium">Total Consignment Summary</span>
-              <div className="flex items-center gap-6 font-semibold numeric">
-                <span>Allocated: {formatQuantity(totalAllocatedAtoms)}</span>
-                <span>
-                  Dispatched: {formatQuantity(totalDispatchedAtoms)}
-                </span>
-                <span>
-                  Delivered: {formatQuantity(totalDeliveredAtoms)}
-                </span>
-              </div>
+            <div className="panel-footer bg-surface-muted/20 text-xs text-muted">
+              Each shipment line retains its own allocated, dispatched, and delivered quantity. Different products are not combined into a single quantity total.
             </div>
           </div>
 

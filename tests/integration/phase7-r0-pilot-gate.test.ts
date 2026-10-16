@@ -439,8 +439,8 @@ describe('Phase 7: R0 Release & Pilot Gate Verification (36 R0 Capabilities)', (
 
     // A. 16 passed / 20 ordered = 80% progress
     const orderView = await portalService.getCustomerOrder(customerUser, orderId);
-    expect(orderView.progressPct).toBe(80);
-    expect(orderView.qcPassedAtoms).toBe(parseQuantity('16').toString());
+    expect(orderView.lines[0].progressPct).toBe(80);
+    expect(orderView.lines[0].qcPassedQuantity).toBe('16');
 
     const deliveryMilestone = orderView.milestones.find((m) => m.key === 'DELIVERY');
     expect(deliveryMilestone?.status).toBe('PENDING');
