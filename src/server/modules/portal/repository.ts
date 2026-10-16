@@ -51,17 +51,17 @@ export class PortalRepository {
     });
 
     return orders.map((o) => {
-      // Calculate QC-passed atoms
+      // Calculate QC-passed atoms on final production outputs
       let qcPassedAtoms = 0n;
-      for (const mo of o.manufacturingOrders) {
-        for (const js of mo.jobsheets) {
-          for (const t of js.tasks) {
-            for (const out of t.productionOutputs) {
-              for (const insp of out.inspections) {
-                if (insp.status === 'FINALIZED') {
-                  qcPassedAtoms += insp.passedAtoms;
-                }
-              }
+      const allOutputs = o.manufacturingOrders.flatMap((mo) =>
+        mo.jobsheets.flatMap((js) => js.tasks.flatMap((t) => t.productionOutputs))
+      );
+      const hasFinalOutputs = allOutputs.some((out) => out.isFinal);
+      for (const out of allOutputs) {
+        if (!hasFinalOutputs || out.isFinal) {
+          for (const insp of out.inspections) {
+            if (insp.status === 'FINALIZED') {
+              qcPassedAtoms += insp.passedAtoms;
             }
           }
         }
@@ -148,22 +148,30 @@ export class PortalRepository {
     let allTasksCompleted = true;
     let taskCount = 0;
 
+    const allOutputs = order.manufacturingOrders.flatMap((mo) =>
+      mo.jobsheets.flatMap((js) => js.tasks.flatMap((t) => t.productionOutputs))
+    );
+    const hasFinalOutputs = allOutputs.some((out) => out.isFinal);
+
     for (const mo of order.manufacturingOrders) {
       for (const js of mo.jobsheets) {
         for (const t of js.tasks) {
           taskCount++;
-          if (t.status === 'IN_PROGRESS' || t.status === 'COMPLETED') {
+          if (['IN_PROGRESS', 'RUNNING', 'PAUSED', 'WAITING_QC', 'COMPLETED'].includes(t.status)) {
             anyTaskStarted = true;
           }
           if (t.status !== 'COMPLETED') {
             allTasksCompleted = false;
           }
-          for (const out of t.productionOutputs) {
-            for (const insp of out.inspections) {
-              if (insp.status === 'FINALIZED') {
-                qcPassedAtoms += insp.passedAtoms;
-              }
-            }
+        }
+      }
+    }
+
+    for (const out of allOutputs) {
+      if (!hasFinalOutputs || out.isFinal) {
+        for (const insp of out.inspections) {
+          if (insp.status === 'FINALIZED') {
+            qcPassedAtoms += insp.passedAtoms;
           }
         }
       }

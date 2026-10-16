@@ -51,7 +51,6 @@ export class PortalService {
   ): Promise<CustomerOrderDetailDTO> {
     requireAnyPermission(principal, [
       'customer_order.acknowledge_own',
-      'customer_order.read_own',
       'admin.access',
     ]);
 

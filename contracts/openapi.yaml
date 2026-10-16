@@ -1037,6 +1037,24 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/execution/profile:
+    get:
+      summary: Retrieve current operator profile, verified skills, and certifications
+      description: Returns the authenticated technician profile, employee code, facility, verified skills matrix (0-4 scale), and active certifications.
+      responses:
+        '200':
+          description: TechnicianProfileDTO envelope
+        '401': { $ref: "#/components/responses/Unauthorized" }
+
+  /api/execution/my-tasks:
+    get:
+      summary: List tasks assigned to the current operator or all workspace tasks for supervisors
+      description: Returns active and scheduled tasks with real-time work session elapsed minutes and predecessor status.
+      responses:
+        '200':
+          description: Array of MyTaskSummaryDTO
+        '401': { $ref: "#/components/responses/Unauthorized" }
+
   /api/facilities:
     get:
       summary: List all facilities in current workspace

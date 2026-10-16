@@ -22,6 +22,7 @@ import {
   TaskIssueDTO,
   ScanCodeSchema,
   ScanResultDTO,
+  TechnicianProfileDTO,
 } from './contracts';
 import { NotificationService } from '../notifications/service';
 
@@ -1094,6 +1095,85 @@ export class ExecutionService {
     }
 
     throw new NotFoundError(`No operational entity found for code '${trimmed}'`);
+  }
+
+  async getTechnicianProfile(principal: Principal): Promise<TechnicianProfileDTO> {
+    const workspaceId = principal.workspaceId;
+    let targetTechId = principal.technicianId;
+
+    if (!targetTechId) {
+      const membership = await this.db.membership.findFirst({
+        where: { workspaceId, userId: principal.userId },
+        select: { technicianId: true },
+      });
+      targetTechId = membership?.technicianId ?? null;
+    }
+
+    const technician = targetTechId
+      ? await this.db.technician.findUnique({
+          where: {
+            workspaceId_id: {
+              workspaceId,
+              id: targetTechId,
+            },
+          },
+          include: {
+            department: true,
+            calendar: true,
+            facility: true,
+            skills: {
+              include: { skill: true },
+              where: { revokedAt: null },
+            },
+            certifications: {
+              include: { certification: true },
+              where: { revokedAt: null },
+            },
+          },
+        })
+      : null;
+
+    const facility = principal.facilityId
+      ? await this.db.facility.findFirst({
+          where: { workspaceId, id: principal.facilityId },
+        })
+      : null;
+
+    return {
+      technicianId: technician?.id ?? null,
+      userId: principal.userId,
+      name: principal.name || technician?.name || "Operator",
+      email: principal.email,
+      code: technician?.code ?? null,
+      facilityId: technician?.facilityId ?? principal.facilityId ?? null,
+      facilityName: technician?.facility?.name ?? facility?.name ?? null,
+      departmentId: technician?.departmentId ?? null,
+      departmentName: technician?.department?.name ?? null,
+      calendarName: technician?.calendar?.name ?? null,
+      roles: principal.roles,
+      skills: (technician?.skills || []).map((s: { id: string; skillId: string; skill: { code: string; name: string }; level: number; assessmentStatus: string | null; validFrom: Date | null; expiresAt: Date | null; evidence: string | null }) => ({
+        id: s.id,
+        skillId: s.skillId,
+        skillCode: s.skill.code,
+        skillName: s.skill.name,
+        level: s.level,
+        assessmentStatus: s.assessmentStatus || "VERIFIED",
+        validFrom: s.validFrom?.toISOString() ?? null,
+        expiresAt: s.expiresAt?.toISOString() ?? null,
+        evidence: s.evidence,
+      })),
+      certifications: (technician?.certifications || []).map((c: { id: string; certificationId: string; certification: { code: string; name: string }; status: string | null; validFromDate: Date | null; expiresAtDate: Date | null; validUntil: string; scope: string | null }) => ({
+        id: c.id,
+        certificationId: c.certificationId,
+        code: c.certification.code,
+        name: c.certification.name,
+        status: c.status || "ACTIVE",
+        validFromDate: c.validFromDate?.toISOString() ?? null,
+        expiresAtDate: c.expiresAtDate?.toISOString() ?? null,
+        validUntil: c.validUntil,
+        scope: c.scope,
+      })),
+    };
   }
 }
 

@@ -581,4 +581,17 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
     const fullDeliveryMilestone = orderAfterFull.milestones.find((m) => m.key === 'DELIVERY');
     expect(fullDeliveryMilestone?.status).toBe('COMPLETED');
   });
+  it("retrieves technician profile with verified skills, levels, and active certifications", async () => {
+    const operator = fixture.alpha.users.operator.principal;
+    const profile = await executionService.getTechnicianProfile(operator);
+
+    expect(profile.technicianId).toBe(fixture.alpha.masters.technicianId);
+    expect(profile.code).toBe("TECH-01");
+    expect(profile.name).toBe("Lead CNC Operator");
+    expect(profile.departmentName).toBeDefined();
+    expect(profile.calendarName).toBeDefined();
+    expect(profile.skills.length).toBeGreaterThanOrEqual(1);
+    expect(profile.skills[0].level).toBe(4);
+    expect(profile.skills[0].skillCode).toBe("SKILL-MILL-5AX");
+  });
 });

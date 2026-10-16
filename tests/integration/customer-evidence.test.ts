@@ -155,6 +155,15 @@ describe('O08: Customer Evidence, Factual Passports, and Customer Portal', () =>
     expect(detail.passports.length).toBe(1);
     expect(detail.milestones.length).toBe(5);
 
+    // Customer with only read permission is strictly rejected from acknowledging promise
+    const readOnlyCustomer = {
+      ...alpha.users.customerUser.principal,
+      permissions: new Set(['customer_order.read_own']),
+    };
+    await expect(
+      portalService.acknowledgePromise(readOnlyCustomer, orderId)
+    ).rejects.toThrow(ForbiddenError);
+
     // Customer acknowledges the promise
     const acknowledged = await portalService.acknowledgePromise(
       alpha.users.customerUser.principal,

@@ -2,7 +2,7 @@
 
 Date: 2026-10-16  
 Source baseline: `feat/product_rev` at `cf282ba`  
-Current execution workspace: `/Users/ardian/.codex/worktrees/2789/manuos-sg`, branch `feat/product_rev`, HEAD `27ed24551d655cdeb63b091525e83184949be9ee`. No commit, push, merge or deployment.
+Current execution workspace: `/Users/ardian/.codex/worktrees/2789/manuos-sg`, branch `feat/product_rev`, HEAD `1e6ab095594b4198889a74aa9bc81dc03bc4b0b1` (commits `c815f4c`, `1794900`, `1e6ab09` applied on branch). No push, merge or deployment.
 
 This file records current-session evidence. The [gap audit](product-rev-gap-audit.md) remains the 79-capability assessment; this status file records implementation and verification as they happen. Source database and pilot evidence are not inferred from disposable test data.
 
@@ -14,7 +14,18 @@ Current inline verification adds: order draft facility-grant and decimal-precisi
 
 ### Session evidence — 2026-10-16 (after `c815f4c`)
 
-Scope: SFL-05 scan entry, SFL-04/scan authorization, MAT-01 start coverage, QLT-01 readings gate, CUS-01 intake milestone truth. All evidence below is local source/service/Vitest/build level; browser, operational-database and pilot gates remain open.
+Scope: SFL-01–05 mobile Today/Profile surfaces, scan entry/authorization, MAT-01 start coverage, QLT-01 readings gate, blocker photographic evidence, truthful final-QC progress projection, and customer promise acknowledgment authorization. All evidence below is local source/service/Vitest/build level; browser, operational-database and pilot gates remain open.
+
+- **Dedicated Mobile Today & Profile Surfaces (SFL-01, RES-01/03/04):**
+  - `/shop-floor/today` (`src/features/execution/components/ShopFloorTodayView.tsx`): mobile-first operator surface showing active running work session with live timer, queued work for today, explicit online-only mutation status badge, and embedded QR/barcode scanner.
+  - `/shop-floor/profile` (`src/features/execution/components/ShopFloorProfileView.tsx`): displays operator identity, employee code, assigned facility, verified skill matrix (0-4 scale, evaluation status, validity dates), and active certifications.
+  - Subnavigation tabs (`All Tasks`, `Today`, `My Profile`) integrated across all shop-floor views.
+  - `GET /api/execution/profile` endpoint added to `ExecutionService` and documented in `contracts/openapi.yaml`.
+- **Workstation Issues & Photographic Evidence (SFL-04):**
+  - `ShopFloorWorkstationView.tsx`: Report Issue modal now connects to `IssueReason` catalog and accepts photographic evidence URLs/attachments; issues table displays category badge and clickable photo evidence links.
+- **Truthful Customer Final QC Progress & Authorization Guards (CUS-01, G10):**
+  - `src/server/modules/portal/repository.ts`: order QC progress now strictly filters to final production outputs (`isFinal: true` / terminal operations), preventing intermediate stage inspections from inflating finished goods progress.
+  - `src/server/modules/portal/service.ts`: promise acknowledgment now strictly rejects callers holding only `customer_order.read_own`, requiring explicit `customer_order.acknowledge_own` or `admin.access` (regression in `tests/integration/customer-evidence.test.ts`).
 
 - **QR/manual scan entry completed (SFL-05, phase 6):**
   - `src/features/execution/components/ShopFloorTaskListView.tsx`: scan/manual code form on My Work with loading, recognised-code and error states in consistent English copy; opens task/job through `/shop-floor/tasks/{id}` and orders through `/orders/{id}` only when the principal holds `order.read`; the server re-authorizes on open.
@@ -382,7 +393,7 @@ The [gap audit matrix](product-rev-gap-audit.md#complete-capability-matrix) cont
 | 10 — R2 finite capacity, feasible promises and factory memory | Partial / open | Service code exists; runtime assumptions, item routing, measured history and verified UI/backtests remain open. |
 | 11 — R2 costing, customer requests and opt-in connectors | Partial / open | Some service/UI work exists; provider delivery, complete cost source coverage and approval-backed customer workflows remain open. |
 | 12 — R3 controlled recovery and validated advanced capabilities | Partial / open | Passport overwrite protection added; canonical genealogy snapshot, applied recovery reservations, telemetry persistence and validated opt-in pilots remain open. |
-| 13 — final reconciliation, regression and release evidence | Partial / open | Full current local suite (71 files / 365 tests), typecheck and production build pass as of 2026-10-16; operational database reconciliation, authenticated browser, restore, performance and pilot evidence remain open. |
+| 13 — final reconciliation, regression and release evidence | Partial / open | Full current local suite (71 files / 367 tests), typecheck and production build pass as of 2026-10-16; operational database reconciliation, authenticated browser, restore, performance and pilot evidence remain open. |
 
 ## Phase 9 — R1 reliable integrations, analytics, grounded assistance and offline work
 

@@ -162,3 +162,43 @@ export interface ScanResultDTO {
   status: string;
   taskId?: string;
 }
+
+export interface TechnicianSkillProfileDTO {
+  id: string;
+  skillId: string;
+  skillCode: string;
+  skillName: string;
+  level: number;
+  assessmentStatus: string;
+  validFrom: string | null;
+  expiresAt: string | null;
+  evidence?: string | null;
+}
+
+export interface TechnicianCertificationProfileDTO {
+  id: string;
+  certificationId: string;
+  code: string;
+  name: string;
+  status: string;
+  validFromDate: string | null;
+  expiresAtDate: string | null;
+  validUntil: string;
+  scope?: string | null;
+}
+
+export interface TechnicianProfileDTO {
+  technicianId: string | null;
+  userId: string;
+  name: string;
+  email: string;
+  code: string | null;
+  facilityId: string | null;
+  facilityName: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  calendarName: string | null;
+  roles: string[];
+  skills: TechnicianSkillProfileDTO[];
+  certifications: TechnicianCertificationProfileDTO[];
+}

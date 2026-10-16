@@ -56,6 +56,17 @@ export function ShopFloorTaskListView() {
 
   return <div className="page-stack my-work-page">
     <PageHeader title="My Work" description={supervisor ? 'Review active production work across your workspace.' : 'Your assigned production tasks, ready for the next step.'} actions={<Button icon="reset" disabled={pagination.disabled} onClick={() => void refetch()}>Refresh</Button>} />
+    <div className="flex items-center gap-2 border-b border-line pb-3">
+      <ButtonLink href="/shop-floor" size="small" variant="primary">
+        All Tasks
+      </ButtonLink>
+      <ButtonLink href="/shop-floor/today" size="small" variant="default">
+        Today
+      </ButtonLink>
+      <ButtonLink href="/shop-floor/profile" size="small" variant="default">
+        My Profile
+      </ButtonLink>
+    </div>
     <section className="my-work-queue" aria-label="Active production work">
       <div className="my-work-toolbar">
         <div className="my-work-filters" role="group" aria-label="Filter work by status">{filters.map(filter => <button type="button" key={filter.value} aria-pressed={status === filter.value} className={status === filter.value ? 'active' : ''} onClick={() => setStatus(filter.value)}>{filter.label}<span>{isPending ? '—' : filter.value ? counts[filter.value] || 0 : total}</span></button>)}</div>

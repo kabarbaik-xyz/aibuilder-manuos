@@ -17,6 +17,7 @@ import {
   useResolveTaskIssue,
   useReopenTaskIssue,
   useScanBarcode,
+  useIssueReasons,
 } from '../hooks';
 import { getScanOpenPath } from '../scan-routing';
 import type { ScanResultDTO } from '@/server/modules/execution/contracts';
@@ -52,6 +53,9 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const resolveIssueMutation = useResolveTaskIssue(taskId);
   const reopenIssueMutation = useReopenTaskIssue(taskId);
   const scanMutation = useScanBarcode();
+  const { data: issueReasons } = useIssueReasons();
+  const [selectedReasonId, setSelectedReasonId] = useState("");
+  const [evidenceUrl, setEvidenceUrl] = useState("");
 
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [issueTitle, setIssueTitle] = useState("");
@@ -149,11 +153,15 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           title: issueTitle.trim(),
           severity: issueSeverity,
           description: issueDescription.trim() || undefined,
+          issueReasonId: selectedReasonId || undefined,
+          evidence: evidenceUrl.trim() ? [evidenceUrl.trim()] : undefined,
         },
       });
       setShowIssueModal(false);
       setIssueTitle("");
       setIssueDescription("");
+      setSelectedReasonId("");
+      setEvidenceUrl("");
       refetchIssues();
     } catch (err: any) {
       setActionError(err.message || "Failed to report issue");
@@ -623,9 +631,30 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                       </Badge>
                     </td>
                     <td className="py-2.5 px-3">
-                      <strong className="text-ink font-medium">{iss.title}</strong>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-ink font-medium">{iss.title}</strong>
+                        {iss.issueReasonLabel && (
+                          <Badge variant="default">{iss.issueReasonLabel}</Badge>
+                        )}
+                      </div>
                       {iss.description && (
                         <p className="text-xs text-muted mt-0.5">{iss.description}</p>
+                      )}
+                      {iss.evidence && iss.evidence.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
+                          <span className="text-xs text-muted font-medium">Evidence:</span>
+                          {iss.evidence.map((url, idx) => (
+                            <a
+                              key={idx}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface border border-line text-xs text-primary hover:underline"
+                            >
+                              Photo #{idx + 1}
+                            </a>
+                          ))}
+                        </div>
                       )}
                     </td>
                     <td className="py-2.5 px-3">
@@ -856,6 +885,24 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
+                Issue Category & Reason
+              </label>
+              <Select
+                value={selectedReasonId}
+                onChange={(e: any) => setSelectedReasonId(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              >
+                <option value="">Select standard blocker/issue reason (optional)...</option>
+                {issueReasons?.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    [{r.category}] {r.code} - {r.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
                 Severity Level
               </label>
               <Select
@@ -881,6 +928,22 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 rows={3}
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Photographic / Attachment Evidence URL
+              </label>
+              <input
+                type="text"
+                value={evidenceUrl}
+                onChange={(e) => setEvidenceUrl(e.target.value)}
+                placeholder="e.g. https://... or /evidence/tooling-crack.jpg"
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+              <span className="text-xs text-muted block mt-1">
+                Link to captured machine inspection photograph or annotated document.
+              </span>
             </div>
 
             <div className="dialog-actions">

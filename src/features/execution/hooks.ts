@@ -83,6 +83,8 @@ import {
   resolveTaskIssue,
   reopenTaskIssue,
   scanBarcode,
+  fetchTechnicianProfile,
+  fetchIssueReasons,
 } from "./api";
 
 export function useTaskIssues(taskId: string) {
@@ -140,5 +142,19 @@ export function useReopenTaskIssue(taskId?: string) {
 export function useScanBarcode() {
   return useMutation({
     mutationFn: (code: string) => scanBarcode(code),
+  });
+}
+
+export function useTechnicianProfile() {
+  return useQuery({
+    queryKey: ["execution", "profile"],
+    queryFn: () => fetchTechnicianProfile(),
+  });
+}
+
+export function useIssueReasons(category?: string) {
+  return useQuery({
+    queryKey: ["issue-reasons", category || "all"],
+    queryFn: () => fetchIssueReasons(category),
   });
 }

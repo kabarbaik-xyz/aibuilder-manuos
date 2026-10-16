@@ -61,7 +61,7 @@ export async function recordTaskOutput(params: RecordOutputParams) {
   });
 }
 
-import { TaskIssueDTO, ScanResultDTO } from "@/server/modules/execution/contracts";
+import { TaskIssueDTO, ScanResultDTO, TechnicianProfileDTO } from "@/server/modules/execution/contracts";
 
 export async function fetchTaskIssues(taskId: string): Promise<TaskIssueDTO[]> {
   const res = await apiRequest<{ data: TaskIssueDTO[] }>("/api/execution/tasks/" + taskId + "/issues");
@@ -75,6 +75,7 @@ export async function createTaskIssue(
     description?: string;
     severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
     issueReasonId?: string;
+    evidence?: string[];
   }
 ) {
   return apiRequest("/api/execution/tasks/" + taskId + "/issues", {
@@ -102,5 +103,24 @@ export async function scanBarcode(code: string): Promise<ScanResultDTO> {
     method: "POST",
     body: JSON.stringify({ code }),
   });
+  return res.data;
+}
+
+export interface IssueReasonDTO {
+  id: string;
+  category: string;
+  code: string;
+  label: string;
+  isActive: boolean;
+}
+
+export async function fetchIssueReasons(category?: string): Promise<IssueReasonDTO[]> {
+  const query = category ? `?category=${encodeURIComponent(category)}` : "";
+  const res = await apiRequest<{ data: IssueReasonDTO[] }>("/api/issue-reasons" + query);
+  return res.data;
+}
+
+export async function fetchTechnicianProfile(): Promise<TechnicianProfileDTO> {
+  const res = await apiRequest<{ data: TechnicianProfileDTO }>("/api/execution/profile");
   return res.data;
 }
