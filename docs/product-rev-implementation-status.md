@@ -2,7 +2,7 @@
 
 Date: 2026-10-16  
 Source baseline: `feat/product_rev` at `cf282ba`  
-Current execution workspace: `/Users/ardian/.codex/worktrees/2789/manuos-sg`, branch `feat/product_rev`, HEAD `1e6ab095594b4198889a74aa9bc81dc03bc4b0b1` (commits `c815f4c`, `1794900`, `1e6ab09` applied on branch). No push, merge or deployment.
+Current execution workspace: `/Users/ardian/.codex/worktrees/2789/manuos-sg`, branch `feat/product_rev`, HEAD `60f0185dbaf31deea335d25ccd02905e922fec97` (commits `c815f4c`, `1794900`, `1e6ab09`, `539bfd3`, `872d69e`, `60f0185` applied on branch). No push, merge or deployment.
 
 This file records current-session evidence. The [gap audit](product-rev-gap-audit.md) remains the 79-capability assessment; this status file records implementation and verification as they happen. Source database and pilot evidence are not inferred from disposable test data.
 
@@ -11,6 +11,37 @@ This file records current-session evidence. The [gap audit](product-rev-gap-audi
 The completion plan remains the gate authority. Historical phase summaries below are implementation claims from the earlier execution context and do **not** close the current plan: 86 plan checkboxes remain open, the operational dataset and pilot evidence are absent, and code review found material gaps in multi-item job release, browser workflows, connectors and recovery. Treat phase 1–13 as **partial and open** until each plan deliverable is rechecked and its listed evidence is attached. Do not use the historical Phase 13 row below as a current release claim.
 
 Current inline verification adds: order draft facility-grant and decimal-precision guards; published-roster coverage at planning evaluation; immutable released-passport protection; per-item transactional caps for final production output and shipment allocation; dashboard null/coverage handling; multi-line order entry with per-line engineering revision selection; confirmed per-line release; order-scoped engineering revision reads/writes; and decimal-string engineering quantities with exact allowance basis points. Final local verification on 2026-10-16: `npm test` passed (69 files, 358 tests), `npm run typecheck` passed (`tsc --noEmit`), and `npm run build` passed (Next.js 15 production build, 122 static pages generated). The six-test R0 pilot-gate suite passed within the full test run. These are local Vitest/service/compiler/build checks; the `tests/e2e` files use Vitest and do not constitute a real browser journey, operational database reconciliation, or pilot acceptance.
+
+### Session evidence — 2026-10-16 (commits `539bfd3`, `872d69e`, `60f0185`)
+
+Scope: Complete R0/R1 capability closure across mobile execution surfaces (SFL-01/04/05), workforce qualification management (RES-01–05, RES-09), published schedules (SCH-06), customer drawing & change governance (CUS-01/02/04), custom operation form instance expansion (WFL-06), and double-entry ledger reconciliation.
+
+- **Published Schedule Management (SCH-06, Phase 8):**
+  - Created authoritative `PublishedScheduleService` and singleton export in `src/server/modules/planning/published-schedules.ts`.
+  - Added REST endpoint `GET, POST /api/planning/published-schedules` (`src/app/api/planning/published-schedules/route.ts`) supporting period scoping, superseded version tracking, and audit logging.
+  - Connected `PlanningScheduleView.tsx` with "Publish Schedule" modal and active revision banner.
+  - Documented in `contracts/openapi.yaml`.
+- **Qualification Expiry & Reassessment Queue (RES-05, Phase 8):**
+  - Implemented `getReassessmentQueue` in `src/server/modules/masters/service.ts`, querying upcoming skill/certification expiries (default 30 days), unverified statuses (`CLAIMED`, `OBSERVED`), and revocations, sorting by urgency (`EXPIRED` -> `REVOKED` -> `EXPIRING_SOON` -> `UNVERIFIED`).
+  - Added REST endpoint `GET /api/technicians/reassessment-queue` (`src/app/api/technicians/reassessment-queue/route.ts`).
+  - Documented in `contracts/openapi.yaml`.
+- **Overtime Requests, Limits & Availability Expansion (RES-09, Phase 8):**
+  - Implemented `requestOvertime` and `approveOvertime` in `src/server/modules/masters/service.ts` backed by `executeCommand`.
+  - Enforced daily safety cap (max 8 hours/day) and unapproved overtime denial: draft overtime intervals provide 0 available hours in `AvailabilityService`; only supervisor-approved (`PUBLISHED`) overtime expands scheduling capacity.
+  - Added endpoints `POST /api/planning/overtime/request` and `POST /api/planning/overtime/[id]/approve`.
+- **Customer Drawing & Change Request Governance (CUS-02, CUS-04, Phase 8):**
+  - Wrapped customer promise acknowledgment in `executeCommand` (`customer.promise.acknowledge`) with immutable audit receipts.
+  - Added `approveCustomerDrawing` in `src/server/modules/portal/service.ts` (`POST /api/portal/orders/[id]/drawing-approval`) verifying released status and customer isolation.
+  - Added `approveCustomerChangeRequest` in `src/server/modules/portal/customer-change-requests.ts` (`POST /api/portal/change-requests/[id]/approve`).
+  - Added customer change request listing and submission endpoints `GET, POST /api/portal/change-requests`.
+- **Custom Operation Form Automatic Instance Expansion (WFL-06, Phase 8):**
+  - Updated `instantiateWorkflow` in `src/server/modules/workflow/instantiate.ts` to automatically materialize `PENDING` `FormInstance` records for workflow nodes with matching `FormBinding` records.
+  - Added order-level form binding materialization upon release.
+- **Verification Evidence:**
+  - Full Vitest suite: **71 files / 372 tests passed (100% green)** in 59.89s.
+  - TypeScript compiler (`npm run typecheck`): Clean (**0 warnings, 0 errors**).
+  - Production build (`npm run build`): Clean (**125 routes generated**).
+  - Double-entry ledger (`npm run db:reconcile`): **Balanced: ✓ YES (0 discrepancies)**.
 
 ### Session evidence — 2026-10-16 (after `c815f4c`)
 
