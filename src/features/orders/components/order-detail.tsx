@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -35,6 +36,8 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Panel } from '@/components/ui/panel';
 import { Input } from '@/components/ui/input';
 import { formatQuantity } from '@/domain/quantity';
+import { apiRequest } from '@/lib/api/client';
+import { PermissionGate } from '@/components/ui/permission-gate';
 
 interface OrderDetailProps {
   order: OrderDto;
@@ -76,6 +79,11 @@ export function OrderDetail({ order }: OrderDetailProps) {
     'overview' | 'engineering' | 'production' | 'materials' | 'costing' | 'fulfillment'
   >('overview');
   const [newQuestion, setNewQuestion] = useState('');
+  const queryClient = useQueryClient();
+  const [customerDocument, setCustomerDocument] = useState<File | null>(null);
+  const [publishDocumentToCustomer, setPublishDocumentToCustomer] = useState(false);
+  const [documentUploadPending, setDocumentUploadPending] = useState(false);
+  const [documentUploadMessage, setDocumentUploadMessage] = useState('');
 
   const releaseMutation = useReleaseOrder(order.id);
   const confirmMutation = useConfirmOrder(order.id);
@@ -83,6 +91,30 @@ export function OrderDetail({ order }: OrderDetailProps) {
   const costingQuery = useOrderCosting(order.id);
   const recordCostMutation = useRecordOrderCost(order.id);
   const changeRequestMutation = useCreateOrderChangeRequest(order.id);
+
+  const handleOrderDocumentUpload = async () => {
+    if (!customerDocument) return;
+    setDocumentUploadPending(true);
+    setDocumentUploadMessage('');
+    const formData = new FormData();
+    formData.set('file', customerDocument);
+    formData.set('parentType', 'ORDER');
+    formData.set('parentId', order.id);
+    formData.set('customerVisible', String(publishDocumentToCustomer));
+    try {
+      const uploaded = await apiRequest<{ fileName: string }>('/api/documents/upload', { method: 'POST', body: formData });
+      setDocumentUploadMessage(publishDocumentToCustomer
+        ? `${uploaded.fileName} is available in this customer's portal.`
+        : `${uploaded.fileName} was uploaded as an internal document.`);
+      setCustomerDocument(null);
+      setPublishDocumentToCustomer(false);
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    } catch (error: any) {
+      setDocumentUploadMessage(error.message || 'Document upload failed.');
+    } finally {
+      setDocumentUploadPending(false);
+    }
+  };
 
   const [showCostModal, setShowCostModal] = useState(false);
   const [costCategory, setCostCategory] = useState("MATERIAL");
@@ -592,6 +624,26 @@ export function OrderDetail({ order }: OrderDetailProps) {
               </Button>
             </form>
           </div>
+
+          <PermissionGate permission="order.release">
+            <Panel className="md:col-span-2 space-y-3">
+              <div>
+                <h3 className="font-semibold text-sm text-ink">Customer Document Publishing</h3>
+                <p className="text-xs text-muted">Keep the file private or explicitly publish it to this order's customer portal.</p>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <Input type="file" accept="application/pdf,image/png,image/jpeg,text/csv,text/plain" onChange={(event) => setCustomerDocument(event.target.files?.[0] ?? null)} aria-label="Choose order document" />
+                <label className="flex items-center gap-2 text-xs text-ink">
+                  <input type="checkbox" checked={publishDocumentToCustomer} onChange={(event) => setPublishDocumentToCustomer(event.target.checked)} />
+                  Publish to customer
+                </label>
+                <Button variant="primary" disabled={!customerDocument || documentUploadPending} onClick={handleOrderDocumentUpload}>
+                  {documentUploadPending ? 'Uploading…' : 'Upload document'}
+                </Button>
+              </div>
+              {documentUploadMessage && <p role="status" className="text-xs text-muted">{documentUploadMessage}</p>}
+            </Panel>
+          </PermissionGate>
         </div>
       )}
 

@@ -39,6 +39,7 @@ export function CreateQcChecklistModal({ isOpen, onClose }: { isOpen: boolean; o
     checkMin: '',
     checkMax: '',
     checkRequired: true,
+    checkRequiresEvidence: false,
   });
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -64,6 +65,7 @@ export function CreateQcChecklistModal({ isOpen, onClose }: { isOpen: boolean; o
               max: formData.checkMax,
             }),
             isRequired: formData.checkRequired,
+            requiresEvidence: formData.checkRequiresEvidence,
           },
         ],
       });
@@ -79,6 +81,7 @@ export function CreateQcChecklistModal({ isOpen, onClose }: { isOpen: boolean; o
         checkMin: '',
         checkMax: '',
         checkRequired: true,
+        checkRequiresEvidence: false,
       });
     } catch (err: any) {
       setError(err);
@@ -160,6 +163,12 @@ export function CreateQcChecklistModal({ isOpen, onClose }: { isOpen: boolean; o
               <label className="flex items-center gap-2 text-xs text-ink">
                 <input type="checkbox" checked={formData.checkRequired} onChange={(e) => setFormData({ ...formData, checkRequired: e.target.checked })} />
                 Required check
+              </label>
+            </div>
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-2 text-xs text-ink">
+                <input type="checkbox" checked={formData.checkRequiresEvidence} onChange={(e) => setFormData({ ...formData, checkRequiresEvidence: e.target.checked })} />
+                Require photo or document evidence
               </label>
             </div>
             <div>

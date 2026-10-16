@@ -53,6 +53,7 @@ export interface InspectionDTO {
       method: string;
       unit?: string | null;
       isRequired: boolean;
+      requiresEvidence: boolean;
     }>;
   } | null;
   inspectorUser?: { id: string; name: string };
@@ -65,6 +66,7 @@ export interface InspectionDTO {
     isPassed: boolean;
     defectReason?: string | null;
     notes?: string | null;
+    evidenceDocumentId?: string | null;
   }>;
   reworkAttempts?: Array<{
     id: string;
@@ -122,6 +124,7 @@ export interface FinalizeInspectionInput {
     checkMethod?: string;
     measuredValue?: string;
     isPassed: boolean;
+    evidenceDocumentId?: string;
     defectReason?: string;
     notes?: string;
   }>;
@@ -133,6 +136,18 @@ export async function finalizeInspection(input: FinalizeInspectionInput) {
   return apiRequest(`/api/quality/inspections/${inspectionId}/finalize`, {
     method: 'POST',
     body: JSON.stringify(stringifyQuantities(body)),
+  });
+}
+
+export async function uploadInspectionEvidence(inspectionId: string, file: File) {
+  const formData = new FormData();
+  formData.set('file', file);
+  formData.set('parentType', 'INSPECTION');
+  formData.set('parentId', inspectionId);
+  formData.set('customerVisible', 'false');
+  return apiRequest<{ id: string; fileName: string }>('/api/documents/upload', {
+    method: 'POST',
+    body: formData,
   });
 }
 
@@ -162,6 +177,7 @@ export interface RecordReinspectionInput {
     checkMethod?: string;
     measuredValue?: string;
     isPassed: boolean;
+    evidenceDocumentId?: string;
     defectReason?: string;
     notes?: string;
   }>;

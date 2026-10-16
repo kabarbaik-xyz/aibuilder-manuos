@@ -81,6 +81,24 @@ describe('O08: Customer Evidence, Factual Passports, and Customer Portal', () =>
     docId = doc.id;
   });
 
+  it('requires order write authority and a real workspace order before linking customer documents', async () => {
+    const { alpha } = fixture;
+    const qcPrincipal = alpha.users.qc.principal;
+    await expect(documentService.uploadDocument(qcPrincipal, {
+      fileName: 'unapproved-certificate.pdf',
+      mimeType: 'application/pdf',
+      content: Buffer.from('private qc file'),
+      link: { parentType: 'ORDER', parentId: '00000000-0000-4000-8000-000000000000', customerVisible: true },
+    })).rejects.toThrow(ForbiddenError);
+
+    await expect(documentService.uploadDocument(alpha.users.owner.principal, {
+      fileName: 'orphan-certificate.pdf',
+      mimeType: 'application/pdf',
+      content: Buffer.from('no order'),
+      link: { parentType: 'ORDER', parentId: '00000000-0000-4000-8000-000000000000', customerVisible: true },
+    })).rejects.toThrow(/order/i);
+  });
+
   it('authorizes download for owning customer and blocks cross-customer access', async () => {
     const { alpha, beta } = fixture;
 

@@ -40,6 +40,9 @@ export class DocumentService {
       await this.assertTaskAccess(principal, input.link.parentId);
       if (input.link.customerVisible) throw new ForbiddenError('Task evidence is internal');
     }
+    if (input.link?.parentType === 'ORDER') {
+      await this.assertOrderLinkAccess(principal, input.link.parentId, input.link.customerVisible ?? false);
+    }
 
     return this.repo.saveFile(
       principal.workspaceId,
@@ -69,6 +72,8 @@ export class DocumentService {
     if (input.parentType === 'TASK') {
       await this.assertTaskAccess(principal, input.parentId);
       if (input.customerVisible) throw new ForbiddenError('Task evidence is internal');
+    } else if (input.parentType === 'ORDER') {
+      await this.assertOrderLinkAccess(principal, input.parentId, input.customerVisible ?? false);
     } else if (hasPermission(principal, 'task.execute_assigned') && !['document.upload', 'order.write', 'quality.inspect', 'delivery.dispatch', 'admin.access', 'task.assign'].some((permission) => hasPermission(principal, permission))) {
       throw new ForbiddenError('Operators may only link evidence to assigned tasks');
     }
@@ -210,6 +215,15 @@ export class DocumentService {
     requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.read', 'document.read', 'quality.read', 'quality.inspect', 'admin.access']);
     const task = await this.prisma.task.findFirst({ where: { ...executionTaskScope(principal), id: taskId }, select: { id: true } });
     if (!task) throw new NotFoundError('Task not found in your authorized facility and assignment');
+  }
+
+  private async assertOrderLinkAccess(principal: Principal, orderId: string, customerVisible: boolean): Promise<void> {
+    if (customerVisible) requireAnyPermission(principal, ['order.release']);
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, workspaceId: principal.workspaceId },
+      select: { id: true },
+    });
+    if (!order) throw new NotFoundError('Order not found in this workspace');
   }
 
   private async assertCustomerParentOwnership(

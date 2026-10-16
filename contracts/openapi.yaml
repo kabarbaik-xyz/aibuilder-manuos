@@ -806,6 +806,36 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/execution/tasks/{id}/interval-corrections:
+    post:
+      summary: Correct a closed work interval
+      description: Requires task.assign, planning.write, or workspace.admin. Corrections are idempotent, update task duration atomically, and append an actor-attributed workflow event with the prior value, delta, and reason.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sessionId, correctedDurationMinutes, reasonCode, reason]
+              properties:
+                sessionId: { type: string, minLength: 1 }
+                correctedDurationMinutes: { type: integer, minimum: 0, maximum: 10080 }
+                reasonCode: { type: string, minLength: 1, maxLength: 100 }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        '200': { description: Corrected session and immutable audit event reference }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/passports/{serial}:
     get:
       summary: Read an internal passport draft
@@ -1034,7 +1064,7 @@ paths:
   /api/quality/inspections/{id}/finalize:
     post:
       summary: Finalize a quality inspection
-      description: Enforces conservation of inspected atoms, rechecks the pinned checklist evidence and validates active FG/SCRAP destination kinds inside the committing transaction before posting disposition movements.
+      description: Enforces conservation of inspected atoms, rechecks the pinned checklist and required document evidence, validates that evidence documents belong to the same workspace, and validates active FG/SCRAP destination kinds inside the committing transaction before posting disposition movements.
       parameters:
         - name: id
           in: path
@@ -1067,6 +1097,7 @@ paths:
                       isPassed: { type: boolean }
                       defectReason: { type: string }
                       notes: { type: string }
+                      evidenceDocumentId: { type: string, format: uuid, description: Existing private document uploaded and linked to this inspection. }
                 notes: { type: string, maxLength: 1000 }
       responses:
         '200': { description: Finalized inspection with inventory dispositions }
@@ -1111,7 +1142,6 @@ paths:
                 severity: { type: string, enum: [LOW, MEDIUM, HIGH, CRITICAL] }
                 ownerUserId: { type: string }
                 expectedResolutionAt: { type: string, format: date-time }
-                evidence: { type: array, items: { type: string } }
                 evidenceDocumentIds:
                   type: array
                   maxItems: 10
@@ -2070,6 +2100,30 @@ paths:
         '400': { $ref: "#/components/responses/BadRequest" }
         '401': { $ref: "#/components/responses/Unauthorized" }
         '404': { $ref: "#/components/responses/NotFound" }
+
+  /api/documents/upload:
+    post:
+      summary: Upload and link a private document
+      description: Document links are workspace-scoped. Linking to an order requires that order to exist in the workspace; setting customerVisible true additionally requires order.release. Task evidence remains internal.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                description: { type: string }
+                parentType: { type: string, enum: [ORDER, TASK, INSPECTION, SHIPMENT, PASSPORT] }
+                parentId: { type: string, format: uuid }
+                customerVisible: { type: boolean, default: false }
+      responses:
+        '201': { description: Uploaded document with private link metadata }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/portal/orders:
     get:

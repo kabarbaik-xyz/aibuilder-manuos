@@ -85,6 +85,7 @@ interface ChecklistWithChecks {
     method: string;
     limitsJson: string;
     isRequired: boolean;
+    requiresEvidence: boolean;
   }>;
 }
 
@@ -92,6 +93,7 @@ interface RecordedCheckResult {
   checkCode: string;
   measuredValue?: string;
   isPassed: boolean;
+  evidenceDocumentId?: string;
 }
 
 /**
@@ -111,6 +113,9 @@ function assertChecklistReadings(
       throw new BadRequestError(
         `Missing required check measurement for '${check.code}' (${check.description})`
       );
+    }
+    if (check.requiresEvidence && !recorded.evidenceDocumentId) {
+      throw new BadRequestError(`Check '${check.code}' requires an evidence document.`);
     }
     const readsMeasurement = check.method === 'MEASUREMENT' || check.method === 'GAUGE';
     const reading = recorded.measuredValue?.trim();
@@ -136,6 +141,22 @@ function assertChecklistReadings(
         `Check '${check.code}' cannot pass: reading ${reading} is above the allowed maximum.`
       );
     }
+  }
+}
+
+async function assertEvidenceDocumentsInWorkspace(
+  tx: any,
+  workspaceId: string,
+  results: RecordedCheckResult[]
+): Promise<void> {
+  const ids = [...new Set(results.flatMap((result) => result.evidenceDocumentId ? [result.evidenceDocumentId] : []))];
+  if (ids.length === 0) return;
+  const documents = await tx.document.findMany({
+    where: { workspaceId, id: { in: ids } },
+    select: { id: true },
+  });
+  if (documents.length !== ids.length) {
+    throw new BadRequestError('QC evidence must reference an existing document in this workspace.');
   }
 }
 
@@ -382,6 +403,7 @@ export async function finalizeInspection(
         }
       }
       assertChecklistReadings(currentInspection.qcChecklist, input.results);
+      await assertEvidenceDocumentsInWorkspace(tx, workspaceId, input.results);
       if (input.passedAtoms > 0n) {
         await assertActiveLocationKind(tx, workspaceId, destFgLocationId, 'FG');
       }
@@ -487,6 +509,7 @@ export async function finalizeInspection(
             isPassed: r.isPassed,
             defectReason: r.defectReason,
             notes: r.notes,
+            evidenceDocumentId: r.evidenceDocumentId,
           })),
         });
       }
@@ -795,6 +818,7 @@ export async function recordReinspection(
         }
       }
       assertChecklistReadings(currentOriginal.qcChecklist, input.results);
+      await assertEvidenceDocumentsInWorkspace(tx, workspaceId, input.results);
 
       // Re-check cumulative reinspected atoms under tx
       const existingReinspections = await tx.inspection.findMany({
@@ -919,6 +943,7 @@ export async function recordReinspection(
             isPassed: r.isPassed,
             defectReason: r.defectReason,
             notes: r.notes,
+            evidenceDocumentId: r.evidenceDocumentId,
           })),
         });
       }

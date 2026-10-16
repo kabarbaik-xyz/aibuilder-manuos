@@ -249,6 +249,7 @@ export interface QcChecklistCheck {
   unit: string | null;
   limitsJson: string;
   isRequired: boolean;
+  requiresEvidence: boolean;
 }
 
 // Client API Methods
@@ -444,5 +445,6 @@ export const mastersApi = {
       unit?: string | null;
       limitsJson: string;
       isRequired: boolean;
+      requiresEvidence?: boolean;
     }>;  }) => masterRequest<{ data: QcChecklist }>('/api/resources/qc-checklists', { method: 'POST', body: JSON.stringify(data) }),
 };

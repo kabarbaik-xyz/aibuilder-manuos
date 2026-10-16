@@ -275,6 +275,7 @@ export const createQcChecklistSchema = z.object({
       unit: z.string().nullable().optional(),
       limitsJson: z.string().default('{}'),
       isRequired: z.boolean().default(true),
+      requiresEvidence: z.boolean().default(false),
     })
   ).default([]),
 });

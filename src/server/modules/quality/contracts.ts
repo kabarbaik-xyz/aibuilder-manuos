@@ -48,6 +48,7 @@ export const InspectionCheckResultSchema = z.object({
   checkMethod: z.string().default('VISUAL'),
   measuredValue: z.string().optional(),
   isPassed: z.boolean(),
+  evidenceDocumentId: z.string().uuid().optional(),
   defectReason: z.string().optional(),
   notes: z.string().optional(),
 });

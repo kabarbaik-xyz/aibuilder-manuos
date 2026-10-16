@@ -5,6 +5,7 @@ import {
   startTask,
   pauseTask,
   resumeTask,
+  correctTaskWorkInterval,
 } from './api';
 import {
   StartTaskInput,
@@ -60,6 +61,15 @@ export function useResumeTask() {
       queryClient.invalidateQueries({ queryKey: ['execution'] });
       queryClient.invalidateQueries({ queryKey: ['execution', 'task', vars.taskId] });
     },
+  });
+}
+
+export function useCorrectTaskWorkInterval(taskId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { sessionId: string; correctedDurationMinutes: number; reasonCode: string; reason: string }) =>
+      correctTaskWorkInterval(taskId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['execution', 'task', taskId] }),
   });
 }
 

@@ -26,6 +26,34 @@ export const ResumeTaskSchema = z.object({
 
 export type ResumeTaskInput = z.infer<typeof ResumeTaskSchema>;
 
+export const CorrectWorkIntervalSchema = z.object({
+  sessionId: z.string().min(1),
+  correctedDurationMinutes: z.number().int().min(0).max(10080),
+  reasonCode: z.string().trim().min(1).max(100),
+  reason: z.string().trim().min(3).max(500),
+}).strict();
+
+export type CorrectWorkIntervalInput = z.infer<typeof CorrectWorkIntervalSchema>;
+
+export interface WorkIntervalCorrectionDTO {
+  id: string;
+  sessionId: string;
+  previousDurationMinutes: number | null;
+  correctedDurationMinutes: number;
+  deltaMinutes: number;
+  reasonCode: string;
+  reason: string;
+  actorUserId: string;
+  actorName?: string;
+  occurredAt: string;
+}
+
+export interface ReadinessReasonDTO {
+  code: 'MISSING_ASSIGNMENT' | 'BLOCKING_ISSUE' | 'PREDECESSOR_INCOMPLETE' | 'MATERIAL_SHORTAGE' | 'ORDER_NOT_RELEASED' | 'TERMINAL_STATUS';
+  severity: 'BLOCKER' | 'WARNING';
+  message: string;
+}
+
 export interface WorkSessionDTO {
   id: string;
   workspaceId: string;
@@ -78,13 +106,28 @@ export interface TaskExecutionDetailDTO {
   workInstruction: {
     engineeringRevisionId: string;
     engineeringRevisionNumber: number;
-    drawingNumber: string;
-    revisionCode: string;
-    documentId: string;
-    fileName: string;
-    checksumSha256: string;
+    workflowVersionId: string;
+    workflowVersionNumber: number;
+    drawingNumber: string | null;
+    revisionCode: string | null;
+    documentId: string | null;
+    fileName: string | null;
+    checksumSha256: string | null;
     notes: string | null;
+    operationSummary: string;
+    specsSummary: string | null;
   } | null;
+  readinessReasons: ReadinessReasonDTO[];
+  canStart: boolean;
+  stageQuantitySummary: {
+    stageInputCapAtoms: string;
+    cumulativeRecordedAtoms: string;
+    cumulativeScrapAtoms: string;
+    cumulativeReworkInAtoms: string;
+    cumulativeReworkOutAtoms: string;
+    remainingRecordableAtoms: string;
+  };
+  intervalCorrections: WorkIntervalCorrectionDTO[];
   issueOwnerOptions: Array<{ userId: string; name: string }>;
   predecessors: Array<{
     taskId: string;
@@ -121,10 +164,9 @@ export const CreateTaskIssueSchema = z.object({
   severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('MEDIUM'),
   ownerUserId: z.string().optional(),
   expectedResolutionAt: z.string().datetime().or(z.date()).optional(),
-  evidence: z.array(z.string()).optional(),
   evidenceDocumentIds: z.array(z.string().min(1)).max(10).optional(),
   affectedMaterialId: z.string().min(1).optional(),
-});
+}).strict();
 
 export type CreateTaskIssueInput = z.infer<typeof CreateTaskIssueSchema>;
 

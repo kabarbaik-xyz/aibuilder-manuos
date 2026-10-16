@@ -14,6 +14,8 @@ import {
   PauseTaskSchema,
   ResumeTaskInput,
   ResumeTaskSchema,
+  CorrectWorkIntervalSchema,
+  WorkIntervalCorrectionDTO,
   TaskExecutionDetailDTO,
   MyTaskSummaryDTO,
   WorkSessionDTO,
@@ -661,6 +663,66 @@ export class ExecutionService {
     });
   }
 
+  async correctWorkInterval(principal: Principal, taskId: string, rawInput: unknown, idempotencyKey?: string) {
+    requireAnyPermission(principal, ['task.assign', 'planning.write', 'workspace.admin']);
+    const input = CorrectWorkIntervalSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+    const task = await this.db.task.findFirst({ where: { ...executionTaskScope(principal), workspaceId, id: taskId } });
+    if (!task) throw new NotFoundError(`Task '${taskId}' not found`);
+
+    return executeCommand({
+      principal,
+      commandType: 'task.work_interval.correct',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: { taskId, ...input },
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const session = await tx.workSession.findFirst({
+          where: { workspaceId, taskId, id: input.sessionId },
+        });
+        if (!session) throw new NotFoundError(`Work interval '${input.sessionId}' not found for task.`);
+        if (!session.endedAt || session.durationMinutes === null) throw new BadRequestError('Only closed work intervals can be corrected.');
+        const previousDurationMinutes = session.durationMinutes;
+        const deltaMinutes = input.correctedDurationMinutes - previousDurationMinutes;
+        const currentTask = await tx.task.findUnique({
+          where: { workspaceId_id: { workspaceId, id: taskId } },
+          select: { id: true, actualDurationMinutes: true, version: true },
+        });
+        if (!currentTask) throw new NotFoundError(`Task '${taskId}' not found.`);
+        if (currentTask.actualDurationMinutes + deltaMinutes < 0) {
+          throw new BadRequestError('Interval correction cannot make the task duration negative.');
+        }
+        const updatedSession = await tx.workSession.update({
+          where: { workspaceId_id: { workspaceId, id: session.id } },
+          data: { durationMinutes: input.correctedDurationMinutes, version: { increment: 1 } },
+        });
+        const updatedTask = await tx.task.update({
+          where: { workspaceId_id: { workspaceId, id: taskId } },
+          data: { actualDurationMinutes: { increment: deltaMinutes }, version: { increment: 1 } },
+        });
+        const event = await tx.workflowEvent.create({
+          data: {
+            workspaceId, instanceId: task.instanceId, taskId, actorUserId: principal.userId,
+            fromStatus: task.status, toStatus: task.status,
+            action: 'WORK_INTERVAL_CORRECTED', attemptNumber: task.attemptNumber,
+            detailJson: JSON.stringify({
+              sessionId: session.id, previousDurationMinutes,
+              correctedDurationMinutes: input.correctedDurationMinutes, deltaMinutes,
+              reasonCode: input.reasonCode, reason: input.reason,
+            }),
+            reason: input.reason,
+          },
+        });
+        return {
+          data: { session: updatedSession, correctionId: event.id },
+          aggregateType: 'TASK', aggregateId: taskId, resourceVersion: updatedTask.version,
+          previousVersion: task.version,
+          auditDetails: { sessionId: session.id, reasonCode: input.reasonCode, deltaMinutes },
+        };
+      },
+    });
+  }
+
   /**
    * Retrieves full execution details for shop floor operator view.
    */
@@ -680,6 +742,14 @@ export class ExecutionService {
     const targetItem = task.targetItemId ? await this.db.item.findFirst({ where: { workspaceId, id: task.targetItemId } }) : task.instance.order.item;
     if (!targetItem) throw new NotFoundError('Task target item not found');
     const drawing = revision?.drawingRevision;
+    const nodeRequirements = node?.requirementsJson ? (() => {
+      try {
+        const parsed: unknown = JSON.parse(node.requirementsJson);
+        return Object.keys(parsed ?? {}).length ? JSON.stringify(parsed) : null;
+      } catch {
+        return null;
+      }
+    })() : null;
     const ownerMemberships = await this.db.membership.findMany({
       where: {
         workspaceId, status: 'ACTIVE', customerId: null,
@@ -725,6 +795,66 @@ export class ExecutionService {
       isCompleted: dep.predecessor.status === 'COMPLETED',
     }));
 
+    const [blockingIssue, outputs, inspections, reworkAttempts, correctionEvents] = await Promise.all([
+      this.db.taskIssue.findFirst({
+        where: { workspaceId, taskId, status: { in: ['OPEN', 'REOPENED'] }, severity: { in: ['HIGH', 'CRITICAL'] } },
+        select: { id: true },
+      }),
+      this.db.productionOutput.findMany({
+        where: { workspaceId, taskId, attemptNumber: task.attemptNumber, status: { not: 'REJECTED' } },
+        select: { outputAtoms: true },
+      }),
+      this.db.inspection.findMany({
+        where: {
+          workspaceId,
+          status: 'FINALIZED',
+          productionOutput: { taskId, attemptNumber: task.attemptNumber },
+        },
+        select: { inspectedAtoms: true, scrappedAtoms: true, reworkAtoms: true, reinspectionOfId: true },
+      }),
+      this.db.reworkAttempt.findMany({
+        where: { workspaceId, taskId, status: 'COMPLETED' },
+        select: { targetAtoms: true },
+      }),
+      this.db.workflowEvent.findMany({
+        where: { workspaceId, taskId, action: 'WORK_INTERVAL_CORRECTED' },
+        orderBy: { occurredAt: 'asc' },
+        select: { id: true, detailJson: true, actorUserId: true, occurredAt: true },
+      }),
+    ]);
+    const readinessReasons: TaskExecutionDetailDTO['readinessReasons'] = [];
+    if (!task.assignedTechnicianId && !principal.technicianId) readinessReasons.push({ code: 'MISSING_ASSIGNMENT', severity: 'BLOCKER', message: 'Belum ada teknisi yang ditugaskan.' });
+    if (blockingIssue) readinessReasons.push({ code: 'BLOCKING_ISSUE', severity: 'BLOCKER', message: 'Ada isu prioritas tinggi/kritis yang belum selesai.' });
+    if (predecessors.some((predecessor) => !predecessor.isCompleted)) readinessReasons.push({ code: 'PREDECESSOR_INCOMPLETE', severity: 'BLOCKER', message: 'Operasi sebelumnya belum selesai.' });
+    if (findUndercoveredDemands(readiness).length) readinessReasons.push({ code: 'MATERIAL_SHORTAGE', severity: 'BLOCKER', message: 'Kebutuhan material belum seluruhnya tercukupi.' });
+    if (!['RELEASED', 'IN_PRODUCTION', 'PARTIALLY_DELIVERED'].includes(task.instance.order.status)) readinessReasons.push({ code: 'ORDER_NOT_RELEASED', severity: 'BLOCKER', message: 'Pesanan belum dirilis untuk produksi.' });
+    if (['COMPLETED', 'CANCELLED'].includes(task.status)) readinessReasons.push({ code: 'TERMINAL_STATUS', severity: 'BLOCKER', message: 'Operasi sudah berstatus akhir.' });
+    const cumulativeRecordedAtoms = outputs.reduce((sum, output) => sum + output.outputAtoms, 0n);
+    const cumulativeScrapAtoms = inspections.reduce((sum, inspection) => sum + inspection.scrappedAtoms, 0n);
+    const cumulativeReworkOutAtoms = inspections
+      .filter((inspection) => !inspection.reinspectionOfId)
+      .reduce((sum, inspection) => sum + inspection.reworkAtoms, 0n);
+    const cumulativeReworkInAtoms = reworkAttempts.reduce((sum, attempt) => sum + attempt.targetAtoms, 0n);
+    const correctionActors = await this.db.membership.findMany({
+      where: {
+        workspaceId,
+        userId: { in: [...new Set(correctionEvents.map((event) => event.actorUserId))] },
+        status: 'ACTIVE',
+      },
+      select: { userId: true, user: { select: { name: true } } },
+    });
+    const correctionActorNames = new Map(correctionActors.map((membership) => [membership.userId, membership.user.name]));
+    const intervalCorrections: WorkIntervalCorrectionDTO[] = correctionEvents.map((event) => {
+      const detail = JSON.parse(event.detailJson) as Omit<WorkIntervalCorrectionDTO, 'id' | 'actorUserId' | 'occurredAt'>;
+      return {
+        ...detail,
+        id: event.id,
+        actorUserId: event.actorUserId,
+        actorName: correctionActorNames.get(event.actorUserId),
+        occurredAt: event.occurredAt.toISOString(),
+      };
+    });
+
     return {
       id: task.id,
       workspaceId: task.workspaceId,
@@ -765,12 +895,26 @@ export class ExecutionService {
         targetAtoms: task.targetAtoms.toString(),
       },
       instructionRevision: task.jobsheet?.instructionRevision || 1,
-      workInstruction: drawing ? {
+      workInstruction: revision ? {
         engineeringRevisionId: revision.id, engineeringRevisionNumber: revision.revisionNumber,
-        drawingNumber: drawing.drawingNumber, revisionCode: drawing.revisionCode,
-        documentId: drawing.documentId, fileName: drawing.document.fileName,
-        checksumSha256: drawing.document.checksumSha256, notes: drawing.notes,
+        workflowVersionId: task.instance.workflowVersion.id,
+        workflowVersionNumber: task.instance.workflowVersion.versionNumber,
+        drawingNumber: drawing?.drawingNumber ?? null, revisionCode: drawing?.revisionCode ?? null,
+        documentId: drawing?.documentId ?? null, fileName: drawing?.document.fileName ?? null,
+        checksumSha256: drawing?.document.checksumSha256 ?? null, notes: drawing?.notes ?? null,
+        operationSummary: node?.name ?? task.nodeKey, specsSummary: nodeRequirements,
       } : null,
+      readinessReasons,
+      canStart: ['READY', 'ASSIGNED'].includes(task.status) && readinessReasons.length === 0,
+      stageQuantitySummary: {
+        stageInputCapAtoms: task.targetAtoms.toString(),
+        cumulativeRecordedAtoms: cumulativeRecordedAtoms.toString(),
+        cumulativeScrapAtoms: cumulativeScrapAtoms.toString(),
+        cumulativeReworkInAtoms: cumulativeReworkInAtoms.toString(),
+        cumulativeReworkOutAtoms: cumulativeReworkOutAtoms.toString(),
+        remainingRecordableAtoms: (task.targetAtoms > cumulativeRecordedAtoms ? task.targetAtoms - cumulativeRecordedAtoms : 0n).toString(),
+      },
+      intervalCorrections,
       issueOwnerOptions: ownerMemberships.map((membership) => ({ userId: membership.userId, name: membership.user.name })),
       predecessors,
       materialReadiness: readiness,
@@ -928,7 +1072,7 @@ export class ExecutionService {
             affectedMaterialId: input.affectedMaterialId,
             reporterUserId: principal.userId,
             expectedResolutionAt: input.expectedResolutionAt ? new Date(input.expectedResolutionAt) : null,
-            evidenceJson: JSON.stringify([...(input.evidence || []), ...documentIds.map((id) => `/api/documents/${encodeURIComponent(id)}/download`)]),
+            evidenceJson: JSON.stringify(documentIds.map((id) => `/api/documents/${encodeURIComponent(id)}/download`)),
             historyJson: JSON.stringify([
               {
                 action: 'CREATED',

@@ -12,6 +12,7 @@ import {
   recordReinspection,
 } from '@/server/modules/quality/service';
 import { recordOutput } from '@/server/modules/execution/output';
+import { ExecutionService } from '@/server/modules/execution/service';
 import { parseQuantity } from '@/domain/quantity';
 import { BadRequestError } from '@/domain/errors';
 
@@ -180,27 +181,78 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
     await fixture.close();
   });
 
-  it('records output to quarantine and consumes issued WIP material', async () => {
+  it('keeps partial output in progress, then completes from cumulative output and consumes WIP once', async () => {
     const { alpha } = fixture;
+    const sessionStartedAt = new Date(Date.now() - 120_000);
+    await fixture.db.task.update({ where: { id: taskId }, data: { status: 'RUNNING' } });
+    const runningSession = await fixture.db.workSession.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        taskId,
+        technicianId: alpha.masters.technicianId,
+        sessionType: 'RUNNING',
+        startedAt: sessionStartedAt,
+      },
+    });
 
-    // Record output of 10 units
+    const partialOutputRes = await recordOutput(
+      fixture.db,
+      alpha.users.operator.principal,
+      {
+        taskId,
+        outputAtoms: parseQuantity('4'),
+        destinationLocationId: alpha.masters.quarantineLocationId,
+        lotNumber: 'LOT-FG-QC-001',
+        isFinal: true,
+      },
+      'key-output-partial-4-units'
+    );
+    expect(partialOutputRes.data.output.outputAtoms).toBe(parseQuantity('4'));
+    expect((await fixture.db.task.findUniqueOrThrow({ where: { id: taskId } })).status).toBe('RUNNING');
+    expect((await fixture.db.workSession.findUniqueOrThrow({ where: { id: runningSession.id } })).endedAt).toBeNull();
+    const wipAfterPartial = await inventoryService.getBalances(
+      alpha.users.warehouse.principal,
+      { itemId: alpha.masters.rawItemId, locationId: alpha.masters.wipLocationId },
+    );
+    expect(wipAfterPartial.reduce((sum, balance) => sum + balance.onHandAtoms, 0n)).toBe(parseQuantity('6'));
+    const partialRetry = await recordOutput(
+      fixture.db,
+      alpha.users.operator.principal,
+      {
+        taskId,
+        outputAtoms: parseQuantity('4'),
+        destinationLocationId: alpha.masters.quarantineLocationId,
+        lotNumber: 'LOT-FG-QC-001',
+        isFinal: true,
+      },
+      'key-output-partial-4-units',
+    );
+    expect(partialRetry.data.output.id).toBe(partialOutputRes.data.output.id);
+    expect(await fixture.db.productionOutput.count({ where: { workspaceId: alpha.workspaceId, taskId } })).toBe(1);
+
     const outputRes = await recordOutput(
       fixture.db,
       alpha.users.operator.principal,
       {
         taskId,
-        outputAtoms: parseQuantity('10'),
+        outputAtoms: parseQuantity('6'),
         destinationLocationId: alpha.masters.quarantineLocationId,
         lotNumber: 'LOT-FG-QC-001',
         isFinal: true,
       },
-      'key-output-10-units'
+      'key-output-final-6-units'
     );
 
     const output = outputRes.data.output;
-    expect(output.outputAtoms).toBe(parseQuantity('10'));
+    expect(output.outputAtoms).toBe(parseQuantity('6'));
     expect(output.status).toBe('RECORDED');
     productionOutputId = output.id;
+
+    const closedSession = await fixture.db.workSession.findUniqueOrThrow({ where: { id: runningSession.id } });
+    const completedTask = await fixture.db.task.findUniqueOrThrow({ where: { id: taskId } });
+    expect(closedSession.endedAt).toBeInstanceOf(Date);
+    expect(closedSession.durationMinutes).toBeGreaterThanOrEqual(1);
+    expect(completedTask.actualDurationMinutes).toBe(closedSession.durationMinutes);
 
     // Verify stock balance: 10 units in QUARANTINE
     const balances = await inventoryService.getBalances(
@@ -353,27 +405,44 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
   it('finalizes QC inspection: 8 passed to FG and 2 rework held in quarantine', async () => {
     const { alpha } = fixture;
 
-    // Create inspection
+    const partialOutput = await fixture.db.productionOutput.findFirstOrThrow({
+      where: { workspaceId: alpha.workspaceId, taskId, outputAtoms: parseQuantity('4') },
+      select: { id: true },
+    });
+    const partialInspection = await createInspection(
+      fixture.db,
+      alpha.users.qc.principal,
+      { sourceType: 'PRODUCTION_OUTPUT', productionOutputId: partialOutput.id, inspectedAtoms: parseQuantity('4') },
+      'key-insp-partial-output-4',
+    );
+    await finalizeInspection(
+      fixture.db,
+      alpha.users.qc.principal,
+      { inspectionId: partialInspection.data.id, passedAtoms: parseQuantity('4'), reworkAtoms: 0n, scrappedAtoms: 0n, disposition: 'PASSED' },
+      'key-finalize-insp-partial-output-4',
+    );
+
+    // Inspect the remaining output separately; both dispositions still reconcile to the batch total.
     const inspRes = await createInspection(
       fixture.db,
       alpha.users.qc.principal,
       {
         sourceType: 'PRODUCTION_OUTPUT',
         productionOutputId,
-        inspectedAtoms: parseQuantity('10'),
+        inspectedAtoms: parseQuantity('6'),
       },
       'key-insp-initial-10'
     );
     const inspection = inspRes.data;
     inspectionId = inspection.id;
 
-    // Finalize inspection: 8 passed to FG, 2 rework
+    // Finalize this output: 4 passed to FG, 2 rework. The earlier partial output passed 4.
     const finalizeRes = await finalizeInspection(
       fixture.db,
       alpha.users.qc.principal,
       {
         inspectionId: inspection.id,
-        passedAtoms: parseQuantity('8'),
+        passedAtoms: parseQuantity('4'),
         reworkAtoms: parseQuantity('2'),
         scrappedAtoms: 0n,
         disposition: 'PARTIAL',
@@ -399,23 +468,23 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
 
     const finalized = finalizeRes.data;
     expect(finalized.status).toBe('FINALIZED');
-    expect(finalized.passedAtoms).toBe(parseQuantity('8'));
+    expect(finalized.passedAtoms).toBe(parseQuantity('4'));
     expect(finalized.reworkAtoms).toBe(parseQuantity('2'));
 
     // Verify inventory balances:
-    // FG Location has 8 units
+    // FG Location has 4 units from each output (8 total).
     const fgBalance = await inventoryService.getBalances(
       alpha.users.warehouse.principal,
       { itemId: alpha.masters.fgItemId, locationId: alpha.masters.fgLocationId }
     );
-    expect(fgBalance[0].onHandAtoms).toBe(parseQuantity('8'));
+    expect(fgBalance.reduce((sum, balance) => sum + balance.onHandAtoms, 0n)).toBe(parseQuantity('8'));
 
     // Quarantine Location has 2 units remaining
     const qBalance = await inventoryService.getBalances(
       alpha.users.warehouse.principal,
       { itemId: alpha.masters.fgItemId, locationId: alpha.masters.quarantineLocationId }
     );
-    expect(qBalance[0].onHandAtoms).toBe(parseQuantity('2'));
+    expect(qBalance.reduce((sum, balance) => sum + balance.onHandAtoms, 0n)).toBe(parseQuantity('2'));
   });
 
   it('re-inspects rework units and strictly conserves physical quantity (totals 10, never 12)', async () => {
@@ -435,15 +504,15 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
     );
     expect(reworkRes.data.targetAtoms).toBe(parseQuantity('2'));
 
-    // Record reinspection: 2 units now passed to FG
+    // Reinspection reclassifies the existing two units: one passed and one scrapped.
     const reinspectionRes = await recordReinspection(
       fixture.db,
       alpha.users.qc.principal,
       {
         originalInspectionId: inspectionId,
         reworkAttemptId: reworkRes.data.id,
-        passedAtoms: parseQuantity('2'),
-        scrappedAtoms: 0n,
+        passedAtoms: parseQuantity('1'),
+        scrappedAtoms: parseQuantity('1'),
         results: [
           {
             checkCode: 'SURF-02-RECHECK',
@@ -458,15 +527,16 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
 
     const reinspection = reinspectionRes.data;
     expect(reinspection.status).toBe('FINALIZED');
-    expect(reinspection.passedAtoms).toBe(parseQuantity('2'));
+    expect(reinspection.passedAtoms).toBe(parseQuantity('1'));
+    expect(reinspection.scrappedAtoms).toBe(parseQuantity('1'));
 
     // Invariant check:
-    // Total in FG Location must be EXACTLY 10 (8 from first pass + 2 from reinspection)
+    // Total in FG plus SCRAP must remain EXACTLY 10 (8 accepted + 1 reworked + 1 scrapped).
     const fgBalance = await inventoryService.getBalances(
       alpha.users.warehouse.principal,
       { itemId: alpha.masters.fgItemId, locationId: alpha.masters.fgLocationId }
     );
-    expect(fgBalance[0].onHandAtoms).toBe(parseQuantity('10'));
+    expect(fgBalance.reduce((sum, balance) => sum + balance.onHandAtoms, 0n)).toBe(parseQuantity('9'));
 
     // Quarantine Location must now have 0 units
     const qBalance = await inventoryService.getBalances(
@@ -475,5 +545,23 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
     );
     const qOnHand = qBalance.reduce((sum, b) => sum + b.onHandAtoms, 0n);
     expect(qOnHand).toBe(0n);
+    const scrapBalances = await inventoryService.getBalances(
+      alpha.users.warehouse.principal,
+      { itemId: alpha.masters.fgItemId, locationId: alpha.masters.scrapLocationId }
+    );
+    expect(scrapBalances.reduce((sum, balance) => sum + balance.onHandAtoms, 0n)).toBe(parseQuantity('1'));
+
+    const executionDetail = await new ExecutionService(fixture.db).getTaskExecutionDetail(
+      alpha.users.operator.principal,
+      taskId,
+    );
+    expect(executionDetail.stageQuantitySummary).toMatchObject({
+      stageInputCapAtoms: parseQuantity('10').toString(),
+      cumulativeRecordedAtoms: parseQuantity('10').toString(),
+      cumulativeScrapAtoms: parseQuantity('1').toString(),
+      cumulativeReworkInAtoms: parseQuantity('2').toString(),
+      cumulativeReworkOutAtoms: parseQuantity('2').toString(),
+      remainingRecordableAtoms: '0',
+    });
   });
 });

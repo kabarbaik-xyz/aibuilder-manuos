@@ -792,6 +792,7 @@ model QcChecklistCheck {
   unit        String?
   limitsJson  String      @default("{}") @map("limits_json")
   isRequired  Boolean     @default(true) @map("is_required")
+  requiresEvidence Boolean @default(false) @map("requires_evidence")
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
@@ -1620,11 +1621,13 @@ model InspectionResult {
   isPassed         Boolean    @map("is_passed")
   defectReason     String?    @map("defect_reason")
   notes            String?
+  evidenceDocumentId String?    @map("evidence_document_id")
   createdAt        DateTime   @default(now()) @map("created_at")
   updatedAt        DateTime   @updatedAt @map("updated_at")
 
   workspace        Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   inspection       Inspection @relation(fields: [workspaceId, inspectionId], references: [workspaceId, id], onDelete: Cascade)
+  evidenceDocument Document? @relation("QcEvidenceDocument", fields: [workspaceId, evidenceDocumentId], references: [workspaceId, id], onDelete: Restrict)
 
   @@unique([workspaceId, id])
   @@index([workspaceId, inspectionId])
@@ -1760,6 +1763,7 @@ model Document {
   links          DocumentLink[]
   drawingRevisions DrawingRevision[]
   formSubmissionDocuments FormSubmissionDocument[]
+  qcEvidenceResults InspectionResult[] @relation("QcEvidenceDocument")
 
   @@unique([workspaceId, id])
   @@index([workspaceId, storageKey])
