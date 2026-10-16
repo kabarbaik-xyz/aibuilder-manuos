@@ -5,6 +5,9 @@ node_modules
 
 # Testing
 coverage
+playwright-report/
+test-results/
+blob-report/
 
 # Build caches
 .cache/
@@ -53,14 +56,33 @@ next-env.d.ts
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
-data/
+/data/
+/prisma/data/
 tests/temp/
 
 # Local UI review captures
 artifacts/ui-restoration/
+docs/superpowers/specs/*/screenshots/
+
+# Agent execution prompts and transient progress/review reports
+# Keep product requirements, design contracts, plans, and the seed permission matrix tracked.
+/docs/EXECUTION_PROMPT_*.md
+/docs/execution-status.md
+/docs/product-rev-implementation-status.md
+/docs/*-evidence.md
+/docs/superpowers/specs/*/audit.md
+/docs/superpowers/specs/*/route-audit.json
+
+# Local scratch work and generated exports
+/tmp/
+/temp/
+*.tmp
+*.bak
+*.orig
+*.rej
+*.tsbuildinfo.*
 
 # Local database backup manifests and generated storage
 storage/*
 backups/
-.superpowers/
 .superpowers/
