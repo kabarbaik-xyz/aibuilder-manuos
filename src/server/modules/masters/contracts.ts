@@ -131,6 +131,7 @@ export const createMachineSchema = z.object({
   machineClassId: z.string().min(1),
   departmentId: z.string().nullable().optional(),
   calendarId: z.string().nullable().optional(),
+  facilityId: z.string().nullable().optional(),
   status: z.enum(['AVAILABLE', 'MAINTENANCE', 'OFFLINE']).default('AVAILABLE'),
 });
 
@@ -140,6 +141,7 @@ export const updateMachineSchema = z.object({
   status: z.enum(['AVAILABLE', 'MAINTENANCE', 'OFFLINE']).optional(),
   departmentId: z.string().nullable().optional(),
   calendarId: z.string().nullable().optional(),
+  facilityId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -149,6 +151,7 @@ export const createTechnicianSchema = z.object({
   membershipId: z.string().nullable().optional(),
   departmentId: z.string().nullable().optional(),
   calendarId: z.string().nullable().optional(),
+  facilityId: z.string().nullable().optional(),
   maxWeeklyMinutes: z.number().int().min(0).default(2400),
 });
 
@@ -156,6 +159,7 @@ export const updateTechnicianSchema = z.object({
   expectedVersion: z.number().int().min(1).optional(),
   departmentId: z.string().nullable().optional(),
   calendarId: z.string().nullable().optional(),
+  facilityId: z.string().nullable().optional(),
   maxWeeklyMinutes: z.number().int().min(0).optional(),
 });
 

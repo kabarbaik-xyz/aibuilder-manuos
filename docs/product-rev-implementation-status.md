@@ -209,18 +209,23 @@ The [gap audit matrix](product-rev-gap-audit.md#complete-capability-matrix) cont
   - Additive `IssueReason` model with `category` (`PAUSE`, `SCRAP`, `REWORK`, `BLOCKER`), `code`, `label`, `sortOrder`, `isActive`.
   - Managed via `MastersService` (`createIssueReason`, `updateIssueReason`, `listIssueReasons`) and exposed via `/api/issue-reasons` (GET, POST).
 - [x] **Durable Notification Inbox & Lifecycle**:
-  - Additive `NotificationInbox` model with `userId`, `title`, `body`, `status` (`UNREAD`, `READ`, `ARCHIVED`), `subjectType`, `subjectId`, `metadataJson`, `readAt`.
-  - Created `NotificationService` (`src/server/modules/notifications/service.ts`) with `sendNotification`, `listNotifications`, `markAsRead`, `markAllAsRead`, and `getUnreadCount`.
-  - Exposed via `/api/notifications` (GET, POST) with verified user inbox isolation.
+  - Additive `NotificationInbox` model with `userId`, `title`, `body`, `status` (`UNREAD`, `READ`, `ARCHIVED`), `category` (`ASSIGNMENT`, `RELEASE`, `APPROVAL`, `BLOCKER`, `GENERAL`), `deliveryStatus` (`DELIVERED`, `SUPPRESSED`), `deliveryReason`, `subjectType`, `subjectId`, `dedupeKey`, `metadataJson`, `readAt`.
+  - Created `NotificationService` (`src/server/modules/notifications/service.ts`) with `sendNotification`, `listNotifications`, `markAsRead`, `markAllAsRead`, `getUnreadCount`, `getPreferences`, `updatePreferences`, and `notifyFacilityMembers`.
+  - Notification preferences dialog (`src/components/notification-preferences-dialog.tsx`) and in-app bell inbox (`src/components/notification-inbox.tsx`) mounted in `AuthenticatedShell` topbar.
+  - Deep link routing (`src/features/notifications/notification-links.ts`) connecting notifications to Order, Task, Inspection, and Task Issue routes.
+  - Exposed via `/api/notifications` (GET, POST) and `/api/notifications/preferences` (GET, PUT) with verified user inbox isolation, idempotent replay, and delivery failure observability.
+- [x] **Operational Resource Facility Scoping**:
+  - Integrated `facilityId` foreign key and tenant isolation on `Machine` and `Technician` master contracts (`createMachineSchema`, `updateMachineSchema`, `createTechnicianSchema`, `updateTechnicianSchema`).
+  - Added workspace facility validation to `createMachine`, `createTechnician`, and `updateMasterRecord` in `MastersService`, rejecting cross-tenant foreign facility references with `NotFoundError`.
 - [x] **Durable Audit & Workflow Correlation**:
   - Added `reason` and `correlationId` fields to `AuditEvent` and `WorkflowEvent`.
   - Extended `executeCommand` in `src/server/db/transaction.ts` to persist `correlationId` and `reason` directly into `audit_events`.
 - [x] **Verification & Contracts**:
-  - Dedicated test suite `tests/integration/phase2-facility-notifications.test.ts` (14/14 passing).
-  - All 63 tests passing across `phase1-containment.test.ts`, `phase2-facility-notifications.test.ts`, `task-execution.test.ts`, `database.test.ts`, and `backup-restore.test.ts`.
-  - `npm run typecheck` (`tsc --noEmit`): 0 warnings or errors.
-  - `npm run db:reconcile`: 0 discrepancies.
-  - `contracts/openapi.yaml`: updated with schemas and responses for `/api/facilities`, `/api/facilities/{id}`, `/api/facilities/grants`, `/api/notifications`, and `/api/issue-reasons`.
+  - Dedicated test suite `tests/integration/phase2-facility-notifications.test.ts` (**22/22 passing**).
+  - All Phase 1, 2, and 3 integration test suites green (**64/64 passing**).
+  - `npm run typecheck` (`tsc --noEmit`): Clean (**0 warnings, 0 errors**).
+  - `npm run db:reconcile`: **Balanced: ✓ YES (0 discrepancies)**.
+  - `contracts/openapi.yaml`: updated with schemas and responses for `/api/facilities`, `/api/facilities/{id}`, `/api/facilities/grants`, `/api/notifications`, `/api/notifications/preferences`, and `/api/issue-reasons`.
 
 ## Phase 3 — multi-item orders, bounded jobs and released engineering
 
@@ -385,6 +390,9 @@ The [gap audit matrix](product-rev-gap-audit.md#complete-capability-matrix) cont
 
 ### Implementation evidence
 
+- [x] **Complete 36 R0 Capabilities Evidence Reconciliation**:
+  - Detailed reconciliation compiled in [`docs/r0-capability-evidence-matrix.md`](r0-capability-evidence-matrix.md) mapping all 36 workbook R0 features (PLT-01..05, ORD-01..03, WFL-01..04, ENG-01..04, MAT-01..02, RES-01..04/06..08, SCH-01..03, SFL-01..05, QLT-01..02, CUS-01) against source models, REST routes, UI components, and test files.
+  - Transparent release gating status: 100% verified via automated local integration suites (399/399 tests passing, 0 ledger discrepancies), with browser E2E and pilot gates explicitly documented as open.
 - [x] **Full 36 R0 Capabilities End-to-End Verification**:
   - Validated complete manufacturer journey with zero client-authoritative mocks or fake data:
     1. Customer & Order Intake (`ORD-01`, `ORD-02`, `ORD-03`)
@@ -401,6 +409,7 @@ The [gap audit matrix](product-rev-gap-audit.md#complete-capability-matrix) cont
   - Confirmed immutable record of all operational state transitions (`ASSIGN`, `START`, `RECORD_ISSUE`, `UNBLOCK`, `OUTPUT`).
 - [x] **Verification & Tests**:
   - Dedicated test suite `tests/integration/phase7-r0-pilot-gate.test.ts` (6/6 passing).
+  - Full Vitest suite: 74 test files / 399 tests passing (100% green).
   - `npm run typecheck` (`tsc --noEmit`): 0 warnings, 0 errors in worktree.
   - `npm run db:reconcile`: 0 discrepancies.
 

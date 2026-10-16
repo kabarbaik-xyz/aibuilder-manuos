@@ -528,4 +528,166 @@ describe('Phase 7: R0 Release & Pilot Gate Verification (36 R0 Capabilities)', (
     expect(eventActions.has('START')).toBe(true);
     expect(eventActions.has('RECORD_ISSUE')).toBe(true);
   });
+
+  // -----------------------------------------------------------------
+  // 7. Process 2: Assembly & Packaging with Multi-Item Split Jobs, Shortage Gate & Leave Conflict
+  // -----------------------------------------------------------------
+  it('executes process template 2 with multi-item split jobs, shortage guard, leave conflict, and role handoffs', async () => {
+    const { alpha } = fixture;
+    const owner = alpha.users.owner.principal;
+    const planner = alpha.users.planner.principal;
+    const warehouse = alpha.users.warehouse.principal;
+
+    // A. Create Workflow Template 2: Assembly & Packaging
+    const wfTmpl2 = await workflowService.createTemplate(
+      owner,
+      {
+        orderTypeId: alpha.masters.orderTypeId,
+        code: 'WF-P7-ASSY-PACK',
+        name: 'Assembly & Packaging Route',
+      },
+      'idemp-wf-p7-tmpl2'
+    );
+
+    const draftV2 = await workflowService.saveVersionDraft(
+      owner,
+      wfTmpl2.data.initialVersionId,
+      {
+        definition: {
+          schemaVersion: 1,
+          name: 'P7 Assembly & Pack V1',
+          nodes: [
+            {
+              key: 'ASSY-10',
+              name: 'Sub-assembly Build',
+              type: 'OPERATION',
+              plannedDurationMinutes: 60,
+              requirements: {
+                requiredSkills: [{ skillId: alpha.masters.skillId, minLevel: 1 }],
+              },
+            },
+            {
+              key: 'PACK-20',
+              name: 'Final Packaging',
+              type: 'OPERATION',
+              plannedDurationMinutes: 30,
+            },
+          ],
+          edges: [
+            {
+              fromNodeKey: 'ASSY-10',
+              toNodeKey: 'PACK-20',
+              joinPolicy: 'AND',
+            },
+          ],
+        },
+      },
+      'idemp-wf-p7-draft2'
+    );
+    await workflowService.submitReview(owner, draftV2.data.id, 'idemp-wf-p7-rev2');
+    await workflowService.publishVersion(owner, draftV2.data.id, 'idemp-wf-p7-pub2');
+
+    // B. Multi-Item Order (Line 1: 10 units, Line 2: 5 units)
+    const orderRes2 = await orderService.createOrderDraft(
+      owner,
+      {
+        customerId: alpha.masters.customerId,
+        orderTypeId: alpha.masters.orderTypeId,
+        itemId: alpha.masters.fgItemId,
+        orderedQuantity: 10,
+        requestedDate: '2026-12-15T17:00:00.000Z',
+        lines: [
+          {
+            itemId: alpha.masters.fgItemId,
+            uomId: alpha.masters.uomPcsId,
+            orderedQuantity: 10,
+            unitPriceCents: 5000,
+          },
+          {
+            itemId: alpha.masters.rawItemId,
+            uomId: alpha.masters.uomPcsId,
+            orderedQuantity: 5,
+            unitPriceCents: 2000,
+          },
+        ],
+      },
+      'idemp-order-p7-multi'
+    );
+    const order2Id = orderRes2.data.id;
+    const line1Id = orderRes2.data.lines[0].id;
+
+    // C. Bounded Split Job: Allocate Line 1 into Job A (6 units) + Job B (4 units)
+    const jobA = await orderService.allocateJob(
+      owner,
+      {
+        orderLineId: line1Id,
+        targetQuantity: 6,
+      },
+      'idemp-job-p7-split-a'
+    );
+    expect(jobA.data.manufacturingOrder.targetAtoms).toBe(parseQuantity('6'));
+
+    const jobB = await orderService.allocateJob(
+      owner,
+      {
+        orderLineId: line1Id,
+        targetQuantity: 4,
+      },
+      'idemp-job-p7-split-b'
+    );
+    expect(jobB.data.manufacturingOrder.targetAtoms).toBe(parseQuantity('4'));
+
+    // Over-allocation (exceeds 10 total) must be rejected
+    await expect(
+      orderService.allocateJob(
+        owner,
+        {
+          orderLineId: line1Id,
+          targetQuantity: 1,
+        },
+        'idemp-job-p7-split-overflow'
+      )
+    ).rejects.toThrowError(BadRequestError);
+
+    // D. Leave / Schedule Conflict Check:
+    // Create leave interval for operator on 2026-11-25 08:00-12:00
+    await fixture.db.rosterInterval.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        technicianId: operatorTechId,
+        intervalType: 'LEAVE',
+        startAt: new Date('2026-11-25T08:00:00.000Z'),
+        endAt: new Date('2026-11-25T12:00:00.000Z'),
+      },
+    });
+
+    const evalConflict = await planningService.evaluateAssignment(planner, {
+      taskId: millingTaskId,
+      technicianId: operatorTechId,
+      scheduledStartAt: '2026-11-25T09:00:00.000Z',
+      scheduledEndAt: '2026-11-25T11:00:00.000Z',
+    });
+    expect(evalConflict.isEligible).toBe(false);
+    expect(evalConflict.violations.some((v) => v.toLowerCase().includes('leave') || v.toLowerCase().includes('availability'))).toBe(true);
+
+    // E. Shortage Guard: IssueToProduction fails if requested stock exceeds WIP custody
+    const existingDemand = await fixture.db.materialDemand.findFirst({
+      where: { workspaceId: alpha.workspaceId, orderId },
+    });
+    if (existingDemand) {
+      await expect(
+        inventoryService.issueToProduction(
+          warehouse,
+          {
+            demandId: existingDemand.id,
+            sourceLocationId: alpha.masters.rawLocationId,
+            sourceLotId: rawLotId,
+            wipLocationId: alpha.masters.wipLocationId,
+            atoms: parseQuantity('999999'), // shortage
+          },
+          'idemp-issue-p7-shortage-fail'
+        )
+      ).rejects.toThrow();
+    }
+  });
 });

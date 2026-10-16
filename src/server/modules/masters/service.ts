@@ -23,6 +23,7 @@ export type EditableCatalogInput = {
   status?: 'AVAILABLE' | 'MAINTENANCE' | 'OFFLINE';
   departmentId?: string | null;
   calendarId?: string | null;
+  facilityId?: string | null;
   scaleMax?: number;
   precision?: number;
   maxWeeklyMinutes?: number;
@@ -76,11 +77,18 @@ export class MastersService {
           handler: async (tx) => {
             const current = await tx.machine.findFirst({ where: { id, workspaceId: principal.workspaceId } });
             if (!current) throw new NotFoundError(`Machine '${id}' not found`);
+            if (input.facilityId) {
+              const fac = await tx.facility.findFirst({
+                where: { id: input.facilityId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+              });
+              if (!fac) throw new NotFoundError(`Facility '${input.facilityId}' not found in workspace`);
+            }
             const data = await tx.machine.update({ where: { id }, data: {
               name: input.name ?? current.name,
               status: input.status ?? current.status,
               departmentId: input.departmentId !== undefined ? input.departmentId : current.departmentId,
               calendarId: input.calendarId !== undefined ? input.calendarId : current.calendarId,
+              facilityId: input.facilityId !== undefined ? input.facilityId : current.facilityId,
               version: { increment: 1 },
             } });
             return { data, aggregateType: 'MACHINE', aggregateId: data.id, resourceVersion: data.version, previousVersion: current.version };
@@ -93,9 +101,16 @@ export class MastersService {
           handler: async (tx) => {
             const current = await tx.technician.findFirst({ where: { id, workspaceId: principal.workspaceId, archivedAt: null } });
             if (!current) throw new NotFoundError(`Technician '${id}' not found`);
+            if (input.facilityId) {
+              const fac = await tx.facility.findFirst({
+                where: { id: input.facilityId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+              });
+              if (!fac) throw new NotFoundError(`Facility '${input.facilityId}' not found in workspace`);
+            }
             const data = await tx.technician.update({ where: { id }, data: {
               departmentId: input.departmentId !== undefined ? input.departmentId : current.departmentId,
               calendarId: input.calendarId !== undefined ? input.calendarId : current.calendarId,
+              facilityId: input.facilityId !== undefined ? input.facilityId : current.facilityId,
               maxWeeklyMinutes: input.maxWeeklyMinutes ?? current.maxWeeklyMinutes,
               version: { increment: 1 },
             } });
@@ -1146,6 +1161,13 @@ export class MastersService {
         });
         if (existing) throw new ConflictError(`Machine '${input.code}' already exists`, 'DUPLICATE_CODE');
 
+        if (input.facilityId) {
+          const fac = await tx.facility.findFirst({
+            where: { id: input.facilityId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+          });
+          if (!fac) throw new NotFoundError(`Facility '${input.facilityId}' not found in workspace`);
+        }
+
         const machine = await tx.machine.create({
           data: { workspaceId: principal.workspaceId, ...input },
           include: { machineClass: true, department: true, calendar: true },
@@ -1197,6 +1219,13 @@ export class MastersService {
           },
         });
         if (existing) throw new ConflictError(`Technician '${input.code}' already exists`, 'DUPLICATE_CODE');
+
+        if (input.facilityId) {
+          const fac = await tx.facility.findFirst({
+            where: { id: input.facilityId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+          });
+          if (!fac) throw new NotFoundError(`Facility '${input.facilityId}' not found in workspace`);
+        }
 
         const tech = await tx.technician.create({
           data: { workspaceId: principal.workspaceId, ...input },

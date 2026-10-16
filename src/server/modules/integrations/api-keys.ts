@@ -28,7 +28,16 @@ export interface ValidatedApiKey {
 }
 
 export class ApiKeyService {
+  private static rateLimitWindows = new Map<string, { count: number; resetAt: number }>();
+
   constructor(private readonly prisma: PrismaClient) {}
+
+  /**
+   * Resets in-memory rate limit counters (for testing).
+   */
+  static resetRateLimits() {
+    ApiKeyService.rateLimitWindows.clear();
+  }
 
   /**
    * Generates a new scoped API Key for external programmatic integrations.
@@ -78,11 +87,13 @@ export class ApiKeyService {
 
   /**
    * Authenticates and authorizes an inbound API key token against its cryptographic hash.
+   * Enforces per-key sliding window rate limits when maxRequestsPerMinute is specified.
    */
   async validateApiKey(
     workspaceId: string,
     rawToken: string,
-    requiredScope?: string
+    requiredScope?: string,
+    options?: { maxRequestsPerMinute?: number }
   ): Promise<ValidatedApiKey | null> {
     if (!rawToken || !rawToken.startsWith('mos_')) {
       return null;
@@ -110,6 +121,18 @@ export class ApiKeyService {
 
     if (requiredScope && !scopes.includes('*') && !scopes.includes(requiredScope)) {
       return null;
+    }
+
+    const maxRpm = options?.maxRequestsPerMinute ?? 120;
+    const now = Date.now();
+    const bucket = ApiKeyService.rateLimitWindows.get(key.id);
+    if (!bucket || now >= bucket.resetAt) {
+      ApiKeyService.rateLimitWindows.set(key.id, { count: 1, resetAt: now + 60_000 });
+    } else {
+      bucket.count += 1;
+      if (bucket.count > maxRpm) {
+        throw new BadRequestError(`Rate limit exceeded for API key '${key.keyPrefix}' (max ${maxRpm}/min).`);
+      }
     }
 
     await this.prisma.apiKey.update({

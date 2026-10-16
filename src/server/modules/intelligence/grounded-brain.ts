@@ -6,6 +6,7 @@ import { NotFoundError, BadRequestError } from '@/domain/errors';
 export interface GroundedEvidenceQuery {
   entityType: 'ORDER' | 'TASK' | 'ITEM';
   entityId: string;
+  maxTokensBudget?: number;
 }
 
 export interface GroundedEvidenceDTO {
@@ -16,10 +17,28 @@ export interface GroundedEvidenceDTO {
   authoritativeFacts: Record<string, unknown>;
   referencedEvidenceIds: string[];
   caveats: string[];
+  modelVersion: string;
+  promptVersion: string;
+  contextVersion: number;
+  tokenBudget: number;
+  sourceTimestamp: string;
   generatedAt: string;
 }
 
+export interface BrainFeedbackRecord {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  entityType: 'ORDER' | 'TASK' | 'ITEM';
+  entityId: string;
+  rating: 'ACCURATE' | 'FACTUAL_CORRECTION';
+  correctionNote?: string;
+  recordedAt: string;
+}
+
 export class GroundedBrainService {
+  private static feedbackStore = new Map<string, BrainFeedbackRecord[]>();
+
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
@@ -35,6 +54,13 @@ export class GroundedBrainService {
     const workspaceId = principal.workspaceId;
     const caveats: string[] = [];
     const referencedEvidenceIds: string[] = [];
+    const tokenBudget = Math.min(Math.max(query.maxTokensBudget ?? 1024, 128), 4096);
+
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { revision: true, updatedAt: true },
+    });
+    const contextVersion = workspace?.revision ?? 1;
 
     if (query.entityType === 'ORDER') {
       const order = await this.prisma.order.findUnique({
@@ -82,6 +108,11 @@ export class GroundedBrainService {
         },
         referencedEvidenceIds,
         caveats,
+        modelVersion: 'grounded-deterministic-v1',
+        promptVersion: 'brain-evidence-v2',
+        contextVersion,
+        tokenBudget,
+        sourceTimestamp: order.updatedAt.toISOString(),
         generatedAt: new Date().toISOString(),
       };
     } else if (query.entityType === 'TASK') {
@@ -129,6 +160,11 @@ export class GroundedBrainService {
         },
         referencedEvidenceIds,
         caveats,
+        modelVersion: 'grounded-deterministic-v1',
+        promptVersion: 'brain-evidence-v2',
+        contextVersion,
+        tokenBudget,
+        sourceTimestamp: task.updatedAt.toISOString(),
         generatedAt: new Date().toISOString(),
       };
     } else if (query.entityType === 'ITEM') {
@@ -175,10 +211,51 @@ export class GroundedBrainService {
         },
         referencedEvidenceIds,
         caveats,
+        modelVersion: 'grounded-deterministic-v1',
+        promptVersion: 'brain-evidence-v2',
+        contextVersion,
+        tokenBudget,
+        sourceTimestamp: item.updatedAt.toISOString(),
         generatedAt: new Date().toISOString(),
       };
     }
 
     throw new BadRequestError(`Unsupported entityType: ${query.entityType}`);
+  }
+
+  /**
+   * Records factual correction or accuracy feedback on grounded Brain evidence without storing PII.
+   */
+  async recordFeedback(
+    principal: Principal,
+    input: {
+      entityType: 'ORDER' | 'TASK' | 'ITEM';
+      entityId: string;
+      rating: 'ACCURATE' | 'FACTUAL_CORRECTION';
+      correctionNote?: string;
+    }
+  ): Promise<BrainFeedbackRecord> {
+    requireAnyPermission(principal, ['planning.read', 'execution.read', 'quality.read', 'owner']);
+    await this.getGroundedEvidence(principal, {
+      entityType: input.entityType,
+      entityId: input.entityId,
+    });
+
+    const record: BrainFeedbackRecord = {
+      id: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      workspaceId: principal.workspaceId,
+      userId: principal.userId,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      rating: input.rating,
+      correctionNote: input.correctionNote?.slice(0, 500),
+      recordedAt: new Date().toISOString(),
+    };
+
+    const existing = GroundedBrainService.feedbackStore.get(principal.workspaceId) || [];
+    existing.push(record);
+    GroundedBrainService.feedbackStore.set(principal.workspaceId, existing);
+
+    return record;
   }
 }
