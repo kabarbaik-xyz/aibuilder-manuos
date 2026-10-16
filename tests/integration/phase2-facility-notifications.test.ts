@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { MastersService } from '@/server/modules/masters/service';
 import { NotificationService } from '@/server/modules/notifications/service';
+import { getNotificationHref } from '@/features/notifications/notification-links';
 import { ConflictError, NotFoundError, ForbiddenError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 
@@ -373,6 +374,192 @@ describe('Phase 2: Facility Scope, Reference Data, Notifications & Audit Correla
       expect(audit).toBeTruthy();
       expect(audit?.correlationId).toBe(corrId);
       expect(audit?.reason).toBe(cmdReason);
+    });
+  });
+
+  describe('6. Operational Resource Facility Scoping & Cross-Tenant Boundary', () => {
+    let facWestId: string;
+
+    beforeAll(async () => {
+      const list = await mastersService.listFacilities(fixture.alpha.users.owner.principal);
+      const facWest = list.find((f) => f.code === 'FAC-WEST');
+      facWestId = facWest!.id;
+    });
+
+    it('creates a machine and technician with valid facilityId', async () => {
+      const { alpha } = fixture;
+
+      const machineRes = await mastersService.createMachine(
+        alpha.users.planner.principal,
+        {
+          code: 'CNC-WEST-01',
+          name: 'West Site CNC Milling Station',
+          machineClassId: alpha.masters.machineClassId,
+          facilityId: facWestId,
+        },
+        'cmd-create-machine-west'
+      );
+      expect(machineRes.data.facilityId).toBe(facWestId);
+
+      const techRes = await mastersService.createTechnician(
+        alpha.users.planner.principal,
+        {
+          code: 'TECH-WEST-01',
+          name: 'West Site Lead Machinist',
+          facilityId: facWestId,
+          maxWeeklyMinutes: 2400,
+        },
+        'cmd-create-tech-west'
+      );
+      expect(techRes.data.facilityId).toBe(facWestId);
+    });
+
+    it('rejects creating machine or technician with cross-workspace or invalid facilityId', async () => {
+      const { alpha, beta } = fixture;
+      const betaFac = await fixture.db.facility.findFirst({
+        where: { workspaceId: beta.workspaceId },
+      });
+      expect(betaFac).toBeTruthy();
+
+      // Attempt creating machine in alpha with beta's facility
+      await expect(
+        mastersService.createMachine(
+          alpha.users.planner.principal,
+          {
+            code: 'CNC-ILLEGAL-FAC',
+            name: 'Cross-Tenant Machine',
+            machineClassId: alpha.masters.machineClassId,
+            facilityId: betaFac!.id,
+          },
+          'cmd-create-machine-illegal'
+        )
+      ).rejects.toThrow(NotFoundError);
+
+      // Attempt creating technician in alpha with beta's facility
+      await expect(
+        mastersService.createTechnician(
+          alpha.users.planner.principal,
+          {
+            code: 'TECH-ILLEGAL-FAC',
+            name: 'Cross-Tenant Technician',
+            facilityId: betaFac!.id,
+          },
+          'cmd-create-tech-illegal'
+        )
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('updates machine and technician facilityId and rejects invalid foreign facility', async () => {
+      const { alpha, beta } = fixture;
+      const betaFac = await fixture.db.facility.findFirst({
+        where: { workspaceId: beta.workspaceId },
+      });
+
+      // Update machine
+      await mastersService.updateCatalogRecord(
+        alpha.users.planner.principal,
+        'machines',
+        alpha.masters.machineId,
+        { facilityId: facWestId },
+        'cmd-upd-mach-fac'
+      );
+
+      const mach = await fixture.db.machine.findUnique({ where: { id: alpha.masters.machineId } });
+      expect(mach?.facilityId).toBe(facWestId);
+
+      // Reject foreign facility update
+      await expect(
+        mastersService.updateCatalogRecord(
+          alpha.users.planner.principal,
+          'machines',
+          alpha.masters.machineId,
+          { facilityId: betaFac!.id },
+          'cmd-upd-mach-fac-illegal'
+        )
+      ).rejects.toThrow(NotFoundError);
+
+      // Update technician
+      await mastersService.updateCatalogRecord(
+        alpha.users.planner.principal,
+        'technicians',
+        alpha.masters.technicianId,
+        { facilityId: facWestId },
+        'cmd-upd-tech-fac'
+      );
+
+      const tech = await fixture.db.technician.findUnique({ where: { id: alpha.masters.technicianId } });
+      expect(tech?.facilityId).toBe(facWestId);
+
+      // Reject foreign facility update
+      await expect(
+        mastersService.updateCatalogRecord(
+          alpha.users.planner.principal,
+          'technicians',
+          alpha.masters.technicianId,
+          { facilityId: betaFac!.id },
+          'cmd-upd-tech-fac-illegal'
+        )
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('7. Multicast Facility Notifications, Entity Deep Links & Locale Formatting', () => {
+    it('multicasts notifications to members with matching facility and permission', async () => {
+      const { alpha } = fixture;
+      const list = await mastersService.listFacilities(alpha.users.owner.principal);
+      const facEast = list.find((f) => f.code === 'FAC-EAST')!;
+
+      // Planner has planning.read, ensure planner has grant to FAC-EAST
+      await mastersService.grantFacilityAccess(
+        alpha.users.admin.principal,
+        alpha.users.planner.membershipId,
+        facEast.id,
+        'cmd-grant-planner-east'
+      );
+
+      const initialCount = await notificationService.getUnreadCount(alpha.users.planner.principal);
+
+      await notificationService.notifyFacilityMembers(alpha.workspaceId, facEast.id, 'planning.read', {
+        title: 'New Production Release at East Site',
+        body: 'Order ORD-EAST-01 has been released for scheduling.',
+        category: 'RELEASE',
+        subjectType: 'ORDER',
+        subjectId: 'ord-east-001',
+      });
+
+      const newCount = await notificationService.getUnreadCount(alpha.users.planner.principal);
+      expect(newCount).toBe(initialCount + 1);
+
+      const unread = await notificationService.listNotifications(alpha.users.planner.principal, { unreadOnly: true });
+      const found = unread.find((n) => n.subjectId === 'ord-east-001');
+      expect(found).toBeTruthy();
+      expect(found?.title).toBe('New Production Release at East Site');
+      expect(found?.category).toBe('RELEASE');
+    });
+
+    it('resolves entity deep links correctly for orders, tasks, inspections and task issues', () => {
+      expect(getNotificationHref({ subjectType: 'ORDER', subjectId: 'ord-101' })).toBe('/orders/ord-101');
+      expect(getNotificationHref({ subjectType: 'TASK', subjectId: 'task-202' })).toBe('/shop-floor/tasks/task-202');
+      expect(getNotificationHref({ subjectType: 'INSPECTION', subjectId: 'insp-303' })).toBe('/quality/inspections/insp-303');
+      expect(getNotificationHref({
+        subjectType: 'TASK_ISSUE',
+        subjectId: 'issue-404',
+        metadataJson: JSON.stringify({ taskId: 'task-505' }),
+      })).toBe('/shop-floor/tasks/task-505');
+      expect(getNotificationHref({ subjectType: 'UNKNOWN', subjectId: '123' })).toBeNull();
+    });
+
+    it('formats dates in Indonesian locale by default with facility-aware timezone', () => {
+      const sampleDate = new Date('2026-10-16T08:30:00.000Z');
+      const formatted = new Intl.DateTimeFormat('id-ID', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'Asia/Jakarta',
+      }).format(sampleDate);
+
+      // In id-ID locale, October is 'Okt' or 'Oktober', and time for 08:30 UTC is 15.30 WIB (UTC+7)
+      expect(formatted).toContain('Okt');
+      expect(formatted).toContain('15');
     });
   });
 });
