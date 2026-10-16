@@ -12,6 +12,30 @@ The completion plan remains the gate authority. Historical phase summaries below
 
 Current inline verification adds: order draft facility-grant and decimal-precision guards; published-roster coverage at planning evaluation; immutable released-passport protection; per-item transactional caps for final production output and shipment allocation; dashboard null/coverage handling; multi-line order entry with per-line engineering revision selection; confirmed per-line release; order-scoped engineering revision reads/writes; and decimal-string engineering quantities with exact allowance basis points. Final local verification on 2026-10-16: `npm test` passed (69 files, 358 tests), `npm run typecheck` passed (`tsc --noEmit`), and `npm run build` passed (Next.js 15 production build, 122 static pages generated). The six-test R0 pilot-gate suite passed within the full test run. These are local Vitest/service/compiler/build checks; the `tests/e2e` files use Vitest and do not constitute a real browser journey, operational database reconciliation, or pilot acceptance.
 
+### Session evidence — 2026-10-16 (after `c815f4c`)
+
+Scope: SFL-05 scan entry, SFL-04/scan authorization, QLT-01 readings gate, CUS-01 intake milestone truth. All evidence below is local source/service/Vitest/build level; browser, operational-database and pilot gates remain open.
+
+- **QR/manual scan entry completed (SFL-05, phase 6):**
+  - `src/features/execution/components/ShopFloorTaskListView.tsx`: scan/manual code form on My Work with loading, recognised-code and error states in consistent English copy; opens task/job through `/shop-floor/tasks/{id}` and orders through `/orders/{id}` only when the principal holds `order.read`; the server re-authorizes on open.
+  - `src/features/execution/scan-routing.ts` + unit test: shared scan-result → route mapping (`TASK`/`JOB` task deep link, `ORDER` behind `order.read`); 3/3 unit tests pass.
+  - `src/features/execution/components/ShopFloorWorkstationView.tsx`: scan modal rewritten from the obsolete `valid/targetType/item/lot` response shape to the actual `ScanResultDTO` contract (`type`, `entityId`, `displayCode`, `title`, `status`, `taskId`) with typed state, `role="status"`/`role="alert"` feedback and an Open action when a deep-link target is available.
+  - `src/app/globals.css`: `.my-work-scan` scan bar styled on the light contract with a ≤650px stacked mobile layout.
+- **Scan authorization tightening (`scanCode`, phase 1/6):**
+  - ORDER lookups now require `order.read` (previously any caller past the entry gate, including `task.execute_assigned` operators, received order data).
+  - JOB results expose a `taskId` deep link only to principals allowed to open tasks; `order.read`-only staff learn the job exists but never receive a task pointer.
+  - Task lookups stay restricted to assigned technicians unless the caller holds supervisor-level permissions.
+  - Regression coverage added to `tests/integration/phase6-evidenced-execution.test.ts`: operator scanning another role's QC task → `NotFoundError`; operator scanning an order code → `NotFoundError`; operator scanning the MO number resolves their assigned active task; `order.read`-only buyer receives JOB without `taskId`.
+  - `contracts/openapi.yaml`: `/api/execution/scan` description now documents these disclosure rules and the `ScanResultDTO` shape.
+- **QC pinned-plan readings gate (QLT-01, phase 6):**
+  - `src/server/modules/quality/service.ts`: `finalizeInspection` and `recordReinspection` now enforce the pinned checklist — required checks must be recorded, MEASUREMENT/GAUGE checks must carry a numeric decimal reading, and a passing reading must sit inside the published `limitsJson` range compared as exact bigint atoms (signed decimals supported for tolerances; no floating point). Failing readings may sit outside limits as defect evidence.
+  - New `tests/integration/qc-checklist-readings.test.ts` (4/4): missing measurement reading rejected; passing reading above max / below negative min rejected; out-of-range accepted only with `isPassed: false` defect evidence; reinspection requires the pinned plan readings again and conserves 10 atoms to FG with quarantine emptied.
+- **Truthful customer intake milestone (CUS-01, phase 6):**
+  - `src/server/modules/portal/repository.ts`: `INTAKE` milestone is now settled only by `confirmedAt` (or a non-DRAFT/REVIEW status); draft orders project `PENDING` instead of a fabricated "Order Confirmed & Planned" completion. `PortalOrderDetailView` labels the promised date as an estimate until the customer acknowledges.
+  - Regression assertions added to the phase 6 milestone test: released order INTAKE `COMPLETED`, draft order INTAKE `PENDING`.
+
+Verification this session: `npm run typecheck` passed; focused suites passed (phase6 5/5, scan-routing 3/3, qc-checklist-readings 4/4); after the QC/milestone changes the full local run passed again: `npm test` 71 files / 365 tests, `npm run typecheck` clean, `npm run build` exit 0. These remain local Vitest/service/compiler/build checks — not browser, operational-database, or pilot evidence.
+
 ## Phase 0 — baseline and contracts
 
 ### Baseline evidence
@@ -348,14 +372,14 @@ The [gap audit matrix](product-rev-gap-audit.md#complete-capability-matrix) cont
 | 3 — multi-item orders, bounded jobs and released engineering | Partial / open | Multi-line order UI, exact decimal-string inputs, order-scoped revision selection, draft-only bounded allocations, and per-line pinned release are implemented and covered by local tests; split-allocation journeys and end-to-end output/shipment/portal reconciliation remain open. |
 | 4 — verified workforce, machine capability and published availability | Partial / open | Workforce and roster primitives exist; remaining resource requirements, setup/capacity and evidence-backed browser flows need review. |
 | 5 — atomic qualified manual dispatch | Partial / open | Eligibility and roster checks exist; hard material readiness, complete required resources and transaction/concurrency behavior need closure. |
-| 6 — evidenced execution, QC dispositions, and truthful customer view | Partial / open | Focused output and QC suites pass; output is now item-capped, while per-line routing, exact decimal handling, scan/mobile and customer milestone proof remain open. |
+| 6 — evidenced execution, QC dispositions, and truthful customer view | Partial / open | Focused output and QC suites pass; output is now item-capped; scan/manual entry shipped with hardened disclosure (orders behind `order.read`, task pointers only for task-openers); workstation scan modal migrated to `ScanResultDTO`; pinned QC plan readings/ranges enforced at finalize+reinspection; INTAKE milestone now reflects confirmed state and promised dates carry estimate labels. Mobile Today/Profile surfaces, browser journeys, and full per-line progress projection remain open. Evidence: session section above, `phase6-evidenced-execution.test.ts` 5/5, `scan-routing.test.ts` 3/3, `qc-checklist-readings.test.ts` 4/4. |
 | 7 — R0 release and pilot gate verification | Open | Current 6-test R0 gate suite passes inside the full local run; actual authenticated browser journeys and pilot acceptance remain open. |
 | 8 — R1 controlled changes, published schedules and connected traceability | Partial / open | Some services/routes exist; schedule-wide validation, customer approval lifecycle and UI reachability remain incomplete. |
 | 9 — R1 reliable integrations, analytics, grounded assistance and offline work | Partial / open | Models/services exist; real webhook dispatch/replay/import and offline conflict UX need proof. |
 | 10 — R2 finite capacity, feasible promises and factory memory | Partial / open | Service code exists; runtime assumptions, item routing, measured history and verified UI/backtests remain open. |
 | 11 — R2 costing, customer requests and opt-in connectors | Partial / open | Some service/UI work exists; provider delivery, complete cost source coverage and approval-backed customer workflows remain open. |
 | 12 — R3 controlled recovery and validated advanced capabilities | Partial / open | Passport overwrite protection added; canonical genealogy snapshot, applied recovery reservations, telemetry persistence and validated opt-in pilots remain open. |
-| 13 — final reconciliation, regression and release evidence | Partial / open | Full current local suite (69 files / 358 tests) and typecheck pass; operational database reconciliation, authenticated browser, restore, performance and pilot evidence remain open. |
+| 13 — final reconciliation, regression and release evidence | Partial / open | Full current local suite (71 files / 365 tests), typecheck and production build pass as of 2026-10-16; operational database reconciliation, authenticated browser, restore, performance and pilot evidence remain open. |
 
 ## Phase 9 — R1 reliable integrations, analytics, grounded assistance and offline work
 

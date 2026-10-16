@@ -146,7 +146,9 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
               </strong>
             </div>
             <div>
-              <span className="text-muted block text-xs">Promised Date</span>
+              <span className="text-muted block text-xs">
+                Promised Date{!order.customerAcknowledged ? " (estimate)" : ""}
+              </span>
               <strong className="text-ink font-semibold">
                 {order.promisedDate
                   ? new Date(order.promisedDate).toLocaleDateString()

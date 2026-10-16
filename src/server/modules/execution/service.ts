@@ -986,11 +986,26 @@ export class ExecutionService {
     const input = ScanCodeSchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
     const trimmed = input.code.trim();
+    const canReadAllTasks = ['task.assign', 'planning.read', 'workspace.admin'].some((permission) =>
+      hasPermission(principal, permission)
+    );
+    const canReadAssignedTasks = hasPermission(principal, 'task.execute_assigned') && !canReadAllTasks;
+    // Order data (number, customer item, status) may only be scanned by principals
+    // holding the same read permission the order detail endpoint enforces.
+    const canReadOrders = hasPermission(principal, 'order.read');
 
     // 1. Task lookup
     const taskId = trimmed.startsWith('TASK:') ? trimmed.slice(5) : trimmed;
     const task = await this.db.task.findFirst({
-      where: { workspaceId, id: taskId },
+      where: {
+        workspaceId,
+        id: taskId,
+        ...(!canReadAllTasks
+          ? canReadAssignedTasks && principal.technicianId
+            ? { assignedTechnicianId: principal.technicianId }
+            : { id: '__not_an_authorized_task__' }
+          : {}),
+      },
       include: {
         instance: {
           include: {
@@ -1014,13 +1029,13 @@ export class ExecutionService {
 
     // 2. Order lookup
     const orderId = trimmed.startsWith('ORDER:') ? trimmed.slice(6) : trimmed;
-    const order = await this.db.order.findFirst({
+    const order = canReadOrders ? await this.db.order.findFirst({
       where: {
         workspaceId,
         OR: [{ id: orderId }, { orderNumber: trimmed }],
       },
       include: { item: true },
-    });
+    }) : null;
     if (order) {
       return {
         type: 'ORDER',
@@ -1039,12 +1054,33 @@ export class ExecutionService {
       },
     });
     if (mo) {
+      // Only principals allowed to open tasks may receive a deep link target;
+      // read-only order staff learn the job exists but never a task pointer.
+      const canOpenTasks = canReadAllTasks || canReadAssignedTasks;
+      const matchingTask = canOpenTasks ? await this.db.task.findFirst({
+        where: {
+          workspaceId,
+          jobsheet: { manufacturingOrderId: mo.id },
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          ...(canReadAssignedTasks
+            ? principal.technicianId
+              ? { assignedTechnicianId: principal.technicianId }
+              : { id: '__not_an_authorized_task__' }
+            : {}),
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      }) : null;
+      if (canReadAssignedTasks && !matchingTask) {
+        throw new NotFoundError(`No operational entity found for code '${trimmed}'`);
+      }
       return {
         type: 'JOB',
         entityId: mo.id,
         displayCode: mo.moNumber,
         title: `Job ${mo.moNumber}`,
         status: mo.status,
+        ...(matchingTask ? { taskId: matchingTask.id } : {}),
       };
     }
 

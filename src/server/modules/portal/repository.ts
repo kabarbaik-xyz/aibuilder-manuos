@@ -246,12 +246,16 @@ export class PortalRepository {
 
     const hasQcPassed = qcPassedAtoms > 0n;
 
+    // Intake counts as settled only once the order is confirmed (release confirms
+    // authoritatively); a DRAFT/REVIEW order must not read as confirmed work.
+    const intakeSettled = Boolean(order.confirmedAt) || !['DRAFT', 'REVIEW'].includes(order.status);
+
     const milestones: CustomerMilestoneDTO[] = [
       {
         key: 'INTAKE',
         title: 'Order Confirmed & Planned',
-        status: 'COMPLETED',
-        completedAt: order.createdAt.toISOString(),
+        status: intakeSettled ? 'COMPLETED' : 'PENDING',
+        completedAt: (order.confirmedAt ?? (intakeSettled ? order.createdAt : null))?.toISOString() ?? null,
       },
       {
         key: 'PRODUCTION',

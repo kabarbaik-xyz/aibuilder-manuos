@@ -328,10 +328,43 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
     expect(taskScan.entityId).toBe(op10TaskId);
     expect(taskScan.displayCode).toBe('OP-10');
 
+    // Operator scan lookup must not reveal work assigned to another role/task.
+    await expect(
+      executionService.scanCode(fixture.alpha.users.operator.principal, { code: `TASK:${qc20TaskId}` })
+    ).rejects.toThrowError(NotFoundError);
+
+    // Order data must not be revealed to operators without order read permission.
+    await expect(
+      executionService.scanCode(fixture.alpha.users.operator.principal, { code: `ORDER:${orderId}` })
+    ).rejects.toThrowError(NotFoundError);
+
     // 2. Scan Order QR code: "ORDER:<orderId>"
     const orderScan = await executionService.scanCode(owner, { code: `ORDER:${orderId}` });
     expect(orderScan.type).toBe('ORDER');
     expect(orderScan.entityId).toBe(orderId);
+
+    // Scanning a job (manufacturing order) resolves to the assigned operator's active task.
+    const op10Task = await fixture.db.task.findUniqueOrThrow({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: op10TaskId } },
+      include: { jobsheet: true },
+    });
+    const manufacturingOrder = await fixture.db.manufacturingOrder.findUniqueOrThrow({
+      where: { id: op10Task.jobsheet!.manufacturingOrderId },
+    });
+    const operatorJobScan = await executionService.scanCode(
+      fixture.alpha.users.operator.principal,
+      { code: manufacturingOrder.moNumber }
+    );
+    expect(operatorJobScan.type).toBe('JOB');
+    expect(operatorJobScan.taskId).toBe(op10TaskId);
+
+    // Order-reading staff learn the job exists but never receive a task deep link.
+    const buyerJobScan = await executionService.scanCode(
+      fixture.alpha.users.buyer.principal,
+      { code: manufacturingOrder.moNumber }
+    );
+    expect(buyerJobScan.type).toBe('JOB');
+    expect(buyerJobScan.taskId).toBeUndefined();
 
     // 3. Scan invalid code -> throws NotFoundError
     await expect(
@@ -462,11 +495,31 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
   // -----------------------------------------------------------------
   it('projects truthful customer milestones and does not claim full delivery on partial shipment', async () => {
     const customerUser = fixture.alpha.users.customerUser.principal;
+    const owner = fixture.alpha.users.owner.principal;
 
     // 1. Customer order view shows 80% QC progress (8 passed / 10 ordered)
     const orderDetail = await portalService.getCustomerOrder(customerUser, orderId);
     expect(orderDetail.progressPct).toBe(80);
     expect(orderDetail.qcPassedAtoms).toBe(parseQuantity('8').toString());
+
+    // Released order was confirmed during release: intake milestone is settled.
+    const intakeMilestone = orderDetail.milestones.find((m) => m.key === 'INTAKE');
+    expect(intakeMilestone?.status).toBe('COMPLETED');
+
+    // A draft order must not read as confirmed intake to the customer.
+    const draftOrder = await orderService.createOrderDraft(
+      owner,
+      {
+        customerId: fixture.alpha.masters.customerId,
+        orderTypeId: fixture.alpha.masters.orderTypeId,
+        itemId: fixture.alpha.masters.fgItemId,
+        orderedQuantity: 5,
+        requestedDate: '2026-12-20T17:00:00.000Z',
+      },
+      'idemp-order-phase6-draft'
+    );
+    const draftView = await portalService.getCustomerOrder(customerUser, draftOrder.data.id);
+    expect(draftView.milestones.find((m) => m.key === 'INTAKE')?.status).toBe('PENDING');
 
     // 2. Check milestones: DELIVERY must be PENDING (no shipment yet)
     const deliveryMilestone = orderDetail.milestones.find((m) => m.key === 'DELIVERY');

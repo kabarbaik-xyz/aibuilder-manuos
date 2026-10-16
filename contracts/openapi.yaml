@@ -1012,8 +1012,14 @@ paths:
 
   /api/execution/scan:
     post:
-      summary: Lookup task, order, or item by scanned barcode or QR string
-      description: Safely parses barcode/QR token with tenant authorization check.
+      summary: Lookup task, job, or order by scanned barcode or QR string
+      description: |
+        Safely parses a barcode/QR token with tenant authorization check.
+        Disclosure rules: TASK results are limited to tasks assigned to the
+        caller unless the caller holds task.assign/planning.read; ORDER results
+        require order.read; JOB results include a deep-link taskId only for
+        callers allowed to open tasks (assigned operators and supervisors).
+        Callers without any matching entity receive 404 without disclosure.
       requestBody:
         required: true
         content:
@@ -1024,7 +1030,8 @@ paths:
               properties:
                 code: { type: string }
       responses:
-        '200': { description: ScanResultDTO envelope }
+        '200':
+          description: ScanResultDTO envelope (type TASK|JOB|ORDER, entityId, displayCode, title, status, optional taskId)
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }

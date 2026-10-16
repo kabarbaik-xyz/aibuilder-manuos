@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   useTaskExecutionDetail,
   useStartTask,
@@ -17,6 +18,9 @@ import {
   useReopenTaskIssue,
   useScanBarcode,
 } from '../hooks';
+import { getScanOpenPath } from '../scan-routing';
+import type { ScanResultDTO } from '@/server/modules/execution/contracts';
+import { useWorkspaceNavigation } from '@/components/workspace-navigation-context';
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -28,6 +32,8 @@ export interface ShopFloorWorkstationViewProps {
 }
 
 export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewProps) {
+  const router = useRouter();
+  const { principal } = useWorkspaceNavigation();
   const { data: task, isLoading, error, refetch } = useTaskExecutionDetail(taskId);
 
   const startMutation = useStartTask();
@@ -58,7 +64,8 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
   const [showScanModal, setShowScanModal] = useState(false);
   const [scanCode, setScanCode] = useState("");
-  const [scanResult, setScanResult] = useState<any>(null);
+  const [scanResult, setScanResult] = useState<ScanResultDTO | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   const openIssues = issues || [];
   const blockingIssues = openIssues.filter(
@@ -186,13 +193,26 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
   const handleScanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!scanCode.trim()) return;
+    const code = scanCode.trim();
+    if (!code) return;
+    setScanError(null);
     try {
-      const res = await scanMutation.mutateAsync(scanCode.trim());
+      const res = await scanMutation.mutateAsync(code);
       setScanResult(res);
     } catch (err: any) {
-      setScanResult({ valid: false, error: err.message || "Scan verification failed" });
+      setScanResult(null);
+      setScanError(err?.message || "Scan verification failed");
     }
+  };
+
+  const openScannedEntity = () => {
+    if (!scanResult) return;
+    const path = getScanOpenPath(scanResult, principal?.permissions.includes('order.read') ?? false);
+    if (!path) return;
+    setShowScanModal(false);
+    setScanResult(null);
+    setScanError(null);
+    router.push(path);
   };
 
   const handleStart = async () => {
@@ -923,53 +943,50 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
       {showScanModal && (
         <Dialog
           isOpen
-          onClose={() => { setShowScanModal(false); setScanResult(null); }}
-          title="Scan Material / Lot Barcode"
+          onClose={() => { setShowScanModal(false); setScanResult(null); setScanError(null); }}
+          title="Scan Task / Job / Order Code"
           size="sm"
           pending={scanMutation.isPending}
         >
           <form onSubmit={handleScanSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-ink mb-1">
+              <label className="block text-xs font-medium text-ink mb-1" htmlFor="workstation-scan-input">
                 Barcode / QR Code String
               </label>
               <input
+                id="workstation-scan-input"
                 type="text"
                 required
                 autoFocus
                 value={scanCode}
                 onChange={(e) => setScanCode(e.target.value)}
-                placeholder="Scan or enter barcode code..."
+                placeholder="Scan or enter TASK:, JOB: or ORDER: code..."
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink font-mono focus:outline-none focus:border-primary"
               />
             </div>
 
+            {scanError && (
+              <p role="alert" className="text-xs text-danger m-0">{scanError}</p>
+            )}
+
             {scanResult && (
-              <div className="p-3 bg-surface-muted border border-line rounded text-xs space-y-1">
+              <div className="p-3 bg-surface-muted border border-line rounded text-xs space-y-1" role="status">
                 <div className="flex items-center gap-2">
-                  <Badge variant={scanResult.valid ? "success" : "danger"}>
-                    {scanResult.valid ? "VALID CODE" : "INVALID / UNKNOWN"}
-                  </Badge>
-                  <span className="font-mono text-muted">{scanResult.targetType || "Unknown"}</span>
+                  <Badge variant="success">{scanResult.type}</Badge>
+                  <span className="font-mono text-ink font-semibold">{scanResult.displayCode}</span>
+                  <Badge variant="default">{scanResult.status}</Badge>
                 </div>
-                {scanResult.error && (
-                  <p className="text-danger mt-1">{scanResult.error}</p>
-                )}
-                {scanResult.item && (
-                  <div className="mt-2 text-ink">
-                    <strong>Item:</strong> {scanResult.item.name} ({scanResult.item.code})
-                  </div>
-                )}
-                {scanResult.lot && (
-                  <div className="text-ink">
-                    <strong>Lot:</strong> {scanResult.lot.lotNumber}
-                  </div>
+                <p className="text-ink m-0">{scanResult.title}</p>
+                {scanResult.taskId && getScanOpenPath(scanResult, principal?.permissions.includes('order.read') ?? false) && (
+                  <Button type="button" variant="primary" size="small" onClick={openScannedEntity}>
+                    Open
+                  </Button>
                 )}
               </div>
             )}
 
             <div className="dialog-actions">
-              <Button onClick={() => { setShowScanModal(false); setScanResult(null); }}>
+              <Button onClick={() => { setShowScanModal(false); setScanResult(null); setScanError(null); }}>
                 Close
               </Button>
               <Button
