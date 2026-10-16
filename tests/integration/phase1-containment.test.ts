@@ -144,15 +144,17 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
   });
 
   describe('2. Atom Arithmetic & Fractional Flooring Prohibited', () => {
-    it('rejects fractional float values passed as atoms without silent flooring', () => {
+    it('rejects fractional or unsafe numeric values passed as atoms without losing precision', () => {
       expect(() => parseAtomInput(12.5)).toThrow(ValidationError);
       expect(() => parseAtomInput(0.000001)).toThrow(ValidationError);
+      expect(() => parseAtomInput(Number.MAX_SAFE_INTEGER + 1)).toThrow(ValidationError);
       expect(() => parseAtomInput(NaN)).toThrow(ValidationError);
       expect(() => parseAtomInput(Infinity)).toThrow(ValidationError);
     });
 
     it('accepts integer numbers, bigint, and decimal strings correctly', () => {
       expect(parseAtomInput(100)).toBe(100n);
+      expect(parseAtomInput(Number.MAX_SAFE_INTEGER)).toBe(BigInt(Number.MAX_SAFE_INTEGER));
       expect(parseAtomInput(1000000n)).toBe(1000000n);
       expect(parseAtomInput('1.5')).toBe(1500000n);
       expect(parseAtomInput('2500000')).toBe(2500000n);

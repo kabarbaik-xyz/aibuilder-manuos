@@ -138,6 +138,24 @@ function assertChecklistReadings(
   }
 }
 
+async function assertActiveLocationKind(
+  tx: any,
+  workspaceId: string,
+  locationId: string | undefined,
+  expectedKind: 'FG' | 'SCRAP'
+): Promise<void> {
+  if (!locationId) {
+    throw new BadRequestError(`A destination ${expectedKind} location is required for this QC disposition.`);
+  }
+  const location = await tx.location.findFirst({
+    where: { workspaceId, id: locationId, isActive: true, archivedAt: null },
+    select: { id: true, kind: true },
+  });
+  if (!location || location.kind !== expectedKind) {
+    throw new BadRequestError(`QC disposition destination must be an active ${expectedKind} location.`);
+  }
+}
+
 export async function createInspection(
   db: PrismaClient,
   principal: Principal,
@@ -330,6 +348,7 @@ export async function finalizeInspection(
       const currentInspection = await tx.inspection.findUnique({
         where: { workspaceId_id: { workspaceId, id: input.inspectionId } },
         include: {
+          qcChecklist: { include: { checks: true } },
           productionOutput: {
             include: {
               item: true,
@@ -351,6 +370,13 @@ export async function finalizeInspection(
         throw new BadRequestError(
           `Conservation of mass violated: passed (${input.passedAtoms}) + rework (${input.reworkAtoms}) + scrap (${input.scrappedAtoms}) != inspected (${currentInspection.inspectedAtoms})`
         );
+      }
+      assertChecklistReadings(currentInspection.qcChecklist, input.results);
+      if (input.passedAtoms > 0n) {
+        await assertActiveLocationKind(tx, workspaceId, destFgLocationId, 'FG');
+      }
+      if (input.scrappedAtoms > 0n) {
+        await assertActiveLocationKind(tx, workspaceId, destScrapLocationId, 'SCRAP');
       }
 
       if (currentInspection.productionOutput && !currentInspection.reinspectionOfId) {
@@ -764,6 +790,12 @@ export async function recordReinspection(
       const currentTotal = input.passedAtoms + input.scrappedAtoms;
       if (currentTotal <= 0n) {
         throw new BadRequestError('Reinspection atoms must be strictly positive (> 0).');
+      }
+      if (input.passedAtoms > 0n) {
+        await assertActiveLocationKind(tx, workspaceId, destFgLocationId, 'FG');
+      }
+      if (input.scrappedAtoms > 0n) {
+        await assertActiveLocationKind(tx, workspaceId, destScrapLocationId, 'SCRAP');
       }
       if (totalPrior + currentTotal > currentOriginal.reworkAtoms) {
         throw new BadRequestError(

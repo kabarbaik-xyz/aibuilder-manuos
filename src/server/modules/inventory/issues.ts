@@ -117,6 +117,53 @@ export class IssueService {
       payload: input,
       prismaClient: this.db,
       handler: async (tx, { requestId }) => {
+        const currentDemand = await tx.materialDemand.findFirst({
+          where: { workspaceId, id: demand.id },
+        });
+        if (!currentDemand) {
+          throw new NotFoundError(`Material demand '${demand.id}' not found at issue time`);
+        }
+        if (
+          currentDemand.itemId !== demand.itemId ||
+          currentDemand.orderId !== demand.orderId ||
+          currentDemand.taskId !== demand.taskId
+        ) {
+          throw new BadRequestError(`Material demand '${demand.id}' changed while the issue command was being prepared.`);
+        }
+        if (currentDemand.status === 'CLOSED') {
+          throw new BadRequestError(`Cannot issue to CLOSED demand '${currentDemand.id}'`);
+        }
+
+        const currentSourceLocation = await tx.location.findFirst({
+          where: {
+            workspaceId,
+            id: input.sourceLocationId,
+            isActive: true,
+            archivedAt: null,
+          },
+        });
+        if (!currentSourceLocation) {
+          throw new NotFoundError(`Source location '${input.sourceLocationId}' is no longer active`);
+        }
+        if (['QUARANTINE', 'SCRAP', 'WIP', 'CUSTOMER'].includes(currentSourceLocation.kind)) {
+          throw new BadRequestError(
+            `Cannot issue from ${currentSourceLocation.kind} location '${currentSourceLocation.code}'. Source location must be raw/storage warehouse.`
+          );
+        }
+
+        const currentWipLocation = await tx.location.findFirst({
+          where: {
+            workspaceId,
+            id: input.wipLocationId,
+            isActive: true,
+            archivedAt: null,
+            kind: 'WIP',
+          },
+        });
+        if (!currentWipLocation) {
+          throw new BadRequestError('Destination location must remain an active WIP location at issue time.');
+        }
+
         // If reservationId is provided or active reservation exists for this demand, consume/release it
         let res = null;
         if (input.reservationId) {
@@ -137,6 +184,18 @@ export class IssueService {
             throw new BadRequestError(`Reservation '${input.reservationId}' is not ACTIVE (status: ${res.status})`);
           }
 
+          if (
+            res.demandId !== currentDemand.id ||
+            res.itemId !== currentDemand.itemId ||
+            (res.orderId && res.orderId !== currentDemand.orderId) ||
+            (res.taskId && res.taskId !== currentDemand.taskId) ||
+            (res.lotId ?? null) !== (input.sourceLotId ?? null)
+          ) {
+            throw new BadRequestError(
+              `Reservation '${res.id}' does not match demand '${currentDemand.id}', item, task, and source lot.`
+            );
+          }
+
           if (res.locationId !== input.sourceLocationId) {
             throw new BadRequestError(
               `Reservation location mismatch: reserved at '${res.locationId}' but issuing from '${input.sourceLocationId}'`
@@ -154,6 +213,8 @@ export class IssueService {
               workspaceId,
               demandId: demand.id,
               locationId: input.sourceLocationId,
+              itemId: currentDemand.itemId,
+              lotId: input.sourceLotId ?? null,
               status: 'ACTIVE',
             },
           });
@@ -173,16 +234,19 @@ export class IssueService {
             },
           });
 
-          if (sourceBalance && sourceBalance.reservedAtoms > 0n) {
-            const dec = atomsToConsume > sourceBalance.reservedAtoms ? sourceBalance.reservedAtoms : atomsToConsume;
-            await tx.stockBalance.update({
-              where: { id: sourceBalance.id },
-              data: {
-                reservedAtoms: { decrement: dec },
-                version: { increment: 1 },
-              },
-            });
+          if (!sourceBalance || sourceBalance.reservedAtoms < atomsToConsume) {
+            throw new BadRequestError(
+              `Reservation '${res.id}' exceeds reserved stock in its source bucket; reconcile the reservation before issuing.`
+            );
           }
+
+          await tx.stockBalance.update({
+            where: { id: sourceBalance.id },
+            data: {
+              reservedAtoms: { decrement: atomsToConsume },
+              version: { increment: 1 },
+            },
+          });
 
           // Update reservation status / quantity
           if (atomsToConsume === res.reservedAtoms) {

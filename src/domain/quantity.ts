@@ -84,9 +84,9 @@ export function parseAtomInput(val: unknown): bigint {
   }
   if (typeof val === 'number') {
     if (!Number.isFinite(val)) throw new ValidationError('Invalid quantity number');
-    if (!Number.isInteger(val)) {
+    if (!Number.isSafeInteger(val)) {
       throw new ValidationError(
-        `Fractional numeric values are prohibited for atoms. Provide a decimal quantity string or integer atoms, received: ${val}`
+        `Unsafe numeric values are prohibited for atoms. Provide decimal quantity or integer atom strings, received: ${val}`
       );
     }
     const b = BigInt(val);

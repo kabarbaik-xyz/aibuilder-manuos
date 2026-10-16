@@ -965,7 +965,7 @@ paths:
               type: object
               required: [outputAtoms, destinationLocationId]
               properties:
-                outputAtoms: { type: string, description: Integer 10^6 atoms }
+                outputAtoms: { type: string, description: Decimal integer 10^6 atoms; keep values as strings to preserve precision beyond JavaScript's safe integer range. }
                 destinationLocationId: { type: string }
                 lotNumber: { type: string }
                 serialNumber: { type: string }
@@ -976,6 +976,78 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/inventory/issues:
+    post:
+      summary: Issue reserved material into production WIP
+      description: Revalidates the demand and any referenced reservation in the committing transaction. A reservation must belong to the specified demand and match its item, source location, task, and lot; reservation and stock-balance quantities are never silently clamped.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [demandId, sourceLocationId, wipLocationId, atoms]
+              properties:
+                demandId: { type: string, format: uuid }
+                sourceLocationId: { type: string, format: uuid }
+                sourceLotId: { type: string, format: uuid, nullable: true }
+                wipLocationId: { type: string, format: uuid }
+                atoms: { type: string, pattern: '^[0-9]+$', description: Positive integer atoms; send as a string to preserve exact precision. }
+                reservationId: { type: string, format: uuid, nullable: true }
+                notes: { type: string }
+      responses:
+        '201': { description: Issue movement and inventory balance update }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/quality/inspections/{id}/finalize:
+    post:
+      summary: Finalize a quality inspection
+      description: Enforces conservation of inspected atoms, rechecks the pinned checklist evidence and validates active FG/SCRAP destination kinds inside the committing transaction before posting disposition movements.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [passedAtoms]
+              properties:
+                passedAtoms: { type: string, pattern: '^[0-9]+$', description: Integer atoms serialized as a string. }
+                reworkAtoms: { type: string, pattern: '^[0-9]+$', default: '0' }
+                scrappedAtoms: { type: string, pattern: '^[0-9]+$', default: '0' }
+                destinationFgLocationId: { type: string, format: uuid }
+                destinationScrapLocationId: { type: string, format: uuid }
+                results:
+                  type: array
+                  items:
+                    type: object
+                    required: [checkCode, checkDescription, isPassed]
+                    properties:
+                      checkCode: { type: string }
+                      checkDescription: { type: string }
+                      checkMethod: { type: string }
+                      measuredValue: { type: string }
+                      isPassed: { type: boolean }
+                      defectReason: { type: string }
+                      notes: { type: string }
+                notes: { type: string, maxLength: 1000 }
+      responses:
+        '200': { description: Finalized inspection with inventory dispositions }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/execution/tasks/{id}/issues:
     get:
@@ -2008,6 +2080,12 @@ components:
       description: Stable key per mutation attempt; replay returns the original result. A different payload with the same key conflicts.
       schema: { type: string }
   responses:
+    NotFound:
+      description: Requested resource was not found in the authorized workspace scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: Missing or expired session
       content:

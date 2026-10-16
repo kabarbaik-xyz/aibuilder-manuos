@@ -293,6 +293,41 @@ describe('QLT-01: pinned QC plan enforces required readings and numeric limits',
     ).rejects.toThrowError(/below the required minimum/);
   });
 
+  it('rejects QC dispositions routed to a location of the wrong stock kind', async () => {
+    const fgDestinationInspection = await nextInspection();
+    const results = [
+      { checkCode: 'DIM-01', checkDescription: 'Diameter', checkMethod: 'MEASUREMENT', measuredValue: '25.0', isPassed: true },
+      { checkCode: 'TOL-02', checkDescription: 'Deviation', checkMethod: 'GAUGE', measuredValue: '0.01', isPassed: true },
+      { checkCode: 'VIS-01', checkDescription: 'Surface', checkMethod: 'VISUAL', isPassed: true },
+    ];
+
+    await expect(finalizeInspection(
+      fixture.db,
+      fixture.alpha.users.qc.principal,
+      {
+        inspectionId: fgDestinationInspection,
+        passedAtoms: parseQuantity('10'),
+        destinationFgLocationId: fixture.alpha.masters.rawLocationId,
+        results,
+      },
+      'key-finalize-wrong-fg-kind'
+    )).rejects.toThrow(/must be an active FG location/);
+
+    const scrapDestinationInspection = await nextInspection();
+    await expect(finalizeInspection(
+      fixture.db,
+      fixture.alpha.users.qc.principal,
+      {
+        inspectionId: scrapDestinationInspection,
+        passedAtoms: 0n,
+        scrappedAtoms: parseQuantity('10'),
+        destinationScrapLocationId: fixture.alpha.masters.fgLocationId,
+        results,
+      },
+      'key-finalize-wrong-scrap-kind'
+    )).rejects.toThrow(/must be an active SCRAP location/);
+  });
+
   it('accepts out-of-range readings only as failing evidence and passes in-range readings', async () => {
     const inspectionId = await nextInspection();
     defectInspectionId = inspectionId;

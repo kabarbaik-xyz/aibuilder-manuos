@@ -258,6 +258,57 @@ describe('O03 — Reservations, WIP Issue/Return and Actual Consumption', () => 
       )
     ).rejects.toThrow(BadRequestError);
 
+    // A reservation for another demand must never authorize this demand's issue.
+    const otherDemand = await fixture.db.materialDemand.create({
+      data: {
+        workspaceId: ws.workspaceId,
+        orderId,
+        taskId,
+        itemId: ws.masters.rawItemId,
+        requiredAtoms: 10_000_000n,
+        status: 'OPEN',
+      },
+    });
+    const otherReservation = await invService.reserveStock(
+      ws.users.planner.principal,
+      {
+        demandId: otherDemand.id,
+        locationId: ws.masters.rawLocationId,
+        lotId,
+        atoms: '10000000',
+      },
+      'idem-res-other-demand'
+    );
+    await expect(
+      invService.issueToProduction(
+        ws.users.warehouse.principal,
+        {
+          demandId,
+          sourceLocationId: ws.masters.rawLocationId,
+          sourceLotId: lotId,
+          wipLocationId: ws.masters.wipLocationId,
+          atoms: '10000000',
+          reservationId: otherReservation.data.id,
+        },
+        'idem-issue-cross-demand-reservation'
+      )
+    ).rejects.toThrow(BadRequestError);
+    const preservedOtherReservation = await fixture.db.stockReservation.findUnique({
+      where: { id: otherReservation.data.id },
+    });
+    expect(preservedOtherReservation?.status).toBe('ACTIVE');
+    await invService.releaseReservation(
+      ws.users.planner.principal,
+      otherReservation.data.id,
+      'idem-release-other-demand'
+    );
+    await fixture.db.stockReservation.delete({
+      where: { workspaceId_id: { workspaceId: ws.workspaceId, id: otherReservation.data.id } },
+    });
+    await fixture.db.materialDemand.delete({
+      where: { workspaceId_id: { workspaceId: ws.workspaceId, id: otherDemand.id } },
+    });
+
     // Issue 60 units to WIP
     const issueResult = await invService.issueToProduction(
       ws.users.warehouse.principal,
