@@ -1275,7 +1275,7 @@ export class ExecutionService {
         skillCode: s.skill.code,
         skillName: s.skill.name,
         level: s.level,
-        assessmentStatus: s.assessmentStatus || "VERIFIED",
+        assessmentStatus: s.assessmentStatus || "UNVERIFIED",
         validFrom: s.validFrom?.toISOString() ?? null,
         expiresAt: s.expiresAt?.toISOString() ?? null,
         evidence: s.evidence,
