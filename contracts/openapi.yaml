@@ -761,7 +761,7 @@ paths:
   /api/execution/tasks/{id}/pause:
     post:
       summary: Pause an in-progress execution task
-      description: Closes active session, sets status to PAUSED, and records duration.
+      description: Closes the active session, sets status to PAUSED, and records duration plus a workspace-configured PAUSE reason. Legacy reason codes are accepted only when they match an active catalog entry.
       parameters:
         - name: id
           in: path
@@ -774,7 +774,8 @@ paths:
             schema:
               type: object
               properties:
-                reason: { type: string, default: BREAK }
+                reasonId: { type: string, description: Active workspace IssueReason ID in category PAUSE. }
+                reason: { type: string, default: BREAK, description: Legacy IssueReason code in category PAUSE. }
                 notes: { type: string }
       responses:
         '200': { description: Task and paused session details }
@@ -801,6 +802,41 @@ paths:
                 notes: { type: string }
       responses:
         '200': { description: Task and resumed session details }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/passports/{serial}:
+    get:
+      summary: Read an internal passport draft
+      description: Customer-facing access is disabled until immutable per-unit genealogy snapshots have a verified publication version. Customer requests return not found, including for legacy released rows.
+      parameters:
+        - name: serial
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Workspace-scoped internal passport preview }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/passports/publish:
+    post:
+      summary: Publish a unit passport
+      description: Publication is disabled until immutable per-unit genealogy snapshots and verified publication versions are implemented. No synthetic digest or RELEASED status is created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serialNumber, itemId]
+              properties:
+                serialNumber: { type: string }
+                orderId: { type: string }
+                itemId: { type: string }
+                lotId: { type: string }
+      responses:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -933,7 +969,7 @@ paths:
                 destinationLocationId: { type: string }
                 lotNumber: { type: string }
                 serialNumber: { type: string }
-                isFinal: { type: boolean }
+                isFinal: { type: boolean, deprecated: true, description: Legacy compatibility field; finality is derived from the released workflow graph and cannot be overridden by clients. }
                 notes: { type: string }
       responses:
         '200': { description: Production output and movement envelope }

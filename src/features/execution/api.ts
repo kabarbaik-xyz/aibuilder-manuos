@@ -32,7 +32,7 @@ export async function startTask(input: StartTaskInput) {
 export async function pauseTask(input: PauseTaskInput) {
   return apiRequest(`/api/execution/tasks/${input.taskId}/pause`, {
     method: 'POST',
-    body: JSON.stringify({ reason: input.reason, notes: input.notes }),
+    body: JSON.stringify({ reasonId: input.reasonId, reason: input.reason, notes: input.notes }),
   });
 }
 

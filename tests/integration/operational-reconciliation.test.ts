@@ -487,16 +487,15 @@ describe('O09: Full Operational Loop & Double-Entry Ledger Reconciliation', () =
     expect(delivered.data.receivedBy).toBe('Alice Warehouse Receiver');
   });
 
-  it('Step 6: Customer Portal Traceability, Evidence Download & Digital Passport', async () => {
+  it('Step 6: Customer Portal Traceability and Evidence Download', async () => {
     const { alpha } = fixture;
 
-    // 1. Publish unit passport for customer order
-    const passportRes = await passportService.publishPassport(alpha.users.qc.principal, {
+    // Passport publication remains disabled until per-unit genealogy is immutable and verifiable.
+    await expect(passportService.publishPassport(alpha.users.qc.principal, {
       serialNumber: unitSerial,
       orderId: customerOrderId,
       itemId: alpha.masters.fgItemId,
-    });
-    expect(passportRes.serialNumber).toBe(unitSerial);
+    })).rejects.toThrow('Passport publication is unavailable');
 
     // 2. Customer user accesses portal order details
     const portalOrder = await portalService.getCustomerOrder(
@@ -514,15 +513,11 @@ describe('O09: Full Operational Loop & Double-Entry Ledger Reconciliation', () =
     );
     expect(ack.customerAcknowledged).toBe(true);
 
-    // 4. Customer verifies unit digital passport
-    const passport = await passportService.getUnitPassport(
-      alpha.users.customerUser.principal,
-      unitSerial
-    );
-    expect(passport.serialNumber).toBe(unitSerial);
-    expect(passport.status).toBe('RELEASED');
-    expect(passport.order?.id).toBe(customerOrderId);
-    expect(passport.digestSha256).toMatch(/^[a-f0-9]{64}$/);
+    // No synthetic customer passport is returned while unit genealogy is unavailable.
+    expect(portalOrder.passports).toHaveLength(0);
+    await expect(
+      passportService.getUnitPassport(alpha.users.customerUser.principal, unitSerial)
+    ).rejects.toThrow();
   });
 
   it('Step 7: Full Double-Entry Ledger Mathematical Reconciliation', async () => {

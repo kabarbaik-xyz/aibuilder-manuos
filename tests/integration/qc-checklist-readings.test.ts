@@ -31,6 +31,16 @@ describe('QLT-01: pinned QC plan enforces required readings and numeric limits',
   let inspectionCounter = 0;
 
   const nextInspection = async (atoms = parseQuantity('10')) => {
+    const pending = await fixture.db.inspection.findFirst({
+      where: {
+        workspaceId: fixture.alpha.workspaceId,
+        productionOutputId,
+        reinspectionOfId: null,
+        status: 'DRAFT',
+      },
+    });
+    if (pending) return pending.id;
+
     inspectionCounter += 1;
     const res = await createInspection(
       fixture.db,
@@ -322,7 +332,7 @@ describe('QLT-01: pinned QC plan enforces required readings and numeric limits',
       'key-rework-qc-limits'
     );
 
-    const withoutReadings = await createInspection(
+    await expect(createInspection(
       fixture.db,
       fixture.alpha.users.qc.principal,
       {
@@ -331,8 +341,8 @@ describe('QLT-01: pinned QC plan enforces required readings and numeric limits',
         inspectedAtoms: parseQuantity('4'),
         qcChecklistId,
       },
-      'key-reinsp-create-missing'
-    ).then((r) => r.data.id);
+      'key-reinsp-create-overallocated'
+    )).rejects.toThrow(/already allocated to QC inspections/);
 
     await expect(
       recordReinspection(
@@ -379,10 +389,5 @@ describe('QLT-01: pinned QC plan enforces required readings and numeric limits',
     );
     expect(quarantine.reduce((sum, b) => sum + b.onHandAtoms, 0n)).toBe(0n);
 
-    // The unused inspection must stay DRAFT (never finalized).
-    const unused = await fixture.db.inspection.findUniqueOrThrow({
-      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: withoutReadings } },
-    });
-    expect(unused.status).toBe('DRAFT');
   });
 });

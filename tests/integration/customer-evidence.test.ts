@@ -50,12 +50,6 @@ describe('O08: Customer Evidence, Factual Passports, and Customer Portal', () =>
       },
     });
 
-    // 2. Publish a unit passport for this order and item
-    await passportService.publishPassport(alpha.users.qc.principal, {
-      serialNumber: unitSerial,
-      orderId,
-      itemId: alpha.masters.fgItemId,
-    });
   });
 
   afterAll(async () => {
@@ -107,19 +101,12 @@ describe('O08: Customer Evidence, Factual Passports, and Customer Portal', () =>
     ).rejects.toThrow();
   });
 
-  it('retrieves factual unit digital passport and verifies SHA-256 digest', async () => {
+  it('does not expose a unit-agnostic passport digest to a customer', async () => {
     const { alpha } = fixture;
 
-    const passport = await passportService.getUnitPassport(
-      alpha.users.customerUser.principal,
-      unitSerial
-    );
-
-    expect(passport).toBeDefined();
-    expect(passport.serialNumber).toBe(unitSerial);
-    expect(passport.status).toBe('RELEASED');
-    expect(passport.order?.id).toBe(orderId);
-    expect(passport.digestSha256).toMatch(/^[a-f0-9]{64}$/);
+    await expect(
+      passportService.getUnitPassport(alpha.users.customerUser.principal, unitSerial)
+    ).rejects.toThrow(NotFoundError);
   });
 
   it('returns not found for unknown or unregistered serial number', async () => {
@@ -152,7 +139,7 @@ describe('O08: Customer Evidence, Factual Passports, and Customer Portal', () =>
       orderId
     );
     expect(detail.documents.length).toBe(1);
-    expect(detail.passports.length).toBe(1);
+    expect(detail.passports).toHaveLength(0);
     expect(detail.milestones.length).toBe(5);
 
     // Customer with only read permission is strictly rejected from acknowledging promise

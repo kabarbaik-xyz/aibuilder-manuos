@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { db as defaultDb } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
@@ -101,6 +100,7 @@ export class PassportService {
           include: {
             customer: true,
             item: true,
+            lines: { select: { itemId: true } },
             manufacturingOrders: {
               include: {
                 jobsheets: {
@@ -155,11 +155,24 @@ export class PassportService {
       if (!passportRecord || passportRecord.status !== 'RELEASED') {
         throw new NotFoundError(`Published passport for serial '${serialNumber}' not found`);
       }
-      if (passportRecord.order && passportRecord.order.customerId !== principal.customerId) {
+      const itemBelongsToOrder = Boolean(
+        passportRecord.order && (
+          passportRecord.order.itemId === passportRecord.itemId ||
+          passportRecord.order.lines.some((line) => line.itemId === passportRecord.itemId)
+        )
+      );
+      if (
+        !passportRecord.order ||
+        passportRecord.order.customerId !== principal.customerId ||
+        !itemBelongsToOrder
+      ) {
         throw new ForbiddenError(
-          `Access denied: passport does not belong to customer account`
+          'Access denied: passport must be linked to an order and item owned by this customer.'
         );
       }
+      throw new NotFoundError(
+        'Customer-facing unit passports are unavailable until immutable per-unit genealogy snapshots are published.'
+      );
     } else {
       // Staff user
       requireAnyPermission(principal, [
@@ -168,6 +181,11 @@ export class PassportService {
         'order.read',
         'admin.access',
       ]);
+      if (passportRecord?.status === 'RELEASED') {
+        throw new NotFoundError(
+          `Released passport '${serialNumber}' is unavailable because it has no immutable genealogy snapshot.`
+        );
+      }
     }
 
     if (!passportRecord) {
@@ -354,56 +372,8 @@ export class PassportService {
     }
   ): Promise<{ id: string; serialNumber: string; digestSha256: string }> {
     requireAnyPermission(principal, ['quality.inspect', 'delivery.dispatch', 'admin.access']);
-
-    const digestSource = JSON.stringify({
-      schemaVersion: 1,
-      workspaceId: principal.workspaceId,
-      serialNumber: input.serialNumber,
-      orderId: input.orderId ?? null,
-      itemId: input.itemId,
-      lotId: input.lotId ?? null,
-    });
-    const digest = crypto.createHash('sha256').update(digestSource).digest('hex');
-
-    const passport = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.passport.findUnique({
-        where: {
-          workspaceId_serialNumber: {
-            workspaceId: principal.workspaceId,
-            serialNumber: input.serialNumber,
-          },
-        },
-      });
-      if (existing && existing.status !== 'DRAFT') {
-        throw new BadRequestError(`Passport '${input.serialNumber}' has already been released or revoked`);
-      }
-
-      const data = {
-        orderId: input.orderId,
-        itemId: input.itemId,
-        lotId: input.lotId,
-        status: 'RELEASED',
-        digestSha256: digest,
-      };
-      if (existing) {
-        return tx.passport.update({
-          where: { workspaceId_id: { workspaceId: principal.workspaceId, id: existing.id } },
-          data,
-        });
-      }
-      return tx.passport.create({
-        data: {
-          workspaceId: principal.workspaceId,
-          serialNumber: input.serialNumber,
-          ...data,
-        },
-      });
-    });
-
-    return {
-      id: passport.id,
-      serialNumber: passport.serialNumber,
-      digestSha256: passport.digestSha256,
-    };
+    throw new BadRequestError(
+      'Passport publication is unavailable until immutable per-unit genealogy snapshots and verified publication versions are implemented.'
+    );
   }
 }

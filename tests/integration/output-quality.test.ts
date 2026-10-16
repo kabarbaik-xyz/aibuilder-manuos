@@ -235,6 +235,72 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
     ).rejects.toThrow(BadRequestError);
   });
 
+  it('derives final output authority from the workflow graph, not the request body', async () => {
+    const { alpha } = fixture;
+    const sourceTask = await fixture.db.task.findUniqueOrThrow({ where: { id: taskId } });
+    const intermediate = await fixture.db.task.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId: sourceTask.instanceId,
+        jobsheetId: sourceTask.jobsheetId,
+        nodeKey: 'OP-CLIENT-FINAL-OVERRIDE',
+        status: 'READY',
+        targetItemId: alpha.masters.fgItemId,
+        targetAtoms: parseQuantity('1'),
+      },
+    });
+    const successor = await fixture.db.task.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId: sourceTask.instanceId,
+        jobsheetId: sourceTask.jobsheetId,
+        nodeKey: 'OP-CLIENT-FINAL-OVERRIDE-NEXT',
+        status: 'PENDING',
+        targetItemId: alpha.masters.fgItemId,
+        targetAtoms: parseQuantity('1'),
+      },
+    });
+    await fixture.db.taskDependency.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId: sourceTask.instanceId,
+        predecessorTaskId: intermediate.id,
+        successorTaskId: successor.id,
+        policy: 'FINISH_TO_START',
+      },
+    });
+
+    await expect(
+      recordOutput(
+        fixture.db,
+        alpha.users.operator.principal,
+        {
+          taskId: intermediate.id,
+          outputAtoms: parseQuantity('1'),
+          destinationLocationId: alpha.masters.quarantineLocationId,
+          isFinal: true,
+        },
+        'key-output-client-final-override'
+      )
+    ).rejects.toThrow('cannot be declared final');
+  });
+
+  it('does not allow QC inspection quantities to exceed physical output', async () => {
+    const { alpha } = fixture;
+    await expect(
+      createInspection(
+        fixture.db,
+        alpha.users.qc.principal,
+        {
+          sourceType: 'PRODUCTION_OUTPUT',
+          productionOutputId,
+          inspectedAtoms: parseQuantity('10.000001'),
+        },
+        'key-insp-over-output-cap'
+      )
+    ).rejects.toThrow(BadRequestError);
+  });
+
   it('caps final output by the matching order item line, not the aggregate order quantity', async () => {
     const { alpha } = fixture;
     const order = await fixture.db.order.findUniqueOrThrow({ where: { id: orderId } });

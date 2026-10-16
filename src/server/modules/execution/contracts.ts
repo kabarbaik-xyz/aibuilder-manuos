@@ -12,6 +12,7 @@ export type StartTaskInput = z.infer<typeof StartTaskSchema>;
 
 export const PauseTaskSchema = z.object({
   taskId: z.string().min(1),
+  reasonId: z.string().min(1).optional(),
   reason: z.string().min(1).max(200).default('BREAK'),
   notes: z.string().max(500).optional(),
 });

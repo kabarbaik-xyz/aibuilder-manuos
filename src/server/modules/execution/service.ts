@@ -26,6 +26,35 @@ import {
 } from './contracts';
 import { NotificationService } from '../notifications/service';
 
+function findUndercoveredDemands(readiness: Awaited<ReturnType<ConsumptionService['getTaskMaterialReadiness']>>) {
+  const totals = new Map<string, {
+    itemCode: string;
+    requiredAtoms: bigint;
+    reservedAtoms: bigint;
+    issuedAtoms: bigint;
+    availableInWarehouseAtoms: bigint;
+  }>();
+  for (const demand of readiness.demands) {
+    const total = totals.get(demand.itemId) ?? {
+      itemCode: demand.itemCode,
+      requiredAtoms: 0n,
+      reservedAtoms: 0n,
+      issuedAtoms: demand.issuedAtoms,
+      availableInWarehouseAtoms: demand.availableInWarehouseAtoms,
+    };
+    total.requiredAtoms += demand.requiredAtoms;
+    total.reservedAtoms += demand.reservedAtoms;
+    if (demand.issuedAtoms > total.issuedAtoms) total.issuedAtoms = demand.issuedAtoms;
+    if (demand.availableInWarehouseAtoms > total.availableInWarehouseAtoms) {
+      total.availableInWarehouseAtoms = demand.availableInWarehouseAtoms;
+    }
+    totals.set(demand.itemId, total);
+  }
+  return [...totals.values()].filter(
+    (demand) => demand.issuedAtoms + demand.reservedAtoms + demand.availableInWarehouseAtoms < demand.requiredAtoms
+  );
+}
+
 export class ExecutionService {
   private readonly repo: ExecutionRepository;
   private readonly consumptionService: ConsumptionService;
@@ -143,9 +172,7 @@ export class ExecutionService {
     );
 
     if (readiness.demands.length > 0) {
-      const undercovered = readiness.demands.filter(
-        (d) => d.issuedAtoms + d.reservedAtoms + d.availableInWarehouseAtoms < d.requiredAtoms
-      );
+      const undercovered = findUndercoveredDemands(readiness);
       if (undercovered.length > 0) {
         const detail = undercovered
           .map(
@@ -168,6 +195,58 @@ export class ExecutionService {
       payload: input,
       prismaClient: this.db,
       handler: async (tx) => {
+        const currentTask = await tx.task.findUnique({
+          where: { workspaceId_id: { workspaceId, id: task.id } },
+          include: {
+            predecessorDeps: { include: { predecessor: true } },
+            instance: { include: { order: true } },
+          },
+        });
+        if (!currentTask || !['READY', 'ASSIGNED'].includes(currentTask.status)) {
+          throw new BadRequestError(`Task '${task.nodeKey}' is no longer READY or ASSIGNED.`);
+        }
+        if (!['RELEASED', 'IN_PRODUCTION', 'PARTIALLY_DELIVERED'].includes(currentTask.instance.order.status)) {
+          throw new BadRequestError(`Order '${currentTask.instance.order.orderNumber}' is not released for execution.`);
+        }
+        if (currentTask.predecessorDeps.some((dep: { predecessor: { status: string } }) => dep.predecessor.status !== 'COMPLETED')) {
+          throw new BadRequestError(`Task '${task.nodeKey}' is waiting for an incomplete predecessor.`);
+        }
+        const currentBlockingIssue = await tx.taskIssue.findFirst({
+          where: {
+            workspaceId,
+            taskId: task.id,
+            status: { in: ['OPEN', 'REOPENED'] },
+            severity: { in: ['CRITICAL', 'HIGH'] },
+          },
+          select: { id: true, title: true },
+        });
+        if (currentBlockingIssue) {
+          throw new BadRequestError(`Cannot start task '${task.nodeKey}': unresolved blocking issue '${currentBlockingIssue.title}'.`);
+        }
+        if (currentTask.assignedTechnicianId !== task.assignedTechnicianId) {
+          throw new BadRequestError('Task assignment changed while starting; refresh the task and retry.');
+        }
+        if (input.technicianId && currentTask.assignedTechnicianId && input.technicianId !== currentTask.assignedTechnicianId) {
+          throw new BadRequestError('Assign the qualified technician before starting this task; the start request cannot change an existing assignment.');
+        }
+        if (
+          !isSupervisor && currentTask.assignedTechnicianId &&
+          currentTask.assignedTechnicianId !== principal.technicianId
+        ) {
+          throw new ForbiddenError(`Task '${task.nodeKey}' is assigned to another technician.`);
+        }
+        const committingTechnicianId = currentTask.assignedTechnicianId ?? input.technicianId ?? principal.technicianId;
+        if (!committingTechnicianId) {
+          throw new BadRequestError('Assign a technician before starting this task.');
+        }
+        const currentReadiness = await this.consumptionService.getTaskMaterialReadiness(principal, task.id, tx);
+        const currentUndercovered = findUndercoveredDemands(currentReadiness);
+        if (currentUndercovered.length > 0) {
+          const detail = currentUndercovered.map((d) =>
+            `${d.itemCode} requires ${d.requiredAtoms} atoms, only ${d.issuedAtoms + d.reservedAtoms + d.availableInWarehouseAtoms} covered`
+          ).join('; ');
+          throw new BadRequestError(`Cannot start task '${task.nodeKey}': material demands lack full coverage (${detail}).`);
+        }
         const now = new Date();
 
         // Close any dangling active sessions if any exist
@@ -186,7 +265,7 @@ export class ExecutionService {
         const session = await this.repo.createWorkSession(tx, {
           workspaceId,
           taskId: task.id,
-          technicianId: effectiveTechnicianId!,
+          technicianId: committingTechnicianId,
           sessionType: 'RUNNING',
           startedAt: now,
           notes: input.notes,
@@ -202,14 +281,14 @@ export class ExecutionService {
           },
           data: {
             status: 'RUNNING',
-            startedAt: task.startedAt ?? now,
-            assignedTechnicianId: effectiveTechnicianId,
+            startedAt: currentTask.startedAt ?? now,
+            assignedTechnicianId: committingTechnicianId,
             version: { increment: 1 },
           },
         });
 
         // Update Order to IN_PRODUCTION if RELEASED
-        if (task.instance.order.status === 'RELEASED') {
+        if (currentTask.instance.order.status === 'RELEASED') {
           await tx.order.update({
             where: {
               workspaceId_id: {
@@ -235,7 +314,7 @@ export class ExecutionService {
             action: 'START',
             actorUserId: principal.userId,
             detailJson: JSON.stringify({
-              technicianId: effectiveTechnicianId,
+              technicianId: committingTechnicianId,
               startedAt: now.toISOString(),
               notes: input.notes,
             }),
@@ -306,7 +385,28 @@ export class ExecutionService {
       payload: input,
       prismaClient: this.db,
       handler: async (tx) => {
+        const currentTask = await tx.task.findUnique({
+          where: { workspaceId_id: { workspaceId, id: task.id } },
+        });
+        if (!currentTask || currentTask.status !== 'RUNNING') {
+          throw new BadRequestError(`Task '${task.nodeKey}' is no longer RUNNING and cannot be paused.`);
+        }
+        if (!isSupervisor && currentTask.assignedTechnicianId !== principal.technicianId) {
+          throw new ForbiddenError(`Cannot pause task '${task.nodeKey}': task assignment changed.`);
+        }
         const now = new Date();
+        const pauseReason = await tx.issueReason.findFirst({
+          where: {
+            workspaceId,
+            category: 'PAUSE',
+            isActive: true,
+            ...(input.reasonId ? { id: input.reasonId } : { code: input.reason }),
+          },
+          select: { id: true, code: true, label: true },
+        });
+        if (!pauseReason) {
+          throw new BadRequestError('Choose an active pause reason from the workspace reason catalog.');
+        }
 
         // 1. Close active RUNNING session
         const activeSession = await tx.workSession.findFirst({
@@ -318,6 +418,9 @@ export class ExecutionService {
           },
           orderBy: { startedAt: 'desc' },
         });
+        if (!activeSession) {
+          throw new BadRequestError(`Task '${task.nodeKey}' has no active RUNNING work session to pause.`);
+        }
 
         let addedMinutes = 0;
         if (activeSession) {
@@ -336,8 +439,10 @@ export class ExecutionService {
         }
 
         // 2. Create PAUSED session
-        const technicianId =
-          activeSession?.technicianId || task.assignedTechnicianId || principal.technicianId!;
+        const technicianId = activeSession?.technicianId || currentTask.assignedTechnicianId || principal.technicianId;
+        if (!technicianId) {
+          throw new BadRequestError('A technician must be assigned to the task before it can be paused.');
+        }
         const pauseSession = await tx.workSession.create({
           data: {
             workspaceId,
@@ -345,7 +450,7 @@ export class ExecutionService {
             technicianId,
             sessionType: 'PAUSED',
             startedAt: now,
-            notes: `${input.reason}${input.notes ? `: ${input.notes}` : ''}`,
+            notes: `${pauseReason.code} — ${pauseReason.label}${input.notes ? `: ${input.notes}` : ''}`,
           },
         });
 
@@ -446,6 +551,15 @@ export class ExecutionService {
       payload: input,
       prismaClient: this.db,
       handler: async (tx) => {
+        const currentTask = await tx.task.findUnique({
+          where: { workspaceId_id: { workspaceId, id: task.id } },
+        });
+        if (!currentTask || currentTask.status !== 'PAUSED') {
+          throw new BadRequestError(`Task '${task.nodeKey}' is no longer PAUSED and cannot be resumed.`);
+        }
+        if (!isResumeSupervisor && currentTask.assignedTechnicianId !== principal.technicianId) {
+          throw new ForbiddenError(`Cannot resume task '${task.nodeKey}': task assignment changed.`);
+        }
         const now = new Date();
 
         // 1. Close active PAUSED session
@@ -458,6 +572,9 @@ export class ExecutionService {
           },
           orderBy: { startedAt: 'desc' },
         });
+        if (!activePause) {
+          throw new BadRequestError(`Task '${task.nodeKey}' has no active PAUSED work session to resume.`);
+        }
 
         if (activePause) {
           const pauseMinutes = Math.max(
@@ -475,8 +592,10 @@ export class ExecutionService {
         }
 
         // 2. Create new RUNNING session
-        const technicianId =
-          activePause?.technicianId || task.assignedTechnicianId || principal.technicianId!;
+        const technicianId = activePause?.technicianId || currentTask.assignedTechnicianId || principal.technicianId;
+        if (!technicianId) {
+          throw new BadRequestError('A technician must be assigned to the task before it can be resumed.');
+        }
         const runningSession = await tx.workSession.create({
           data: {
             workspaceId,

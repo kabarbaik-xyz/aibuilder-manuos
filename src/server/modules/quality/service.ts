@@ -18,7 +18,7 @@ import {
   findInspectionById,
   findDefaultLocationByKind,
 } from './repository';
-import { parseQuantity, MAX_UOM_PRECISION } from '@/domain/quantity';
+import { parseAtomInput, parseQuantity, MAX_UOM_PRECISION } from '@/domain/quantity';
 
 /**
  * Exact signed-decimal parsing for QC readings and checklist limits.
@@ -153,7 +153,9 @@ export async function createInspection(
   }
 
   let productionOutput: any = null;
-  let inspectedAtoms = input.inspectedAtoms;
+  let inspectedAtoms: bigint | undefined = input.inspectedAtoms === undefined
+    ? undefined
+    : parseAtomInput(input.inspectedAtoms);
 
   if (input.productionOutputId) {
     productionOutput = await db.productionOutput.findUnique({
@@ -173,9 +175,7 @@ export async function createInspection(
       throw new NotFoundError(`Production output '${input.productionOutputId}' not found`);
     }
 
-    if (!inspectedAtoms) {
-      inspectedAtoms = productionOutput.outputAtoms;
-    }
+    if (!inspectedAtoms) inspectedAtoms = parseAtomInput(productionOutput.outputAtoms);
   }
 
   if (!inspectedAtoms || inspectedAtoms <= 0n) {
@@ -206,6 +206,38 @@ export async function createInspection(
     payload: input,
     prismaClient: db,
     handler: async (tx, { requestId }) => {
+      let committedInspectedAtoms: bigint = inspectedAtoms!;
+      if (input.productionOutputId) {
+        const currentOutput = await tx.productionOutput.findUnique({
+          where: { workspaceId_id: { workspaceId, id: input.productionOutputId } },
+          select: { id: true, outputAtoms: true, status: true },
+        });
+        if (!currentOutput || currentOutput.status === 'REJECTED') {
+          throw new NotFoundError(`Production output '${input.productionOutputId}' is not available for inspection`);
+        }
+        const priorInitialInspections = await tx.inspection.aggregate({
+          where: {
+            workspaceId,
+            productionOutputId: currentOutput.id,
+            reinspectionOfId: null,
+          },
+          _sum: { inspectedAtoms: true },
+        });
+        const alreadyAllocatedAtoms = parseAtomInput(priorInitialInspections._sum.inspectedAtoms ?? 0n);
+        const remainingAtoms = parseAtomInput(currentOutput.outputAtoms) - alreadyAllocatedAtoms;
+        if (remainingAtoms <= 0n) {
+          throw new BadRequestError('All produced atoms for this output are already allocated to QC inspections.');
+        }
+        if (input.inspectedAtoms !== undefined && input.inspectedAtoms > remainingAtoms) {
+          throw new BadRequestError(
+            `Inspection quantity ${input.inspectedAtoms} exceeds the ${remainingAtoms} atoms remaining for QC on this output.`
+          );
+        }
+        committedInspectedAtoms = input.inspectedAtoms === undefined
+          ? remainingAtoms
+          : parseAtomInput(input.inspectedAtoms);
+      }
+
       const inspection = await tx.inspection.create({
         data: {
           workspaceId,
@@ -214,7 +246,7 @@ export async function createInspection(
           supplyReceiptId: input.supplyReceiptId,
           qcChecklistId: input.qcChecklistId,
           checklistRevision,
-          inspectedAtoms: inspectedAtoms!,
+          inspectedAtoms: committedInspectedAtoms,
           status: 'DRAFT',
           inspectorUserId: principal.userId,
           notes: input.notes,
@@ -319,6 +351,25 @@ export async function finalizeInspection(
         throw new BadRequestError(
           `Conservation of mass violated: passed (${input.passedAtoms}) + rework (${input.reworkAtoms}) + scrap (${input.scrappedAtoms}) != inspected (${currentInspection.inspectedAtoms})`
         );
+      }
+
+      if (currentInspection.productionOutput && !currentInspection.reinspectionOfId) {
+        const priorFinalizedInitialInspections = await tx.inspection.aggregate({
+          where: {
+            workspaceId,
+            productionOutputId: currentInspection.productionOutput.id,
+            reinspectionOfId: null,
+            status: 'FINALIZED',
+            id: { not: currentInspection.id },
+          },
+          _sum: { inspectedAtoms: true },
+        });
+        const finalizedBefore = priorFinalizedInitialInspections._sum.inspectedAtoms ?? 0n;
+        if (finalizedBefore + currentInspection.inspectedAtoms > currentInspection.productionOutput.outputAtoms) {
+          throw new BadRequestError(
+            `QC inspection total would exceed production output: ${finalizedBefore + currentInspection.inspectedAtoms} inspected atoms for ${currentInspection.productionOutput.outputAtoms} produced atoms.`
+          );
+        }
       }
 
       // Gate: Verify all required QC evidence forms are finalized before inspection finalization
@@ -566,12 +617,28 @@ export async function authorizeRework(
     payload: input,
     prismaClient: db,
     handler: async (tx, { requestId }) => {
+      const currentInspection = await tx.inspection.findUnique({
+        where: { workspaceId_id: { workspaceId, id: input.inspectionId } },
+        include: { productionOutput: true },
+      });
+      if (!currentInspection || currentInspection.status !== 'FINALIZED' || !currentInspection.productionOutput) {
+        throw new BadRequestError('Rework authorization requires a finalized inspection linked to production output.');
+      }
+      const currentAttempts = await tx.reworkAttempt.findMany({
+        where: { workspaceId, inspectionId: currentInspection.id, status: { not: 'CANCELLED' } },
+      });
+      const currentAuthorizedAtoms = currentAttempts.reduce((total: bigint, attempt: { targetAtoms: bigint }) => total + attempt.targetAtoms, 0n);
+      if (currentAuthorizedAtoms + input.targetAtoms > currentInspection.reworkAtoms) {
+        throw new BadRequestError(
+          `Cannot authorize ${input.targetAtoms} atoms: already authorized ${currentAuthorizedAtoms} of ${currentInspection.reworkAtoms} rework atoms.`
+        );
+      }
       const reworkAttempt = await tx.reworkAttempt.create({
         data: {
           workspaceId,
-          inspectionId: inspection.id,
-          taskId: inspection.productionOutput!.taskId,
-          attemptNumber: existingAttempts.length + 1,
+          inspectionId: currentInspection.id,
+          taskId: currentInspection.productionOutput.taskId,
+          attemptNumber: currentAttempts.reduce((max: number, attempt: { attemptNumber: number }) => Math.max(max, attempt.attemptNumber), 0) + 1,
           targetAtoms: input.targetAtoms,
           instruction: input.instruction,
           status: 'PENDING',
@@ -639,6 +706,9 @@ export async function recordReinspection(
   const totalPrior = priorReinspectedPassed + priorReinspectedScrapped;
 
   const currentTotal = input.passedAtoms + input.scrappedAtoms;
+  if (currentTotal <= 0n) {
+    throw new BadRequestError('Reinspection atoms must be strictly positive (> 0).');
+  }
   if (totalPrior + currentTotal > origInspection.reworkAtoms) {
     throw new BadRequestError(
       `Reinspection quantity overflow: total reinspected (${totalPrior + currentTotal}) exceeds original rework atoms (${origInspection.reworkAtoms}).`
@@ -671,11 +741,20 @@ export async function recordReinspection(
     payload: input,
     prismaClient: db,
     handler: async (tx, { requestId }) => {
+      const currentOriginal = await tx.inspection.findUnique({
+        where: { workspaceId_id: { workspaceId, id: input.originalInspectionId } },
+        include: { productionOutput: true, qcChecklist: { include: { checks: true } } },
+      });
+      if (!currentOriginal || currentOriginal.status !== 'FINALIZED' || currentOriginal.reworkAtoms <= 0n) {
+        throw new BadRequestError('Reinspection requires a finalized original inspection with rework atoms.');
+      }
+      assertChecklistReadings(currentOriginal.qcChecklist, input.results);
+
       // Re-check cumulative reinspected atoms under tx
       const existingReinspections = await tx.inspection.findMany({
         where: {
           workspaceId,
-          reinspectionOfId: origInspection.id,
+          reinspectionOfId: currentOriginal.id,
           status: 'FINALIZED',
         },
       });
@@ -683,13 +762,32 @@ export async function recordReinspection(
       const priorScrapped = existingReinspections.reduce((acc: bigint, r: { scrappedAtoms: bigint }) => acc + r.scrappedAtoms, 0n);
       const totalPrior = priorPassed + priorScrapped;
       const currentTotal = input.passedAtoms + input.scrappedAtoms;
-      if (totalPrior + currentTotal > origInspection.reworkAtoms) {
+      if (currentTotal <= 0n) {
+        throw new BadRequestError('Reinspection atoms must be strictly positive (> 0).');
+      }
+      if (totalPrior + currentTotal > currentOriginal.reworkAtoms) {
         throw new BadRequestError(
-          `Reinspection quantity overflow: total reinspected (${totalPrior + currentTotal}) exceeds original rework atoms (${origInspection.reworkAtoms}).`
+          `Reinspection quantity overflow: total reinspected (${totalPrior + currentTotal}) exceeds original rework atoms (${currentOriginal.reworkAtoms}).`
         );
       }
 
-      const output = origInspection.productionOutput;
+      let reworkAttempt: { targetAtoms: bigint; status: string } | null = null;
+      if (input.reworkAttemptId) {
+        reworkAttempt = await tx.reworkAttempt.findFirst({
+          where: {
+            workspaceId,
+            id: input.reworkAttemptId,
+            inspectionId: currentOriginal.id,
+            status: { in: ['PENDING', 'IN_PROGRESS'] },
+          },
+          select: { targetAtoms: true, status: true },
+        });
+        if (!reworkAttempt || currentTotal !== reworkAttempt.targetAtoms) {
+          throw new BadRequestError('Reinspection must exactly settle an active rework attempt for this inspection.');
+        }
+      }
+
+      const output = currentOriginal.productionOutput;
       const itemId = output?.itemId;
       const lotId = output?.lotId;
       const sourceLocationId = output?.destinationLocationId;
@@ -709,7 +807,7 @@ export async function recordReinspection(
               destinationLotId: lotId,
               atoms: input.passedAtoms,
               referenceType: MovementReferenceType.QC_INSPECTION,
-              referenceId: origInspection.id,
+              referenceId: currentOriginal.id,
               notes: `Reinspection: ${input.passedAtoms} reworked atoms accepted to FG`,
             },
             requestId
@@ -730,7 +828,7 @@ export async function recordReinspection(
             destinationLotId: null,
             atoms: input.scrappedAtoms,
             referenceType: MovementReferenceType.QC_INSPECTION,
-            referenceId: origInspection.id,
+            referenceId: currentOriginal.id,
             notes: `Reinspection: ${input.scrappedAtoms} reworked atoms scrapped`,
           },
           requestId
@@ -740,11 +838,11 @@ export async function recordReinspection(
       const reinspection = await tx.inspection.create({
         data: {
           workspaceId,
-          sourceType: origInspection.sourceType,
-          productionOutputId: origInspection.productionOutputId,
-          supplyReceiptId: origInspection.supplyReceiptId,
-          qcChecklistId: origInspection.qcChecklistId,
-          checklistRevision: origInspection.checklistRevision,
+          sourceType: currentOriginal.sourceType,
+          productionOutputId: currentOriginal.productionOutputId,
+          supplyReceiptId: currentOriginal.supplyReceiptId,
+          qcChecklistId: currentOriginal.qcChecklistId,
+          checklistRevision: currentOriginal.checklistRevision,
           inspectedAtoms: currentTotal,
           passedAtoms: input.passedAtoms,
           reworkAtoms: 0n,
@@ -752,7 +850,7 @@ export async function recordReinspection(
           status: 'FINALIZED',
           disposition: input.scrappedAtoms === 0n ? 'PASSED' : 'PARTIAL',
           inspectorUserId: principal.userId,
-          reinspectionOfId: origInspection.id,
+          reinspectionOfId: currentOriginal.id,
           notes: input.notes,
         },
       });

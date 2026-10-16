@@ -383,15 +383,14 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
     expect(confirmJson.data.status).toBe('DELIVERED');
   });
 
-  it('serves customer portal traceability, acknowledgment, and digital passport via HTTP routes', async () => {
+  it('serves customer portal traceability and acknowledgment while passport publication is gated', async () => {
     const { alpha } = fixture;
 
-    // Publish unit digital passport
-    await passportService.publishPassport(alpha.users.qc.principal, {
+    await expect(passportService.publishPassport(alpha.users.qc.principal, {
       serialNumber: unitSerial,
       orderId,
       itemId: alpha.masters.fgItemId,
-    });
+    })).rejects.toThrow('Passport publication is unavailable');
 
     // 1. Customer views portal order detail via HTTP GET
     const portalReq = new NextRequest(`http://localhost:3000/api/portal/orders/${orderId}`, {
@@ -414,16 +413,11 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
     const ackJson = await ackRes.json();
     expect(ackJson.data.customerAcknowledged).toBe(true);
 
-    // 3. Query digital passport via HTTP GET
+    // 3. Customer passport read is closed until immutable per-unit genealogy exists.
     const passReq = new NextRequest(`http://localhost:3000/api/passports/${unitSerial}`, {
       headers: alpha.users.customerUser.headers,
     });
     const passRes = await getPassportRoute(passReq, { params: Promise.resolve({ serial: unitSerial }) });
-    expect(passRes.status).toBe(200);
-    const passJson = await passRes.json();
-    const passportData = passJson.data ?? passJson;
-    expect(passportData.serialNumber).toBe(unitSerial);
-    expect(passportData.status).toBe('RELEASED');
-    expect(passportData.digestSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(passRes.status).toBe(404);
   });
 });

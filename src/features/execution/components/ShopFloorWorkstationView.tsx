@@ -43,7 +43,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const recordOutputMutation = useRecordTaskOutput();
 
   const [showPauseModal, setShowPauseModal] = useState(false);
-  const [pauseReason, setPauseReason] = useState('BREAK');
+  const [pauseReasonId, setPauseReasonId] = useState('');
   const [pauseNotes, setPauseNotes] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -54,8 +54,17 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const reopenIssueMutation = useReopenTaskIssue(taskId);
   const scanMutation = useScanBarcode();
   const { data: issueReasons } = useIssueReasons();
+  const { data: pauseReasons, isLoading: pauseReasonsLoading } = useIssueReasons('PAUSE');
   const [selectedReasonId, setSelectedReasonId] = useState("");
   const [evidenceUrl, setEvidenceUrl] = useState("");
+
+  useEffect(() => {
+    if (!pauseReasons?.length) {
+      setPauseReasonId('');
+      return;
+    }
+    setPauseReasonId((current) => pauseReasons.some((reason) => reason.id === current) ? current : pauseReasons[0].id);
+  }, [pauseReasons]);
 
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [issueTitle, setIssueTitle] = useState("");
@@ -236,10 +245,16 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const handlePauseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionError(null);
+    const selectedPauseReason = pauseReasons?.find((reason) => reason.id === pauseReasonId);
+    if (!selectedPauseReason) {
+      setActionError('Configure an active Pause reason before pausing this task.');
+      return;
+    }
     try {
       await pauseMutation.mutateAsync({
         taskId: task.id,
-        reason: pauseReason,
+        reasonId: selectedPauseReason.id,
+        reason: selectedPauseReason.code,
         notes: pauseNotes,
       });
       setShowPauseModal(false);
@@ -316,9 +331,11 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           <h1 className="text-2xl font-bold text-ink">{task.nodeName}</h1>
           <p className="text-xs text-muted mt-1">
             Order <strong className="text-ink">{task.order.orderNumber}</strong> · Customer:{' '}
-            <strong className="text-ink">{task.order.customerName}</strong> · Instruction Rev:{' '}
-            <strong className="text-ink">v{task.instructionRevision}</strong>
+            <strong className="text-ink">{task.order.customerName}</strong>
           </p>
+          <div className="mt-2">
+            <Badge variant="warning">Work instruction content unavailable · revision v{task.instructionRevision}</Badge>
+          </div>
         </div>
 
         {/* Live Telemetry Display */}
@@ -711,17 +728,19 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                   Reason for Pause
                 
                 <Select
-                  value={pauseReason}
-                  onChange={(e) => setPauseReason(e.target.value)}
+                  value={pauseReasonId}
+                  disabled={pauseReasonsLoading || !pauseReasons?.length || pauseMutation.isPending}
+                  onChange={(e) => setPauseReasonId(e.target.value)}
                   className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-warning/20"
                 >
-                  <option value="BREAK">Shift Break / Meal</option>
-                  <option value="TOOLING">Tooling Adjustment / Calibration</option>
-                  <option value="MATERIAL_SHORTAGE">Material Shortage</option>
-                  <option value="WAITING_QC">Waiting for In-Process QC</option>
-                  <option value="MACHINE_MAINTENANCE">Machine Issue / Maintenance</option>
-                  <option value="OTHER">Other Reason</option>
+                  <option value="">{pauseReasonsLoading ? 'Loading reasons…' : 'Select a configured reason'}</option>
+                  {pauseReasons?.map((reason) => (
+                    <option key={reason.id} value={reason.id}>{reason.code} · {reason.label}</option>
+                  ))}
                 </Select></label>
+                {!pauseReasonsLoading && !pauseReasons?.length && (
+                  <p className="mt-1 text-xs text-warning">No active Pause reasons are configured for this workspace.</p>
+                )}
               </div>
 
               <div>
@@ -746,7 +765,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={pauseMutation.isPending}
+                  disabled={pauseMutation.isPending || pauseReasonsLoading || !pauseReasonId}
                 >
                   {pauseMutation.isPending ? 'Pausing...' : 'Confirm Pause'}
                 </Button>

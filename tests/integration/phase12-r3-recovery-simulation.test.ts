@@ -180,27 +180,29 @@ describe('Phase 12: R3 Controlled Recovery & Advanced Capabilities', () => {
   });
 
   describe('2. Customer-Safe Product Passport (QLT-05)', () => {
-    it('publishes passport and verifies customer-safe public view token', async () => {
+    it('does not publish a passport without an immutable unit genealogy snapshot', async () => {
       const { alpha } = fixture;
       const qc = alpha.users.qc.principal;
 
-      const published = await passportService.publishPassport(qc, {
+      await expect(passportService.publishPassport(qc, {
         serialNumber: testSerialNumber,
         orderId: testOrderId,
         itemId: alpha.masters.fgItemId,
-      });
-
-      expect(published.id).toBeDefined();
-      expect(published.serialNumber).toBe(testSerialNumber);
-      expect(published.digestSha256).toBeDefined();
-      expect(published.digestSha256.length).toBe(64); // SHA-256
+      })).rejects.toThrow(BadRequestError);
     });
 
-    it('does not replace an already released passport', async () => {
+    it('does not expose or replace legacy released passport rows', async () => {
       const { alpha } = fixture;
       const qc = alpha.users.qc.principal;
-      const original = await fixture.db.passport.findUnique({
-        where: { workspaceId_serialNumber: { workspaceId: qc.workspaceId, serialNumber: testSerialNumber } },
+      const original = await fixture.db.passport.create({
+        data: {
+          workspaceId: qc.workspaceId,
+          serialNumber: testSerialNumber,
+          orderId: testOrderId,
+          itemId: alpha.masters.fgItemId,
+          status: 'RELEASED',
+          digestSha256: 'b'.repeat(64),
+        },
       });
 
       await expect(passportService.publishPassport(qc, {
@@ -215,17 +217,11 @@ describe('Phase 12: R3 Controlled Recovery & Advanced Capabilities', () => {
       expect(after?.itemId).toBe(original?.itemId);
     });
 
-    it('generates immutable product passport with canonical SHA-256 hash', async () => {
+    it('hides legacy released passport digests from internal views', async () => {
       const { alpha } = fixture;
       const qc = alpha.users.qc.principal;
 
-      const passport = await passportService.getUnitPassport(qc, testSerialNumber);
-
-      expect(passport.serialNumber).toBe(testSerialNumber);
-      expect(passport.digestSha256).toBeDefined();
-      expect(passport.digestSha256).not.toBeNull();
-      expect(passport.digestSha256!).toHaveLength(64);
-      expect(passport.order?.orderNumber).toBeDefined();
+      await expect(passportService.getUnitPassport(qc, testSerialNumber)).rejects.toThrow(NotFoundError);
     });
   });
 

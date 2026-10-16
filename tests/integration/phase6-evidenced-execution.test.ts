@@ -29,6 +29,7 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
   let op10TaskId: string;
   let qc20TaskId: string;
   let issueReasonId: string;
+  let pauseReasonId: string;
   let operatorTechnicianId: string;
   let createdIssueId: string;
   let rawLotId: string;
@@ -74,6 +75,16 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
       },
     });
     issueReasonId = reason.id;
+    const pauseReason = await fixture.db.issueReason.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        category: 'PAUSE',
+        code: 'TOOL_CHANGE',
+        label: 'Tool change and recalibration',
+        isActive: true,
+      },
+    });
+    pauseReasonId = pauseReason.id;
 
     // 3. Use operator technician from fixture
     operatorTechnicianId = alpha.masters.technicianId;
@@ -223,7 +234,7 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
     // 2. Pause task OP-10 with reason
     const pauseRes = await executionService.pauseTask(
       operator,
-      { taskId: op10TaskId, reason: 'Tool change & recalibration', notes: 'Scheduled tool swap' },
+      { taskId: op10TaskId, reasonId: pauseReasonId, reason: 'TOOL_CHANGE', notes: 'Scheduled tool swap' },
       'idemp-pause-op10'
     );
     expect(pauseRes.data.task.status).toBe('PAUSED');

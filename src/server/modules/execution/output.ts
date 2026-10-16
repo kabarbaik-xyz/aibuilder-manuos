@@ -10,6 +10,35 @@ import { assertRequiredFormsFinalized } from '../forms/completion';
 import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
 
+function hasDownstreamProductionOperation(
+  taskId: string,
+  dependencies: Array<{
+    predecessorTaskId: string;
+    successor: { id: string; nodeKey: string };
+  }>,
+  operationNodeKeys: Set<string>,
+  knownNodeKeys: Set<string>
+): boolean {
+  const pending = dependencies
+    .filter((dependency) => dependency.predecessorTaskId === taskId)
+    .map((dependency) => dependency.successor);
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const next = pending.pop()!;
+    if (visited.has(next.id)) continue;
+    visited.add(next.id);
+    // An unknown instantiated node is treated as production work until the
+    // workflow definition is reconciled; it must not make output customer-final.
+    if (operationNodeKeys.has(next.nodeKey) || !knownNodeKeys.has(next.nodeKey)) return true;
+    for (const dependency of dependencies) {
+      if (dependency.predecessorTaskId === next.id && !visited.has(dependency.successor.id)) {
+        pending.push(dependency.successor);
+      }
+    }
+  }
+  return false;
+}
+
 export const RecordOutputSchema = z.object({
   taskId: z.string().min(1),
   outputAtoms: z
@@ -134,30 +163,7 @@ export async function recordOutput(
   }
 
   let lotId: string | null = null;
-  if (item.tracking === 'LOT') {
-    const lotNumber = input.lotNumber || `LOT-${order.orderNumber}-${task.nodeKey}`;
-    let lot = await db.lot.findUnique({
-      where: {
-        workspaceId_itemId_lotNumber: {
-          workspaceId,
-          itemId: item.id,
-          lotNumber,
-        },
-      },
-    });
-
-    if (!lot) {
-      lot = await db.lot.create({
-        data: {
-          workspaceId,
-          itemId: item.id,
-          lotNumber,
-          receivedAt: new Date(),
-        },
-      });
-    }
-    lotId = lot.id;
-  }
+  const lotNumber = input.lotNumber || `LOT-${order.orderNumber}-${task.nodeKey}`;
 
   return executeCommand<any, any>({
     principal,
@@ -172,7 +178,7 @@ export async function recordOutput(
       const currentTask = await tx.task.findUnique({
         where: { workspaceId_id: { workspaceId, id: input.taskId } },
         include: {
-          successorDeps: true,
+          instance: { include: { workflowVersion: { include: { nodes: true } } } },
           jobsheet: { include: { manufacturingOrder: true } },
         },
       });
@@ -189,6 +195,50 @@ export async function recordOutput(
         );
       }
 
+      const operationNodeKeys = new Set<string>(
+        currentTask.instance.workflowVersion.nodes
+          .filter((node: { type: string }) => node.type === 'OPERATION')
+          .map((node: { key: string }) => node.key)
+      );
+      const knownNodeKeys = new Set<string>(
+        currentTask.instance.workflowVersion.nodes.map((node: { key: string }) => node.key)
+      );
+      const taskDependencies = await tx.taskDependency.findMany({
+        where: { workspaceId, instanceId: currentTask.instanceId },
+        include: { successor: { select: { id: true, nodeKey: true } } },
+      });
+      const hasDownstreamOperation = hasDownstreamProductionOperation(
+        currentTask.id,
+        taskDependencies,
+        operationNodeKeys,
+        knownNodeKeys
+      );
+      if (input.isFinal && hasDownstreamOperation) {
+        throw new BadRequestError(
+          `Task '${currentTask.nodeKey}' has downstream production operations and cannot be declared final by the output request.`
+        );
+      }
+      const isFinalOp = !hasDownstreamOperation;
+
+      const currentDestination = await tx.location.findFirst({
+        where: {
+          workspaceId,
+          id: input.destinationLocationId,
+          isActive: true,
+          archivedAt: null,
+        },
+      });
+      if (!currentDestination) {
+        throw new NotFoundError(`Destination location '${input.destinationLocationId}' is not active at commit time`);
+      }
+      if (!['QUARANTINE', 'FG', 'WIP'].includes(currentDestination.kind)) {
+        throw new BadRequestError(`Destination location must be QUARANTINE, FG, or WIP, but got '${currentDestination.kind}'`);
+      }
+      const currentItemRecord = await tx.item.findFirst({
+        where: { workspaceId, id: targetItemId, isActive: true, archivedAt: null },
+      });
+      if (!currentItemRecord) throw new NotFoundError(`Target item '${targetItemId}' is not active at commit time`);
+
       const taskOutputs = await tx.productionOutput.findMany({
         where: {
           workspaceId,
@@ -202,7 +252,6 @@ export async function recordOutput(
         (total: bigint, output: { outputAtoms: bigint }) => total + output.outputAtoms,
         0n
       );
-      const isFinalOp = currentTask.successorDeps.length === 0 || input.isFinal;
       const currentOrder = await tx.order.findUnique({
         where: { workspaceId_id: { workspaceId, id: order.id } },
         include: { lines: true },
@@ -269,15 +318,35 @@ export async function recordOutput(
         }
       }
 
+      if (currentItemRecord.tracking === 'LOT') {
+        const lot = await tx.lot.upsert({
+          where: {
+            workspaceId_itemId_lotNumber: {
+              workspaceId,
+              itemId: currentItemRecord.id,
+              lotNumber,
+            },
+          },
+          create: {
+            workspaceId,
+            itemId: currentItemRecord.id,
+            lotNumber,
+            receivedAt: now,
+          },
+          update: {},
+        });
+        lotId = lot.id;
+      }
+
       // Post physical inventory movement for the produced goods into destination location
       const movement = await postMovement(
         tx,
         principal,
         {
           movementType: MovementType.PRODUCTION_OUTPUT,
-          itemId: item.id,
+          itemId: currentItemRecord.id,
           sourceLocationId: null, // Production virtual boundary
-          destinationLocationId: destLocation.id,
+          destinationLocationId: currentDestination.id,
           destinationLotId: lotId,
           atoms: input.outputAtoms,
           referenceType: MovementReferenceType.TASK,
@@ -288,7 +357,11 @@ export async function recordOutput(
       );
 
       // Reconcile and consume remaining WIP for this task if BOM demands exist
-      const unassignedDemands = order.demands.filter((d) => !d.taskId);
+      const currentDemands = await tx.materialDemand.findMany({
+        where: { workspaceId, orderId: order.id },
+        include: { item: true },
+      });
+      const unassignedDemands = currentDemands.filter((d: { taskId: string | null }) => !d.taskId);
       if (unassignedDemands.length > 0) {
         const taskCount = await tx.task.count({ where: { workspaceId, instanceId: currentTask.instanceId } });
         if (taskCount > 1) {
@@ -297,7 +370,7 @@ export async function recordOutput(
           );
         }
       }
-      const demands = order.demands.filter((d) => d.taskId === currentTask.id || (!d.taskId && unassignedDemands.length > 0));
+      const demands = currentDemands.filter((d: { taskId: string | null }) => d.taskId === currentTask.id || (!d.taskId && unassignedDemands.length > 0));
       for (const demand of demands) {
         const orderTasks = await tx.task.findMany({
           where: { workspaceId, instance: { orderId: order.id } },
@@ -388,10 +461,10 @@ export async function recordOutput(
           workspaceId,
           taskId: currentTask.id,
           attemptNumber: currentTask.attemptNumber,
-          itemId: item.id,
+          itemId: currentItemRecord.id,
           lotId,
           outputAtoms: input.outputAtoms,
-          destinationLocationId: destLocation.id,
+          destinationLocationId: currentDestination.id,
           movementId: movement.id,
           isFinal: isFinalOp,
           status: 'RECORDED',
@@ -466,7 +539,7 @@ export async function recordOutput(
           detailJson: JSON.stringify({
             outputId: output.id,
             outputAtoms: input.outputAtoms.toString(),
-            destinationLocationId: destLocation.id,
+            destinationLocationId: currentDestination.id,
             isFinal: isFinalOp,
           }),
         },

@@ -36,6 +36,15 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
 
     const { alpha } = fixture;
     const mastersService = new MastersService(fixture.db);
+    await fixture.db.issueReason.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        category: 'PAUSE',
+        code: 'BREAK',
+        label: 'Shift break',
+        isActive: true,
+      },
+    });
     await mastersService.publishRosterIntervals(alpha.users.owner.principal, {
       intervals: [
         ...[

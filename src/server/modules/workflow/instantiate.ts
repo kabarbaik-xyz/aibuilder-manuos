@@ -2,6 +2,13 @@ import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { BadRequestError, ConflictError } from '@/domain/errors';
 
+function ceilDivide(numerator: bigint, denominator: bigint): bigint {
+  if (numerator < 0n || denominator <= 0n) {
+    throw new BadRequestError('BOM quantity ratios must be non-negative with a positive output basis.');
+  }
+  return numerator === 0n ? 0n : (numerator + denominator - 1n) / denominator;
+}
+
 export interface InstantiateWorkflowParams {
   tx: any; // Prisma transaction client
   principal: Principal;
@@ -255,16 +262,19 @@ export async function instantiateWorkflow(
   for (const bomLine of engineeringRevision.bomLines || []) {
     const associatedTask = taskMap.get(bomLine.operationNodeKey);
 
-    // requirementAtoms = (manufacturingOrder.targetAtoms * bomLine.requirementAtoms) / bomLine.outputBasisAtoms
-    const baseRequirement =
-      (BigInt(mo.targetAtoms) * BigInt(bomLine.requirementAtoms)) /
-      BigInt(bomLine.outputBasisAtoms || 1000000n);
+    // Round material requirements up to the next atom so the ratio never under-allocates stock.
+    const outputBasisAtoms = BigInt(bomLine.outputBasisAtoms);
+    const baseRequirement = ceilDivide(
+      BigInt(mo.targetAtoms) * BigInt(bomLine.requirementAtoms),
+      outputBasisAtoms
+    );
 
     // Allowance calculation using authoritative integer basis points
-    const allowanceBasis = BigInt(
-      (bomLine as any).allowanceBps ?? Math.round((bomLine.allowancePercent || 0.0) * 100)
-    );
-    const allowanceAtoms = (baseRequirement * allowanceBasis) / 10000n;
+    const allowanceBasis = BigInt(bomLine.allowanceBps);
+    if (allowanceBasis < 0n || allowanceBasis > 10_000n) {
+      throw new BadRequestError(`BOM allowance for '${bomLine.itemId}' must be between 0 and 10000 basis points.`);
+    }
+    const allowanceAtoms = ceilDivide(baseRequirement * allowanceBasis, 10_000n);
     const totalRequiredAtoms = baseRequirement + allowanceAtoms;
 
     const demand = await tx.materialDemand.create({

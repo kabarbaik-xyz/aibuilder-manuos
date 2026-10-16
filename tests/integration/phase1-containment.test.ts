@@ -390,31 +390,21 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
       );
       orderId = ord.data.id;
 
-      await passportService.publishPassport(alpha.users.qc.principal, {
-        serialNumber: serialNum,
-        orderId,
-        itemId: alpha.masters.fgItemId,
-      });
     });
 
-    it('masks internal technician and inspector PII when accessed by customer user', async () => {
+    it('keeps customer access disabled until immutable per-unit evidence exists', async () => {
       const { alpha } = fixture;
 
-      const passport = await passportService.getUnitPassport(
-        alpha.users.customerUser.principal,
-        serialNum
-      );
-
-      expect(passport.status).toBe('RELEASED');
-      expect(passport.digestSha256).toMatch(/^[a-f0-9]{64}$/);
-
-      // Verify operator and inspector names are masked / null for external customer
-      for (const op of passport.operations) {
-        expect(op.operatorName).toBeNull();
-      }
-      for (const qc of passport.qcEvents) {
-        expect(qc.inspectorName).toBeNull();
-      }
+      await expect(
+        passportService.publishPassport(alpha.users.qc.principal, {
+          serialNumber: serialNum,
+          orderId,
+          itemId: alpha.masters.fgItemId,
+        })
+      ).rejects.toThrow(BadRequestError);
+      await expect(
+        passportService.getUnitPassport(alpha.users.customerUser.principal, serialNum)
+      ).rejects.toThrow(NotFoundError);
     });
 
     it('denies customer access to unreleased passport records', async () => {
@@ -426,6 +416,24 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
           'SN-UNRELEASED-999'
         )
       ).rejects.toThrow(NotFoundError);
+    });
+
+    it('denies customer access to released passport records with no owning order', async () => {
+      const { alpha } = fixture;
+      const serialNumber = 'SN-PASSPORT-NO-ORDER';
+      await fixture.db.passport.create({
+        data: {
+          workspaceId: alpha.workspaceId,
+          serialNumber,
+          itemId: alpha.masters.fgItemId,
+          status: 'RELEASED',
+          digestSha256: 'a'.repeat(64),
+        },
+      });
+
+      await expect(
+        passportService.getUnitPassport(alpha.users.customerUser.principal, serialNumber)
+      ).rejects.toThrow(ForbiddenError);
     });
   });
 });

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { hasPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
@@ -156,11 +156,12 @@ export class ConsumptionService {
    */
   async getTaskMaterialReadiness(
     principal: Principal,
-    taskId: string
+    taskId: string,
+    dataClient: PrismaClient | Prisma.TransactionClient = this.db
   ): Promise<TaskMaterialReadinessDTO> {
     const workspaceId = principal.workspaceId;
 
-    const task = await this.db.task.findUnique({
+    const task = await dataClient.task.findUnique({
       where: {
         workspaceId_id: {
           workspaceId,
@@ -196,16 +197,24 @@ export class ConsumptionService {
       (d) => !d.taskId || d.taskId === taskId
     );
 
+    const orderTaskIds = (await dataClient.task.findMany({
+      where: { workspaceId, instance: { orderId } },
+      select: { id: true },
+    })).map((orderTask) => orderTask.id);
+
     // Fetch movements for this order/task
-    const movements = await this.db.stockMovement.findMany({
+    const movements = await dataClient.stockMovement.findMany({
       where: {
         workspaceId,
-        referenceId: { in: [orderId, taskId] },
+        OR: [
+          { referenceType: MovementReferenceType.ORDER, referenceId: orderId },
+          { referenceType: MovementReferenceType.TASK, referenceId: { in: orderTaskIds } },
+        ],
       },
     });
 
     // Fetch warehouse balances for each demand item in RAW locations
-    const rawLocations = await this.db.location.findMany({
+    const rawLocations = await dataClient.location.findMany({
       where: { workspaceId, kind: 'RAW', isActive: true },
       select: { id: true },
     });
@@ -223,7 +232,7 @@ export class ConsumptionService {
         const returnedMoves = movements.filter(
           (m) => m.itemId === d.itemId && m.movementType === MovementType.RETURN_FROM_WIP
         );
-        const issuedAtoms =
+        const grossIssuedAtoms =
           issuedMoves.reduce((acc, m) => acc + m.atoms, 0n) -
           returnedMoves.reduce((acc, m) => acc + m.atoms, 0n);
 
@@ -232,9 +241,10 @@ export class ConsumptionService {
           (m) => m.itemId === d.itemId && m.movementType === MovementType.PRODUCTION_CONSUME
         );
         const consumedAtoms = consumedMoves.reduce((acc, m) => acc + m.atoms, 0n);
+        const issuedAtoms = grossIssuedAtoms > consumedAtoms ? grossIssuedAtoms - consumedAtoms : 0n;
 
         // Available in warehouse raw storage
-        const rawBalances = await this.db.stockBalance.findMany({
+        const rawBalances = await dataClient.stockBalance.findMany({
           where: {
             workspaceId,
             itemId: d.itemId,

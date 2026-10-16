@@ -199,10 +199,6 @@ export class PortalRepository {
           },
           orderBy: { createdAt: 'desc' },
         },
-        passports: {
-          where: { status: 'RELEASED' },
-          orderBy: { publishedAt: 'desc' },
-        },
       },
     });
 
@@ -272,12 +268,8 @@ export class PortalRepository {
       })),
     }));
 
-    const passports: CustomerPassportSummaryDTO[] = order.passports.map((p) => ({
-      serialNumber: p.serialNumber,
-      status: p.status,
-      publishedAt: p.publishedAt.toISOString(),
-      digestSha256: p.digestSha256,
-    }));
+    // Passport rows are not customer evidence until they contain a verified immutable unit snapshot.
+    const passports: CustomerPassportSummaryDTO[] = [];
 
     // Derive truthful milestones based on settled atom quantities
     const isFullyDelivered = hasReachedEveryLine(orderLines, 'deliveredAtoms');

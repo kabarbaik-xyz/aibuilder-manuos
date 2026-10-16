@@ -27,10 +27,7 @@ const STARTER_PROMPTS = [
 
 export function BrainDrawer() {
   const store = useGraphStore();
-  const { disruption, activeRecovery, setScreen, closeModal, orders } = store;
-
-  const isDelayed = disruption.isDelayed;
-  const isApproved = activeRecovery?.status === "APPLIED";
+  const { setScreen, closeModal } = store;
 
   const [inputQuery, setInputQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -38,7 +35,7 @@ export function BrainDrawer() {
     {
       id: "msg-welcome",
       sender: "assistant",
-      text: "Hello Alex. I am ManuOS Operational Brain, grounded in real-time shop-floor state, machine telemetry, and order routing for Precision Works. How can I assist your operations today?",
+      text: "Ask an operational question. Answers are based on records available to your workspace and include evidence references when available.",
       timestamp: "Just now",
     },
   ]);
@@ -121,17 +118,7 @@ export function BrainDrawer() {
       const res = await fetch("/api/ai/brain-qa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: q,
-          snapshot: {
-            delayed: isDelayed,
-            approved: isApproved,
-            delayedMaterial: "TB-24",
-            blockedTasks: disruption.blockedTaskIds,
-            affectedOrders: disruption.affectedOrderIds,
-            activeOrdersCount: orders.length,
-          },
-        }),
+        body: JSON.stringify({ question: q }),
       });
 
       if (res.ok) {
@@ -155,18 +142,13 @@ export function BrainDrawer() {
         }
       }
     } catch {
-      // Fallback
+      // Keep the unavailable response below when the API cannot be reached.
     }
 
-    // Default resilient response if fetch errors
     const fallbackMessage: ChatMessage = {
       id: `ai-err-${Date.now()}`,
       sender: "assistant",
-      text: isDelayed
-        ? "Factory telemetry indicates Order #CO-2026-1042 is delayed by 3 days due to Terminal Block TB-24 supplier postponement. 5-Axis CNC machining continues normally while electrical assembly tasks are held."
-        : "All 6 manufacturing orders are tracking normally across Shift A. Machine capacity on 5-Axis CNC CNC-02 is at 91%.",
-      evidenceRefs: ["#CO-2026-1042", "TB-24", "CNC-02"],
-      linkToScreen: "orchestrator",
+      text: "Operational answers are unavailable right now. Check the relevant workspace records or try again shortly.",
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -199,12 +181,12 @@ export function BrainDrawer() {
       <div className="brain-status-bar">
         <div className="flex items-center gap-2">
           <span className="live-indicator">
-            <span className={`dot ${isDelayed ? "warning" : ""}`} />
-            <span>Precision Works</span>
+            <span className="dot" />
+            <span>Workspace</span>
           </span>
           <span className="topbar-rule" style={{ height: 14 }} />
           <span className="small muted">
-            {isDelayed ? "1 Delay Disruption Active" : "All 6 Orders Normal"}
+            Operational data is retrieved when you ask a question
           </span>
         </div>
 
