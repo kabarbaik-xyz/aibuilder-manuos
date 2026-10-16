@@ -3,17 +3,42 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePortalOrderDetail } from "../hooks";
-import { downloadPortalDocument } from "../api";
+import {
+  downloadPortalDocument,
+  approveCustomerDrawing,
+  submitCustomerChangeRequest,
+  approveCustomerChangeRequest,
+} from "../api";
 import { Button } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
 import { PageHeader } from "@/components/ui/page-header";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
+import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/icons";
 
 export function PortalOrderDetailView({ orderId }: { orderId: string }) {
   const { order, loading, error, refresh, acknowledge } = usePortalOrderDetail(orderId);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Drawing Approval state
+  const [selectedDrawing, setSelectedDrawing] = useState<{ id: string; drawingNumber: string; revisionCode: string } | null>(null);
+  const [drawingNotes, setDrawingNotes] = useState("");
+  const [drawingSubmitting, setDrawingSubmitting] = useState(false);
+  const [drawingError, setDrawingError] = useState<string | null>(null);
+
+  // Change Request state
+  const [showOcrModal, setShowOcrModal] = useState(false);
+  const [ocrChangeType, setOcrChangeType] = useState<"DATE" | "QUANTITY" | "SPECIFICATION" | "CANCEL">("DATE");
+  const [ocrRequestedDate, setOcrRequestedDate] = useState("");
+  const [ocrRequestedQuantity, setOcrRequestedQuantity] = useState("");
+  const [ocrReason, setOcrReason] = useState("");
+  const [ocrSubmitting, setOcrSubmitting] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [approvingOcrId, setApprovingOcrId] = useState<string | null>(null);
 
   const handleDownload = async (docId: string, fileName: string) => {
     try {
@@ -23,6 +48,70 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
       alert(err?.message || "Failed to download document");
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleApproveDrawing = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDrawing || !order) return;
+    try {
+      setDrawingSubmitting(true);
+      setDrawingError(null);
+      await approveCustomerDrawing(order.id, selectedDrawing.id, drawingNotes.trim() || undefined);
+      setSelectedDrawing(null);
+      setDrawingNotes("");
+      await refresh();
+    } catch (err: any) {
+      setDrawingError(err?.message || "Failed to record customer drawing approval");
+    } finally {
+      setDrawingSubmitting(false);
+    }
+  };
+
+  const handleSubmitOcr = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!order) return;
+    try {
+      setOcrSubmitting(true);
+      setOcrError(null);
+
+      const requestedChanges: Record<string, unknown> = {};
+      if (ocrChangeType === "DATE" && ocrRequestedDate) {
+        requestedChanges.requestedDate = new Date(ocrRequestedDate).toISOString();
+      } else if (ocrChangeType === "QUANTITY" && ocrRequestedQuantity) {
+        requestedChanges.orderedQuantity = Number(ocrRequestedQuantity);
+      } else if (ocrChangeType === "CANCEL") {
+        requestedChanges.cancelOrder = true;
+      }
+
+      await submitCustomerChangeRequest({
+        orderId: order.id,
+        changeType: ocrChangeType,
+        reason: ocrReason.trim(),
+        requestedChanges,
+      });
+
+      setShowOcrModal(false);
+      setOcrReason("");
+      setOcrRequestedDate("");
+      setOcrRequestedQuantity("");
+      await refresh();
+    } catch (err: any) {
+      setOcrError(err?.message || "Failed to submit change request");
+    } finally {
+      setOcrSubmitting(false);
+    }
+  };
+
+  const handleApproveOcr = async (ocrId: string) => {
+    try {
+      setApprovingOcrId(ocrId);
+      await approveCustomerChangeRequest(ocrId);
+      await refresh();
+    } catch (err: any) {
+      alert(err?.message || "Failed to approve change request");
+    } finally {
+      setApprovingOcrId(null);
     }
   };
 
@@ -69,6 +158,15 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
         description={`${order.itemName} (${order.itemCode}) · ${order.orderedQuantity} units ordered`}
         actions={
           <div className="flex items-center gap-2">
+            <Button
+              onClick={() => {
+                setOcrError(null);
+                setOcrReason("");
+                setShowOcrModal(true);
+              }}
+            >
+              Request Order Change
+            </Button>
             <Badge
               variant={
                 order.status === "DELIVERED"
@@ -119,79 +217,272 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
         </div>
       )}
 
-      {/* Progress & Specifications Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Panel className="p-4 md:col-span-2 space-y-4">
-          <h3 className="text-sm font-semibold text-ink">Production & Verification Progress</h3>
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs">
-              <span className="text-muted">Verified QC Passed Units</span>
-              <span className="font-bold text-ink">
-                {order.qcPassedQuantity} / {order.orderedQuantity} ({order.progressPct}%)
-              </span>
-            </div>
-            <div className="w-full h-2.5 bg-surface-muted rounded-full overflow-hidden border border-line">
-              <div
-                className="h-full bg-primary rounded-full transition-all duration-300"
-                style={{ width: `${order.progressPct}%` }}
-              />
-            </div>
+      {/* Overview Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <Panel className="p-4">
+          <span className="text-xs font-medium text-muted block mb-1">
+            Manufacturing Progress
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-ink">
+              {order.progressPct}%
+            </span>
+            <span className="text-xs text-muted">
+              ({order.qcPassedQuantity} / {order.orderedQuantity} verified)
+            </span>
           </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-line text-xs">
-            <div>
-              <span className="text-muted block text-xs">Requested Date</span>
-              <strong className="text-ink font-semibold">
-                {new Date(order.requestedDate).toLocaleDateString()}
-              </strong>
-            </div>
-            <div>
-              <span className="text-muted block text-xs">
-                Promised Date{!order.customerAcknowledged ? " (estimate)" : ""}
-              </span>
-              <strong className="text-ink font-semibold">
-                {order.promisedDate
-                  ? new Date(order.promisedDate).toLocaleDateString()
-                  : "Pending Review"}
-              </strong>
-            </div>
-            <div>
-              <span className="text-muted block text-xs">Acknowledgment</span>
-              <span className="text-ink font-semibold">
-                {order.customerAcknowledged
-                  ? `Confirmed by ${order.customerAcknowledgedBy || "Customer"}`
-                  : "Not yet confirmed"}
-              </span>
-            </div>
+          <div className="w-full bg-line rounded-full h-1.5 mt-3 overflow-hidden">
+            <div
+              className="bg-primary h-1.5 rounded-full transition-all duration-300"
+              style={{ width: `${order.progressPct}%` }}
+            />
           </div>
         </Panel>
 
-        {/* Milestones Card */}
-        <Panel className="p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-ink">Fulfillment Milestones</h3>
-          <div className="space-y-2.5">
-            {order.milestones.map((m) => (
-              <div key={m.key} className="flex items-center justify-between text-xs">
-                <span className="text-ink flex items-center gap-2">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      m.status === "COMPLETED"
-                        ? "bg-emerald-500"
-                        : m.status === "IN_PROGRESS"
-                        ? "bg-amber-500 animate-pulse"
-                        : "bg-line"
-                    }`}
-                  />
-                  {m.title}
-                </span>
-                <span className="text-xs text-muted capitalize">
-                  {m.status.toLowerCase().replace(/_/g, " ")}
-                </span>
+        <Panel className="p-4">
+          <span className="text-xs font-medium text-muted block mb-1">
+            Customer Requested Date
+          </span>
+          <span className="text-base font-semibold text-ink">
+            {new Date(order.requestedDate).toLocaleDateString()}
+          </span>
+          <span className="text-xs text-muted block mt-1">Requested delivery target</span>
+        </Panel>
+
+        <Panel className="p-4">
+          <span className="text-xs font-medium text-muted block mb-1">
+            Promised Delivery Date
+          </span>
+          <span className="text-base font-semibold text-ink">
+            {order.promisedDate
+              ? new Date(order.promisedDate).toLocaleDateString()
+              : "Pending schedule commitment"}
+          </span>
+          <span className="text-xs text-muted block mt-1">
+            {order.customerAcknowledged ? "Acknowledged by customer" : "Awaiting customer confirmation"}
+          </span>
+        </Panel>
+
+        <Panel className="p-4">
+          <span className="text-xs font-medium text-muted block mb-1">
+            Dispatched Shipments
+          </span>
+          <span className="text-2xl font-bold text-ink">
+            {order.shipments.length}
+          </span>
+          <span className="text-xs text-muted block mt-1">Physical consignments</span>
+        </Panel>
+      </div>
+
+      {/* Engineering Drawing Specifications (CUS-02) */}
+      <Panel className="p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Engineering Drawings & Specifications</h3>
+            <p className="text-xs text-muted">
+              Authoritative released blueprint revisions and formal customer approval evidence
+            </p>
+          </div>
+        </div>
+
+        {(!order.drawings || order.drawings.length === 0) ? (
+          <div className="p-6 text-center text-xs text-muted border border-dashed border-line rounded-xl">
+            No released engineering drawings registered for this item yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {order.drawings.map((dwg) => (
+              <div
+                key={dwg.id}
+                className="p-4 border border-line rounded-xl bg-surface-muted/30 flex items-center justify-between flex-wrap gap-3"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-ink text-xs font-mono">
+                      {dwg.drawingNumber}
+                    </span>
+                    <Badge variant="blue">Rev {dwg.revisionCode}</Badge>
+                    <Badge variant={dwg.status === "RELEASED" ? "success" : "default"}>
+                      {dwg.status}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-muted">
+                    File: {dwg.documentFileName || "Blueprint Attachment"}
+                  </div>
+                  {dwg.customerApproved && (
+                    <div className="text-xs text-emerald-700 flex items-center gap-1 font-medium pt-1">
+                      <Icon name="check" className="w-3.5 h-3.5" />
+                      Approved by {dwg.customerApprovedBy || "Customer Representative"} on{" "}
+                      {dwg.customerApprovedAt ? new Date(dwg.customerApprovedAt).toLocaleDateString() : "Record"}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {dwg.documentId && (
+                    <Button
+                      size="small"
+                      onClick={() => handleDownload(dwg.documentId, dwg.documentFileName || `${dwg.drawingNumber}-Rev${dwg.revisionCode}.pdf`)}
+                      disabled={downloadingId === dwg.documentId}
+                    >
+                      {downloadingId === dwg.documentId ? "Downloading..." : "Download Blueprint"}
+                    </Button>
+                  )}
+                  {dwg.customerApproved ? (
+                    <Badge variant="success">Customer Approved</Badge>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      size="small"
+                      onClick={() => {
+                        setSelectedDrawing(dwg);
+                        setDrawingNotes("");
+                        setDrawingError(null);
+                      }}
+                    >
+                      Approve Drawing Spec
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
-        </Panel>
-      </div>
+        )}
+      </Panel>
+
+      {/* Customer Order Change Requests (CUS-04) */}
+      <Panel className="p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Order Change Requests (OCR)</h3>
+            <p className="text-xs text-muted">
+              Customer-originated delivery date, quantity, or specification revision proposals
+            </p>
+          </div>
+          <Button
+            size="small"
+            onClick={() => {
+              setOcrError(null);
+              setOcrReason("");
+              setShowOcrModal(true);
+            }}
+          >
+            + New Change Request
+          </Button>
+        </div>
+
+        {(!order.changeRequests || order.changeRequests.length === 0) ? (
+          <div className="p-6 text-center text-xs text-muted border border-dashed border-line rounded-xl">
+            No change requests filed for this order. Click &quot;Request Order Change&quot; to propose modifications.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {order.changeRequests.map((ocr) => (
+              <div
+                key={ocr.id}
+                className="p-4 border border-line rounded-xl bg-surface-muted/30 space-y-2"
+              >
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-ink text-xs font-mono">
+                      {ocr.requestNumber}
+                    </span>
+                    <Badge variant="blue">{ocr.changeType}</Badge>
+                    <Badge
+                      variant={
+                        ocr.status === "APPROVED" || ocr.status === "APPLIED"
+                          ? "success"
+                          : ocr.status === "REJECTED"
+                          ? "danger"
+                          : "warning"
+                      }
+                    >
+                      {ocr.status}
+                    </Badge>
+                  </div>
+                  <span className="text-xs text-muted">
+                    Submitted: {ocr.submittedAt ? new Date(ocr.submittedAt).toLocaleDateString() : "—"}
+                  </span>
+                </div>
+
+                <div className="text-xs text-ink">
+                  <strong>Reason:</strong> {ocr.reason}
+                </div>
+
+                {ocr.requestedChanges && Object.keys(ocr.requestedChanges).length > 0 && (
+                  <div className="text-xs text-muted bg-surface p-2 rounded border border-line font-mono">
+                    Requested: {JSON.stringify(ocr.requestedChanges)}
+                  </div>
+                )}
+
+                {ocr.status === "SUBMITTED" && (
+                  <div className="flex justify-end pt-2 border-t border-line/60">
+                    <Button
+                      size="small"
+                      variant="primary"
+                      onClick={() => handleApproveOcr(ocr.id)}
+                      disabled={approvingOcrId === ocr.id}
+                    >
+                      {approvingOcrId === ocr.id ? "Recording..." : "Customer Confirm / Approve"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {/* Production & Fulfillment Milestones */}
+      <Panel className="p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-ink">Fulfillment Milestones</h3>
+          <p className="text-xs text-muted">
+            Auditable physical stage tracking derived from settled workstation output
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 pt-2">
+          {order.milestones.map((m, idx) => {
+            const isCompleted = m.status === "COMPLETED";
+            const isInProgress = m.status === "IN_PROGRESS";
+
+            return (
+              <div
+                key={m.key}
+                className={`p-3 rounded-xl border transition ${
+                  isCompleted
+                    ? "bg-emerald-50/50 border-emerald-200 text-emerald-900"
+                    : isInProgress
+                    ? "bg-blue-50/50 border-blue-200 text-blue-900"
+                    : "bg-surface-muted/50 border-line text-muted"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-mono font-semibold opacity-75">
+                    0{idx + 1}
+                  </span>
+                  <Badge
+                    variant={
+                      isCompleted ? "success" : isInProgress ? "blue" : "default"
+                    }
+                  >
+                    {m.status}
+                  </Badge>
+                </div>
+                <h4 className="font-semibold text-xs text-ink leading-tight mb-1">
+                  {m.title}
+                </h4>
+                {m.completedAt && (
+                  <span className="text-xs opacity-75 block">
+                    {new Date(m.completedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
 
       {/* Shipments Section */}
       <Panel className="p-5 space-y-4">
@@ -380,6 +671,145 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
           )}
         </Panel>
       </div>
+
+      {/* Customer Drawing Approval Modal (CUS-02) */}
+      {selectedDrawing && (
+        <Dialog
+          isOpen
+          onClose={() => { setSelectedDrawing(null); setDrawingError(null); }}
+          title={`Approve Drawing Specification: ${selectedDrawing.drawingNumber} (Rev ${selectedDrawing.revisionCode})`}
+          size="md"
+          pending={drawingSubmitting}
+        >
+          <form onSubmit={handleApproveDrawing} className="space-y-4">
+            <p className="text-xs text-muted">
+              By confirming approval, you verify and authorize this released engineering blueprint as the contractual specification for order <strong>{order.orderNumber}</strong>. An immutable audit record will be logged.
+            </p>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Approval Notes / Reference (Optional)
+              </label>
+              <Input
+                type="text"
+                value={drawingNotes}
+                onChange={(e) => setDrawingNotes(e.target.value)}
+                placeholder="e.g. Approved per Engineering Review Meeting 2026-10-15"
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              />
+            </div>
+
+            {drawingError && (
+              <div className="p-2.5 bg-danger-soft border border-line rounded text-xs text-danger">
+                {drawingError}
+              </div>
+            )}
+
+            <div className="dialog-actions">
+              <Button type="button" onClick={() => setSelectedDrawing(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={drawingSubmitting}>
+                {drawingSubmitting ? "Recording Approval..." : "Confirm & Sign Drawing"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {/* Customer Change Request Modal (CUS-04) */}
+      {showOcrModal && (
+        <Dialog
+          isOpen
+          onClose={() => { setShowOcrModal(false); setOcrError(null); }}
+          title="Submit Order Change Request (OCR)"
+          size="md"
+          pending={ocrSubmitting}
+        >
+          <form onSubmit={handleSubmitOcr} className="space-y-4">
+            <p className="text-xs text-muted">
+              Propose a formal change to order <strong>{order.orderNumber}</strong>. Change requests enter review status and require engineering evaluation before being applied to active production.
+            </p>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Change Category
+              </label>
+              <Select
+                value={ocrChangeType}
+                onChange={(e: any) => setOcrChangeType(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              >
+                <option value="DATE">Delivery Date Modification</option>
+                <option value="QUANTITY">Order Quantity Adjustment</option>
+                <option value="SPECIFICATION">Drawing / Technical Specification</option>
+                <option value="CANCEL">Order Cancellation Request</option>
+              </Select>
+            </div>
+
+            {ocrChangeType === "DATE" && (
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1">
+                  Proposed Delivery Date
+                </label>
+                <Input
+                  type="date"
+                  required
+                  value={ocrRequestedDate}
+                  onChange={(e) => setOcrRequestedDate(e.target.value)}
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                />
+              </div>
+            )}
+
+            {ocrChangeType === "QUANTITY" && (
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1">
+                  Proposed Total Quantity (Units)
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  required
+                  value={ocrRequestedQuantity}
+                  onChange={(e) => setOcrRequestedQuantity(e.target.value)}
+                  placeholder={`Current: ${order.orderedQuantity}`}
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Business Reason & Detailed Justification
+              </label>
+              <Textarea
+                required
+                rows={3}
+                value={ocrReason}
+                onChange={(e) => setOcrReason(e.target.value)}
+                placeholder="Explain the reason for this proposed change (e.g. customer warehouse expansion delay, accelerated prototype build schedule)..."
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              />
+            </div>
+
+            {ocrError && (
+              <div className="p-2.5 bg-danger-soft border border-line rounded text-xs text-danger">
+                {ocrError}
+              </div>
+            )}
+
+            <div className="dialog-actions">
+              <Button type="button" onClick={() => setShowOcrModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={ocrSubmitting || !ocrReason.trim()}>
+                {ocrSubmitting ? "Submitting Request..." : "Submit Proposal"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
     </div>
   );
 }

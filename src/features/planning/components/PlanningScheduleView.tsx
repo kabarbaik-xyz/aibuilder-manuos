@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import React, { useState } from 'react';
 import { useTechnicians, useMachines } from '@/features/masters/hooks';
-import { useAssignTask, useTaskReadiness, useEvaluateAssignment, usePublishedSchedules, usePublishSchedule } from '../hooks';
+import { useAssignTask, useTaskReadiness, useEvaluateAssignment, usePublishedSchedules, usePublishSchedule, useRequestOvertime } from '../hooks';
+import { Textarea } from '@/components/ui/textarea';
 import type { AssignmentEvaluationResult } from '@/server/modules/planning/contracts';
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +42,64 @@ export function PlanningScheduleView() {
   const [publishPeriodStart, setPublishPeriodStart] = useState(new Date().toISOString().slice(0, 10));
   const [publishPeriodEnd, setPublishPeriodEnd] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
   const [publishError, setPublishError] = useState<string | null>(null);
+
+  const requestOtMutation = useRequestOvertime();
+  const [showOtModal, setShowOtModal] = useState(false);
+  const [otTechId, setOtTechId] = useState("");
+  const [otDate, setOtDate] = useState(new Date().toISOString().slice(0, 10));
+  const [otStartTime, setOtStartTime] = useState("17:00");
+  const [otEndTime, setOtEndTime] = useState("21:00");
+  const [otReason, setOtReason] = useState("");
+  const [otError, setOtError] = useState<string | null>(null);
+
+  const handlePublishSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setPublishError(null);
+      await publishMutation.mutateAsync({
+        title: publishTitle.trim(),
+        periodStart: new Date(publishPeriodStart).toISOString(),
+        periodEnd: new Date(publishPeriodEnd).toISOString(),
+      });
+      setShowPublishModal(false);
+      refetchPublished();
+    } catch (err: any) {
+      setPublishError(err?.message || "Failed to publish schedule revision");
+    }
+  };
+
+  const handleOtSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otTechId) {
+      setOtError("Please select a technician");
+      return;
+    }
+    const startAt = new Date(`${otDate}T${otStartTime}:00.000Z`).toISOString();
+    const endAt = new Date(`${otDate}T${otEndTime}:00.000Z`).toISOString();
+    const diffHours = (new Date(endAt).getTime() - new Date(startAt).getTime()) / (1000 * 60 * 60);
+    if (diffHours <= 0) {
+      setOtError("End time must be after start time");
+      return;
+    }
+    if (diffHours > 8) {
+      setOtError(`Overtime request exceeds statutory daily maximum of 8 hours (requested: ${diffHours.toFixed(1)}h)`);
+      return;
+    }
+    try {
+      setOtError(null);
+      await requestOtMutation.mutateAsync({
+        technicianId: otTechId,
+        startAt,
+        endAt,
+        reason: otReason.trim(),
+      });
+      setShowOtModal(false);
+      setOtReason("");
+      refetch();
+    } catch (err: any) {
+      setOtError(err?.message || "Failed to submit overtime request");
+    }
+  };
 
   // Trigger qualification evaluation on resource selection
   React.useEffect(() => {
@@ -109,6 +168,18 @@ export function PlanningScheduleView() {
           <Button onClick={() => refetch()} icon="reset">
             Recalculate
           </Button>
+          <PermissionGate permission={["planning.write", "resource.manage"]}>
+            <Button
+              onClick={() => {
+                setOtError(null);
+                setOtReason("");
+                setOtTechId(techniciansQuery.data?.data?.[0]?.id || "");
+                setShowOtModal(true);
+              }}
+            >
+              Request Overtime
+            </Button>
+          </PermissionGate>
           <PermissionGate permission={["planning.write", "order.release"]}>
             <Button
               variant="primary"
@@ -385,6 +456,155 @@ export function PlanningScheduleView() {
           
         </Dialog>
       )}
+    
+      {/* Publish Schedule Modal (SCH-06) */}
+      {showPublishModal && (
+        <Dialog
+          isOpen
+          onClose={() => { setShowPublishModal(false); setPublishError(null); }}
+          title="Publish Master Production Schedule (SCH-06)"
+          size="md"
+          pending={publishMutation.isPending}
+        >
+          <form onSubmit={handlePublishSubmit} className="space-y-4">
+            <p className="text-xs text-muted">
+              Publishing commits this schedule revision as the authoritative operational plan. It establishes the baseline commitments for shop floor dispatch, customer promise dates, and supervisor tracking.
+            </p>
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">Schedule Revision Title</label>
+              <Input
+                type="text"
+                required
+                value={publishTitle}
+                onChange={(e) => setPublishTitle(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1">Period Start</label>
+                <Input
+                  type="date"
+                  required
+                  value={publishPeriodStart}
+                  onChange={(e) => setPublishPeriodStart(e.target.value)}
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1">Period End</label>
+                <Input
+                  type="date"
+                  required
+                  value={publishPeriodEnd}
+                  onChange={(e) => setPublishPeriodEnd(e.target.value)}
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                />
+              </div>
+            </div>
+            {publishError && (
+              <div className="p-2.5 bg-danger-soft border border-line rounded text-xs text-danger">
+                {publishError}
+              </div>
+            )}
+            <div className="dialog-actions">
+              <Button type="button" onClick={() => setShowPublishModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={publishMutation.isPending}>
+                {publishMutation.isPending ? "Publishing Schedule..." : "Publish Authoritative Schedule"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {/* Request Overtime Modal (RES-09) */}
+      {showOtModal && (
+        <Dialog
+          isOpen
+          onClose={() => { setShowOtModal(false); setOtError(null); }}
+          title="Request Technician Overtime Shift (RES-09)"
+          size="md"
+          pending={requestOtMutation.isPending}
+        >
+          <form onSubmit={handleOtSubmit} className="space-y-4">
+            <p className="text-xs text-muted">
+              Overtime intervals expand qualified capacity only after approval. Requests exceeding the statutory daily limit (8 hours per shift) will be rejected.
+            </p>
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">Technician</label>
+              <Select
+                value={otTechId}
+                onChange={(e) => setOtTechId(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              >
+                <option value="">Select technician...</option>
+                {techniciansQuery.data?.data.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name} ({t.code})</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">Shift Date</label>
+              <Input
+                type="date"
+                required
+                value={otDate}
+                onChange={(e) => setOtDate(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1">Start Time</label>
+                <Input
+                  type="time"
+                  required
+                  value={otStartTime}
+                  onChange={(e) => setOtStartTime(e.target.value)}
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink mb-1">End Time</label>
+                <Input
+                  type="time"
+                  required
+                  value={otEndTime}
+                  onChange={(e) => setOtEndTime(e.target.value)}
+                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">Business Reason & Operational Need</label>
+              <Textarea
+                required
+                rows={2}
+                value={otReason}
+                onChange={(e) => setOtReason(e.target.value)}
+                placeholder="e.g. Critical aerospace lot CNC milling expedited to meet promise date..."
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              />
+            </div>
+            {otError && (
+              <div className="p-2.5 bg-danger-soft border border-line rounded text-xs text-danger">
+                {otError}
+              </div>
+            )}
+            <div className="dialog-actions">
+              <Button type="button" onClick={() => setShowOtModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={requestOtMutation.isPending || !otTechId || !otReason.trim()}>
+                {requestOtMutation.isPending ? "Submitting Request..." : "Submit Overtime Request"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
     </div>
   );
 }

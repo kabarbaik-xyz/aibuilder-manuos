@@ -61,11 +61,37 @@ export interface CustomerMilestoneDTO {
   completedAt?: string | null;
 }
 
+
+export interface CustomerDrawingDTO {
+  id: string;
+  drawingNumber: string;
+  revisionCode: string;
+  status: string;
+  documentId: string;
+  documentFileName?: string;
+  customerApproved: boolean;
+  customerApprovedAt: string | null;
+  customerApprovedBy: string | null;
+}
+
+export interface CustomerChangeRequestDTO {
+  id: string;
+  requestNumber: string;
+  changeType: string;
+  status: string;
+  reason: string;
+  requestedChanges: Record<string, unknown>;
+  submittedAt: string | null;
+  approvedAt: string | null;
+}
+
 export interface CustomerOrderDetailDTO extends CustomerOrderSummaryDTO {
   shipments: CustomerShipmentDTO[];
   documents: CustomerDocumentDTO[];
   passports: CustomerPassportSummaryDTO[];
   milestones: CustomerMilestoneDTO[];
+  drawings?: CustomerDrawingDTO[];
+  changeRequests?: CustomerChangeRequestDTO[];
 }
 
 export interface AcknowledgePromiseInput {

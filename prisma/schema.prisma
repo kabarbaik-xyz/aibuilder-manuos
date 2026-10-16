@@ -1995,6 +1995,7 @@ model NotificationInbox {
   status       String    @default("UNREAD") // UNREAD | READ | ARCHIVED
   subjectType  String?   @map("subject_type")
   subjectId    String?   @map("subject_id")
+  dedupeKey    String?   @map("dedupe_key")
   metadataJson String?   @map("metadata_json")
   readAt       DateTime? @map("read_at")
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -2005,6 +2006,7 @@ model NotificationInbox {
 
   @@index([workspaceId, userId, status])
   @@index([workspaceId, createdAt])
+  @@unique([workspaceId, userId, dedupeKey])
   @@map("notification_inbox")
 }
 

@@ -84,3 +84,35 @@ export function usePublishSchedule() {
     },
   });
 }
+
+
+import { requestOvertime, approveOvertime } from "./api";
+
+export function useRequestOvertime() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      technicianId: string;
+      facilityId?: string;
+      startAt: string;
+      endAt: string;
+      reason: string;
+      notes?: string;
+    }) => requestOvertime(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planning"] });
+      queryClient.invalidateQueries({ queryKey: ["technicians"] });
+    },
+  });
+}
+
+export function useApproveOvertime() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (intervalId: string) => approveOvertime(intervalId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planning"] });
+      queryClient.invalidateQueries({ queryKey: ["technicians"] });
+    },
+  });
+}

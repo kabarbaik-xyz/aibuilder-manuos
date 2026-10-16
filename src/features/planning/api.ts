@@ -62,3 +62,24 @@ export async function publishSchedule(input: { title: string; periodStart: strin
     body: JSON.stringify(input),
   });
 }
+
+
+export async function requestOvertime(input: {
+  technicianId: string;
+  facilityId?: string;
+  startAt: string;
+  endAt: string;
+  reason: string;
+  notes?: string;
+}) {
+  return apiRequest('/api/planning/overtime/request', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function approveOvertime(intervalId: string) {
+  return apiRequest(`/api/planning/overtime/${intervalId}/approve`, {
+    method: 'POST',
+  });
+}

@@ -8,6 +8,8 @@ import {
   CustomerDocumentDTO,
   CustomerPassportSummaryDTO,
   CustomerMilestoneDTO,
+  CustomerDrawingDTO,
+  CustomerChangeRequestDTO,
 } from './contracts';
 
 export class PortalRepository {
@@ -304,6 +306,76 @@ export class PortalRepository {
       },
     ];
 
+    // Query released drawing revisions for the item
+    const drawingRevisions = await this.prisma.drawingRevision.findMany({
+      where: {
+        workspaceId,
+        itemId: order.itemId,
+        status: 'RELEASED',
+      },
+      include: {
+        document: true,
+      },
+      orderBy: { revisionCode: 'desc' },
+    });
+
+    // Check customer drawing approvals in audit events
+    const drawingApprovals = drawingRevisions.length > 0 ? await this.prisma.auditEvent.findMany({
+      where: {
+        workspaceId,
+        action: 'customer.drawing.approved',
+        aggregateType: 'DRAWING_REVISION',
+        aggregateId: { in: drawingRevisions.map((d) => d.id) },
+      },
+      orderBy: { occurredAt: 'desc' },
+    }) : [];
+
+    const drawings: CustomerDrawingDTO[] = drawingRevisions.map((dwg) => {
+      const approval = drawingApprovals.find((a) => a.aggregateId === dwg.id);
+      let approvedBy: string | null = null;
+      let approvedAt: string | null = null;
+      if (approval) {
+        try {
+          const detail = JSON.parse(approval.detailJson || '{}');
+          approvedBy = detail.approvedBy || null;
+          approvedAt = detail.approvedAt || approval.occurredAt.toISOString();
+        } catch {
+          approvedAt = approval.occurredAt.toISOString();
+        }
+      }
+      return {
+        id: dwg.id,
+        drawingNumber: dwg.drawingNumber,
+        revisionCode: dwg.revisionCode,
+        status: dwg.status,
+        documentId: dwg.documentId,
+        documentFileName: dwg.document.fileName,
+        customerApproved: !!approval,
+        customerApprovedAt: approvedAt,
+        customerApprovedBy: approvedBy,
+      };
+    });
+
+    // Fetch customer change requests for this order
+    const ocrs = await this.prisma.orderChangeRequest.findMany({
+      where: {
+        workspaceId,
+        orderId: order.id,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const changeRequests: CustomerChangeRequestDTO[] = ocrs.map((r) => ({
+      id: r.id,
+      requestNumber: r.requestNumber,
+      changeType: r.changeType,
+      status: r.status,
+      reason: r.reason,
+      requestedChanges: JSON.parse(r.requestedChangesJson || '{}'),
+      submittedAt: r.submittedAt?.toISOString() || null,
+      approvedAt: r.approvedAt?.toISOString() || null,
+    }));
+
     return {
       id: order.id,
       orderNumber: order.orderNumber,
@@ -324,6 +396,8 @@ export class PortalRepository {
       documents,
       passports,
       milestones,
+      drawings,
+      changeRequests,
     };
   }
 

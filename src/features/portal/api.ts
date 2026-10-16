@@ -46,3 +46,33 @@ export async function downloadPortalDocument(
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+
+export async function approveCustomerDrawing(
+  orderId: string,
+  drawingRevisionId: string,
+  notes?: string
+): Promise<{ data: any }> {
+  return request(`/api/portal/orders/${orderId}/drawing-approval`, {
+    method: 'POST',
+    body: JSON.stringify({ drawingRevisionId, notes }),
+  });
+}
+
+export async function submitCustomerChangeRequest(input: {
+  orderId: string;
+  changeType: 'QUANTITY' | 'DATE' | 'BOM' | 'SPECIFICATION' | 'CANCEL';
+  reason: string;
+  requestedChanges: Record<string, unknown>;
+}): Promise<{ data: any }> {
+  return request('/api/portal/change-requests', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function approveCustomerChangeRequest(changeRequestId: string): Promise<{ data: any }> {
+  return request(`/api/portal/change-requests/${changeRequestId}/approve`, {
+    method: 'POST',
+  });
+}
