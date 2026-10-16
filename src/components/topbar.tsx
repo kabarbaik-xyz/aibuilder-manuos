@@ -7,6 +7,7 @@ import { Icon } from './icons';
 import { Button } from './ui/button';
 import { useWorkspaceNavigation } from './workspace-navigation-context';
 import { AccountMenu } from './account-menu';
+import { NotificationInbox } from './notification-inbox';
 
 interface TopbarProps {
   customBreadcrumb?: React.ReactNode;
@@ -55,6 +56,7 @@ export function Topbar({ customBreadcrumb, activeTitle }: TopbarProps = {}) {
           <kbd>⌘ K</kbd>
         </button>
         <span className="topbar-rule" />
+        {!isDemo && <NotificationInbox />}
         <span className="live-indicator">
           <span className="dot" />
           {isDemo ? 'Demo session' : 'Workspace'}

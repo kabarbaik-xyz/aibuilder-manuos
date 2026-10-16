@@ -28,6 +28,7 @@ describe('W02: Real Order Drafts and Reviewed Engineering Revisions', () => {
   let rawItemId: string;
   let fgItemId: string;
   let publishedWfVersionId: string;
+  let ungrantedFacilityId: string;
 
   beforeAll(async () => {
     testDb = await createTestDatabase();
@@ -118,6 +119,13 @@ describe('W02: Real Order Drafts and Reviewed Engineering Revisions', () => {
     );
     fgItemId = fg.data.id;
 
+    const restrictedFacility = await mastersService.createFacility(
+      owner.principal,
+      { code: 'FAC-RESTRICTED', name: 'Restricted Facility' },
+      'fac-restricted'
+    );
+    ungrantedFacilityId = restrictedFacility.data.id;
+
     // Publish a baseline workflow template & version for this order type
     const wfTpl = await workflowService.createTemplate(
       owner.principal,
@@ -191,6 +199,35 @@ describe('W02: Real Order Drafts and Reviewed Engineering Revisions', () => {
       'cmd-order-create-1'
     );
     expect(replayRes.data.id).toBe(res.data.id);
+  });
+
+  it('rejects creating an order for a facility outside the principal grant', async () => {
+    await expect(orderService.createOrderDraft(
+      sales.principal,
+      {
+        customerId: customerAId,
+        orderTypeId,
+        itemId: fgItemId,
+        orderedQuantity: 1,
+        requestedDate: '2026-11-01T00:00:00.000Z',
+        facilityId: ungrantedFacilityId,
+      },
+      'cmd-order-ungranted-facility'
+    )).rejects.toThrow(ForbiddenError);
+  });
+
+  it('rejects quantities with more precision than the item unit allows', async () => {
+    await expect(orderService.createOrderDraft(
+      sales.principal,
+      {
+        customerId: customerAId,
+        orderTypeId,
+        itemId: fgItemId,
+        orderedQuantity: 1.000001,
+        requestedDate: '2026-11-01T00:00:00.000Z',
+      },
+      'cmd-order-fractional-piece'
+    )).rejects.toThrow();
   });
 
   it('enforces customer scoping for customer portal users', async () => {
@@ -295,9 +332,9 @@ describe('W02: Real Order Drafts and Reviewed Engineering Revisions', () => {
             operationNodeKey: 'OP-10',
             itemId: rawItemId,
             inputUomId: uomKgId,
-            requirementQuantity: 1.25,
+            requirementQuantity: '1.250',
             outputBasis: 1,
-            allowancePercent: 5.0,
+            allowancePercent: '5.00',
           },
         ],
       },

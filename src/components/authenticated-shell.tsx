@@ -70,7 +70,7 @@ export function AuthenticatedShell({
           {children}
         </main>
         <footer className="workspace-footer">
-          <span>ManuOS · Manufacturing operations</span>
+          <span>ManuOS · Operasional manufaktur</span>
           
         </footer>
       </div>

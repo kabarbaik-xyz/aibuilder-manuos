@@ -29,3 +29,24 @@ export async function evaluateAssignment(input: EvaluateAssignmentInput): Promis
   });
   return res.data;
 }
+
+import { TaskDispatchReadinessDTO } from "@/server/modules/planning/contracts";
+
+export async function fetchTaskReadiness(taskId: string): Promise<TaskDispatchReadinessDTO> {
+  const res = await apiRequest<{ data: TaskDispatchReadinessDTO }>("/api/planning/tasks/" + taskId + "/readiness");
+  return res.data;
+}
+
+export async function cancelAssignment(assignmentId: string, reason?: string) {
+  return apiRequest("/api/planning/assignments/" + assignmentId + "/cancel", {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function rescheduleAssignment(assignmentId: string, input: { startAt: string; endAt: string; notes?: string }) {
+  return apiRequest("/api/planning/assignments/" + assignmentId + "/reschedule", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}

@@ -41,6 +41,7 @@ export const ADMIN_NAV_ITEMS: readonly MasterNavItem[] = [
   { title: 'Users', href: '/settings/users', icon: 'users', permissions: ['access.manage'] },
   { title: 'Roles', href: '/settings/roles', icon: 'shield', permissions: ['access.manage'] },
   { title: 'Permissions', href: '/settings/permissions', icon: 'checklist', permissions: ['access.manage'] },
+  { title: 'Integrations', href: '/settings/integrations', icon: 'network', permissions: ['access.manage', 'owner'] },
 ];
 
 export function getAdminNavigation(permissions: readonly string[], roles: readonly string[] = []) {
@@ -82,7 +83,7 @@ const FUNCTIONAL_NAVIGATION = [
   { id: 'quality', title: 'Quality', paths: ['/quality/inspections', '/settings/qc-checklists'] },
   { id: 'delivery', title: 'Delivery', paths: ['/delivery/shipments'] },
   { id: 'resources', title: 'Resources', paths: ['/settings/departments', '/settings/machines', '/settings/technicians', '/settings/calendars', '/settings/skills-certifications'] },
-  { id: 'access', title: 'Access', paths: ['/settings/users', '/settings/roles', '/settings/permissions'] },
+  { id: 'access', title: 'Access & Integrations', paths: ['/settings/users', '/settings/roles', '/settings/permissions', '/settings/integrations'] },
 ] as const;
 
 export function getFunctionalNavigation(permissions: readonly string[], roles: readonly string[] = [], customerId?: string | null): FunctionalNavigationGroup[] {

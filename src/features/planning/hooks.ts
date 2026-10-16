@@ -25,3 +25,41 @@ export function useEvaluateAssignment() {
     mutationFn: (input: EvaluateAssignmentInput) => evaluateAssignment(input),
   });
 }
+
+import {
+  fetchTaskReadiness,
+  cancelAssignment,
+  rescheduleAssignment,
+} from "./api";
+
+export function useTaskReadiness(taskId: string | null) {
+  return useQuery({
+    queryKey: ["planning", "task", taskId, "readiness"],
+    queryFn: () => fetchTaskReadiness(taskId!),
+    enabled: Boolean(taskId),
+  });
+}
+
+export function useCancelAssignment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ assignmentId, reason }: { assignmentId: string; reason?: string }) =>
+      cancelAssignment(assignmentId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planning"] });
+      queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
+  });
+}
+
+export function useRescheduleAssignment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ assignmentId, input }: { assignmentId: string; input: { startAt: string; endAt: string; notes?: string } }) =>
+      rescheduleAssignment(assignmentId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["planning"] });
+      queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
+  });
+}

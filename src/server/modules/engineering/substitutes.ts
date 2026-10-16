@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { db } from '@/server/db/client';
 import { randomUUID } from 'crypto';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
@@ -125,3 +126,5 @@ export class MaterialSubstituteService {
     });
   }
 }
+
+export const materialSubstituteService = new MaterialSubstituteService(db);

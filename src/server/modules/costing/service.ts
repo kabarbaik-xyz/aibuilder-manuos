@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { db } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { BadRequestError, NotFoundError } from '@/domain/errors';
@@ -155,3 +156,5 @@ export class JobCostingService {
     };
   }
 }
+
+export const jobCostingService = new JobCostingService(db);

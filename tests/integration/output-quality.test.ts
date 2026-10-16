@@ -235,6 +235,51 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
     ).rejects.toThrow(BadRequestError);
   });
 
+  it('caps final output by the matching order item line, not the aggregate order quantity', async () => {
+    const { alpha } = fixture;
+    const order = await fixture.db.order.findUniqueOrThrow({ where: { id: orderId } });
+    await fixture.db.orderLine.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        orderId,
+        lineNumber: 2,
+        itemId: alpha.masters.rawItemId,
+        uomId: alpha.masters.uomPcsId,
+        orderedAtoms: parseQuantity('90'),
+      },
+    });
+    await fixture.db.order.update({
+      where: { id: orderId },
+      data: { orderedAtoms: order.orderedAtoms + parseQuantity('90') },
+    });
+    const sourceTask = await fixture.db.task.findUniqueOrThrow({ where: { id: taskId } });
+    const secondTask = await fixture.db.task.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId: sourceTask.instanceId,
+        jobsheetId: sourceTask.jobsheetId,
+        nodeKey: 'OP-SECOND-FINAL',
+        status: 'READY',
+        targetItemId: alpha.masters.fgItemId,
+        targetAtoms: parseQuantity('10'),
+      },
+    });
+
+    await expect(
+      recordOutput(
+        fixture.db,
+        alpha.users.operator.principal,
+        {
+          taskId: secondTask.id,
+          outputAtoms: parseQuantity('11'),
+          destinationLocationId: alpha.masters.quarantineLocationId,
+          isFinal: true,
+        },
+        'key-output-item-line-over-cap'
+      )
+    ).rejects.toThrow(BadRequestError);
+  });
+
   it('finalizes QC inspection: 8 passed to FG and 2 rework held in quarantine', async () => {
     const { alpha } = fixture;
 

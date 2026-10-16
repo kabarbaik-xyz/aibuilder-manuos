@@ -3,6 +3,7 @@ import { db as defaultDb } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
 import { requirePermission, requireAnyPermission } from '@/server/auth/permissions';
 import { ConflictError, NotFoundError, BadRequestError, ForbiddenError } from '@/domain/errors';
+import { parseQuantity } from '@/domain/quantity';
 import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
 
@@ -144,18 +145,24 @@ export class OrderService {
         });
         if (!orderType) throw new BadRequestError(`OrderType '${input.orderTypeId}' not found or inactive`);
 
-        // Optional Facility check
-        if (input.facilityId) {
+        // Use the caller's assigned site by default; an explicitly selected site
+        // must also be present in the authenticated principal's grant set.
+        const facilityId = input.facilityId ?? principal.facilityId ?? null;
+        if (facilityId) {
           const facility = await tx.facility.findFirst({
-            where: { id: input.facilityId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+            where: { id: facilityId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
           });
-          if (!facility) throw new BadRequestError(`Facility '${input.facilityId}' not found or inactive`);
+          if (!facility) throw new BadRequestError(`Facility '${facilityId}' not found or inactive`);
+          if (!principal.facilityIds?.includes(facilityId)) {
+            throw new ForbiddenError(`Access to facility '${facilityId}' is not granted to this membership`);
+          }
         }
 
         // Determine primary item and lines
         const hasExplicitLines = input.lines && input.lines.length > 0;
         let primaryItemId = input.itemId;
         let totalOrderedAtoms = 0n;
+        const lineAtoms: bigint[] = [];
 
         if (hasExplicitLines) {
           if (!primaryItemId) {
@@ -164,17 +171,23 @@ export class OrderService {
           for (const line of input.lines!) {
             const item = await tx.item.findFirst({
               where: { id: line.itemId, workspaceId: principal.workspaceId, archivedAt: null },
+              include: { baseUom: true },
             });
             if (!item) throw new BadRequestError(`Item '${line.itemId}' not found or inactive`);
 
+            let precision = item.baseUom.precision;
             if (line.uomId) {
               const uom = await tx.uom.findFirst({
                 where: { id: line.uomId, workspaceId: principal.workspaceId, isActive: true },
+                select: { id: true, precision: true },
               });
               if (!uom) throw new BadRequestError(`UOM '${line.uomId}' not found or inactive`);
+              precision = uom.precision;
             }
 
-            totalOrderedAtoms += BigInt(Math.round(line.orderedQuantity * 1_000_000));
+            const atoms = parseQuantity(String(line.orderedQuantity), precision);
+            lineAtoms.push(atoms);
+            totalOrderedAtoms += atoms;
           }
         } else {
           if (!primaryItemId) {
@@ -182,11 +195,12 @@ export class OrderService {
           }
           const item = await tx.item.findFirst({
             where: { id: primaryItemId, workspaceId: principal.workspaceId, archivedAt: null },
+            include: { baseUom: true },
           });
           if (!item) throw new BadRequestError(`Item '${primaryItemId}' not found or inactive`);
 
           const qty = input.orderedQuantity ?? 1;
-          totalOrderedAtoms = BigInt(Math.round(qty * 1_000_000));
+          totalOrderedAtoms = parseQuantity(String(qty), item.baseUom.precision);
         }
 
         // Generate Order Number transaction-safely
@@ -208,7 +222,7 @@ export class OrderService {
             orderedAtoms: totalOrderedAtoms,
             requestedDate,
             promisedDate,
-            facilityId: input.facilityId,
+            facilityId,
             deliveryAddress: input.deliveryAddress,
             contractReference: input.contractReference,
             status: 'DRAFT',
@@ -224,7 +238,7 @@ export class OrderService {
         if (hasExplicitLines) {
           for (let i = 0; i < input.lines!.length; i++) {
             const line = input.lines![i];
-            const lineAtoms = BigInt(Math.round(line.orderedQuantity * 1_000_000));
+            const atoms = lineAtoms[i];
             const lineReqDate = line.requestedDate ? new Date(line.requestedDate) : requestedDate;
             const linePromDate = line.promisedDate ? new Date(line.promisedDate) : promisedDate;
 
@@ -234,8 +248,8 @@ export class OrderService {
                 orderId: order.id,
                 lineNumber: i + 1,
                 itemId: line.itemId,
-                uomId: line.uomId,
-                orderedAtoms: lineAtoms,
+                uomId: line.uomId ?? undefined,
+                orderedAtoms: atoms,
                 unitPriceCents: line.unitPriceCents ? BigInt(line.unitPriceCents) : null,
                 requestedDate: lineReqDate,
                 promisedDate: linePromDate,
@@ -280,16 +294,23 @@ export class OrderService {
           orderBy: { versionNumber: 'desc' },
         });
 
-        await tx.engineeringRevision.create({
-          data: {
-            workspaceId: principal.workspaceId,
-            orderId: order.id,
-            revisionNumber: 1,
-            status: 'DRAFT',
-            workflowVersionId: publishedWf?.id || null,
-            outputBasisAtoms: BigInt(1_000_000), // 1 unit output basis
-          },
+        const engineeringLines = await tx.orderLine.findMany({
+          where: { workspaceId: principal.workspaceId, orderId: order.id },
+          orderBy: { lineNumber: 'asc' },
         });
+        for (const [index, line] of engineeringLines.entries()) {
+          await tx.engineeringRevision.create({
+            data: {
+              workspaceId: principal.workspaceId,
+              orderId: order.id,
+              orderLineId: line.id,
+              revisionNumber: index + 1,
+              status: 'DRAFT',
+              workflowVersionId: publishedWf?.id || null,
+              outputBasisAtoms: BigInt(1_000_000), // 1 unit output basis
+            },
+          });
+        }
 
         const fullOrder = await tx.order.findUnique({
           where: { id: order.id },
@@ -344,20 +365,26 @@ export class OrderService {
         });
         if (!order) throw new NotFoundError(`Order '${orderId}' not found`);
 
-        if (order.status === 'CANCELLED' || order.status === 'DELIVERED') {
-          throw new BadRequestError(`Cannot add order line to order in status '${order.status}'`);
+        if (order.status !== 'DRAFT' || order.confirmedAt) {
+          throw new BadRequestError(
+            `Cannot add order lines after confirmation or outside DRAFT status (current status '${order.status}')`
+          );
         }
 
         const item = await tx.item.findFirst({
           where: { id: input.itemId, workspaceId: principal.workspaceId, archivedAt: null },
+          include: { baseUom: true },
         });
         if (!item) throw new BadRequestError(`Item '${input.itemId}' not found or inactive`);
 
+        let precision = item.baseUom.precision;
         if (input.uomId) {
           const uom = await tx.uom.findFirst({
             where: { id: input.uomId, workspaceId: principal.workspaceId, isActive: true },
+            select: { id: true, precision: true },
           });
           if (!uom) throw new BadRequestError(`UOM '${input.uomId}' not found or inactive`);
+          precision = uom.precision;
         }
 
         const maxLine = await tx.orderLine.findFirst({
@@ -365,7 +392,7 @@ export class OrderService {
           orderBy: { lineNumber: 'desc' },
         });
         const nextLineNumber = (maxLine?.lineNumber ?? 0) + 1;
-        const lineAtoms = BigInt(Math.round(input.orderedQuantity * 1_000_000));
+        const lineAtoms = parseQuantity(String(input.orderedQuantity), precision);
 
         const orderLine = await tx.orderLine.create({
           data: {
@@ -383,6 +410,22 @@ export class OrderService {
           include: {
             item: true,
             uom: true,
+          },
+        });
+
+        const latestRevision = await tx.engineeringRevision.findFirst({
+          where: { workspaceId: principal.workspaceId, orderId: order.id },
+          orderBy: { revisionNumber: 'desc' },
+          select: { revisionNumber: true },
+        });
+        await tx.engineeringRevision.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            orderId: order.id,
+            orderLineId: orderLine.id,
+            revisionNumber: (latestRevision?.revisionNumber ?? 0) + 1,
+            status: 'DRAFT',
+            outputBasisAtoms: 1_000_000n,
           },
         });
 
@@ -428,6 +471,9 @@ export class OrderService {
 
         if (order.status === 'CANCELLED') {
           throw new BadRequestError(`Cannot confirm order '${orderId}' in CANCELLED status`);
+        }
+        if ((order.status !== 'DRAFT' && order.status !== 'READY') || order.confirmedAt !== null) {
+          throw new BadRequestError(`Only an unconfirmed DRAFT or READY order can be confirmed`);
         }
 
         const updated = await tx.order.update({
@@ -480,15 +526,15 @@ export class OrderService {
       handler: async (tx) => {
         const line = await tx.orderLine.findFirst({
           where: { id: input.orderLineId, workspaceId: principal.workspaceId },
-          include: { order: true },
+          include: { order: true, uom: true },
         });
         if (!line) throw new NotFoundError(`Order line '${input.orderLineId}' not found`);
 
-        if (line.order.status === 'CANCELLED') {
-          throw new BadRequestError(`Cannot allocate job for order in CANCELLED status`);
+        if (line.order.status !== 'DRAFT' || line.order.confirmedAt !== null) {
+          throw new BadRequestError(`Jobs can only be allocated while the order is an unconfirmed draft`);
         }
 
-        const targetAtoms = BigInt(Math.round(input.targetQuantity * 1_000_000));
+        const targetAtoms = parseQuantity(String(input.targetQuantity), line.uom?.precision ?? 6);
         const remainingAtoms = line.orderedAtoms - line.allocatedAtoms;
 
         if (targetAtoms > remainingAtoms) {
@@ -507,16 +553,27 @@ export class OrderService {
 
         if (input.workflowVersionId) {
           const wf = await tx.workflowVersion.findFirst({
-            where: { id: input.workflowVersionId, workspaceId: principal.workspaceId },
+            where: {
+              id: input.workflowVersionId,
+              workspaceId: principal.workspaceId,
+              status: 'PUBLISHED',
+              orderTypeId: line.order.orderTypeId,
+            },
           });
-          if (!wf) throw new BadRequestError(`Workflow version '${input.workflowVersionId}' not found`);
+          if (!wf) throw new BadRequestError(`Workflow version '${input.workflowVersionId}' is not published for this order type`);
         }
 
         if (input.engineeringRevisionId) {
           const eng = await tx.engineeringRevision.findFirst({
-            where: { id: input.engineeringRevisionId, workspaceId: principal.workspaceId },
+            where: {
+              id: input.engineeringRevisionId,
+              workspaceId: principal.workspaceId,
+              orderId: line.orderId,
+              orderLineId: line.id,
+              status: 'APPROVED',
+            },
           });
-          if (!eng) throw new BadRequestError(`Engineering revision '${input.engineeringRevisionId}' not found`);
+          if (!eng) throw new BadRequestError(`Engineering revision '${input.engineeringRevisionId}' is not an approved revision for this order line`);
         }
 
         // Generate MO Number transaction-safely
@@ -535,7 +592,7 @@ export class OrderService {
             workflowVersionId: input.workflowVersionId ?? null,
             engineeringRevisionId: input.engineeringRevisionId ?? null,
             targetAtoms,
-            status: 'RELEASED',
+            status: 'DRAFT',
           },
         });
 

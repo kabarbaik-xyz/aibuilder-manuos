@@ -11,6 +11,7 @@ export interface OrderDto {
   orderedAtoms: string | number | bigint;
   requestedDate: string;
   promisedDate: string | null;
+  confirmedAt?: string | null;
   status: string;
   customerAcknowledged?: boolean;
   customerAcknowledgedAt?: string | null;
@@ -20,6 +21,16 @@ export interface OrderDto {
   customer?: { id: string; code: string; name: string };
   orderType?: { id: string; code: string; name: string };
   item?: { id: string; code: string; name: string; baseUom?: { code: string; name: string } };
+  lines?: Array<{
+    id: string;
+    lineNumber: number;
+    itemId: string;
+    orderedAtoms: string | number | bigint;
+    allocatedAtoms: string | number | bigint;
+    shippedAtoms: string | number | bigint;
+    item?: { id: string; code: string; name: string; baseUom?: { code: string; name: string } };
+    manufacturingOrders?: Array<{ id: string; moNumber: string; targetAtoms: string | number | bigint; status: string }>;
+  }>;
   questions?: Array<{
     id: string;
     question: string;
@@ -37,6 +48,7 @@ export interface OrderDto {
     id: string;
     revisionNumber: number;
     status: string;
+    orderLineId?: string | null;
     outputBasisAtoms?: string | number | bigint;
     workflowVersionId: string | null;
     bomLines?: any[];
@@ -104,6 +116,48 @@ export const ordersApi = {
     return apiRequest<{ data: any }>(`/api/orders/${orderId}/release`, {
       method: 'POST',
       body: JSON.stringify({}),
+    });
+  },
+
+  confirmOrder: async (orderId: string) => {
+    return apiRequest<{ data: OrderDto }>(`/api/orders/${orderId}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+};
+
+export interface OrderCostSummary {
+  orderId: string;
+  currency: string;
+  totalStandardCents: string;
+  totalActualCents: string;
+  totalVarianceCents: string;
+  isFavorable: boolean;
+  categories: Array<{
+    category: "MATERIAL" | "LABOR" | "MACHINE" | "OUTSOURCED" | "SCRAP";
+    standardCents: string;
+    actualCents: string;
+    varianceCents: string;
+    isFavorable: boolean;
+  }>;
+}
+
+export const orderCostingApi = {
+  getCostSummary: async (orderId: string): Promise<OrderCostSummary> => {
+    const res = await apiRequest<{ data: OrderCostSummary }>("/api/orders/" + orderId + "/costing");
+    return res.data;
+  },
+  recordCost: async (orderId: string, input: { costCategory: string; costType: string; amountCents: number | string; notes?: string }) => {
+    return apiRequest("/api/orders/" + orderId + "/costing", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  createChangeRequest: async (orderId: string, input: { changeType: string; reason: string; requestedChanges: any }) => {
+    return apiRequest("/api/orders/" + orderId + "/change-requests", {
+      method: "POST",
+      body: JSON.stringify(input),
     });
   },
 };

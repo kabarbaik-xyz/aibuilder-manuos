@@ -60,3 +60,47 @@ export async function recordTaskOutput(params: RecordOutputParams) {
     body: JSON.stringify(stringifyQuantities(body)),
   });
 }
+
+import { TaskIssueDTO, ScanResultDTO } from "@/server/modules/execution/contracts";
+
+export async function fetchTaskIssues(taskId: string): Promise<TaskIssueDTO[]> {
+  const res = await apiRequest<{ data: TaskIssueDTO[] }>("/api/execution/tasks/" + taskId + "/issues");
+  return res.data;
+}
+
+export async function createTaskIssue(
+  taskId: string,
+  input: {
+    title: string;
+    description?: string;
+    severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+    issueReasonId?: string;
+  }
+) {
+  return apiRequest("/api/execution/tasks/" + taskId + "/issues", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function resolveTaskIssue(issueId: string, notes?: string) {
+  return apiRequest("/api/execution/issues/" + issueId + "/resolve", {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function reopenTaskIssue(issueId: string, notes?: string) {
+  return apiRequest("/api/execution/issues/" + issueId + "/reopen", {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function scanBarcode(code: string): Promise<ScanResultDTO> {
+  const res = await apiRequest<{ data: ScanResultDTO }>("/api/execution/scan", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+  return res.data;
+}

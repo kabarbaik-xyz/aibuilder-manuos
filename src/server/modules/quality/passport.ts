@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { db as defaultDb } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
-import { NotFoundError, ForbiddenError } from '@/domain/errors';
+import { NotFoundError, ForbiddenError, BadRequestError } from '@/domain/errors';
 import { formatQuantity } from '@/domain/quantity';
 
 export interface PassportMaterialInput {
@@ -364,34 +364,49 @@ export class PassportService {
   ): Promise<{ id: string; serialNumber: string; digestSha256: string }> {
     requireAnyPermission(principal, ['quality.inspect', 'delivery.dispatch', 'admin.access']);
 
-    const digest = crypto
-      .createHash('sha256')
-      .update(`${principal.workspaceId}:${input.serialNumber}:${Date.now()}`)
-      .digest('hex');
+    const digestSource = JSON.stringify({
+      schemaVersion: 1,
+      workspaceId: principal.workspaceId,
+      serialNumber: input.serialNumber,
+      orderId: input.orderId ?? null,
+      itemId: input.itemId,
+      lotId: input.lotId ?? null,
+    });
+    const digest = crypto.createHash('sha256').update(digestSource).digest('hex');
 
-    const passport = await this.prisma.passport.upsert({
-      where: {
-        workspaceId_serialNumber: {
+    const passport = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.passport.findUnique({
+        where: {
+          workspaceId_serialNumber: {
+            workspaceId: principal.workspaceId,
+            serialNumber: input.serialNumber,
+          },
+        },
+      });
+      if (existing && existing.status !== 'DRAFT') {
+        throw new BadRequestError(`Passport '${input.serialNumber}' has already been released or revoked`);
+      }
+
+      const data = {
+        orderId: input.orderId,
+        itemId: input.itemId,
+        lotId: input.lotId,
+        status: 'RELEASED',
+        digestSha256: digest,
+      };
+      if (existing) {
+        return tx.passport.update({
+          where: { workspaceId_id: { workspaceId: principal.workspaceId, id: existing.id } },
+          data,
+        });
+      }
+      return tx.passport.create({
+        data: {
           workspaceId: principal.workspaceId,
           serialNumber: input.serialNumber,
+          ...data,
         },
-      },
-      create: {
-        workspaceId: principal.workspaceId,
-        serialNumber: input.serialNumber,
-        orderId: input.orderId,
-        itemId: input.itemId,
-        lotId: input.lotId,
-        status: 'RELEASED',
-        digestSha256: digest,
-      },
-      update: {
-        orderId: input.orderId,
-        itemId: input.itemId,
-        lotId: input.lotId,
-        status: 'RELEASED',
-        digestSha256: digest,
-      },
+      });
     });
 
     return {

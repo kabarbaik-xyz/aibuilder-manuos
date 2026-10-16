@@ -1,12 +1,18 @@
 import { z } from 'zod';
 
+const positiveQuantitySchema = z.union([
+  z.number().positive(),
+  z.string().max(80).regex(/^\d+(\.\d+)?$/).refine((value) => /[1-9]/.test(value), 'Quantity must be greater than zero'),
+]);
+
 export const bomLineDraftSchema = z.object({
   operationNodeKey: z.string().min(1).max(50),
   itemId: z.string().min(1),
   inputUomId: z.string().min(1),
-  requirementQuantity: z.number().positive(),
-  outputBasis: z.number().positive().default(1),
-  allowancePercent: z.number().min(0).max(100).default(0.0),
+  requirementQuantity: positiveQuantitySchema,
+  outputBasis: positiveQuantitySchema.default(1),
+  allowancePercent: z.union([z.number().min(0).max(100), z.string().regex(/^\d+(\.\d+)?$/)]).default(0),
+  allowanceBps: z.number().int().min(0).max(10_000).optional(),
 });
 
 export const saveEngineeringDraftSchema = z.object({
@@ -15,7 +21,7 @@ export const saveEngineeringDraftSchema = z.object({
   drawingRevisionId: z.string().optional(),
   workflowVersionId: z.string().min(1).optional(),
   specs: z.record(z.any()).default({}),
-  outputBasis: z.number().positive().default(1),
+  outputBasis: positiveQuantitySchema.default(1),
   bomLines: z.array(bomLineDraftSchema).default([]),
 });
 

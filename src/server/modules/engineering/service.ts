@@ -5,6 +5,7 @@ import { requirePermission } from '@/server/auth/permissions';
 import { ConflictError, NotFoundError, BadRequestError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
+import { parseQuantity } from '@/domain/quantity';
 
 export class EngineeringService {
   constructor(private readonly prisma: PrismaClient = defaultDb) {}
@@ -153,11 +154,23 @@ export class EngineeringService {
           where: { workspaceId: principal.workspaceId, engineeringRevisionId: revisionId },
         });
 
-        const outputBasisAtoms = BigInt(Math.round((input.outputBasis || 1) * 1_000_000));
+        const outputBasisAtoms = parseQuantity(String(input.outputBasis || 1));
 
         for (const line of input.bomLines || []) {
-          const requirementAtoms = BigInt(Math.round(line.requirementQuantity * 1_000_000));
-          const lineBasisAtoms = BigInt(Math.round((line.outputBasis || 1) * 1_000_000));
+          const uom = await tx.uom.findFirst({
+            where: { id: line.inputUomId, workspaceId: principal.workspaceId, isActive: true },
+            select: { precision: true },
+          });
+          if (!uom) throw new BadRequestError(`UOM '${line.inputUomId}' not found or inactive`);
+          const requirementAtoms = parseQuantity(String(line.requirementQuantity), uom.precision);
+          const lineBasisAtoms = parseQuantity(String(line.outputBasis || 1));
+          const allowanceValue = String(line.allowancePercent ?? 0);
+          const allowanceAtoms = parseQuantity(allowanceValue, 2);
+          const legacyAllowanceBps = allowanceAtoms / 10_000n;
+          if (allowanceAtoms % 10_000n !== 0n) {
+            throw new BadRequestError('Allowance percent supports at most two decimal places (integer basis points).');
+          }
+          const allowanceBps = line.allowanceBps ?? Number(legacyAllowanceBps);
 
           await tx.bomLine.create({
             data: {
@@ -168,8 +181,8 @@ export class EngineeringService {
               inputUomId: line.inputUomId,
               requirementAtoms,
               outputBasisAtoms: lineBasisAtoms,
-              allowancePercent: line.allowancePercent || 0.0,
-              allowanceBps: Math.round((line.allowancePercent || 0.0) * 100),
+              allowancePercent: allowanceBps / 100,
+              allowanceBps,
             },
           });
         }

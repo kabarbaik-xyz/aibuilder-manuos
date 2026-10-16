@@ -11,6 +11,17 @@ import { useWorkflowTemplates } from '@/features/workflows/hooks';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { FormErrorSummary } from '@/components/ui/form-errors';
+import { formatQuantity } from '@/domain/quantity';
+
+function formatAllowancePercent(value: unknown, allowanceBps: unknown) {
+  if (allowanceBps !== null && allowanceBps !== undefined) {
+    const basisPoints = BigInt(allowanceBps as string | number | bigint);
+    const whole = basisPoints / 100n;
+    const fraction = (basisPoints % 100n).toString().padStart(2, '0').replace(/0+$/, '');
+    return fraction ? `${whole}.${fraction}` : whole.toString();
+  }
+  return String(value ?? '0');
+}
 
 interface ReviewEditorProps {
   orderId: string;
@@ -44,17 +55,17 @@ export function ReviewEditor({ orderId, revision }: ReviewEditorProps) {
       operationNodeKey: b.operationNodeKey,
       itemId: b.itemId,
       inputUomId: b.inputUomId,
-      requirementQuantity: Number(b.requirementAtoms) / 1_000_000,
+      requirementQuantity: formatQuantity(BigInt(b.requirementAtoms)),
       outputBasis: 1,
-      allowancePercent: b.allowancePercent || 0.0,
+      allowancePercent: formatAllowancePercent(b.allowancePercent, b.allowanceBps),
     }));
   });
 
   const [newLineNode, setNewLineNode] = useState('OP-10');
   const [newLineItem, setNewLineItem] = useState('');
   const [newLineUom, setNewLineUom] = useState('');
-  const [newLineQty, setNewLineQty] = useState(1);
-  const [newLineAllowance, setNewLineAllowance] = useState(0);
+  const [newLineQty, setNewLineQty] = useState('1');
+  const [newLineAllowance, setNewLineAllowance] = useState('0');
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -78,15 +89,15 @@ export function ReviewEditor({ orderId, revision }: ReviewEditorProps) {
         operationNodeKey: newLineNode,
         itemId: newLineItem,
         inputUomId: newLineUom,
-        requirementQuantity: Number(newLineQty),
+        requirementQuantity: newLineQty,
         outputBasis: 1,
-        allowancePercent: Number(newLineAllowance) || 0.0,
+        allowancePercent: newLineAllowance,
       },
     ]);
 
     setNewLineItem('');
-    setNewLineQty(1);
-    setNewLineAllowance(0);
+    setNewLineQty('1');
+    setNewLineAllowance('0');
   };
 
   const handleRemoveBomLine = (idx: number) => {
@@ -318,7 +329,7 @@ export function ReviewEditor({ orderId, revision }: ReviewEditorProps) {
 
         {/* Add BOM Line form */}
         {!isReadOnly && (
-          <form onSubmit={handleAddBomLine} className="mt-4 border-t pt-4 grid grid-cols-1 md:grid-cols-6 gap-3 items-end border-line">
+          <form onSubmit={handleAddBomLine} className="mt-4 border-t pt-4 grid grid-cols-1 md:grid-cols-7 gap-3 items-end border-line">
             <div>
               <label className="text-xs font-medium text-muted">Operation Node
               <Input
@@ -372,7 +383,21 @@ export function ReviewEditor({ orderId, revision }: ReviewEditorProps) {
                 step="any"
                 min="0.0001"
                 value={newLineQty}
-                onChange={(e) => setNewLineQty(Number(e.target.value))}
+                onChange={(e) => setNewLineQty(e.target.value)}
+                className="w-full rounded border px-2 py-1.5 text-xs border-line"
+                required
+              /></label>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted">Allowance %
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                value={newLineAllowance}
+                onChange={(e) => setNewLineAllowance(e.target.value)}
                 className="w-full rounded border px-2 py-1.5 text-xs border-line"
                 required
               /></label>

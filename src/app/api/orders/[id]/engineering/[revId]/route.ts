@@ -10,9 +10,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string; revId: string }> }
 ) {
   try {
-    const { revId } = await params;
+    const { id, revId } = await params;
     const principal = await requirePrincipal(req);
     const revision = await engineeringService.getEngineeringRevision(principal, revId);
+    if (revision.orderId !== id) return jsonResponse({ error: 'Engineering revision does not belong to this order' }, { status: 404 });
     return jsonResponse({ data: revision });
   } catch (err) {
     return formatErrorResponse(err);
@@ -24,8 +25,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; revId: string }> }
 ) {
   try {
-    const { revId } = await params;
+    const { id, revId } = await params;
     const principal = await requirePrincipal(req);
+    const revision = await engineeringService.getEngineeringRevision(principal, revId);
+    if (revision.orderId !== id) return jsonResponse({ error: 'Engineering revision does not belong to this order' }, { status: 404 });
     const idempotencyKey = parseIdempotencyKey(req);
     const body = await parseJsonBody(req, saveEngineeringDraftSchema);
     const result = await engineeringService.saveEngineeringDraft(principal, revId, body, idempotencyKey);

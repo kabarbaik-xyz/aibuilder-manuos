@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCreateOrderDraft } from '../hooks';
@@ -29,8 +29,8 @@ export function OrderForm() {
   const items = itemsQuery.data?.data || [];
   const [customerId, setCustomerId] = useState('');
   const [orderTypeId, setOrderTypeId] = useState('');
-  const [itemId, setItemId] = useState('');
-  const [quantity, setQuantity] = useState('');
+  const lineSequence = useRef(1);
+  const [lines, setLines] = useState([{ key: 1, itemId: '', quantity: '' }]);
   const [requestedDate, setRequestedDate] = useState('');
   const [promisedDate, setPromisedDate] = useState('');
   const [rfqText, setRfqText] = useState('');
@@ -45,10 +45,19 @@ export function OrderForm() {
     if (pending || !ready) return;
     setError(null);
     if (!requestedDate) { setError(new Error('Choose the requested delivery date.')); return; }
-    createOrder.mutate({ customerId, orderTypeId, itemId, orderedQuantity: Number(quantity), requestedDate: new Date(requestedDate).toISOString(), promisedDate: promisedDate ? new Date(promisedDate).toISOString() : null, rfqText, rfqSourceType }, {
+    if (lines.some(line => !line.itemId || !line.quantity || !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0)) {
+      setError(new Error('Set an item and a positive quantity for every order line.'));
+      return;
+    }
+    createOrder.mutate({ customerId, orderTypeId, itemId: lines[0].itemId, lines: lines.map(line => ({ itemId: line.itemId, orderedQuantity: line.quantity })), requestedDate: new Date(requestedDate).toISOString(), promisedDate: promisedDate ? new Date(promisedDate).toISOString() : null, rfqText, rfqSourceType }, {
       onSuccess: response => router.push(`/orders/${response.data.id}`),
       onError: err => setError(err),
     });
+  }
+
+  function addLine() {
+    const key = ++lineSequence.current;
+    setLines(current => [...current, { key, itemId: '', quantity: '' }]);
   }
 
   return <div className="page-stack order-intake">
@@ -59,9 +68,14 @@ export function OrderForm() {
       <section className="form-section page-stack"><div><h2>Order details</h2><p className="field-help">Fields marked * are required.</p></div><div className="form-grid">
         <FormField id={`${prefix}-customer`} label="Customer" required><Select value={customerId} onChange={e => setCustomerId(e.target.value)} disabled={!ready || pending}><option value="">Select customer…</option>{customers.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}</Select></FormField>
         <FormField id={`${prefix}-type`} label="Order type" required><Select value={orderTypeId} onChange={e => setOrderTypeId(e.target.value)} disabled={!ready || pending}><option value="">Select order type…</option>{orderTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></FormField>
-        <FormField id={`${prefix}-item`} label="Target item" required><Select value={itemId} onChange={e => setItemId(e.target.value)} disabled={!ready || pending}><option value="">Select item…</option>{items.map(i => <option key={i.id} value={i.id}>{i.code} · {i.name}</option>)}</Select></FormField>
-        <FormField id={`${prefix}-quantity`} label="Ordered quantity" required><Input type="number" min="0.000001" step="any" value={quantity} onChange={e => setQuantity(e.target.value)} disabled={pending} placeholder="Enter quantity" /></FormField>
       </div></section>
+      <section className="form-section page-stack"><div className="flex items-start justify-between gap-4"><div><h2>Order lines</h2><p className="field-help">Each item is tracked and released as its own manufacturing job.</p></div><Button icon="plus" onClick={addLine} disabled={!ready || pending}>Add item</Button></div>
+        {lines.map((line, index) => <div className="form-grid order-line-row" key={line.key}>
+          <FormField id={`${prefix}-line-${line.key}-item`} label={`Item ${index + 1}`} required><Select value={line.itemId} onChange={event => setLines(current => current.map(row => row.key === line.key ? { ...row, itemId: event.target.value } : row))} disabled={!ready || pending}><option value="">Select item…</option>{items.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</Select></FormField>
+          <FormField id={`${prefix}-line-${line.key}-quantity`} label="Ordered quantity" required><Input type="number" min="0.000001" step="any" value={line.quantity} onChange={event => setLines(current => current.map(row => row.key === line.key ? { ...row, quantity: event.target.value } : row))} disabled={pending} placeholder="Enter quantity" /></FormField>
+          {lines.length > 1 && <Button variant="icon" icon="close" aria-label={`Remove item ${index + 1}`} title="Remove line" disabled={pending} onClick={() => setLines(current => current.filter(row => row.key !== line.key))} />}
+        </div>)}
+      </section>
       <section className="form-section page-stack"><div><h2>Delivery dates</h2><p className="field-help">Keep the customer's request separate from an agreed delivery commitment.</p></div><div className="form-grid">
         <FormField id={`${prefix}-requested`} label="Requested delivery date" required><DatePicker value={requestedDate} onChange={setRequestedDate} required disabled={pending} /></FormField>
         <FormField id={`${prefix}-promised`} label="Committed delivery date" help="Optional. Set only when a delivery date has been agreed."><DatePicker value={promisedDate} onChange={setPromisedDate} clearable disabled={pending} /></FormField>

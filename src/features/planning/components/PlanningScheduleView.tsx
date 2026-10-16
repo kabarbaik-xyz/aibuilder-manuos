@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import React, { useState } from 'react';
 import { useTechnicians, useMachines } from '@/features/masters/hooks';
-import { useAssignTask } from '../hooks';
+import { useAssignTask, useTaskReadiness, useEvaluateAssignment } from '../hooks';
+import type { AssignmentEvaluationResult } from '@/server/modules/planning/contracts';
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -30,6 +31,22 @@ export function PlanningScheduleView() {
   const [technicianId, setTechnicianId] = useState('');
   const [machineId, setMachineId] = useState('');
   const [assignError, setAssignError] = useState<string | null>(null);
+  const { data: readiness, isLoading: isReadinessLoading } = useTaskReadiness(selectedTaskId);
+  const evaluateMutation = useEvaluateAssignment();
+  const [evaluation, setEvaluation] = useState<AssignmentEvaluationResult | null>(null);
+
+  // Trigger qualification evaluation on resource selection
+  React.useEffect(() => {
+    if (!selectedTaskId || (!technicianId && !machineId)) {
+      setEvaluation(null);
+      return;
+    }
+    evaluateMutation.mutateAsync({
+      taskId: selectedTaskId,
+      technicianId: technicianId.trim() || null,
+      machineId: machineId.trim() || null,
+    }).then(res => setEvaluation(res)).catch(() => setEvaluation(null));
+  }, [selectedTaskId, technicianId, machineId]);
 
   if (isLoading) {
     return (
@@ -216,6 +233,32 @@ export function PlanningScheduleView() {
             
 
             <form onSubmit={handleAssignSubmit} className="space-y-4">
+              {/* Readiness summary */}
+              {isReadinessLoading ? (
+                <div className="p-3 bg-surface border border-line rounded text-xs text-muted">
+                  Checking stage predecessors & inventory readiness...
+                </div>
+              ) : readiness ? (
+                <div className="p-3 bg-surface-muted border border-line rounded space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted uppercase tracking-wider">Dispatch Readiness</span>
+                    <Badge variant={readiness.readinessStatus === "READY" ? "success" : readiness.readinessStatus === "WAITING_PREDECESSOR" ? "warning" : readiness.readinessStatus === "BLOCKED_MATERIAL" ? "danger" : "blue"}>
+                      {readiness.readinessStatus}
+                    </Badge>
+                  </div>
+                  {readiness.uncompletedPredecessors.length > 0 && (
+                    <div className="text-xs text-warning">
+                      <strong>Uncompleted Predecessors:</strong> {readiness.uncompletedPredecessors.map(p => p.nodeKey + " (" + p.status + ")").join(", ")}
+                    </div>
+                  )}
+                  {readiness.uncoveredDemands.length > 0 && (
+                    <div className="text-xs text-danger">
+                      <strong>Unallocated Materials:</strong> {readiness.uncoveredDemands.length} required item demand(s) lack allocated warehouse inventory.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
               <div>
                 <label className="block text-xs font-medium text-muted mb-1">
                   Task ID
@@ -241,6 +284,41 @@ export function PlanningScheduleView() {
                 
                 <Select value={machineId} onChange={e => setMachineId(e.target.value)} disabled={machinesQuery.isPending || !!machinesQuery.error}><option value="">No machine assigned</option>{machinesQuery.data?.data.map(resource => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</Select></label>
               </div>
+
+              {/* Qualification Evaluation Feedback */}
+              {evaluation && (
+                <div className="space-y-2">
+                  {evaluation.isEligible ? (
+                    <div className="p-2.5 bg-success-soft border border-line rounded text-xs text-success flex items-center gap-2">
+                      <Icon name="check" className="w-4 h-4 flex-shrink-0" />
+                      <span>Technician is fully certified and machine capability matches stage specification.</span>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-danger-soft border border-line rounded text-xs text-danger space-y-1">
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <Icon name="alert" className="w-4 h-4 flex-shrink-0" />
+                        <span>Resource Allocation Violations:</span>
+                      </div>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {evaluation.violations.map((v, i) => (
+                          <li key={i}>{v}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {evaluation.warnings && evaluation.warnings.length > 0 && (
+                    <div className="p-2.5 bg-warning-soft border border-line rounded text-xs text-warning space-y-1">
+                      <div className="font-semibold">Schedule Advisory:</div>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {evaluation.warnings.map((w, i) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {assignError && (
                 <div className="p-3 bg-danger-soft border border-line rounded text-xs text-danger whitespace-pre-wrap">

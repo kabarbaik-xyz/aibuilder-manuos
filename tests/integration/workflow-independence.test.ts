@@ -391,6 +391,7 @@ describe('W06: Workflow Independence, Multi-Type Proof & Restart Persistence', (
       },
       'cmd-ord-d'
     );
+    await orderService.confirmOrder(ownerEngineer.principal, orderD.data.id, 'cmd-confirm-d');
     await expect(
       releaseOrder(ownerEngineer.principal, orderD.data.id, 'cmd-rel-d-fail', testDb.db)
     ).rejects.toThrow(/has no APPROVED engineering revision/);

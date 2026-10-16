@@ -11,8 +11,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string; revId: string }> }
 ) {
   try {
-    const { revId } = await params;
+    const { id, revId } = await params;
     const principal = await requirePrincipal(req);
+    const revision = await engineeringService.getEngineeringRevision(principal, revId);
+    if (revision.orderId !== id) return jsonResponse({ error: 'Engineering revision does not belong to this order' }, { status: 404 });
     const idempotencyKey = parseIdempotencyKey(req);
     const body = await parseJsonBody(req, engineeringActionSchema);
 

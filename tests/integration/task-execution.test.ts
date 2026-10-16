@@ -7,6 +7,7 @@ import { EngineeringService } from '@/server/modules/engineering/service';
 import { PlanningService } from '@/server/modules/planning/service';
 import { ExecutionService } from '@/server/modules/execution/service';
 import { InventoryService } from '@/server/modules/inventory/service';
+import { MastersService } from '@/server/modules/masters/service';
 import { BadRequestError, ConflictError, ForbiddenError } from '@/domain/errors';
 
 describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
@@ -34,6 +35,19 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
     inventoryService = new InventoryService(fixture.db);
 
     const { alpha } = fixture;
+    const mastersService = new MastersService(fixture.db);
+    await mastersService.publishRosterIntervals(alpha.users.owner.principal, {
+      intervals: [
+        ...[
+          ['2026-10-16T08:00:00.000Z', '2026-10-16T10:00:00.000Z'],
+          ['2026-10-16T13:00:00.000Z', '2026-10-16T16:00:00.000Z'],
+          ['2030-01-02T08:00:00.000Z', '2030-01-02T09:00:00.000Z'],
+        ].flatMap(([startAt, endAt]) => [
+          { technicianId: alpha.masters.technicianId, intervalType: 'SHIFT' as const, startAt, endAt },
+          { machineId: alpha.masters.machineId, intervalType: 'SHIFT' as const, startAt, endAt },
+        ]),
+      ],
+    }, 'idemp-task-execution-roster');
 
     // 1. Create Workflow Template with OP-10 (machining) and QC-20 (inspection)
     const wfTmpl = await workflowService.createTemplate(
@@ -165,6 +179,8 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
       taskId: op10TaskId,
       technicianId: alpha.masters.technicianId,
       machineId: alpha.masters.machineId,
+      scheduledStartAt: '2026-10-16T08:00:00.000Z',
+      scheduledEndAt: '2026-10-16T10:00:00.000Z',
     });
     expect(res2.isEligible).toBe(true);
     expect(res2.violations).toHaveLength(0);

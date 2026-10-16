@@ -226,6 +226,7 @@ describe('W03: Release and Process Instantiation Transaction', () => {
     // Verify Order status is now RELEASED
     const order = await testDb.db.order.findUnique({ where: { id: orderAId } });
     expect(order?.status).toBe('RELEASED');
+    expect(order?.confirmedAt).toBeDefined();
 
     // Repeating the command returns the exact same IDs idempotently
     const replayRes = await releaseOrder(owner.principal, orderAId, 'cmd-rel-order-a', testDb.db);
@@ -310,5 +311,58 @@ describe('W03: Release and Process Instantiation Transaction', () => {
     });
     expect(instA?.workflowVersionId).toBe(wfV1Id);
     expect(instA?.tasks.length).toBe(3);
+  });
+
+  it('releases each multi-item order line as its own pinned manufacturing job', async () => {
+    const orderRes = await orderService.createOrderDraft(
+      sales.principal,
+      {
+        customerId,
+        orderTypeId,
+        lines: [
+          { itemId: fgItemId, orderedQuantity: 10 },
+          { itemId: rawItemId, orderedQuantity: 20 },
+        ],
+        requestedDate: '2026-11-22T00:00:00.000Z',
+      },
+      'cmd-order-multi-line-release'
+    );
+
+    for (const revision of orderRes.data.engineeringRevisions) {
+      await engineeringService.saveEngineeringDraft(
+        engineer.principal,
+        revision.id,
+        { workflowVersionId: wfV1Id },
+        `cmd-eng-multi-${revision.id}`
+      );
+      await engineeringService.approveEngineeringRevision(
+        owner.principal,
+        revision.id,
+        `cmd-approve-multi-${revision.id}`
+      );
+    }
+
+    const released = await releaseOrder(
+      owner.principal,
+      orderRes.data.id,
+      'cmd-release-multi-line',
+      testDb.db
+    );
+    const jobs = await testDb.db.manufacturingOrder.findMany({
+      where: { orderId: orderRes.data.id },
+      include: { orderLine: true, jobsheets: { include: { tasks: true } } },
+      orderBy: { orderLineId: 'asc' },
+    });
+
+    expect(jobs).toHaveLength(2);
+    expect(jobs.map((job) => job.orderLineId).sort()).toEqual(
+      orderRes.data.lines.map((line: { id: string }) => line.id).sort()
+    );
+    expect(jobs.map((job) => job.targetAtoms).sort((a, b) => Number(a - b))).toEqual([
+      10_000_000n,
+      20_000_000n,
+    ]);
+    expect(jobs.every((job) => job.jobsheets.length === 1 && job.jobsheets[0].tasks.length === 3)).toBe(true);
+    expect(released.data.jobs).toHaveLength(2);
   });
 });

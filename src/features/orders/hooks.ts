@@ -47,3 +47,46 @@ export function useReleaseOrder(orderId: string) {
     },
   });
 }
+
+export function useConfirmOrder(orderId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => ordersApi.confirmOrder(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.order(orderId) });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+import { orderCostingApi, OrderCostSummary } from "./api";
+
+export function useOrderCosting(orderId: string) {
+  return useQuery({
+    queryKey: ["orders", orderId, "costing"],
+    queryFn: () => orderCostingApi.getCostSummary(orderId),
+    enabled: Boolean(orderId),
+  });
+}
+
+export function useRecordOrderCost(orderId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof orderCostingApi.recordCost>[1]) =>
+      orderCostingApi.recordCost(orderId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders", orderId, "costing"] });
+    },
+  });
+}
+
+export function useCreateOrderChangeRequest(orderId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof orderCostingApi.createChangeRequest>[1]) =>
+      orderCostingApi.createChangeRequest(orderId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders", orderId] });
+    },
+  });
+}

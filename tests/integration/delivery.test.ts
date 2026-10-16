@@ -192,4 +192,57 @@ describe('O07: Shipment Allocation, Dispatch, and Delivery Confirmation', () => 
     expect(order).toBeDefined();
     expect(order!.status).toBe('DELIVERED');
   });
+
+  it('rejects allocation above an item line even when the order aggregate has room', async () => {
+    const { alpha } = fixture;
+    await inventoryService.postOpeningBalance(
+      alpha.users.owner.principal,
+      {
+        itemId: alpha.masters.fgItemId,
+        locationId: alpha.masters.fgLocationId,
+        lotNumber: 'LOT-FG-SHIP-LINE-CAP',
+        atoms: parseQuantity('11'),
+        notes: 'Line-cap regression stock',
+      },
+      'key-open-fg-line-cap'
+    );
+    const lineCapLot = await fixture.db.lot.findFirstOrThrow({
+      where: {
+        workspaceId: alpha.workspaceId,
+        itemId: alpha.masters.fgItemId,
+        lotNumber: 'LOT-FG-SHIP-LINE-CAP',
+      },
+    });
+    const multiItemOrder = await orderService.createOrderDraft(
+      alpha.users.owner.principal,
+      {
+        customerId: alpha.masters.customerId,
+        orderTypeId: alpha.masters.orderTypeId,
+        lines: [
+          { itemId: alpha.masters.fgItemId, orderedQuantity: 10 },
+          { itemId: alpha.masters.rawItemId, orderedQuantity: 100 },
+        ],
+        requestedDate: '2026-11-26T00:00:00Z',
+      },
+      'key-order-ship-line-cap'
+    );
+
+    await expect(
+      deliveryService.allocateShipment(
+        alpha.users.warehouse.principal,
+        {
+          orderId: multiItemOrder.data.id,
+          lines: [
+            {
+              itemId: alpha.masters.fgItemId,
+              lotId: lineCapLot.id,
+              sourceLocationId: alpha.masters.fgLocationId,
+              allocatedAtoms: parseQuantity('11'),
+            },
+          ],
+        },
+        'key-allocate-shipment-line-cap'
+      )
+    ).rejects.toThrow(BadRequestError);
+  });
 });

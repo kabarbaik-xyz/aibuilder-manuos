@@ -11,6 +11,11 @@ import {
   usePauseTask,
   useResumeTask,
   useRecordTaskOutput,
+  useTaskIssues,
+  useCreateTaskIssue,
+  useResolveTaskIssue,
+  useReopenTaskIssue,
+  useScanBarcode,
 } from '../hooks';
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +39,32 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const [pauseReason, setPauseReason] = useState('BREAK');
   const [pauseNotes, setPauseNotes] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Issues & Blocker management
+  const { data: issues, refetch: refetchIssues } = useTaskIssues(taskId);
+  const createIssueMutation = useCreateTaskIssue();
+  const resolveIssueMutation = useResolveTaskIssue(taskId);
+  const reopenIssueMutation = useReopenTaskIssue(taskId);
+  const scanMutation = useScanBarcode();
+
+  const [showIssueModal, setShowIssueModal] = useState(false);
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueSeverity, setIssueSeverity] = useState<"LOW" | "MEDIUM" | "HIGH" | "CRITICAL">("HIGH");
+  const [issueDescription, setIssueDescription] = useState("");
+
+  const [showResolveModal, setShowResolveModal] = useState(false);
+  const [resolvingIssueId, setResolvingIssueId] = useState<string | null>(null);
+  const [resolutionNotes, setResolutionNotes] = useState("");
+
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [scanCode, setScanCode] = useState("");
+  const [scanResult, setScanResult] = useState<any>(null);
+
+  const openIssues = issues || [];
+  const blockingIssues = openIssues.filter(
+    (i) => (i.status === "OPEN" || i.status === "REOPENED") && (i.severity === "CRITICAL" || i.severity === "HIGH")
+  );
+  const isExecutionBlocked = blockingIssues.length > 0;
 
   // Production Output Modal state
   const [showOutputModal, setShowOutputModal] = useState(false);
@@ -99,6 +130,70 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
       </div>
     );
   }
+
+  
+  const handleReportIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionError(null);
+    try {
+      await createIssueMutation.mutateAsync({
+        taskId: task.id,
+        input: {
+          title: issueTitle.trim(),
+          severity: issueSeverity,
+          description: issueDescription.trim() || undefined,
+        },
+      });
+      setShowIssueModal(false);
+      setIssueTitle("");
+      setIssueDescription("");
+      refetchIssues();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to report issue");
+    }
+  };
+
+  const handleResolveIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvingIssueId) return;
+    setActionError(null);
+    try {
+      await resolveIssueMutation.mutateAsync({
+        issueId: resolvingIssueId,
+        notes: resolutionNotes.trim() || undefined,
+      });
+      setShowResolveModal(false);
+      setResolvingIssueId(null);
+      setResolutionNotes("");
+      refetchIssues();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to resolve issue");
+    }
+  };
+
+  const handleReopenIssue = async (issueId: string) => {
+    setActionError(null);
+    try {
+      await reopenIssueMutation.mutateAsync({
+        issueId,
+        notes: "Reopened from workstation terminal",
+      });
+      refetchIssues();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to reopen issue");
+    }
+  };
+
+  const handleScanSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!scanCode.trim()) return;
+    try {
+      const res = await scanMutation.mutateAsync(scanCode.trim());
+      setScanResult(res);
+    } catch (err: any) {
+      setScanResult({ valid: false, error: err.message || "Scan verification failed" });
+    }
+  };
 
   const handleStart = async () => {
     setActionError(null);
@@ -220,14 +315,26 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
           {/* Action buttons */}
           <div className="flex items-center gap-2">
-            {(task.status === 'READY' || task.status === 'ASSIGNED') && (
+            <Button
+              onClick={() => { setScanResult(null); setScanCode(""); setShowScanModal(true); }}
+              icon="search"
+            >
+              Scan Barcode
+            </Button>
+            <Button
+              onClick={() => setShowIssueModal(true)}
+              icon="alert"
+            >
+              Report Issue
+            </Button>
+            {(task.status === "READY" || task.status === "ASSIGNED") && (
               <Button
                 variant="primary"
                 onClick={handleStart}
-                disabled={startMutation.isPending}
+                disabled={startMutation.isPending || isExecutionBlocked}
                 icon="bolt"
               >
-                {startMutation.isPending ? 'Starting...' : 'Start Operation'}
+                {startMutation.isPending ? "Starting..." : isExecutionBlocked ? "Blocked by Issue" : "Start Operation"}
               </Button>
             )}
 
@@ -267,6 +374,25 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           </div>
         </div>
       </div>
+
+      {isExecutionBlocked && (
+        <div className="p-4 bg-danger-soft border border-line rounded-xl flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Icon name="alert" className="w-5 h-5 text-danger flex-shrink-0" />
+            <div>
+              <div className="text-xs font-bold text-danger uppercase tracking-wide">
+                Workstation Execution Blocked ({blockingIssues.length} active issue{blockingIssues.length > 1 ? "s" : ""})
+              </div>
+              <p className="text-xs text-ink mt-0.5">
+                {blockingIssues[0]?.title} — Critical/high severity issues must be resolved before starting this operation.
+              </p>
+            </div>
+          </div>
+          <Button size="small" onClick={() => setShowIssueModal(true)}>
+            View / Add Notes
+          </Button>
+        </div>
+      )}
 
       {actionError && (
         <div className="p-4 bg-danger-soft border border-line rounded-xl text-xs text-danger">
@@ -432,6 +558,98 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         </div>
       </div>
 
+            {/* Task Issues & Downtime Events Section */}
+      <div className="bg-surface border border-line rounded-xl p-5">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">
+              Task Issues, Blockers & Downtime
+            </h3>
+            <p className="text-xs text-muted">
+              Active disruptions, machine fault telemetry, and operator resolution log
+            </p>
+          </div>
+          <Button
+            size="small"
+            onClick={() => setShowIssueModal(true)}
+            icon="plus"
+          >
+            Report Issue
+          </Button>
+        </div>
+
+        {(!issues || issues.length === 0) ? (
+          <div className="text-center py-8 text-muted text-xs bg-surface-muted rounded-lg border border-line">
+            No active issues or blockers reported on this workstation.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse border-line">
+              <thead>
+                <tr className="border-b border-line text-muted font-semibold uppercase tracking-wider">
+                  <th className="py-2.5 px-3">Severity</th>
+                  <th className="py-2.5 px-3">Title & Notes</th>
+                  <th className="py-2.5 px-3">Status</th>
+                  <th className="py-2.5 px-3">Reported By</th>
+                  <th className="py-2.5 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line text-ink">
+                {issues.map((iss) => (
+                  <tr key={iss.id}>
+                    <td className="py-2.5 px-3">
+                      <Badge variant={iss.severity === "CRITICAL" ? "danger" : iss.severity === "HIGH" ? "warning" : "default"}>
+                        {iss.severity}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <strong className="text-ink font-medium">{iss.title}</strong>
+                      {iss.description && (
+                        <p className="text-xs text-muted mt-0.5">{iss.description}</p>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <Badge variant={iss.status === "RESOLVED" ? "success" : iss.status === "OPEN" ? "warning" : "blue"}>
+                        {iss.status}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-muted">
+                      {iss.reporterUserName || "Operator"}
+                      <span className="block text-xs text-muted">
+                        {new Date(iss.createdAt).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {iss.status === "RESOLVED" ? (
+                        <Button
+                          size="small"
+                          onClick={() => handleReopenIssue(iss.id)}
+                          disabled={reopenIssueMutation.isPending}
+                        >
+                          Reopen
+                        </Button>
+                      ) : (
+                        <Button
+                          size="small"
+                          variant="primary"
+                          onClick={() => {
+                            setResolvingIssueId(iss.id);
+                            setResolutionNotes("");
+                            setShowResolveModal(true);
+                          }}
+                        >
+                          Resolve
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Pause Reason Modal */}
       {showPauseModal && (
         <Dialog isOpen onClose={() => setShowPauseModal(false)} title="Pause work session" size="md" pending={pauseMutation.isPending}>
@@ -591,6 +809,181 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           </form>
         </Dialog>
       )}
+
+      {/* Report Issue Modal */}
+      {showIssueModal && (
+        <Dialog
+          isOpen
+          onClose={() => setShowIssueModal(false)}
+          title="Report Task Issue or Blocker"
+          size="md"
+          pending={createIssueMutation.isPending}
+        >
+          <form onSubmit={handleReportIssue} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Issue Title / Summary
+              </label>
+              <input
+                type="text"
+                required
+                value={issueTitle}
+                onChange={(e) => setIssueTitle(e.target.value)}
+                placeholder="e.g. Spindle overheating above tolerance"
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Severity Level
+              </label>
+              <Select
+                value={issueSeverity}
+                onChange={(e: any) => setIssueSeverity(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              >
+                <option value="LOW">Low (Informational, non-blocking)</option>
+                <option value="MEDIUM">Medium (Degraded performance)</option>
+                <option value="HIGH">High (Blocks work start / safety alert)</option>
+                <option value="CRITICAL">Critical (Immediate workstation shutdown)</option>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Description & Notes
+              </label>
+              <Textarea
+                value={issueDescription}
+                onChange={(e) => setIssueDescription(e.target.value)}
+                placeholder="Observed readings, error codes, tooling wear..."
+                rows={3}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="dialog-actions">
+              <Button onClick={() => setShowIssueModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={createIssueMutation.isPending}
+              >
+                {createIssueMutation.isPending ? "Submitting..." : "Report Issue"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {/* Resolve Issue Modal */}
+      {showResolveModal && (
+        <Dialog
+          isOpen
+          onClose={() => { setShowResolveModal(false); setResolvingIssueId(null); }}
+          title="Resolve Task Issue"
+          size="sm"
+          pending={resolveIssueMutation.isPending}
+        >
+          <form onSubmit={handleResolveIssue} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Resolution Notes
+              </label>
+              <Textarea
+                required
+                value={resolutionNotes}
+                onChange={(e) => setResolutionNotes(e.target.value)}
+                placeholder="Action taken to clear the blocker (e.g. replaced worn insert, cleaned cooling port)..."
+                rows={3}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="dialog-actions">
+              <Button onClick={() => { setShowResolveModal(false); setResolvingIssueId(null); }}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={resolveIssueMutation.isPending}
+              >
+                {resolveIssueMutation.isPending ? "Resolving..." : "Confirm Resolution"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {/* Scan Barcode Modal */}
+      {showScanModal && (
+        <Dialog
+          isOpen
+          onClose={() => { setShowScanModal(false); setScanResult(null); }}
+          title="Scan Material / Lot Barcode"
+          size="sm"
+          pending={scanMutation.isPending}
+        >
+          <form onSubmit={handleScanSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Barcode / QR Code String
+              </label>
+              <input
+                type="text"
+                required
+                autoFocus
+                value={scanCode}
+                onChange={(e) => setScanCode(e.target.value)}
+                placeholder="Scan or enter barcode code..."
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink font-mono focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            {scanResult && (
+              <div className="p-3 bg-surface-muted border border-line rounded text-xs space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant={scanResult.valid ? "success" : "danger"}>
+                    {scanResult.valid ? "VALID CODE" : "INVALID / UNKNOWN"}
+                  </Badge>
+                  <span className="font-mono text-muted">{scanResult.targetType || "Unknown"}</span>
+                </div>
+                {scanResult.error && (
+                  <p className="text-danger mt-1">{scanResult.error}</p>
+                )}
+                {scanResult.item && (
+                  <div className="mt-2 text-ink">
+                    <strong>Item:</strong> {scanResult.item.name} ({scanResult.item.code})
+                  </div>
+                )}
+                {scanResult.lot && (
+                  <div className="text-ink">
+                    <strong>Lot:</strong> {scanResult.lot.lotNumber}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="dialog-actions">
+              <Button onClick={() => { setShowScanModal(false); setScanResult(null); }}>
+                Close
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={scanMutation.isPending}
+              >
+                {scanMutation.isPending ? "Verifying..." : "Verify Code"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
     </div>
   );
 }

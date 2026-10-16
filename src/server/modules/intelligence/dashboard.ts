@@ -1,14 +1,16 @@
 import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
+import { formatQuantity } from '@/domain/quantity';
 
 export interface DashboardMetricDTO {
   activeOrdersCount: number;
   ordersDueThisWeekCount: number;
   atRiskOrdersCount: number;
-  qcPassedUnits: number;
-  reworkUnits: number;
-  machineUtilizationPct: number;
+  qcPassedUnits: string;
+  qcInspectedUnits: string;
+  reworkUnits: string;
+  machineUtilizationPct: number | null;
   activeMachinesCount: number;
   materialShortagesCount: number;
   pendingApprovalsCount: number;
@@ -20,8 +22,8 @@ export interface DashboardOrderRowDTO {
   customerName: string;
   itemCode: string;
   itemName: string;
-  orderedQty: number;
-  completedQty: number;
+  orderedQty: string;
+  completedQty: string;
   progressPct: number;
   status: string;
   promisedDate: string | null;
@@ -116,6 +118,7 @@ export class DashboardService {
     const exceptions: DashboardExceptionDTO[] = [];
 
     let totalQcPassedAtoms = 0n;
+    let totalQcInspectedAtoms = 0n;
     let totalReworkAtoms = 0n;
 
     for (const o of orders) {
@@ -149,7 +152,8 @@ export class DashboardService {
           for (const task of js.tasks) {
             for (const out of task.productionOutputs) {
               for (const insp of out.inspections) {
-                if (insp.status === 'FINALIZED') {
+                if (insp.status === 'FINALIZED' && !insp.reinspectionOfId) {
+                  totalQcInspectedAtoms += insp.inspectedAtoms;
                   orderPassedAtoms += insp.passedAtoms;
                   orderReworkAtoms += insp.reworkAtoms;
                 }
@@ -162,16 +166,18 @@ export class DashboardService {
       totalQcPassedAtoms += orderPassedAtoms;
       totalReworkAtoms += orderReworkAtoms;
 
-      const orderedQty = Number(o.orderedAtoms / 1_000_000n);
-      const completedQty = Number(orderPassedAtoms / 1_000_000n);
+      const orderedQty = formatQuantity(o.orderedAtoms);
+      const completedQty = formatQuantity(orderPassedAtoms);
       const progressPct =
-        orderedQty > 0 ? Math.min(100, Math.round((completedQty / orderedQty) * 100)) : 0;
+        o.orderedAtoms > 0n
+          ? Number((orderPassedAtoms * 10000n) / o.orderedAtoms) / 100
+          : 0;
 
       const isAtRisk =
         o.status === 'RELEASED' &&
         o.promisedDate &&
         o.promisedDate < now &&
-        completedQty < orderedQty;
+        orderPassedAtoms < o.orderedAtoms;
 
       if (isAtRisk) {
         atRiskOrdersCount++;
@@ -221,11 +227,11 @@ export class DashboardService {
       }
     }
 
-    const totalCapacityMinutes = Math.max(1, machines.length * standardWeeklyMinutes);
-    const machineUtilizationPct = Math.min(
-      100,
-      Math.round((totalScheduledMinutes / totalCapacityMinutes) * 100)
-    );
+    const totalCapacityMinutes = machines.length * standardWeeklyMinutes;
+    const machineUtilizationPct =
+      totalCapacityMinutes > 0
+        ? Math.min(100, Math.round((totalScheduledMinutes / totalCapacityMinutes) * 100))
+        : null;
 
     // 3. Fetch Material Shortages
     const openDemands = await this.prisma.materialDemand.findMany({
@@ -267,8 +273,9 @@ export class DashboardService {
       activeOrdersCount: activeOrders.length,
       ordersDueThisWeekCount,
       atRiskOrdersCount,
-      qcPassedUnits: Number(totalQcPassedAtoms / 1_000_000n),
-      reworkUnits: Number(totalReworkAtoms / 1_000_000n),
+      qcPassedUnits: formatQuantity(totalQcPassedAtoms),
+      qcInspectedUnits: formatQuantity(totalQcInspectedAtoms),
+      reworkUnits: formatQuantity(totalReworkAtoms),
       machineUtilizationPct,
       activeMachinesCount,
       materialShortagesCount,

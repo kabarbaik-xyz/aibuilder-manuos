@@ -191,20 +191,37 @@ export async function recordOutput(
       const existingOutputs = await tx.productionOutput.findMany({
         where: {
           workspaceId,
-          taskId: currentTask.id,
+          itemId: targetItemId,
+          isFinal: true,
           status: { not: 'REJECTED' },
+          task: { instance: { orderId: order.id } },
         },
       });
-      const cumulativeOutputAtoms = existingOutputs.reduce(
-        (acc: bigint, o: { outputAtoms: bigint }) => acc + o.outputAtoms,
-        0n
-      );
-
       const isFinalOp = currentTask.successorDeps.length === 0 || input.isFinal;
-      if (isFinalOp && cumulativeOutputAtoms + input.outputAtoms > order.orderedAtoms) {
-        throw new BadRequestError(
-          `Overproduction rejected: cumulative output (${cumulativeOutputAtoms + input.outputAtoms} atoms) exceeds ordered quantity (${order.orderedAtoms} atoms).`
+      if (isFinalOp) {
+        const currentOrder = await tx.order.findUnique({
+          where: { workspaceId_id: { workspaceId, id: order.id } },
+          include: { lines: true },
+        });
+        if (!currentOrder) throw new NotFoundError(`Order '${order.id}' not found`);
+        const matchingLines = currentOrder.lines.filter((line: { itemId: string; orderedAtoms: bigint }) => line.itemId === targetItemId);
+        const orderedForItem = matchingLines.length
+          ? matchingLines.reduce((total: bigint, line: { orderedAtoms: bigint }) => total + line.orderedAtoms, 0n)
+          : targetItemId === currentOrder.itemId
+            ? currentOrder.orderedAtoms
+            : 0n;
+        if (orderedForItem === 0n) {
+          throw new BadRequestError(`Output item '${targetItemId}' is not part of order '${currentOrder.id}'.`);
+        }
+        const finalOutputAtoms = existingOutputs.reduce(
+          (total: bigint, output: { outputAtoms: bigint }) => total + output.outputAtoms,
+          0n
         );
+        if (finalOutputAtoms + input.outputAtoms > orderedForItem) {
+          throw new BadRequestError(
+            `Overproduction rejected: final output for item '${targetItemId}' (${finalOutputAtoms + input.outputAtoms} atoms) exceeds ordered quantity (${orderedForItem} atoms).`
+          );
+        }
       }
 
       // Post physical inventory movement for the produced goods into destination location

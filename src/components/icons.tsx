@@ -142,6 +142,7 @@ const paths = {
       <path d="M12 11v6m0-10h.01" />
     </>
   ),
+  bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" /></>,
   edit: <><path d="m16 4 4 4M4 20l4-.8L19.1 8.1a2.1 2.1 0 0 0-3-3L5 16.2 4 20Z" /></>,
   archive: <><path d="M3 4h18v4H3zM5 8v12h14V8M10 12h4" /></>,
   'more-horizontal': <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useOrder } from '@/features/orders/hooks';
 import { useEngineeringRevision } from '@/features/engineering/hooks';
 import { ReviewEditor } from '@/features/engineering/components/review-editor';
@@ -9,17 +9,22 @@ import { LoadingState, ErrorState } from '@/components/ui/resource-state';
 
 export default function OrderEngineeringReviewPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const orderId = params.orderId as string;
 
   const { data: order, isPending: isOrderPending, error: orderError, refetch: refetchOrder } =
     useOrder(orderId);
 
   const latestRevId = order?.engineeringRevisions?.[0]?.id;
+  const requestedRevisionId = searchParams.get('revisionId');
+  const selectedRevisionId = order?.engineeringRevisions?.some(revision => revision.id === requestedRevisionId)
+    ? requestedRevisionId
+    : latestRevId;
 
   const { data: revision, isPending: isRevPending, error: revError, refetch: refetchRev } =
-    useEngineeringRevision(orderId, latestRevId || '');
+    useEngineeringRevision(orderId, selectedRevisionId || '');
 
-  if (isOrderPending || (latestRevId && isRevPending)) {
+  if (isOrderPending || (selectedRevisionId && isRevPending)) {
     return <LoadingState message="Loading engineering revision…" />;
   }
 

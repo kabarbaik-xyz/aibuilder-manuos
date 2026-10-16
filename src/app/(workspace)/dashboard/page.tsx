@@ -12,6 +12,7 @@ import { LoadingState, ErrorState } from "@/components/ui/resource-state";
 import { apiRequest } from "@/lib/api/client";
 import { useGraphStore } from "@/store/graph-store";
 import type { DashboardOverviewDTO } from "@/server/modules/intelligence/dashboard";
+import { parseQuantity } from "@/domain/quantity";
 
 export default function DashboardPage() {
   const openModal = useGraphStore((s) => s.openModal);
@@ -42,21 +43,10 @@ export default function DashboardPage() {
         onRetry={() => refetch()}
       />
     );
+  const metrics = overview.metrics;
 
-  const metrics = overview?.metrics ?? {
-    activeOrdersCount: 0,
-    ordersDueThisWeekCount: 0,
-    atRiskOrdersCount: 0,
-    qcPassedUnits: 0,
-    reworkUnits: 0,
-    machineUtilizationPct: 0,
-    activeMachinesCount: 0,
-    materialShortagesCount: 0,
-    pendingApprovalsCount: 0,
-  };
-
-  const exceptions = overview?.exceptions ?? [];
-  const orders = overview?.orders ?? [];
+  const exceptions = overview.exceptions;
+  const orders = overview.orders;
 
   const exceptionPriority: Record<string, number> = {
     CRITICAL: 0,
@@ -81,11 +71,12 @@ export default function DashboardPage() {
   ).length;
   const recentOrders = orders.slice(0, 5);
 
-  const totalInspected = metrics.qcPassedUnits + metrics.reworkUnits;
+  const inspectedAtoms = parseQuantity(metrics.qcInspectedUnits);
+  const passedAtoms = parseQuantity(metrics.qcPassedUnits);
   const yieldPct =
-    totalInspected > 0
-      ? Math.round((metrics.qcPassedUnits / totalInspected) * 100)
-      : 100;
+    inspectedAtoms > 0n
+      ? Math.round(Number((passedAtoms * 10000n) / inspectedAtoms) / 100)
+      : null;
 
   return (
     <div className="space-y-6">
@@ -131,10 +122,12 @@ export default function DashboardPage() {
           <div className="min-w-0 px-4 py-4 xl:px-4">
             <div className="text-xs font-semibold text-muted">First-pass yield</div>
             <div className="mt-1 tabular-nums text-2xl font-bold tracking-tight text-ink">
-              {yieldPct}%
+              {yieldPct === null ? "—" : `${yieldPct}%`}
             </div>
             <div className="mt-1 text-xs text-muted">
-              {metrics.qcPassedUnits} passed · {metrics.reworkUnits} rework
+              {inspectedAtoms === 0n
+                ? "No finalized inspections yet"
+                : `${metrics.qcPassedUnits} passed · ${metrics.reworkUnits} rework`}
             </div>
           </div>
           <div className="min-w-0 px-4 py-4 xl:px-4">
@@ -142,7 +135,9 @@ export default function DashboardPage() {
               Machine utilization
             </div>
             <div className="mt-1 tabular-nums text-2xl font-bold tracking-tight text-ink">
-              {metrics.machineUtilizationPct}%
+              {metrics.machineUtilizationPct === null
+                ? "—"
+                : `${metrics.machineUtilizationPct}%`}
             </div>
             <div className="mt-1 text-xs text-muted">
               {metrics.activeMachinesCount} active units

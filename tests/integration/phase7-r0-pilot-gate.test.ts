@@ -77,6 +77,12 @@ describe('Phase 7: R0 Release & Pilot Gate Verification (36 R0 Capabilities)', (
 
     // 3. Operator technician from fixture
     operatorTechId = alpha.masters.technicianId;
+    await mastersService.publishRosterIntervals(owner, {
+      intervals: [
+        { technicianId: operatorTechId, intervalType: 'SHIFT', startAt: '2026-11-20T08:00:00.000Z', endAt: '2026-11-20T10:00:00.000Z' },
+        { machineId: alpha.masters.machineId, intervalType: 'SHIFT', startAt: '2026-11-20T08:00:00.000Z', endAt: '2026-11-20T10:00:00.000Z' },
+      ],
+    }, 'idemp-p7-roster');
   });
 
   afterAll(async () => {
@@ -239,8 +245,8 @@ describe('Phase 7: R0 Release & Pilot Gate Verification (36 R0 Capabilities)', (
         taskId: millingTaskId,
         technicianId: operatorTechId,
         machineId: alpha.masters.machineId,
-        scheduledStart: startAt.toISOString(),
-        scheduledEnd: endAt.toISOString(),
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString(),
         expectedVersion: 1,
       },
       'idemp-assign-p7-milling'

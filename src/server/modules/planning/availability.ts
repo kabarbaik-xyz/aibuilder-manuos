@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { db as defaultDb } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
@@ -15,6 +15,7 @@ export interface AvailabilityQuery {
   resourceId: string;
   startAt: Date;
   endAt: Date;
+  excludeTaskId?: string;
 }
 
 export interface SkillRequirement {
@@ -42,7 +43,7 @@ export interface EligibilityResult {
 }
 
 export class AvailabilityService {
-  constructor(private readonly prisma: PrismaClient = defaultDb) {}
+  constructor(private readonly prisma: PrismaClient | Prisma.TransactionClient = defaultDb) {}
 
   /**
    * Authoritative Availability Interval Service.
@@ -59,7 +60,7 @@ export class AvailabilityService {
     principal: Principal,
     query: AvailabilityQuery
   ): Promise<TimeInterval[]> {
-    requireAnyPermission(principal, ['planning.read', 'resource.manage']);
+    requireAnyPermission(principal, ['planning.read', 'resource.manage', 'task.assign', 'planning.write']);
 
     const { resourceType, resourceId, startAt, endAt } = query;
 
@@ -200,6 +201,7 @@ export class AvailabilityService {
         workspaceId: principal.workspaceId,
         resourceType,
         resourceId,
+        ...(query.excludeTaskId ? { taskId: { not: query.excludeTaskId } } : {}),
         status: 'CONFIRMED',
         startAt: { lt: endAt },
         endAt: { gt: startAt },

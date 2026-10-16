@@ -77,7 +77,7 @@ describe('Phase 3: Multi-Item Orders, Bounded Jobs, Released Engineering & Form 
           },
           {
             itemId: fixture.alpha.masters.rawItemId,
-            orderedQuantity: 100,
+            orderedQuantity: '100',
             unitPriceCents: 12000,
             notes: 'Raw stock test specimen',
           },
@@ -89,7 +89,7 @@ describe('Phase 3: Multi-Item Orders, Bounded Jobs, Released Engineering & Form 
     const order = res.data;
     expect(order.deliveryAddress).toBe('Hangar 4B, Seletar Aerospace Park, Singapore');
     expect(order.contractReference).toBe('CTR-AERO-2026-089');
-    expect(order.orderedAtoms).toBe(125_000_000n); // 25 + 100 = 125 * 10^6
+    expect(order.orderedAtoms).toBe(125_000_000n); // Decimal-string input is accepted without numeric coercion.
     expect(order.lines).toHaveLength(2);
 
     expect(order.lines[0].lineNumber).toBe(1);
@@ -101,6 +101,10 @@ describe('Phase 3: Multi-Item Orders, Bounded Jobs, Released Engineering & Form 
     expect(order.lines[1].itemId).toBe(fixture.alpha.masters.rawItemId);
     expect(order.lines[1].orderedAtoms).toBe(100_000_000n);
     expect(order.lines[1].unitPriceCents).toBe(12000n);
+    expect(order.engineeringRevisions).toHaveLength(2);
+    expect(order.engineeringRevisions.map((revision: { orderLineId: string | null }) => revision.orderLineId).sort()).toEqual(
+      order.lines.map((line: { id: string }) => line.id).sort()
+    );
   });
 
   // -----------------------------------------------------------------
@@ -140,6 +144,11 @@ describe('Phase 3: Multi-Item Orders, Bounded Jobs, Released Engineering & Form 
     const fetched = await orderService.getOrder(owner, orderRes.data.id);
     expect(fetched.orderedAtoms).toBe(20_000_000n); // 5 + 15 = 20 * 10^6
     expect(fetched.lines).toHaveLength(2);
+    const revisions = await fixture.db.engineeringRevision.findMany({
+      where: { workspaceId: owner.workspaceId, orderId: orderRes.data.id },
+    });
+    expect(revisions).toHaveLength(2);
+    expect(revisions.some((revision) => revision.orderLineId === lineRes.data.id)).toBe(true);
   });
 
   // -----------------------------------------------------------------
@@ -169,6 +178,13 @@ describe('Phase 3: Multi-Item Orders, Bounded Jobs, Released Engineering & Form 
 
     expect(confirmedRes.data.confirmedAt).toBeDefined();
     expect(confirmedRes.data.confirmedById).toBe(owner.userId);
+    await expect(
+      orderService.allocateJob(
+        owner,
+        { orderLineId: orderRes.data.lines[0].id, targetQuantity: 1 },
+        'idemp-phase3-alloc-after-confirm'
+      )
+    ).rejects.toThrowError(BadRequestError);
   });
 
   // -----------------------------------------------------------------
@@ -202,6 +218,7 @@ describe('Phase 3: Multi-Item Orders, Bounded Jobs, Released Engineering & Form 
     );
 
     expect(job1Res.data.manufacturingOrder.targetAtoms).toBe(40_000_000n);
+    expect(job1Res.data.manufacturingOrder.status).toBe('DRAFT');
     expect(job1Res.data.orderLine.allocatedAtoms).toBe(40_000_000n);
     expect(job1Res.data.unallocatedAtoms).toBe(60_000_000n);
 

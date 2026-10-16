@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { db } from '@/server/db/client';
 import crypto from 'node:crypto';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
@@ -168,3 +169,5 @@ export class WebhookService {
     return updated;
   }
 }
+
+export const webhookService = new WebhookService(db);

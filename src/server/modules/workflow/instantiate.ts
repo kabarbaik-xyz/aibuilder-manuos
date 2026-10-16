@@ -8,6 +8,9 @@ export interface InstantiateWorkflowParams {
   order: any;
   publishedVersion: any;
   engineeringRevision: any;
+  orderLine?: any;
+  orderLineCount?: number;
+  manufacturingOrder?: any;
   idempotencyKey: string;
 }
 
@@ -17,18 +20,33 @@ export interface InstantiationResult {
   jobsheetId: string;
   taskIds: Record<string, string>; // nodeKey -> taskId
   demandIds: string[];
+  orderLineId: string | null;
 }
 
 export async function instantiateWorkflow(
   params: InstantiateWorkflowParams
 ): Promise<InstantiationResult> {
-  const { tx, principal, order, publishedVersion, engineeringRevision, idempotencyKey } = params;
+  const {
+    tx,
+    principal,
+    order,
+    publishedVersion,
+    engineeringRevision,
+    orderLine,
+    orderLineCount = 1,
+    manufacturingOrder,
+    idempotencyKey,
+  } = params;
 
   // 1. Check if already instantiated
-  const existingInstance = await tx.workflowInstance.findFirst({
-    where: { orderId: order.id, workspaceId: principal.workspaceId },
+  const existingInstances = await tx.workflowInstance.findMany({
+    where: {
+      orderId: order.id,
+      engineeringRevisionId: engineeringRevision.id,
+      workspaceId: principal.workspaceId,
+    },
     include: {
-      tasks: true,
+      tasks: { include: { jobsheet: true } },
       order: {
         include: {
           manufacturingOrders: true,
@@ -37,23 +55,40 @@ export async function instantiateWorkflow(
       },
     },
   });
+  const existingInstance = existingInstances.find((candidate: any) =>
+    manufacturingOrder
+      ? candidate.tasks.some((task: any) => task.jobsheet?.manufacturingOrderId === manufacturingOrder.id)
+      : true
+  );
 
   if (existingInstance) {
     const taskIds: Record<string, string> = {};
     for (const t of existingInstance.tasks) {
       taskIds[t.nodeKey] = t.id;
     }
-    const mo = existingInstance.order.manufacturingOrders[0];
+    const mo = existingInstance.order.manufacturingOrders.find((candidate: any) =>
+      manufacturingOrder
+        ? candidate.id === manufacturingOrder.id
+        : candidate.orderLineId === (orderLine?.id ?? null)
+    );
     const jobsheet = await tx.jobsheet.findFirst({
-      where: { orderId: order.id, workspaceId: principal.workspaceId },
+      where: {
+        orderId: order.id,
+        manufacturingOrderId: mo?.id,
+        workspaceId: principal.workspaceId,
+      },
     });
+    const taskIdSet = new Set(existingInstance.tasks.map((task: any) => task.id));
 
     return {
       instanceId: existingInstance.id,
       moId: mo ? mo.id : '',
       jobsheetId: jobsheet ? jobsheet.id : '',
       taskIds,
-      demandIds: existingInstance.order.demands.map((d: any) => d.id),
+      demandIds: existingInstance.order.demands
+        .filter((demand: any) => demand.taskId && taskIdSet.has(demand.taskId))
+        .map((demand: any) => demand.id),
+      orderLineId: orderLine?.id ?? null,
     };
   }
 
@@ -79,16 +114,31 @@ export async function instantiateWorkflow(
   });
 
   // 4. Create Manufacturing Order
-  const moNumber = `MO-${order.orderNumber.replace(/^ORD-/, '')}`;
-  const mo = await tx.manufacturingOrder.create({
-    data: {
-      workspaceId: principal.workspaceId,
-      orderId: order.id,
-      moNumber,
-      status: 'RELEASED',
-      targetAtoms: order.orderedAtoms,
-    },
-  });
+  const baseMoNumber = `MO-${order.orderNumber.replace(/^ORD-/, '')}`;
+  const moNumber = orderLineCount > 1
+    ? `${baseMoNumber}-L${String(orderLine.lineNumber).padStart(2, '0')}`
+    : baseMoNumber;
+  const mo = manufacturingOrder
+    ? await tx.manufacturingOrder.update({
+        where: { id: manufacturingOrder.id },
+        data: {
+          status: 'RELEASED',
+          workflowVersionId: publishedVersion.id,
+          engineeringRevisionId: engineeringRevision.id,
+        },
+      })
+    : await tx.manufacturingOrder.create({
+        data: {
+          workspaceId: principal.workspaceId,
+          orderId: order.id,
+          orderLineId: orderLine?.id ?? null,
+          moNumber,
+          status: 'RELEASED',
+          targetAtoms: order.orderedAtoms,
+          workflowVersionId: publishedVersion.id,
+          engineeringRevisionId: engineeringRevision.id,
+        },
+      });
 
   // 5. Create Jobsheet
   const jobsheet = await tx.jobsheet.create({
@@ -120,7 +170,7 @@ export async function instantiateWorkflow(
         status: initialStatus,
         plannedDurationMinutes: node.plannedDurationMinutes,
         targetItemId: order.itemId,
-        targetAtoms: order.orderedAtoms,
+        targetAtoms: mo.targetAtoms,
       },
     });
 
@@ -150,9 +200,9 @@ export async function instantiateWorkflow(
   for (const bomLine of engineeringRevision.bomLines || []) {
     const associatedTask = taskMap.get(bomLine.operationNodeKey);
 
-    // requirementAtoms = (order.orderedAtoms * bomLine.requirementAtoms) / bomLine.outputBasisAtoms
+    // requirementAtoms = (manufacturingOrder.targetAtoms * bomLine.requirementAtoms) / bomLine.outputBasisAtoms
     const baseRequirement =
-      (BigInt(order.orderedAtoms) * BigInt(bomLine.requirementAtoms)) /
+      (BigInt(mo.targetAtoms) * BigInt(bomLine.requirementAtoms)) /
       BigInt(bomLine.outputBasisAtoms || 1000000n);
 
     // Allowance calculation using authoritative integer basis points
@@ -201,13 +251,19 @@ export async function instantiateWorkflow(
   });
 
   // 10. Advance Order status to RELEASED
-  await tx.order.update({
-    where: { id: order.id },
-    data: {
-      status: 'RELEASED',
-      version: { increment: 1 },
-    },
+  const currentOrder = await tx.order.findUnique({
+    where: { workspaceId_id: { workspaceId: principal.workspaceId, id: order.id } },
+    select: { status: true },
   });
+  if (currentOrder?.status !== 'RELEASED' && currentOrder?.status !== 'IN_PRODUCTION') {
+    await tx.order.update({
+      where: { id: order.id },
+      data: {
+        status: 'RELEASED',
+        version: { increment: 1 },
+      },
+    });
+  }
 
   return {
     instanceId: instance.id,
@@ -215,5 +271,6 @@ export async function instantiateWorkflow(
     jobsheetId: jobsheet.id,
     taskIds: taskIdRecord,
     demandIds,
+    orderLineId: orderLine?.id ?? null,
   };
 }

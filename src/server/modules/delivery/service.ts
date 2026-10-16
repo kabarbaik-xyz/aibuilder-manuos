@@ -44,6 +44,7 @@ export class DeliveryService {
       include: {
         customer: true,
         item: true,
+        lines: true,
       },
     });
 
@@ -57,6 +58,16 @@ export class DeliveryService {
 
     // 2. Verify all lines have eligible Finished Goods (FG) stock
     for (const line of input.lines) {
+      const matchingOrderLines = order.lines.filter((orderLine) => orderLine.itemId === line.itemId);
+      const orderedForItem = matchingOrderLines.length
+        ? matchingOrderLines.reduce((total: bigint, orderLine: { orderedAtoms: bigint }) => total + orderLine.orderedAtoms, 0n)
+        : line.itemId === order.itemId
+          ? order.orderedAtoms
+          : 0n;
+      if (orderedForItem === 0n) {
+        throw new BadRequestError(`Item '${line.itemId}' is not part of order '${order.id}'.`);
+      }
+
       const loc = await this.db.location.findUnique({
         where: {
           workspaceId_id: {
@@ -120,19 +131,42 @@ export class DeliveryService {
           },
         });
 
-        // Check order cumulative cap inside tx
+        // Re-read order-line limits and allocated shipment quantities in the committing transaction.
+        const currentOrder = await tx.order.findUnique({
+          where: { workspaceId_id: { workspaceId, id: order.id } },
+          include: { lines: true },
+        });
+        if (!currentOrder) throw new NotFoundError(`Order '${order.id}' not found`);
         const existingLines = await tx.shipmentLine.findMany({
           where: {
             workspaceId,
             shipment: { orderId: order.id, status: { not: 'CANCELLED' } },
           },
         });
-        const currentAllocated = existingLines.reduce((acc: bigint, l: { allocatedAtoms: bigint }) => acc + l.allocatedAtoms, 0n);
-        const newAllocated = input.lines.reduce((acc, l) => acc + l.allocatedAtoms, 0n);
-        if (currentAllocated + newAllocated > order.orderedAtoms) {
-          throw new BadRequestError(
-            `Shipment allocation exceeds order ordered quantity (${order.orderedAtoms} atoms).`
+        const allocatedByItem = new Map<string, bigint>();
+        for (const line of existingLines) {
+          allocatedByItem.set(
+            line.itemId,
+            (allocatedByItem.get(line.itemId) ?? 0n) + line.allocatedAtoms
           );
+        }
+        for (const line of input.lines) {
+          const matchingOrderLines = currentOrder.lines.filter((orderLine: { itemId: string; orderedAtoms: bigint }) => orderLine.itemId === line.itemId);
+          const orderedForItem = matchingOrderLines.length
+            ? matchingOrderLines.reduce((total: bigint, orderLine: { itemId: string; orderedAtoms: bigint }) => total + orderLine.orderedAtoms, 0n)
+            : line.itemId === currentOrder.itemId
+              ? currentOrder.orderedAtoms
+              : 0n;
+          if (orderedForItem === 0n) {
+            throw new BadRequestError(`Item '${line.itemId}' is not part of order '${currentOrder.id}'.`);
+          }
+          const nextAllocated = (allocatedByItem.get(line.itemId) ?? 0n) + line.allocatedAtoms;
+          if (nextAllocated > orderedForItem) {
+            throw new BadRequestError(
+              `Shipment allocation for item '${line.itemId}' exceeds its ordered quantity (${orderedForItem} atoms).`
+            );
+          }
+          allocatedByItem.set(line.itemId, nextAllocated);
         }
 
         // Create shipment lines and stock reservations

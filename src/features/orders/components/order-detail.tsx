@@ -24,7 +24,10 @@ import {
   FileText,
 } from 'lucide-react';
 import { OrderDto } from '../api';
-import { useReleaseOrder, useAddCustomerQuestion } from '../hooks';
+import { useReleaseOrder, useConfirmOrder, useAddCustomerQuestion, useOrderCosting, useRecordOrderCost, useCreateOrderChangeRequest } from '../hooks';
+import { Dialog } from '@/components/ui/dialog';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { ButtonLink } from '@/components/ui/button-link';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +51,13 @@ function formatDate(dateStr?: string | null) {
   });
 }
 
+function formatCents(centsStr?: string | bigint | number): string {
+  if (centsStr === undefined || centsStr === null) return "$0.00";
+  const cents = typeof centsStr === "bigint" ? Number(centsStr) : Number(centsStr);
+  const dollars = (cents / 100).toFixed(2);
+  return "$" + Number(dollars).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function formatDateTime(dateStr?: string | null) {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
@@ -63,18 +73,46 @@ function formatDateTime(dateStr?: string | null) {
 
 export function OrderDetail({ order }: OrderDetailProps) {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'engineering' | 'production' | 'materials' | 'fulfillment'
+    'overview' | 'engineering' | 'production' | 'materials' | 'costing' | 'fulfillment'
   >('overview');
   const [newQuestion, setNewQuestion] = useState('');
 
   const releaseMutation = useReleaseOrder(order.id);
+  const confirmMutation = useConfirmOrder(order.id);
   const addQuestionMutation = useAddCustomerQuestion(order.id);
+  const costingQuery = useOrderCosting(order.id);
+  const recordCostMutation = useRecordOrderCost(order.id);
+  const changeRequestMutation = useCreateOrderChangeRequest(order.id);
+
+  const [showCostModal, setShowCostModal] = useState(false);
+  const [costCategory, setCostCategory] = useState("MATERIAL");
+  const [costType, setCostType] = useState("ACTUAL");
+  const [costAmountDollars, setCostAmountDollars] = useState("");
+  const [costNotes, setCostNotes] = useState("");
+
+  const [showChangeModal, setShowChangeModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [changeType, setChangeType] = useState("DELIVERY_DATE");
+  const [changeReason, setChangeReason] = useState("");
+  const [requestedValue, setRequestedValue] = useState("");
 
   const latestEng = order.engineeringRevisions?.[0];
+  const bomLines = order.engineeringRevisions?.flatMap(revision => (revision.bomLines ?? []).map((line: any) => ({
+    ...line,
+    engineeringRevisionId: revision.id,
+    engineeringRevisionNumber: revision.revisionNumber,
+    orderLineId: revision.orderLineId,
+    outputBasisAtoms: revision.outputBasisAtoms ?? 1_000_000,
+  }))) ?? [];
   const instance = order.instances?.[0];
-  const canRelease =
-    order.status === 'READY' ||
-    (latestEng?.status === 'APPROVED' && order.status === 'DRAFT');
+  const approvedForEveryLine = order.lines?.length
+    ? order.lines.every(line => order.engineeringRevisions?.some(revision =>
+        revision.status === 'APPROVED' &&
+        (revision.orderLineId === line.id || (order.lines?.length === 1 && revision.orderLineId == null))
+      ))
+    : latestEng?.status === 'APPROVED';
+  const canRelease = approvedForEveryLine && Boolean(order.confirmedAt) && (order.status === 'READY' || order.status === 'DRAFT');
+  const canConfirm = approvedForEveryLine && (order.status === 'DRAFT' || order.status === 'READY') && !order.confirmedAt;
 
   const handleAddQuestion = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,11 +122,38 @@ export function OrderDetail({ order }: OrderDetailProps) {
     });
   };
 
+  const handleRecordCost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const dollars = parseFloat(costAmountDollars);
+    if (isNaN(dollars) || dollars < 0) return;
+    const amountCents = Math.round(dollars * 100);
+    await recordCostMutation.mutateAsync({
+      costCategory,
+      costType,
+      amountCents,
+      notes: costNotes.trim() || undefined,
+    });
+    setShowCostModal(false);
+    setCostAmountDollars("");
+    setCostNotes("");
+  };
+
+  const handleChangeRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await changeRequestMutation.mutateAsync({
+      changeType,
+      reason: changeReason.trim(),
+      requestedChanges: { targetValue: requestedValue.trim() },
+    });
+    setShowChangeModal(false);
+    setChangeReason("");
+    setRequestedValue("");
+  };
+
   const handleRelease = () => {
     releaseMutation.mutate();
   };
 
-  const naturalQuantity = Number(order.orderedAtoms) / 1_000_000;
   const isDelivered = order.status === 'DELIVERED';
   const isShipped =
     order.status === 'DELIVERED' || order.status === 'PARTIALLY_DELIVERED';
@@ -171,6 +236,10 @@ export function OrderDetail({ order }: OrderDetailProps) {
                 </span>
               </ButtonLink>
             )}
+
+            {canConfirm && <Button variant="primary" onClick={() => setShowConfirmModal(true)} disabled={confirmMutation.isPending}>
+              Confirm order
+            </Button>}
 
             {canRelease && (
               <Button
@@ -266,17 +335,27 @@ export function OrderDetail({ order }: OrderDetailProps) {
               </p>
             </div>
           </div>
-          <Button
-            variant="primary"
-            onClick={handleRelease}
-            disabled={releaseMutation.isPending}
-          >
-            Release to Production
-          </Button>
+          {canConfirm ? <Button variant="primary" onClick={() => setShowConfirmModal(true)}>Confirm order</Button> : canRelease && <Button variant="primary" onClick={handleRelease} disabled={releaseMutation.isPending}>Release to production</Button>}
         </div>
       )}
 
+      {order.confirmedAt && <Panel className="p-4 flex flex-wrap items-center justify-between gap-3">
+        <div><strong className="text-sm text-ink">Order confirmed</strong><p className="small muted">Confirmed {formatDateTime(order.confirmedAt)}. Engineering release can now create the manufacturing jobs.</p></div>
+        {canRelease && <Button variant="primary" onClick={handleRelease} disabled={releaseMutation.isPending}>{releaseMutation.isPending ? 'Releasing…' : 'Release to production'}</Button>}
+      </Panel>}
+
       {/* 4 Harmonized Metric Tiles */}
+      {order.lines && order.lines.length > 1 && <Panel className="p-5 page-stack">
+        <div><h2 className="text-sm font-semibold text-ink">Order lines</h2><p className="field-help">Each line has its own engineering revision and manufacturing jobs.</p></div>
+        <div className="page-stack">
+          {order.lines.map(line => <div key={line.id} className="order-detail-line">
+            <div><strong>{line.item?.code || line.itemId} · {line.item?.name || 'Item'}</strong>{(() => { const revision = order.engineeringRevisions?.find(candidate => candidate.orderLineId === line.id); return revision ? <Link className="small text-primary underline" href={`/engineering/orders/${order.id}?revisionId=${revision.id}`}>Line {line.lineNumber} · Engineering {revision.status}</Link> : <span className="small muted">Line {line.lineNumber} · Engineering pending</span>; })()}</div>
+            <div><span className="small muted">Ordered</span><strong>{formatQuantity(BigInt(line.orderedAtoms))} {line.item?.baseUom?.code || ''}</strong></div>
+            <div><span className="small muted">Allocated</span><strong>{formatQuantity(BigInt(line.allocatedAtoms))}</strong></div>
+            <div><span className="small muted">Jobs</span><strong>{line.manufacturingOrders?.length ?? 0}</strong></div>
+          </div>)}
+        </div>
+      </Panel>}
       <Panel className="p-0 overflow-hidden shadow-xs border-line">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-line bg-surface">
           {/* Tile 1: Target Item */}
@@ -303,7 +382,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
             </div>
             <div>
               <p className="text-base font-bold text-ink">
-                {naturalQuantity.toLocaleString()} {order.item?.baseUom?.code || 'Units'}
+                {formatQuantity(BigInt(order.orderedAtoms))} {order.item?.baseUom?.code || 'Units'}
               </p>
               <p className="text-xs text-muted font-mono mt-0.5">
                 {formatQuantity(BigInt(order.orderedAtoms))} display units
@@ -367,6 +446,10 @@ export function OrderDetail({ order }: OrderDetailProps) {
             id: 'materials',
             label: 'Materials & Demands',
             badge: order.demands?.length ? `${order.demands.length}` : undefined,
+          },
+          {
+            id: 'costing',
+            label: 'Job Costing & Variance',
           },
           {
             id: 'fulfillment',
@@ -544,7 +627,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
             <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">
               Reviewed Bill of Materials (BOM)
             </h4>
-            {latestEng?.bomLines && latestEng.bomLines.length > 0 ? (
+            {bomLines.length > 0 ? (
               <div className="overflow-x-auto rounded-lg border border-line">
                 <table className="w-full text-left text-xs">
                   <thead>
@@ -559,13 +642,16 @@ export function OrderDetail({ order }: OrderDetailProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {latestEng.bomLines.map((b: any) => {
-                      const reqPerUnit = Number(b.requirementAtoms) / 1_000_000;
-                      const totalReq = (reqPerUnit * naturalQuantity);
+                    {bomLines.map((b: any) => {
+                      const line = order.lines?.find(candidate => candidate.id === b.orderLineId);
+                      const lineAtoms = BigInt(line?.orderedAtoms ?? order.orderedAtoms);
+                      const reqPerUnit = formatQuantity(BigInt(b.requirementAtoms));
+                      const totalReqAtoms = (BigInt(b.requirementAtoms) * lineAtoms) / BigInt(b.outputBasisAtoms);
+                      const totalReq = formatQuantity(totalReqAtoms);
                       return (
                         <tr key={b.id} className="hover:bg-surface-muted/50">
                           <td className="p-3 font-mono font-bold text-primary">
-                            {b.operationNodeKey}
+                            {b.operationNodeKey}<span className="block text-[10px] font-normal text-muted">Rev {b.engineeringRevisionNumber} · {line ? `Line ${line.lineNumber}` : 'Order'}</span>
                           </td>
                           <td className="p-3 font-medium text-ink">
                             {b.item?.name || b.itemId}
@@ -750,6 +836,118 @@ export function OrderDetail({ order }: OrderDetailProps) {
       )}
 
       {/* TAB 5: Fulfillment & Shipments */}
+      {activeTab === 'costing' && (
+        <div className="rounded-xl border bg-white p-6 border-line shadow-2xs space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4 border-line">
+            <div>
+              <h3 className="font-semibold text-sm text-ink">
+                Job Cost Ledger & Financial Variance
+              </h3>
+              <p className="text-xs text-muted mt-0.5">
+                Standard baseline budget vs authoritative actual incurred expenditure in 64-bit integer minor units.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              onClick={() => setShowCostModal(true)}
+              icon="plus"
+            >
+              Record Cost Entry
+            </Button>
+          </div>
+
+          {costingQuery.isLoading ? (
+            <div className="p-8 text-center text-xs text-muted">
+              Calculating job costing ledger balances...
+            </div>
+          ) : costingQuery.data ? (
+            <div className="space-y-6">
+              {/* Cost Summary Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 bg-surface rounded-xl border border-line">
+                  <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+                    Standard Budget
+                  </span>
+                  <div className="text-2xl font-bold font-mono text-ink mt-1">
+                    {formatCents(costingQuery.data.totalStandardCents)}
+                  </div>
+                  <p className="text-xs text-muted mt-1">Target baseline allocation</p>
+                </div>
+
+                <div className="p-4 bg-surface rounded-xl border border-line">
+                  <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+                    Actual Incurred Cost
+                  </span>
+                  <div className="text-2xl font-bold font-mono text-ink mt-1">
+                    {formatCents(costingQuery.data.totalActualCents)}
+                  </div>
+                  <p className="text-xs text-muted mt-1">Booked production expenses</p>
+                </div>
+
+                <div className="p-4 bg-surface rounded-xl border border-line">
+                  <span className="text-xs font-semibold text-muted uppercase tracking-wider">
+                    Cost Variance
+                  </span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`text-2xl font-bold font-mono ${costingQuery.data.isFavorable ? "text-success" : "text-danger"}`}>
+                      {formatCents(costingQuery.data.totalVarianceCents)}
+                    </span>
+                    <Badge variant={costingQuery.data.isFavorable ? "success" : "danger"}>
+                      {costingQuery.data.isFavorable ? "FAVORABLE" : "UNFAVORABLE"}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted mt-1">
+                    {costingQuery.data.isFavorable ? "Actual below standard budget" : "Budget overrun detected"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Categories Variance Table */}
+              <div className="overflow-x-auto border border-line rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-line bg-surface text-muted font-semibold uppercase tracking-wider">
+                      <th className="py-3 px-4">Cost Category</th>
+                      <th className="py-3 px-4 font-mono">Standard Budget</th>
+                      <th className="py-3 px-4 font-mono">Actual Incurred</th>
+                      <th className="py-3 px-4 font-mono">Variance</th>
+                      <th className="py-3 px-4 text-right">Performance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line text-ink">
+                    {costingQuery.data.categories.map((cat) => (
+                      <tr key={cat.category} className="hover:bg-surface-muted transition-colors">
+                        <td className="py-3 px-4 font-semibold text-ink">
+                          {cat.category}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-muted">
+                          {formatCents(cat.standardCents)}
+                        </td>
+                        <td className="py-3 px-4 font-mono font-medium text-ink">
+                          {formatCents(cat.actualCents)}
+                        </td>
+                        <td className={`py-3 px-4 font-mono font-semibold ${cat.isFavorable ? "text-success" : "text-danger"}`}>
+                          {formatCents(cat.varianceCents)}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Badge variant={cat.isFavorable ? "success" : "danger"}>
+                            {cat.isFavorable ? "FAVORABLE" : "UNFAVORABLE"}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="p-8 text-center text-xs text-muted">
+              No cost entries recorded for this order yet.
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === 'fulfillment' && (
         <div className="rounded-xl border bg-white p-6 border-line shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b pb-3 border-line">
@@ -842,6 +1040,175 @@ export function OrderDetail({ order }: OrderDetailProps) {
           )}
         </div>
       )}
+
+      {/* Record Cost Entry Modal */}
+      {showCostModal && (
+        <Dialog
+          isOpen
+          onClose={() => setShowCostModal(false)}
+          title="Record Job Cost Entry"
+          size="md"
+          pending={recordCostMutation.isPending}
+        >
+          <form onSubmit={handleRecordCost} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Cost Category
+              </label>
+              <Select
+                value={costCategory}
+                onChange={(e) => setCostCategory(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              >
+                <option value="MATERIAL">Material Cost</option>
+                <option value="LABOR">Direct Labor</option>
+                <option value="MACHINE">Machine Telemetry / Run-hour</option>
+                <option value="OUTSOURCED">Subcontractor / External Processing</option>
+                <option value="SCRAP">Scrap / Defect Loss</option>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Entry Type
+              </label>
+              <Select
+                value={costType}
+                onChange={(e) => setCostType(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              >
+                <option value="ACTUAL">Actual Incurred Cost</option>
+                <option value="STANDARD">Standard Baseline Budget</option>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Amount (USD $)
+              </label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={costAmountDollars}
+                onChange={(e) => setCostAmountDollars(e.target.value)}
+                placeholder="e.g. 245.50"
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Cost Rationale / Ledger Notes
+              </label>
+              <Textarea
+                value={costNotes}
+                onChange={(e) => setCostNotes(e.target.value)}
+                placeholder="Reference PO, technician shift sheet, or machine telemetry log..."
+                rows={3}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              />
+            </div>
+
+            <div className="dialog-actions">
+              <Button onClick={() => setShowCostModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={recordCostMutation.isPending}
+              >
+                {recordCostMutation.isPending ? "Recording..." : "Post to Ledger"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {/* Order Change Request Modal */}
+      {showChangeModal && (
+        <Dialog
+          isOpen
+          onClose={() => setShowChangeModal(false)}
+          title="Submit Order Change Request (OCR)"
+          size="md"
+          pending={changeRequestMutation.isPending}
+        >
+          <form onSubmit={handleChangeRequestSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Change Classification
+              </label>
+              <Select
+                value={changeType}
+                onChange={(e) => setChangeType(e.target.value)}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              >
+                <option value="DELIVERY_DATE">Delivery Date Rescheduling</option>
+                <option value="QUANTITY">Quantity Variation</option>
+                <option value="SPECIFICATION">BOM / Specification Revision</option>
+                <option value="CANCEL">Order Cancellation</option>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Requested Target Adjustment
+              </label>
+              <Input
+                type="text"
+                required
+                value={requestedValue}
+                onChange={(e) => setRequestedValue(e.target.value)}
+                placeholder="e.g. New delivery target 2026-11-01 or +20 units"
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-ink mb-1">
+                Business Reason & Customer Confirmation
+              </label>
+              <Textarea
+                required
+                value={changeReason}
+                onChange={(e) => setChangeReason(e.target.value)}
+                placeholder="Formal reason, customer reference correspondence, or supply disruption note..."
+                rows={3}
+                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
+              />
+            </div>
+
+            <div className="dialog-actions">
+              <Button onClick={() => setShowChangeModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={changeRequestMutation.isPending}
+              >
+                {changeRequestMutation.isPending ? "Submitting..." : "Submit Change Request"}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {showConfirmModal && <Dialog
+        isOpen
+        onClose={() => setShowConfirmModal(false)}
+        title="Confirm customer order?"
+        subtitle="This records the customer order as confirmed. Check every line and approved engineering revision before continuing."
+        size="sm"
+        pending={confirmMutation.isPending}
+        footer={<><Button onClick={() => setShowConfirmModal(false)} disabled={confirmMutation.isPending}>Cancel</Button><Button variant="primary" disabled={confirmMutation.isPending} onClick={() => confirmMutation.mutate(undefined, { onSuccess: () => setShowConfirmModal(false) })}>{confirmMutation.isPending ? 'Confirming…' : 'Confirm order'}</Button></>}
+      >
+        <div className="page-stack"><p className="text-sm text-ink">{order.lines?.length ?? 1} order line(s) will be included in the confirmed request.</p><p className="small muted">After confirmation, line items can no longer be edited or allocated as draft jobs.</p></div>
+      </Dialog>}
+
     </div>
   );
 }

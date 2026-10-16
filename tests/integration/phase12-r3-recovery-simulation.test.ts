@@ -195,6 +195,25 @@ describe('Phase 12: R3 Controlled Recovery & Advanced Capabilities', () => {
       expect(published.digestSha256.length).toBe(64); // SHA-256
     });
 
+    it('does not replace an already released passport', async () => {
+      const { alpha } = fixture;
+      const qc = alpha.users.qc.principal;
+      const original = await fixture.db.passport.findUnique({
+        where: { workspaceId_serialNumber: { workspaceId: qc.workspaceId, serialNumber: testSerialNumber } },
+      });
+
+      await expect(passportService.publishPassport(qc, {
+        serialNumber: testSerialNumber,
+        itemId: alpha.masters.rawItemId,
+      })).rejects.toThrow(BadRequestError);
+
+      const after = await fixture.db.passport.findUnique({
+        where: { workspaceId_serialNumber: { workspaceId: qc.workspaceId, serialNumber: testSerialNumber } },
+      });
+      expect(after?.digestSha256).toBe(original?.digestSha256);
+      expect(after?.itemId).toBe(original?.itemId);
+    });
+
     it('generates immutable product passport with canonical SHA-256 hash', async () => {
       const { alpha } = fixture;
       const qc = alpha.users.qc.principal;

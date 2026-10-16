@@ -76,3 +76,69 @@ export function useRecordTaskOutput() {
     },
   });
 }
+
+import {
+  fetchTaskIssues,
+  createTaskIssue,
+  resolveTaskIssue,
+  reopenTaskIssue,
+  scanBarcode,
+} from "./api";
+
+export function useTaskIssues(taskId: string) {
+  return useQuery({
+    queryKey: ["execution", "task", taskId, "issues"],
+    queryFn: () => fetchTaskIssues(taskId),
+    enabled: Boolean(taskId),
+    refetchInterval: 5000,
+  });
+}
+
+export function useCreateTaskIssue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, input }: { taskId: string; input: Parameters<typeof createTaskIssue>[1] }) =>
+      createTaskIssue(taskId, input),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["execution", "task", vars.taskId, "issues"] });
+      queryClient.invalidateQueries({ queryKey: ["execution", "task", vars.taskId] });
+      queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
+  });
+}
+
+export function useResolveTaskIssue(taskId?: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ issueId, notes }: { issueId: string; notes?: string }) =>
+      resolveTaskIssue(issueId, notes),
+    onSuccess: () => {
+      if (taskId) {
+        queryClient.invalidateQueries({ queryKey: ["execution", "task", taskId, "issues"] });
+        queryClient.invalidateQueries({ queryKey: ["execution", "task", taskId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
+  });
+}
+
+export function useReopenTaskIssue(taskId?: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ issueId, notes }: { issueId: string; notes?: string }) =>
+      reopenTaskIssue(issueId, notes),
+    onSuccess: () => {
+      if (taskId) {
+        queryClient.invalidateQueries({ queryKey: ["execution", "task", taskId, "issues"] });
+        queryClient.invalidateQueries({ queryKey: ["execution", "task", taskId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["execution"] });
+    },
+  });
+}
+
+export function useScanBarcode() {
+  return useMutation({
+    mutationFn: (code: string) => scanBarcode(code),
+  });
+}

@@ -1,9 +1,17 @@
 import { z } from 'zod';
 
+const positiveQuantitySchema = z.union([
+  z.number().positive(),
+  z.string().max(80).regex(/^\d+(\.\d+)?$/, 'Quantity must be a positive decimal string').refine(
+    (value) => /[1-9]/.test(value),
+    'Quantity must be greater than zero'
+  ),
+]);
+
 export const createOrderLineSchema = z.object({
   itemId: z.string().min(1),
   uomId: z.string().optional(),
-  orderedQuantity: z.number().positive(),
+  orderedQuantity: positiveQuantitySchema,
   unitPriceCents: z.number().int().nonnegative().optional(),
   requestedDate: z.string().optional(),
   promisedDate: z.string().nullable().optional(),
@@ -14,7 +22,7 @@ export const createOrderDraftSchema = z.object({
   customerId: z.string().min(1),
   orderTypeId: z.string().min(1),
   itemId: z.string().optional(),
-  orderedQuantity: z.number().positive().optional(),
+  orderedQuantity: positiveQuantitySchema.optional(),
   requestedDate: z.string(),
   promisedDate: z.string().nullable().optional(),
   facilityId: z.string().optional(),
@@ -30,7 +38,7 @@ export const updateOrderDraftSchema = z.object({
   customerId: z.string().min(1).optional(),
   orderTypeId: z.string().min(1).optional(),
   itemId: z.string().min(1).optional(),
-  orderedQuantity: z.number().positive().optional(),
+  orderedQuantity: positiveQuantitySchema.optional(),
   requestedDate: z.string().optional(),
   promisedDate: z.string().nullable().optional(),
   facilityId: z.string().optional(),
@@ -42,7 +50,7 @@ export const updateOrderDraftSchema = z.object({
 export const addOrderLineSchema = z.object({
   itemId: z.string().min(1),
   uomId: z.string().optional(),
-  orderedQuantity: z.number().positive(),
+  orderedQuantity: positiveQuantitySchema,
   unitPriceCents: z.number().int().nonnegative().optional(),
   requestedDate: z.string().optional(),
   promisedDate: z.string().nullable().optional(),
@@ -55,7 +63,7 @@ export const confirmOrderSchema = z.object({
 
 export const allocateJobSchema = z.object({
   orderLineId: z.string().min(1),
-  targetQuantity: z.number().positive(),
+  targetQuantity: positiveQuantitySchema,
   moNumber: z.string().optional(),
   departmentId: z.string().optional(),
   workflowVersionId: z.string().optional(),

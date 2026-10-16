@@ -72,6 +72,15 @@ describe('Phase 5: Atomic Qualified Manual Dispatch, Eligibility & Readiness', (
     });
     facility2Id = facility2.id;
 
+    await fixture.db.membershipFacilityGrant.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        membershipId: owner.membershipId,
+        facilityId: facility1Id,
+      },
+    });
+    owner.facilityIds = [...new Set([...(owner.facilityIds ?? []), facility1Id])];
+
     // 3. Create machine in primary facility and machine in other facility
     testMachineId = alpha.masters.machineId;
     await fixture.db.machine.update({
@@ -170,6 +179,28 @@ describe('Phase 5: Atomic Qualified Manual Dispatch, Eligibility & Readiness', (
       },
       'idemp-tech-unqual-cert'
     );
+
+    const publishedShifts = ['01', '02', '03', '04', '05'].flatMap((day) => {
+      const startAt = `2026-11-${day}T08:00:00.000Z`;
+      const endAt = `2026-11-${day}T17:00:00.000Z`;
+      return [
+        ...[qualifiedTechId, unqualifiedTechId].map((technicianId) => ({
+          technicianId,
+          intervalType: 'SHIFT' as const,
+          startAt,
+          endAt,
+          breakIntervals: [{ start: '12:00', end: '13:00' }],
+        })),
+        {
+          machineId: testMachineId,
+          intervalType: 'SHIFT' as const,
+          startAt,
+          endAt,
+          breakIntervals: [{ start: '12:00', end: '13:00' }],
+        },
+      ];
+    });
+    await mastersService.publishRosterIntervals(owner, { intervals: publishedShifts }, 'idemp-phase5-shifts');
 
     // 6. Workflow Template with OP-10 (requires skill, cert, machine) and QC-20 (inspection)
     const wfTmpl = await workflowService.createTemplate(
@@ -349,6 +380,21 @@ describe('Phase 5: Atomic Qualified Manual Dispatch, Eligibility & Readiness', (
     expect(evalResult.violations.length).toBe(0);
     // Unallocated material produces warning advisory, but does not block manual safety eligibility
     expect(evalResult.warnings.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('blocks otherwise qualified resources when no published roster covers the slot', async () => {
+    const planner = fixture.alpha.users.planner.principal;
+
+    const evalResult = await planningService.evaluateAssignment(planner, {
+      taskId: op10TaskId,
+      technicianId: qualifiedTechId,
+      machineId: testMachineId,
+      scheduledStartAt: '2026-11-06T09:00:00.000Z',
+      scheduledEndAt: '2026-11-06T11:00:00.000Z',
+    });
+
+    expect(evalResult.isEligible).toBe(false);
+    expect(evalResult.violations.some((violation) => violation.includes('published availability'))).toBe(true);
   });
 
   // -----------------------------------------------------------------

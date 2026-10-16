@@ -6,6 +6,7 @@ import { executeCommand } from '@/server/db/transaction';
 import { BadRequestError, ConflictError, NotFoundError } from '@/domain/errors';
 import { db } from '@/server/db/client';
 import { PlanningRepository } from './repository';
+import { AvailabilityService } from './availability';
 import {
   ScheduleTasksRequest,
   ScheduleTasksRequestSchema,
@@ -61,8 +62,12 @@ export class PlanningService {
     if ((startAt === undefined) !== (endAt === undefined)) {
       throw new BadRequestError('Both assignment start and end times must be provided together');
     }
-    if (startAt !== undefined && endAt !== undefined && new Date(startAt) >= new Date(endAt)) {
-      throw new BadRequestError('Assignment start time must be before end time');
+    if (startAt !== undefined && endAt !== undefined) {
+      const start = new Date(startAt).getTime();
+      const end = new Date(endAt).getTime();
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) {
+        throw new BadRequestError('Assignment start and end must be valid dates with start before end');
+      }
     }
   }
 
@@ -90,6 +95,30 @@ export class PlanningService {
 
     const violations: string[] = [];
     const warnings: string[] = [];
+
+    if ((input.technicianId || input.machineId) && (!input.scheduledStartAt || !input.scheduledEndAt)) {
+      violations.push('A scheduled time window is required to verify published availability');
+    } else if (input.scheduledStartAt && input.scheduledEndAt) {
+      const availability = new AvailabilityService(client);
+      const startAt = new Date(input.scheduledStartAt);
+      const endAt = new Date(input.scheduledEndAt);
+      const resources: Array<{ type: 'TECHNICIAN' | 'MACHINE'; id: string; label: string }> = [];
+      if (input.technicianId) resources.push({ type: 'TECHNICIAN', id: input.technicianId, label: 'Technician' });
+      if (input.machineId) resources.push({ type: 'MACHINE', id: input.machineId, label: 'Machine' });
+
+      for (const resource of resources) {
+        const intervals = await availability.getAvailableIntervals(principal, {
+          resourceType: resource.type,
+          resourceId: resource.id,
+          startAt,
+          endAt,
+          excludeTaskId: task.id,
+        });
+        if (!intervals.some((interval) => interval.startAt <= startAt && interval.endAt >= endAt)) {
+          violations.push(`${resource.label} '${resource.id}' has no published availability covering the full assignment window`);
+        }
+      }
+    }
 
     // Extract node requirements if available
     const node = task.instance.workflowVersion.nodes.find((n) => n.key === task.nodeKey);

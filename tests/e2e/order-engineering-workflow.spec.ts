@@ -175,6 +175,14 @@ describe('W05: Order Intake, Engineering Review & Workflow Release E2E Walkthrou
     const revId = orderDetailJson.data.engineeringRevisions[0].id;
     expect(revId).toBeDefined();
 
+    const mismatchedRevisionReq = new NextRequest(`http://localhost:3000/api/orders/not-the-order/engineering/${revId}`, {
+      headers: ownerHeaders,
+    });
+    const mismatchedRevisionRes = await getEngRev(mismatchedRevisionReq, {
+      params: Promise.resolve({ id: 'not-the-order', revId }),
+    });
+    expect(mismatchedRevisionRes.status).toBe(404);
+
     const saveEngReq = new NextRequest(
       `http://localhost:3000/api/orders/${orderId}/engineering/${revId}`,
       {
@@ -193,7 +201,7 @@ describe('W05: Order Intake, Engineering Review & Workflow Release E2E Walkthrou
               operationNodeKey: 'OP-10',
               itemId: fixture.alpha.masters.rawItemId,
               inputUomId: fixture.alpha.masters.uomPcsId,
-              requirementQuantity: 2.5,
+              requirementQuantity: '2',
               outputBasis: 1.0,
               allowancePercent: 5.0,
             },

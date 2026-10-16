@@ -26,7 +26,7 @@ describe('I07: Command Center & Cross-Module Live Dashboard', () => {
     expect(overview).toBeDefined();
     expect(overview.workspaceId).toBe(alpha.workspaceId);
     expect(overview.metrics.activeOrdersCount).toBe(0);
-    expect(overview.metrics.qcPassedUnits).toBe(0);
+    expect(overview.metrics.qcPassedUnits).toBe('0');
     expect(overview.metrics.materialShortagesCount).toBe(0);
     expect(overview.orders.length).toBe(0);
   });
@@ -71,5 +71,17 @@ describe('I07: Command Center & Cross-Module Live Dashboard', () => {
     for (const ord of custOverview.orders) {
       expect(ord.customerName).toBe('Apex Dynamics Corp');
     }
+  });
+
+  it('returns unavailable machine utilization when the workspace has no active machine records', async () => {
+    const { alpha } = fixture;
+    await fixture.db.machine.updateMany({
+      where: { workspaceId: alpha.workspaceId, archivedAt: null },
+      data: { archivedAt: new Date() },
+    });
+
+    const overview = await dashboardService.getDashboardOverview(alpha.users.planner.principal);
+
+    expect(overview.metrics.machineUtilizationPct).toBeNull();
   });
 });
