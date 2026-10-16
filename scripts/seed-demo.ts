@@ -92,7 +92,7 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     const machine = (await step(`machine-${f}`, k => masters.createMachine(principal, { code: `DM-M${f + 1}`, name: `${operation} station ${f + 1}`, machineClassId: machineClass.id, departmentId: department.id, calendarId: calendar.id }, k))).data;
     await step(`machine-spare-${f}`, k => masters.createMachine(principal, { code: `DM-M${f + 7}`, name: `${operation} backup`, machineClassId: machineClass.id, departmentId: department.id, calendarId: calendar.id, status: f % 2 ? 'MAINTENANCE' : 'AVAILABLE' }, k));
     const tech = (await step(`tech-${f}`, k => masters.createTechnician(principal, { code: `DM-T${f + 1}`, name: ['Hendra Wijaya', 'Rina Putri', 'Marco Santoso', 'Budi Pratama', 'Siti Rahma', 'Adi Nugroho'][f], departmentId: department.id, calendarId: calendar.id }, k))).data;
-    await step(`skill-${f}`, k => masters.assignSkill(principal, tech.id, { skillId: skill.id, level: 3 + f % 3 }, k));
+    await step(`skill-${f}`, k => masters.assignSkill(principal, tech.id, { skillId: skill.id, level: 3 + f % 2 }, k));
     await step(`cert-${f}`, k => masters.assignCert(principal, tech.id, { certificationId: certification.id, certificateNumber: `DM-CERT-${f + 1}`, issuedDate: day(-180).slice(0, 10), validUntil: day(f === 5 ? -5 : 365).slice(0, 10) }, k));
     const raw = (await step(`raw-${f}`, k => masters.createItem(principal, { code: `DM-RAW-${code}`, name: `${name} blank`, itemType: 'RAW', baseUomId: pcs.id, tracking: 'LOT' }, k))).data;
     const fg = (await step(`fg-${f}`, k => masters.createItem(principal, { code: `DM-FG-${code}`, name, itemType: 'FINISHED', baseUomId: pcs.id, tracking: 'LOT' }, k))).data;
@@ -133,7 +133,7 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     const lot = await db.lot.findFirstOrThrow({ where: { workspaceId: workspace.id, lotNumber: `DM-OPEN-${family}` } });
     const reservation = (await step(`reserve-${i}`, k => inventory.reserveStock(principal, { demandId: demand.id, locationId: loc('RAW'), lotId: lot.id, atoms: parseQuantity(String(quantity)) }, k))).data;
     // Non-overlapping resource bookings cover current and future shifts.
-    const start = new Date(anchor.getTime() + (2 + Math.floor(i / 6)) * 86400000 + (i % 6) * 3600000);
+    const start = new Date(anchor.getTime() + (2 + Math.floor(i / 6)) * 86400000 + (i % 6) * 7200000);
     await step(`assign-${i}`, k => planning.assignTask(principal, { taskId, expectedVersion: 1, technicianId: c.techId, machineId: c.machineId, startAt: start.toISOString(), endAt: new Date(start.getTime() + (45 + family * 15) * 60000).toISOString() }, k));
     if (scenario === 'reserved') continue;
     await step(`issue-${i}`, k => inventory.issueToProduction(principal, { demandId: demand.id, sourceLocationId: loc('RAW'), sourceLotId: lot.id, wipLocationId: loc('WIP'), atoms: parseQuantity(String(quantity)), reservationId: reservation.id }, k));

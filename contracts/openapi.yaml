@@ -91,6 +91,73 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { description: 'Task or assigned resource is not in the current workspace' }
         '409': { description: 'Stale task version, conflicting booking or inconsistent legacy booking windows' }
+
+  /api/planning/assignments/{id}/reschedule:
+    post:
+      summary: Reschedule an existing task assignment
+      description: Atomically updates scheduled slot and replaces resource bookings for assigned technician and machine.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scheduledStart, scheduledEnd]
+              properties:
+                scheduledStart: { type: string, format: date-time }
+                scheduledEnd: { type: string, format: date-time }
+      responses:
+        '200': { description: Rescheduled assignment envelope }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/planning/assignments/{id}/cancel:
+    post:
+      summary: Cancel an existing task assignment
+      description: Atomically releases confirmed bookings to CANCELLED, unassigns resources, and reverts task to READY status.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200': { description: Cancelled assignment envelope }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/planning/tasks/{id}/readiness:
+    get:
+      summary: Evaluate comprehensive dispatch readiness of a task
+      description: Evaluates predecessor completion status, material demand availability, and equipment readiness.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Readiness evaluation DTO }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/health:
     get:
       summary: Health check endpoint
@@ -741,6 +808,122 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/execution/tasks/{id}/issues:
+    get:
+      summary: List all issues recorded for a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Array of TaskIssueDTO }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Record a blocker or issue on a task
+      description: Records issue, notifies assigned owner, and transitions task to BLOCKED if severity is HIGH or CRITICAL.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, severity]
+              properties:
+                issueReasonId: { type: string }
+                title: { type: string }
+                description: { type: string }
+                severity: { type: string, enum: [LOW, MEDIUM, HIGH, CRITICAL] }
+                ownerUserId: { type: string }
+                expectedResolutionAt: { type: string, format: date-time }
+                evidence: { type: array, items: { type: string } }
+      responses:
+        '200': { description: Created TaskIssueDTO envelope }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/execution/issues/{id}/resolve:
+    post:
+      summary: Resolve an open task issue
+      description: Marks issue RESOLVED and automatically unblocks the parent task if no other blocking issues remain.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [notes]
+              properties:
+                notes: { type: string }
+      responses:
+        '200': { description: Resolved TaskIssueDTO envelope }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/execution/issues/{id}/reopen:
+    post:
+      summary: Reopen a previously resolved task issue
+      description: Reopens issue and sets parent task back to BLOCKED if severity is HIGH or CRITICAL.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [notes]
+              properties:
+                notes: { type: string }
+      responses:
+        '200': { description: Reopened TaskIssueDTO envelope }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/execution/scan:
+    post:
+      summary: Lookup task, order, or item by scanned barcode or QR string
+      description: Safely parses barcode/QR token with tenant authorization check.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200': { description: ScanResultDTO envelope }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/facilities:
     get:

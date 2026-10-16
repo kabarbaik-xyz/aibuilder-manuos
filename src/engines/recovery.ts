@@ -25,8 +25,8 @@ export function generateRecoveryOptions(
     projectedDelayedDate,
   } = input;
 
-  const tranche1Qty = 40;
-  const tranche2Qty = totalQty - tranche1Qty; // 80
+  const tranche1Qty = totalQty >= 80 ? 40 : Math.max(1, Math.floor(totalQty / 2));
+  const tranche2Qty = Math.max(0, totalQty - tranche1Qty);
 
   // Split Batch is feasible if we already have at least tranche1Qty passed by QC
   const splitFeasible = totalQty >= tranche1Qty;

@@ -167,6 +167,17 @@ model Workspace {
   formBindings      FormBinding[]
   formInstances     FormInstance[]
   formSubmissions   FormSubmission[]
+  orderChangeRequests      OrderChangeRequest[]
+  engineeringChangeOrders  EngineeringChangeOrder[]
+  nonConformanceReports    NonConformanceReport[]
+  materialSubstitutes      MaterialSubstitute[]
+  publishedSchedules       PublishedSchedule[]
+  apiKeys                  ApiKey[]
+  webhookEndpoints         WebhookEndpoint[]
+  webhookDeliveries        WebhookDelivery[]
+  offlineSyncQueues        OfflineSyncQueue[]
+  jobCostEntries           JobCostEntry[]
+  communicationConsents    CommunicationConsent[]
 
   @@map("workspaces")
 }
@@ -438,6 +449,8 @@ model Item {
   drawingRevisions  DrawingRevision[]
   shipmentLines     ShipmentLine[]
   passports         Passport[]
+  originalSubstitutes MaterialSubstitute[] @relation("OriginalItemSubstitutes")
+  substituteMatches   MaterialSubstitute[] @relation("SubstituteItemMatches")
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -916,6 +929,8 @@ model Order {
   reservations         StockReservation[]
   shipments            Shipment[]
   passports            Passport[]
+  changeRequests       OrderChangeRequest[]
+  jobCostEntries       JobCostEntry[]
 
   @@unique([workspaceId, orderNumber])
   @@unique([workspaceId, id])
@@ -2171,4 +2186,243 @@ model TaskIssue {
   @@unique([workspaceId, id])
   @@index([workspaceId, taskId])
   @@map("task_issues")
+}
+
+model OrderChangeRequest {
+  id                   String    @id @default(uuid())
+  workspaceId          String    @map("workspace_id")
+  orderId              String    @map("order_id")
+  requestNumber        String    @map("request_number")
+  changeType           String    @map("change_type") // QUANTITY | DATE | SPECIFICATION | CANCEL
+  status               String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | APPLIED
+  reason               String
+  requestedChangesJson String    @map("requested_changes_json")
+  impactSummaryJson    String?   @map("impact_summary_json")
+  submittedAt          DateTime? @map("submitted_at")
+  approvedAt           DateTime? @map("approved_at")
+  approvedByUserId     String?   @map("approved_by_user_id")
+  appliedAt            DateTime? @map("applied_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order                Order     @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, requestNumber])
+  @@index([workspaceId, orderId])
+  @@map("order_change_requests")
+}
+
+model EngineeringChangeOrder {
+  id                 String    @id @default(uuid())
+  workspaceId        String    @map("workspace_id")
+  code               String
+  title              String
+  description        String?
+  sourceRevisionId   String    @map("source_revision_id")
+  targetRevisionId   String?   @map("target_revision_id")
+  status             String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED | APPLIED
+  impactedJobsCount  Int       @default(0) @map("impacted_jobs_count")
+  migrationPolicy    String    @default("RUNNING_JOBS_MIGRATE") @map("migration_policy") // RUNNING_JOBS_MIGRATE | NEW_JOBS_ONLY
+  approvedAt         DateTime? @map("approved_at")
+  approvedByUserId   String?   @map("approved_by_user_id")
+  appliedAt          DateTime? @map("applied_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, code])
+  @@map("engineering_change_orders")
+}
+
+model NonConformanceReport {
+  id                 String    @id @default(uuid())
+  workspaceId        String    @map("workspace_id")
+  ncrNumber          String    @map("ncr_number")
+  title              String
+  description        String
+  severity           String    @default("MAJOR") // MINOR | MAJOR | CRITICAL
+  status             String    @default("OPEN") // OPEN | INVESTIGATING | CONTAINED | CORRECTED | CLOSED
+  taskId             String?   @map("task_id")
+  inspectionId       String?   @map("inspection_id")
+  rootCause          String?   @map("root_cause")
+  containmentAction  String?   @map("containment_action")
+  correctiveAction   String?   @map("corrective_action")
+  ownerUserId        String?   @map("owner_user_id")
+  resolvedAt         DateTime? @map("resolved_at")
+  closedAt           DateTime? @map("closed_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, ncrNumber])
+  @@index([workspaceId, taskId])
+  @@map("non_conformance_reports")
+}
+
+model MaterialSubstitute {
+  id                 String    @id @default(uuid())
+  workspaceId        String    @map("workspace_id")
+  originalItemId     String    @map("original_item_id")
+  substituteItemId   String    @map("substitute_item_id")
+  conversionRatio    BigInt    @default(1000000) @map("conversion_ratio") // atoms: 1.0 = 1_000_000
+  scope              String    @default("GLOBAL") // GLOBAL | ORDER_SPECIFIC
+  orderId            String?   @map("order_id")
+  reason             String
+  isActive           Boolean   @default(true) @map("is_active")
+  approvedByUserId   String?   @map("approved_by_user_id")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  originalItem       Item      @relation("OriginalItemSubstitutes", fields: [workspaceId, originalItemId], references: [workspaceId, id], onDelete: Cascade)
+  substituteItem     Item      @relation("SubstituteItemMatches", fields: [workspaceId, substituteItemId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, originalItemId])
+  @@map("material_substitutes")
+}
+
+model PublishedSchedule {
+  id                 String    @id @default(uuid())
+  workspaceId        String    @map("workspace_id")
+  revisionNumber     Int       @map("revision_number")
+  title              String
+  periodStart        DateTime  @map("period_start")
+  periodEnd          DateTime  @map("period_end")
+  status             String    @default("PUBLISHED") // DRAFT | PUBLISHED | SUPERSEDED
+  snapshotJson       String    @map("snapshot_json")
+  publishedByUserId  String    @map("published_by_user_id")
+  publishedAt        DateTime  @default(now()) @map("published_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, revisionNumber])
+  @@index([workspaceId, periodStart, periodEnd])
+  @@map("published_schedules")
+}
+
+model ApiKey {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  name         String
+  keyPrefix    String    @map("key_prefix")
+  keyHash      String    @map("key_hash")
+  scopesJson   String    @default("[]") @map("scopes_json")
+  isActive     Boolean   @default(true) @map("is_active")
+  expiresAt    DateTime? @map("expires_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, keyPrefix])
+  @@map("api_keys")
+}
+
+model WebhookEndpoint {
+  id           String            @id @default(uuid())
+  workspaceId  String            @map("workspace_id")
+  url          String
+  secret       String
+  eventsJson   String            @default("[]") @map("events_json")
+  isActive     Boolean           @default(true) @map("is_active")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@unique([workspaceId, id])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id           String          @id @default(uuid())
+  workspaceId  String          @map("workspace_id")
+  endpointId   String          @map("endpoint_id")
+  eventType    String          @map("event_type")
+  payloadJson  String          @map("payload_json")
+  statusCode   Int?            @map("status_code")
+  attempts     Int             @default(1)
+  status       String          @default("DELIVERED") // PENDING | DELIVERED | FAILED
+  errorReason  String?         @map("error_reason")
+  deliveredAt  DateTime?       @map("delivered_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  endpoint     WebhookEndpoint @relation(fields: [workspaceId, endpointId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, endpointId])
+  @@map("webhook_deliveries")
+}
+
+model OfflineSyncQueue {
+  id             String    @id @default(uuid())
+  workspaceId    String    @map("workspace_id")
+  userId         String    @map("user_id")
+  commandType    String    @map("command_type")
+  idempotencyKey String    @map("idempotency_key")
+  payloadJson    String    @map("payload_json")
+  status         String    @default("QUEUED") // QUEUED | APPLIED | CONFLICT | FAILED
+  errorReason    String?   @map("error_reason")
+  appliedAt      DateTime? @map("applied_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, idempotencyKey])
+  @@index([workspaceId, userId, status])
+  @@map("offline_sync_queues")
+}
+
+model JobCostEntry {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  orderId      String    @map("order_id")
+  taskId       String?   @map("task_id")
+  costCategory String    @map("cost_category") // MATERIAL | LABOR | MACHINE | OUTSOURCED | SCRAP
+  costType     String    @map("cost_type")     // STANDARD | ACTUAL
+  amountCents  BigInt    @map("amount_cents")
+  currency     String    @default("IDR")
+  notes        String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order        Order     @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, orderId, costType])
+  @@map("job_cost_entries")
+}
+
+model CommunicationConsent {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  recipient    String
+  channel      String    // EMAIL | WHATSAPP
+  isOptedIn    Boolean   @default(true) @map("is_opted_in")
+  optedInAt    DateTime  @default(now()) @map("opted_in_at")
+  optedOutAt   DateTime? @map("opted_out_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, recipient, channel])
+  @@map("communication_consents")
 }

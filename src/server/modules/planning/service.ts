@@ -595,7 +595,7 @@ export class PlanningService {
     const input: ScheduleTasksRequest = ScheduleTasksRequestSchema.parse(rawInput || {});
     const workspaceId = principal.workspaceId;
 
-    const [tasks, technicians, machines, existingBookings] = await Promise.all([
+    const [tasks, technicians, machines, existingBookings, confirmedSupplyLines] = await Promise.all([
       this.repo.findTasksForScheduling(workspaceId, {
         orderId: input.orderId,
         instanceId: input.instanceId,
@@ -604,7 +604,22 @@ export class PlanningService {
       this.repo.findTechnicians(workspaceId),
       this.repo.findMachines(workspaceId),
       this.repo.findExistingBookings(workspaceId),
+      this.db.supplyOrderLine.findMany({
+        where: {
+          workspaceId,
+          supplyOrder: { status: { in: ["APPROVED", "PARTIALLY_RECEIVED"] } },
+        },
+        include: { supplyOrder: true },
+        orderBy: { supplyOrder: { expectedDate: "asc" } },
+      }),
     ]);
+
+    const supplyEtaByItem = new Map<string, Date>();
+    for (const sol of confirmedSupplyLines) {
+      if (sol.supplyOrder?.expectedDate && !supplyEtaByItem.has(sol.itemId)) {
+        supplyEtaByItem.set(sol.itemId, sol.supplyOrder.expectedDate);
+      }
+    }
 
     const calendar: ScheduleCalendar = input.calendar
       ? {
@@ -638,12 +653,15 @@ export class PlanningService {
         }
       }
 
-      // Check material delay from demands
+      // Check material arrival from confirmed supply orders (never use demand need-by date as supply arrival)
       let materialAvailableAt: Date | null = null;
       const demands = t.instance.order?.demands.filter((d) => !d.taskId || d.taskId === t.id) || [];
       for (const d of demands) {
-        if (d.needByDate && (!materialAvailableAt || d.needByDate > materialAvailableAt)) {
-          materialAvailableAt = d.needByDate;
+        if (d.status !== "ALLOCATED" && d.status !== "ISSUED") {
+          const supplyEta = supplyEtaByItem.get(d.itemId);
+          if (supplyEta && (!materialAvailableAt || supplyEta > materialAvailableAt)) {
+            materialAvailableAt = supplyEta;
+          }
         }
       }
 
