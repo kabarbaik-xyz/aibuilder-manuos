@@ -43,6 +43,19 @@ export async function resumeTask(input: ResumeTaskInput) {
   });
 }
 
+export async function correctTaskWorkInterval(taskId: string, input: {
+  sessionId: string;
+  correctedDurationMinutes: number;
+  reasonCode: string;
+  reason: string;
+}) {
+  return apiRequest(`/api/execution/tasks/${taskId}/interval-corrections`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body: JSON.stringify(input),
+  });
+}
+
 export interface RecordOutputParams {
   taskId: string;
   outputAtoms: bigint | string | number;

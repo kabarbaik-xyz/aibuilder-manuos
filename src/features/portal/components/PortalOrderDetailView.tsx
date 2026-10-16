@@ -275,7 +275,7 @@ export function PortalOrderDetailView({ orderId }: { orderId: string }) {
               : "Pending schedule commitment"}
           </span>
           <span className="text-xs text-muted block mt-1">
-            {order.customerAcknowledged ? "Acknowledged by customer" : "Awaiting customer confirmation"}
+            {order.customerAcknowledged ? "Delivery plan confirmed by customer" : "Schedule estimate · awaiting customer confirmation"}
           </span>
         </Panel>
 

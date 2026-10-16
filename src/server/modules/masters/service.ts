@@ -2004,6 +2004,7 @@ export class MastersService {
                 unit: c.unit || null,
                 limitsJson: c.limitsJson,
                 isRequired: c.isRequired,
+                requiresEvidence: c.requiresEvidence,
               })),
             },
           },

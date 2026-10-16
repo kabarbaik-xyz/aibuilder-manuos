@@ -9,12 +9,14 @@ import {
   useRecordReinspection,
 } from "../hooks";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ButtonLink } from "@/components/ui/button-link";
 import { PageHeader } from "@/components/ui/page-header";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { formatQuantity, parseQuantity } from "@/domain/quantity";
+import { uploadInspectionEvidence } from "../api";
 import { PassportPublicationActions } from '@/features/passport/passport-publication-actions';
 import {
   ShieldCheck,
@@ -54,10 +56,11 @@ export function InspectionDetailView({
   const [checkResults, setCheckResults] = useState<
     Record<
       string,
-      { isPassed: boolean; measuredValue?: string; defectReason?: string }
+      { isPassed: boolean; measuredValue?: string; defectReason?: string; evidenceDocumentId?: string; evidenceFileName?: string }
     >
   >({});
   const [finalizeNotes, setFinalizeNotes] = useState("");
+  const [uploadingEvidence, setUploadingEvidence] = useState<Record<string, boolean>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
   // Rework dialog state
@@ -148,6 +151,7 @@ export function InspectionDetailView({
           measuredValue: val.measuredValue,
           isPassed: val.isPassed,
           defectReason: val.defectReason,
+          evidenceDocumentId: val.evidenceDocumentId,
         };
       });
 
@@ -191,6 +195,18 @@ export function InspectionDetailView({
         originalInspectionId: inspection.id,
         passedAtoms: parseQuantity(reinspectPassedQty, 0),
         scrappedAtoms: parseQuantity(reinspectScrappedQty || "0", 0),
+        results: Object.entries(checkResults).map(([code, value]) => {
+          const check = inspection.qcChecklist?.checks.find((candidate) => candidate.code === code);
+          return {
+            checkCode: code,
+            checkDescription: check?.description || code,
+            checkMethod: check?.method || "VISUAL",
+            measuredValue: value.measuredValue,
+            isPassed: value.isPassed,
+            evidenceDocumentId: value.evidenceDocumentId,
+            defectReason: value.defectReason,
+          };
+        }),
       });
       setShowReinspectModal(false);
       refetch();
@@ -459,6 +475,9 @@ export function InspectionDetailView({
                                 Required
                               </span>
                             )}
+                            {check.requiresEvidence && (
+                              <span className="text-xs text-primary uppercase font-bold">Evidence required</span>
+                            )}
                           </div>
                           <div className="text-xs text-muted mt-0.5">
                             Method: {check.method}{" "}
@@ -501,6 +520,33 @@ export function InspectionDetailView({
                           >
                             {state.isPassed ? "✓ PASS" : "✗ FAIL"}
                           </button>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            aria-label={`Attach evidence for ${check.code}`}
+                            disabled={uploadingEvidence[check.code]}
+                            onChange={async (event) => {
+                              const file = event.target.files?.[0];
+                              if (!file) return;
+                              setUploadingEvidence((current) => ({ ...current, [check.code]: true }));
+                              setFormError(null);
+                              try {
+                                const document = await uploadInspectionEvidence(inspection.id, file);
+                                setCheckResults((current) => ({
+                                  ...current,
+                                  [check.code]: { ...current[check.code], evidenceDocumentId: document.id, evidenceFileName: document.fileName },
+                                }));
+                              } catch (err: any) {
+                                setFormError(err.message || `Failed to upload evidence for ${check.code}`);
+                              } finally {
+                                setUploadingEvidence((current) => ({ ...current, [check.code]: false }));
+                                event.target.value = "";
+                              }
+                            }}
+                          />
+                          {uploadingEvidence[check.code] ? <span className="text-muted">Uploading…</span> : state.evidenceFileName ? <span className="text-success">{state.evidenceFileName}</span> : check.requiresEvidence ? <span className="text-danger">Required</span> : null}
                         </div>
                       </div>
                     );
@@ -901,6 +947,44 @@ export function InspectionDetailView({
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink"
               />
             </div>
+            {inspection.qcChecklist?.checks.map((check) => {
+              const state = checkResults[check.code] || { isPassed: true };
+              return (
+                <div key={check.id} className="rounded-lg border border-line p-3 space-y-2">
+                  <div className="text-xs font-medium text-ink">{check.code}: {check.description}{check.requiresEvidence ? ' · Evidence required' : ''}</div>
+                  {(check.method === 'MEASUREMENT' || check.method === 'GAUGE') && (
+                    <Input
+                      aria-label={`Reinspection reading for ${check.code}`}
+                      value={state.measuredValue || ''}
+                      onChange={(event) => setCheckResults((current) => ({ ...current, [check.code]: { ...current[check.code], isPassed: true, measuredValue: event.target.value } }))}
+                      placeholder={check.unit ? `Reading (${check.unit})` : 'Reading'}
+                    />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    aria-label={`Attach reinspection evidence for ${check.code}`}
+                    disabled={uploadingEvidence[check.code]}
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      setUploadingEvidence((current) => ({ ...current, [check.code]: true }));
+                      setFormError(null);
+                      try {
+                        const document = await uploadInspectionEvidence(inspection.id, file);
+                        setCheckResults((current) => ({ ...current, [check.code]: { ...current[check.code], isPassed: true, evidenceDocumentId: document.id, evidenceFileName: document.fileName } }));
+                      } catch (err: any) {
+                        setFormError(err.message || `Failed to upload evidence for ${check.code}`);
+                      } finally {
+                        setUploadingEvidence((current) => ({ ...current, [check.code]: false }));
+                        event.target.value = '';
+                      }
+                    }}
+                  />
+                  {state.evidenceFileName && <span className="text-xs text-success">{state.evidenceFileName}</span>}
+                </div>
+              );
+            })}
             <div className="dialog-actions">
               <Button onClick={() => setShowReinspectModal(false)}>
                 Cancel

@@ -505,11 +505,32 @@ export async function recordOutput(
       });
 
       // Update Task status
-      const nextStatus = isFinalOp
-        ? 'WAITING_QC'
-        : taskOutputComplete
-          ? 'COMPLETED'
-          : currentTask.status;
+      const nextStatus = taskOutputComplete
+        ? isFinalOp
+          ? 'WAITING_QC'
+          : 'COMPLETED'
+        : currentTask.status;
+      let completedSessionMinutes = 0;
+      if (taskOutputComplete && currentTask.status === 'RUNNING') {
+        const activeSession = await tx.workSession.findFirst({
+          where: { workspaceId, taskId: currentTask.id, sessionType: 'RUNNING', endedAt: null },
+          orderBy: { startedAt: 'desc' },
+        });
+        if (activeSession) {
+          completedSessionMinutes = Math.max(
+            1,
+            Math.round((now.getTime() - activeSession.startedAt.getTime()) / 60000)
+          );
+          await tx.workSession.update({
+            where: { workspaceId_id: { workspaceId, id: activeSession.id } },
+            data: {
+              endedAt: now,
+              durationMinutes: completedSessionMinutes,
+              version: { increment: 1 },
+            },
+          });
+        }
+      }
       const updatedTask = await tx.task.update({
         where: {
           workspaceId_id: {
@@ -520,6 +541,9 @@ export async function recordOutput(
         data: {
           status: nextStatus,
           completedAt: !isFinalOp && taskOutputComplete ? now : undefined,
+          ...(completedSessionMinutes > 0
+            ? { actualDurationMinutes: { increment: completedSessionMinutes } }
+            : {}),
           version: { increment: 1 },
         },
       });

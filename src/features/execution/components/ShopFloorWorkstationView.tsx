@@ -14,6 +14,7 @@ import {
   useStartTask,
   usePauseTask,
   useResumeTask,
+  useCorrectTaskWorkInterval,
   useRecordTaskOutput,
   useTaskIssues,
   useCreateTaskIssue,
@@ -36,6 +37,16 @@ export interface ShopFloorWorkstationViewProps {
   taskId: string;
 }
 
+const taskStatusLabels: Record<string, string> = {
+  READY: 'Siap',
+  ASSIGNED: 'Ditugaskan',
+  RUNNING: 'Berjalan',
+  PAUSED: 'Dijeda',
+  WAITING_QC: 'Menunggu QC',
+  COMPLETED: 'Selesai',
+  CANCELLED: 'Dibatalkan',
+};
+
 export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewProps) {
   const router = useRouter();
   const { principal } = useWorkspaceNavigation();
@@ -45,6 +56,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const startMutation = useStartTask();
   const pauseMutation = usePauseTask();
   const resumeMutation = useResumeTask();
+  const correctIntervalMutation = useCorrectTaskWorkInterval(taskId);
   const recordOutputMutation = useRecordTaskOutput();
 
   const [showPauseModal, setShowPauseModal] = useState(false);
@@ -95,6 +107,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     (i) => (i.status === "OPEN" || i.status === "REOPENED") && (i.severity === "CRITICAL" || i.severity === "HIGH")
   );
   const isExecutionBlocked = blockingIssues.length > 0;
+  const startBlockReasons = task?.readinessReasons.map((reason) => reason.message) ?? [];
 
   // Production Output Modal state
   const [showOutputModal, setShowOutputModal] = useState(false);
@@ -102,8 +115,11 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const [destLocationId, setDestLocationId] = useState('');
   const [lotNumber, setLotNumber] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
-  const [isFinal, setIsFinal] = useState(true);
   const [outputNotes, setOutputNotes] = useState('');
+  const [correctionSessionId, setCorrectionSessionId] = useState<string | null>(null);
+  const [correctionMinutes, setCorrectionMinutes] = useState('');
+  const [correctionReasonCode, setCorrectionReasonCode] = useState('MISSED_CLOCK');
+  const [correctionReason, setCorrectionReason] = useState('');
   const [locations, setLocations] = useState<Location[]>([]);
 
   useEffect(() => {
@@ -142,7 +158,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     return (
       <div className="flex flex-col items-center justify-center p-16 text-muted">
         <Icon name="clock" className="w-10 h-10 animate-spin mb-4 text-primary" />
-        <p className="text-sm">Loading task and material custody...</p>
+        <p className="text-sm">Memuat tugas dan status material…</p>
       </div>
     );
   }
@@ -150,13 +166,13 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   if (error || !task) {
     return (
       <div className="p-8 text-center bg-danger-soft border border-line rounded-xl my-6">
-        <p className="text-danger font-medium mb-2">Unable to load workstation task</p>
-        <p className="text-xs text-muted mb-4">{error?.message || 'Task not found'}</p>
+        <p className="text-danger font-medium mb-2">Tugas workstation tidak dapat dimuat</p>
+        <p className="text-xs text-muted mb-4">{error?.message || 'Tugas tidak ditemukan'}</p>
         <Link
           href="/shop-floor"
           className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded-lg transition"
         >
-          Return to Shop Floor Tasks
+          Kembali ke daftar tugas produksi
         </Link>
       </div>
     );
@@ -167,7 +183,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     e.preventDefault();
     setActionError(null);
     if (!isOnline) {
-      setActionError('You are offline. Issue changes are not queued and require a server connection.');
+      setActionError('Anda sedang luring. Perubahan issue tidak masuk antrean dan memerlukan koneksi server.');
       return;
     }
     try {
@@ -191,7 +207,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
       setIssueEvidence([]); setIssueOwnerId(''); setIssueMaterialId(''); setIssueEtaDate('');
       refetchIssues();
     } catch (err: any) {
-      setActionError(err.message || "Failed to report issue");
+      setActionError(err.message || "Issue gagal dilaporkan.");
     }
   };
 
@@ -215,7 +231,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     if (!resolvingIssueId) return;
     setActionError(null);
     if (!isOnline) {
-      setActionError('You are offline. Issue changes are not queued and require a server connection.');
+      setActionError('Anda sedang luring. Perubahan issue tidak masuk antrean dan memerlukan koneksi server.');
       return;
     }
     try {
@@ -228,24 +244,24 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
       setResolutionNotes("");
       refetchIssues();
     } catch (err: any) {
-      setActionError(err.message || "Failed to resolve issue");
+      setActionError(err.message || "Issue gagal diselesaikan.");
     }
   };
 
   const handleReopenIssue = async (issueId: string) => {
     setActionError(null);
     if (!isOnline) {
-      setActionError('You are offline. Issue changes are not queued and require a server connection.');
+      setActionError('Anda sedang luring. Perubahan issue tidak masuk antrean dan memerlukan koneksi server.');
       return;
     }
     try {
       await reopenIssueMutation.mutateAsync({
         issueId,
-        notes: "Reopened from workstation terminal",
+        notes: "Dibuka kembali dari workstation produksi",
       });
       refetchIssues();
     } catch (err: any) {
-      setActionError(err.message || "Failed to reopen issue");
+      setActionError(err.message || "Issue gagal dibuka kembali.");
     }
   };
 
@@ -254,7 +270,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     const code = scanCode.trim();
     if (!code) return;
     if (!isOnline) {
-      setScanError('You are offline. Scan lookup requires a server connection.');
+      setScanError('Anda sedang luring. Pemindaian memerlukan koneksi server.');
       return;
     }
     setScanError(null);
@@ -263,7 +279,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
       setScanResult(res);
     } catch (err: any) {
       setScanResult(null);
-      setScanError(err?.message || "Scan verification failed");
+      setScanError(err?.message || "Kode gagal diverifikasi.");
     }
   };
 
@@ -280,14 +296,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const handleStart = async () => {
     setActionError(null);
     if (!isOnline) {
-      setActionError('You are offline. Execution changes are not queued and require a server connection.');
+      setActionError('Anda sedang luring. Perubahan produksi tidak masuk antrean dan memerlukan koneksi server.');
       return;
     }
     try {
       await startMutation.mutateAsync({ taskId: task.id });
       refetch();
     } catch (err: any) {
-      setActionError(err.message || 'Failed to start task');
+      setActionError(err.message || 'Tugas gagal dimulai.');
     }
   };
 
@@ -295,12 +311,12 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     e.preventDefault();
     setActionError(null);
     if (!isOnline) {
-      setActionError('You are offline. Execution changes are not queued and require a server connection.');
+      setActionError('Anda sedang luring. Perubahan produksi tidak masuk antrean dan memerlukan koneksi server.');
       return;
     }
     const selectedPauseReason = pauseReasons?.find((reason) => reason.id === pauseReasonId);
     if (!selectedPauseReason) {
-      setActionError('Configure an active Pause reason before pausing this task.');
+      setActionError('Atur alasan jeda yang aktif sebelum menjeda tugas ini.');
       return;
     }
     try {
@@ -314,21 +330,41 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
       setPauseNotes('');
       refetch();
     } catch (err: any) {
-      setActionError(err.message || 'Failed to pause task');
+      setActionError(err.message || 'Tugas gagal dijeda.');
     }
   };
 
   const handleResume = async () => {
     setActionError(null);
     if (!isOnline) {
-      setActionError('You are offline. Execution changes are not queued and require a server connection.');
+      setActionError('Anda sedang luring. Perubahan produksi tidak masuk antrean dan memerlukan koneksi server.');
       return;
     }
     try {
       await resumeMutation.mutateAsync({ taskId: task.id });
       refetch();
     } catch (err: any) {
-      setActionError(err.message || 'Failed to resume task');
+      setActionError(err.message || 'Tugas gagal dilanjutkan.');
+    }
+  };
+
+  const handleCorrectInterval = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!correctionSessionId) return;
+    setActionError(null);
+    try {
+      await correctIntervalMutation.mutateAsync({
+        sessionId: correctionSessionId,
+        correctedDurationMinutes: Number(correctionMinutes),
+        reasonCode: correctionReasonCode,
+        reason: correctionReason.trim(),
+      });
+      setCorrectionSessionId(null);
+      setCorrectionMinutes('');
+      setCorrectionReason('');
+      await refetch();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Koreksi durasi gagal disimpan.');
     }
   };
 
@@ -336,7 +372,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     e.preventDefault();
     setActionError(null);
     if (!isOnline) {
-      setActionError('You are offline. Execution changes are not queued and require a server connection.');
+      setActionError('Anda sedang luring. Perubahan produksi tidak masuk antrean dan memerlukan koneksi server.');
       return;
     }
     try {
@@ -347,7 +383,6 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         destinationLocationId: destLocationId,
         lotNumber: task.order.itemTracking !== 'SERIAL' ? lotNumber.trim() || undefined : undefined,
         serialNumber: task.order.itemTracking === 'SERIAL' ? serialNumber.trim() || undefined : undefined,
-        isFinal,
         notes: outputNotes.trim() || undefined,
       });
       setShowOutputModal(false);
@@ -355,7 +390,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
       setSerialNumber(''); setOutputQty('');
       refetch();
     } catch (err: any) {
-      setActionError(err.message || 'Failed to record output');
+      setActionError(err.message || 'Hasil produksi gagal dicatat.');
     }
   };
 
@@ -370,11 +405,11 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   return (
     <div className="space-y-6">
       <div role="status" className="p-3 bg-surface border border-line rounded-xl flex flex-wrap items-center gap-2 text-xs text-muted">
-        <Badge variant={isOnline ? 'success' : 'warning'}>{isOnline ? 'Browser online' : 'Offline'}</Badge>
+        <Badge variant={isOnline ? 'success' : 'warning'}>{isOnline ? 'Terhubung' : 'Luring'}</Badge>
         <span>
           {isOnline
-            ? 'Execution changes require a successful server response and are not queued offline.'
-            : 'Scan, execution, output and issue changes are disabled until you reconnect.'}
+            ? 'Perubahan produksi hanya tercatat setelah server mengonfirmasi dan tidak disimpan saat luring.'
+            : 'Pemindaian, produksi, pencatatan hasil, dan perubahan issue dinonaktifkan sampai koneksi pulih.'}
         </span>
       </div>
 
@@ -386,30 +421,34 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               href="/shop-floor"
               className="text-xs text-primary hover:underline flex items-center gap-1"
             >
-              ← Back to My Tasks
+              ← Kembali ke daftar tugas
             </Link>
             <span className="text-muted">·</span>
             <span className="px-2 py-0.5 text-xs font-mono font-bold bg-surface text-ink rounded">
               {task.nodeKey}
             </span>
             {isRunning ? (
-              <Badge variant="blue">RUNNING LIVE</Badge>
+              <Badge variant="blue">SEDANG BERJALAN</Badge>
             ) : isPaused ? (
-              <Badge variant="warning">PAUSED</Badge>
+              <Badge variant="warning">DIJEDA</Badge>
             ) : (
-              <Badge variant="default">{task.status}</Badge>
+              <Badge variant="default">{taskStatusLabels[task.status] || task.status}</Badge>
             )}
           </div>
           <h1 className="text-2xl font-bold text-ink">{task.nodeName}</h1>
           <p className="text-xs text-muted mt-1">
-            Order <strong className="text-ink">{task.order.orderNumber}</strong> · Customer:{' '}
+            Pesanan <strong className="text-ink">{task.order.orderNumber}</strong> · Pelanggan:{' '}
             <strong className="text-ink">{task.order.customerName}</strong>
           </p>
           <div className="mt-2">
             {task.workInstruction ? <div className="page-stack">
-              <Badge variant="blue">Drawing {task.workInstruction.drawingNumber} · rev. {task.workInstruction.revisionCode}</Badge>
-              <a className="text-primary text-xs hover:underline" href={`/api/documents/${encodeURIComponent(task.workInstruction.documentId)}/download`} target="_blank" rel="noreferrer">Buka instruksi / drawing yang dirilis: {task.workInstruction.fileName}</a>
-              <span className="small muted">Engineering rev. {task.workInstruction.engineeringRevisionNumber} · dokumen dipin ke job ini</span>
+              <Badge variant="blue">Gambar teknik {task.workInstruction.drawingNumber || '—'} · revisi {task.workInstruction.revisionCode || '—'}</Badge>
+              {task.workInstruction.documentId && task.workInstruction.fileName ? (
+                <a className="text-primary text-xs hover:underline" href={`/api/documents/${encodeURIComponent(task.workInstruction.documentId)}/download`} target="_blank" rel="noreferrer">Buka instruksi/gambar teknik yang dirilis: {task.workInstruction.fileName}</a>
+              ) : (
+                <p role="status" className="text-xs text-warning">Revisi engineering terpasang, tetapi file instruksi belum tersedia.</p>
+              )}
+              <span className="small muted">Revisi engineering {task.workInstruction.engineeringRevisionNumber} · dokumen dipin ke job ini</span>
               {task.workInstruction.notes && <p className="small">{task.workInstruction.notes}</p>}
             </div> : <Badge variant="warning">Drawing / instruksi belum dipin · revisi v{task.instructionRevision}</Badge>}
           </div>
@@ -419,7 +458,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         <div className="flex items-center gap-6 bg-surface border border-line p-4 rounded-xl">
           <div>
             <div className="text-xs font-medium text-muted uppercase tracking-wider">
-              Task Timer
+              Waktu kerja
             </div>
             <div
               className={`text-2xl font-mono font-bold tracking-tight mt-0.5 ${
@@ -429,7 +468,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               {formattedLiveTimer}
             </div>
             <div className="text-xs text-muted">
-              Target: {task.plannedDurationMinutes}m
+              Target: {task.plannedDurationMinutes} menit
             </div>
           </div>
 
@@ -442,23 +481,23 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               disabled={!isOnline}
               icon="search"
             >
-              Scan Barcode
+              Pindai kode
             </Button>
             <Button
               onClick={() => setShowIssueModal(true)}
               disabled={!isOnline}
               icon="alert"
             >
-              Report Issue
+              Laporkan issue
             </Button>
             {(task.status === "READY" || task.status === "ASSIGNED") && (
               <Button
                 variant="primary"
                 onClick={handleStart}
-                disabled={!isOnline || startMutation.isPending || isExecutionBlocked}
+                disabled={!isOnline || startMutation.isPending || !task.canStart}
                 icon="bolt"
               >
-                {startMutation.isPending ? "Starting..." : isExecutionBlocked ? "Blocked by Issue" : "Start Operation"}
+                  {startMutation.isPending ? "Memulai…" : !task.canStart ? "Periksa Syarat Mulai" : "Mulai operasi"}
               </Button>
             )}
 
@@ -469,7 +508,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                   disabled={!isOnline || pauseMutation.isPending}
                   icon="clock"
                 >
-                  Pause Work
+                  Jeda operasi
                 </Button>
                 <Button
                   variant="primary"
@@ -480,7 +519,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                   disabled={!isOnline || recordOutputMutation.isPending}
                   icon="check"
                 >
-                  Record Output
+                  Catat hasil
                 </Button>
               </>
             )}
@@ -492,7 +531,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 disabled={!isOnline || resumeMutation.isPending}
                 icon="reset"
               >
-                {resumeMutation.isPending ? 'Resuming...' : 'Resume Operation'}
+                {resumeMutation.isPending ? 'Melanjutkan…' : 'Lanjutkan operasi'}
               </Button>
             )}
           </div>
@@ -505,24 +544,62 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
             <Icon name="alert" className="w-5 h-5 text-danger flex-shrink-0" />
             <div>
               <div className="text-xs font-bold text-danger uppercase tracking-wide">
-                Workstation Execution Blocked ({blockingIssues.length} active issue{blockingIssues.length > 1 ? "s" : ""})
+                Blocker aktif ({blockingIssues.length})
               </div>
               <p className="text-xs text-ink mt-0.5">
-                {blockingIssues[0]?.title} — Critical/high severity issues must be resolved before starting this operation.
+                {blockingIssues[0]?.title} — selesaikan blocker sebelum memulai operasi ini.
               </p>
             </div>
           </div>
           <Button size="small" onClick={() => setShowIssueModal(true)}>
-            View / Add Notes
+            Lihat / tambah catatan
           </Button>
         </div>
       )}
 
       {actionError && (
         <div className="p-4 bg-danger-soft border border-line rounded-xl text-xs text-danger">
-          <strong>Action Blocked:</strong> {actionError}
+          <strong>Tindakan terhambat:</strong> {actionError}
         </div>
       )}
+
+      {(task.status === 'READY' || task.status === 'ASSIGNED') && (
+        <section aria-labelledby="task-start-readiness-title" className={`p-4 border border-line rounded-xl ${startBlockReasons.length ? 'bg-warning-soft' : 'bg-success-soft'}`}>
+          <h2 id="task-start-readiness-title" className="text-sm font-semibold text-ink">
+            Pemeriksaan sebelum mulai
+          </h2>
+          <p className="text-xs text-muted mt-1">
+            Alasan berasal dari pemeriksaan server untuk teknisi, blocker, operasi sebelumnya, material, status pesanan, dan status operasi.
+          </p>
+          {startBlockReasons.length ? (
+            <ul className="mt-3 space-y-1 text-xs text-ink" role="list">
+              {startBlockReasons.map((reason) => <li key={reason}>• {reason}</li>)}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-success">Pemeriksaan yang tersedia sudah terpenuhi.</p>
+          )}
+        </section>
+      )}
+
+      <section aria-labelledby="stage-quantity-title" className="bg-surface border border-line rounded-xl p-5">
+        <h2 id="stage-quantity-title" className="text-sm font-semibold text-ink">Rekonsiliasi hasil operasi</h2>
+        <p className="text-xs text-muted mt-1">Jumlah berasal dari catatan output dan QC tersimpan, dalam satuan atom produk.</p>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {[
+            ['Batas input', task.stageQuantitySummary.stageInputCapAtoms],
+            ['Tercatat', task.stageQuantitySummary.cumulativeRecordedAtoms],
+            ['Scrap', task.stageQuantitySummary.cumulativeScrapAtoms],
+            ['Masuk rework', task.stageQuantitySummary.cumulativeReworkInAtoms],
+            ['Keluar ke rework', task.stageQuantitySummary.cumulativeReworkOutAtoms],
+            ['Sisa dapat dicatat', task.stageQuantitySummary.remainingRecordableAtoms],
+          ].map(([label, atoms]) => (
+            <div key={label} className="rounded-lg border border-line bg-surface-muted p-3">
+              <div className="text-[11px] text-muted">{label}</div>
+              <div className="mt-1 font-mono text-sm font-semibold text-ink">{formatQuantity(BigInt(atoms))}</div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* Main Grid: Materials, Predecessors & Instructions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -533,18 +610,18 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h3 className="text-sm font-semibold text-ink">
-                  Material Custody & Allocation
+              Ketersediaan dan alokasi material
                 </h3>
                 <p className="text-xs text-muted">
-                  Live verification of shop-floor WIP vs raw warehouse balances
+                  Pemeriksaan kebutuhan, stok WIP, alokasi, dan stok gudang
                 </p>
               </div>
               {task.materialReadiness.isFullyIssued ? (
-                <Badge variant="blue">ALL MATERIALS IN WIP</Badge>
+                <Badge variant="blue">SEMUA MATERIAL ADA DI WIP</Badge>
               ) : task.materialReadiness.isFullyAllocated ? (
-                <Badge variant="blue">RESERVED IN WAREHOUSE</Badge>
+                <Badge variant="blue">TERSEDIA DI GUDANG</Badge>
               ) : (
-                <Badge variant="warning">WAITING ISSUE</Badge>
+                <Badge variant="warning">MENUNGGU PENGELUARAN</Badge>
               )}
             </div>
 
@@ -552,10 +629,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <table className="w-full text-left text-xs border-collapse border-line">
                 <thead>
                   <tr className="border-b border-line text-muted font-semibold uppercase tracking-wider">
-                    <th className="py-2.5 px-3">Item</th>
-                    <th className="py-2.5 px-3">Required</th>
-                    <th className="py-2.5 px-3">WIP Issued</th>
-                    <th className="py-2.5 px-3">Warehouse Stock</th>
+                    <th className="py-2.5 px-3">Barang</th>
+                    <th className="py-2.5 px-3">Kebutuhan</th>
+                    <th className="py-2.5 px-3">Sudah dikeluarkan ke WIP</th>
+                    <th className="py-2.5 px-3">Stok gudang</th>
                     <th className="py-2.5 px-3">Status</th>
                   </tr>
                 </thead>
@@ -579,11 +656,11 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                       </td>
                       <td className="py-2.5 px-3">
                         {demand.issuedAtoms >= demand.requiredAtoms ? (
-                          <span className="text-success font-medium">✓ Ready in WIP</span>
+                          <span className="text-success font-medium">✓ Siap di WIP</span>
                         ) : demand.reservedAtoms >= demand.requiredAtoms ? (
-                          <span className="text-primary font-medium">Reserved</span>
+                          <span className="text-primary font-medium">Dialokasikan</span>
                         ) : (
-                          <span className="text-warning font-medium">Shortage</span>
+                          <span className="text-warning font-medium">Kurang</span>
                         )}
                       </td>
                     </tr>
@@ -596,15 +673,15 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           {/* Predecessor Tasks Guard */}
           <div className="bg-surface border border-line rounded-xl p-5">
             <h3 className="text-sm font-semibold text-ink mb-1">
-              Predecessor Operations Guard
+              Operasi pendahulu
             </h3>
             <p className="text-xs text-muted mb-4">
-              All predecessor tasks must be marked COMPLETED before operation starts.
+              Semua operasi sebelumnya harus selesai sebelum operasi ini dimulai.
             </p>
 
             {task.predecessors.length === 0 ? (
               <p className="text-xs text-success">
-                ✓ Root task: No predecessor dependencies required.
+                ✓ Operasi awal: tidak memiliki operasi pendahulu.
               </p>
             ) : (
               <div className="space-y-2">
@@ -618,11 +695,11 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                     </span>
                     {p.isCompleted ? (
                       <span className="text-success font-medium flex items-center gap-1">
-                        ✓ Completed
+                        ✓ Selesai
                       </span>
                     ) : (
                       <span className="text-warning font-medium flex items-center gap-1">
-                        ⏳ Incomplete ({p.status})
+                        ⏳ Belum selesai ({p.status})
                       </span>
                     )}
                   </div>
@@ -636,14 +713,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         <div className="space-y-6">
           <div className="bg-surface border border-line rounded-xl p-5">
             <h3 className="text-sm font-semibold text-ink mb-1">
-              Work Sessions Log
+              Riwayat sesi kerja
             </h3>
             <p className="text-xs text-muted mb-4">
-              Immutable server records of start, pause, and resume events
+              Catatan server untuk mulai, jeda, lanjut, dan penyelesaian sesi
             </p>
 
             {task.sessions.length === 0 ? (
-              <p className="text-xs text-muted">No work sessions started yet.</p>
+              <p className="text-xs text-muted">Belum ada sesi kerja.</p>
             ) : (
               <div className="space-y-3">
                 {task.sessions.map((sess) => (
@@ -657,22 +734,40 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                           sess.sessionType === 'RUNNING' ? 'text-success' : 'text-warning'
                         }`}
                       >
-                        {sess.sessionType}
+                        {sess.sessionType === 'RUNNING' ? 'BERJALAN' : 'DIJEDA'}
                       </span>
                       <span className="text-muted font-mono">
                         {sess.durationMinutes !== null
-                          ? `${sess.durationMinutes}m`
-                          : 'Active live'}
+                          ? `${sess.durationMinutes} menit`
+                          : 'Sedang aktif'}
                       </span>
                     </div>
                     <div className="text-xs text-muted">
-                      Started: {new Date(sess.startedAt).toLocaleTimeString()}
-                      {sess.endedAt && ` → ${new Date(sess.endedAt).toLocaleTimeString()}`}
+                      Mulai: {new Date(sess.startedAt).toLocaleTimeString('id-ID')}
+                      {sess.endedAt && ` → ${new Date(sess.endedAt).toLocaleTimeString('id-ID')}`}
                     </div>
                     {sess.notes && (
                       <div className="text-xs text-muted italic">
                         &ldquo;{sess.notes}&rdquo;
                       </div>
+                    )}
+                    {task.intervalCorrections.filter((correction) => correction.sessionId === sess.id).map((correction) => (
+                      <div key={correction.id} className="mt-2 rounded-md border border-line bg-warning-soft p-2 text-xs text-ink">
+                        <div className="font-semibold">Koreksi: {correction.previousDurationMinutes ?? '—'} → {correction.correctedDurationMinutes} menit</div>
+                        <div>{correction.reasonCode}: {correction.reason}</div>
+                        <div className="text-muted">Oleh {correction.actorName || 'akun aktif'} · {new Date(correction.occurredAt).toLocaleString('id-ID')}</div>
+                      </div>
+                    ))}
+                    {sess.endedAt && sess.durationMinutes !== null && principal?.permissions.some((permission) => ['task.assign', 'planning.write', 'workspace.admin'].includes(permission)) && (
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          setCorrectionSessionId(sess.id);
+                          setCorrectionMinutes(String(sess.durationMinutes));
+                        }}
+                      >
+                        Koreksi durasi
+                      </Button>
                     )}
                   </div>
                 ))}
@@ -687,10 +782,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         <div className="flex justify-between items-center mb-4">
           <div>
             <h3 className="text-sm font-semibold text-ink">
-              Task Issues, Blockers & Downtime
+              Issue, hambatan, dan waktu henti
             </h3>
             <p className="text-xs text-muted">
-              Reported task blockers, downtime context, and resolution history
+              Catatan hambatan, konteks waktu henti, dan riwayat penyelesaian
             </p>
           </div>
           <Button
@@ -698,24 +793,24 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
             onClick={() => setShowIssueModal(true)}
             icon="plus"
           >
-            Report Issue
+            Laporkan issue
           </Button>
         </div>
 
         {(!issues || issues.length === 0) ? (
           <div className="text-center py-8 text-muted text-xs bg-surface-muted rounded-lg border border-line">
-            No active issues or blockers reported on this workstation.
+            Belum ada issue atau hambatan aktif pada tugas ini.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse border-line">
               <thead>
                 <tr className="border-b border-line text-muted font-semibold uppercase tracking-wider">
-                  <th className="py-2.5 px-3">Severity</th>
-                  <th className="py-2.5 px-3">Title & Notes</th>
+                  <th className="py-2.5 px-3">Tingkat</th>
+                  <th className="py-2.5 px-3">Judul dan catatan</th>
                   <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Reported By</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
+                  <th className="py-2.5 px-3">Dilaporkan oleh</th>
+                  <th className="py-2.5 px-3 text-right">Tindakan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line text-ink">
@@ -723,7 +818,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                   <tr key={iss.id}>
                     <td className="py-2.5 px-3">
                       <Badge variant={iss.severity === "CRITICAL" ? "danger" : iss.severity === "HIGH" ? "warning" : "default"}>
-                        {iss.severity}
+                        {({ LOW: 'RENDAH', MEDIUM: 'SEDANG', HIGH: 'TINGGI', CRITICAL: 'KRITIS' } as const)[iss.severity]}
                       </Badge>
                     </td>
                     <td className="py-2.5 px-3">
@@ -738,7 +833,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                       )}
                       {iss.evidence && iss.evidence.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
-                          <span className="text-xs text-muted font-medium">Evidence:</span>
+                          <span className="text-xs text-muted font-medium">Bukti:</span>
                           {iss.evidence.map((url, idx) => (
                             <a
                               key={idx}
@@ -747,7 +842,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface border border-line text-xs text-primary hover:underline"
                             >
-                              Photo #{idx + 1}
+                              Foto #{idx + 1}
                             </a>
                           ))}
                         </div>
@@ -755,13 +850,13 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                     </td>
                     <td className="py-2.5 px-3">
                       <Badge variant={iss.status === "RESOLVED" ? "success" : iss.status === "OPEN" ? "warning" : "blue"}>
-                        {iss.status}
+                        {({ OPEN: 'TERBUKA', REOPENED: 'DIBUKA KEMBALI', RESOLVED: 'SELESAI' } as const)[iss.status as 'OPEN' | 'REOPENED' | 'RESOLVED'] || iss.status}
                       </Badge>
                     </td>
                     <td className="py-2.5 px-3 text-muted">
                       {iss.reporterUserName || "Operator"}
                       <span className="block text-xs text-muted">
-                        {new Date(iss.createdAt).toLocaleString()}
+                      {new Date(iss.createdAt).toLocaleString('id-ID')}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-right">
@@ -771,7 +866,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                           onClick={() => handleReopenIssue(iss.id)}
                           disabled={!isOnline || reopenIssueMutation.isPending}
                         >
-                          Reopen
+                          Buka kembali
                         </Button>
                       ) : (
                         <Button
@@ -783,7 +878,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                             setShowResolveModal(true);
                           }}
                         >
-                          Resolve
+                          Selesaikan
                         </Button>
                       )}
                     </td>
@@ -797,14 +892,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
       {/* Pause Reason Modal */}
       {showPauseModal && (
-        <Dialog isOpen onClose={() => setShowPauseModal(false)} title="Pause work session" size="md" pending={pauseMutation.isPending}>
+        <Dialog isOpen onClose={() => setShowPauseModal(false)} title="Jeda sesi kerja" size="md" pending={pauseMutation.isPending}>
           
             
 
             <form onSubmit={handlePauseSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-ink mb-1">
-                  Reason for Pause
+                  Alasan jeda
                 
                 <Select
                   value={pauseReasonId}
@@ -812,13 +907,13 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                   onChange={(e) => setPauseReasonId(e.target.value)}
                   className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-warning/20"
                 >
-                  <option value="">{pauseReasonsLoading ? 'Loading reasons…' : 'Select a configured reason'}</option>
+                  <option value="">{pauseReasonsLoading ? 'Memuat alasan…' : 'Pilih alasan yang tersedia'}</option>
                   {pauseReasons?.map((reason) => (
                     <option key={reason.id} value={reason.id}>{reason.code} · {reason.label}</option>
                   ))}
                 </Select></label>
                 {!pauseReasonsLoading && !pauseReasons?.length && (
-                  <p className="mt-1 text-xs text-warning">No active Pause reasons are configured for this workspace.</p>
+                  <p className="mt-1 text-xs text-warning">Belum ada alasan jeda aktif yang diatur di ruang kerja ini.</p>
                 )}
               </div>
 
@@ -829,7 +924,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 <Textarea
                   value={pauseNotes}
                   onChange={(e) => setPauseNotes(e.target.value)}
-                  placeholder="Optional details regarding pause..."
+                  placeholder="Catatan jeda (opsional)…"
                   rows={3}
                   className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-warning/20"
                 /></label>
@@ -839,14 +934,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 <Button
                   onClick={() => setShowPauseModal(false)}
                 >
-                  Cancel
+                  Batal
                 </Button>
                 <Button
                   type="submit"
                   variant="primary"
                   disabled={!isOnline || pauseMutation.isPending || pauseReasonsLoading || !pauseReasonId}
                 >
-                  {pauseMutation.isPending ? 'Pausing...' : 'Confirm Pause'}
+                {pauseMutation.isPending ? 'Menjeda…' : 'Jeda sesi'}
                 </Button>
               </div>
             </form>
@@ -859,14 +954,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         <Dialog
           isOpen
           onClose={() => setShowOutputModal(false)}
-          title="Record Production Output"
+          title="Catat hasil produksi"
           size="md"
           pending={recordOutputMutation.isPending}
         >
           <form onSubmit={handleOutputSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
-                Output Quantity (units)
+                Jumlah hasil (unit)
               </label>
               <input
                 type="number"
@@ -876,16 +971,16 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 value={outputQty}
                 onChange={(e) => setOutputQty(e.target.value)}
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
-                placeholder="e.g. 10"
+                placeholder="Contoh: 10"
               />
               <span className="text-xs text-muted block mt-1">
-                Quantity produced from this operation to be transferred into holding/quarantine.
+                Jumlah hasil operasi yang akan dipindahkan ke lokasi penahanan/karantina.
               </span>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
-                Destination Location
+                Lokasi tujuan
               </label>
               <Select
                 value={destLocationId}
@@ -900,33 +995,24 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               </Select>
             </div>
 
+            <p className="text-xs text-muted">
+              Penentuan apakah operasi ini tahap terakhir mengikuti rute produksi yang dirilis.
+            </p>
+
             {task.order.itemTracking === 'SERIAL' ? <FormField id="output-serial" label="Nomor seri unit" required help="Satu unit per pencatatan pada operasi produksi final. Rework memakai output yang sudah ada.">
               <Input value={serialNumber} onChange={(event) => setSerialNumber(event.target.value)} required />
             </FormField> : <FormField id="output-lot" label="Nomor lot / batch" help="Dibuat otomatis bila dikosongkan.">
               <Input value={lotNumber} onChange={(event) => setLotNumber(event.target.value)} />
             </FormField>}
 
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="checkbox"
-                id="isFinalOp"
-                checked={isFinal}
-                onChange={(e) => setIsFinal(e.target.checked)}
-                className="rounded border-line text-primary focus:ring-primary"
-              />
-              <label htmlFor="isFinalOp" className="text-xs text-ink cursor-pointer">
-                Final operation (posts output to Quarantine and awaits QC Inspection)
-              </label>
-            </div>
-
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
-                Production Notes
+                Catatan produksi
               </label>
               <Textarea
                 value={outputNotes}
                 onChange={(e) => setOutputNotes(e.target.value)}
-                placeholder="Optional remarks, machine telemetry, batch observations..."
+                placeholder="Catatan proses, kondisi mesin, atau pengamatan batch (opsional)…"
                 rows={2}
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
               />
@@ -936,14 +1022,56 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <Button
                 onClick={() => setShowOutputModal(false)}
               >
-                Cancel
+                Batal
               </Button>
               <Button
                 type="submit"
                 variant="primary"
                 disabled={!isOnline || recordOutputMutation.isPending}
               >
-                {recordOutputMutation.isPending ? 'Recording Output...' : 'Confirm Output'}
+                {recordOutputMutation.isPending ? 'Mencatat hasil…' : 'Catat hasil'}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {correctionSessionId && (
+        <Dialog
+          isOpen
+          onClose={() => setCorrectionSessionId(null)}
+          title="Koreksi durasi sesi kerja"
+          size="sm"
+          pending={correctIntervalMutation.isPending}
+        >
+          <form onSubmit={handleCorrectInterval} className="space-y-4">
+            <FormField id="corrected-duration" label="Durasi yang benar (menit)" required>
+              <Input
+                id="corrected-duration"
+                type="number"
+                min="0"
+                max="10080"
+                step="1"
+                required
+                value={correctionMinutes}
+                onChange={(event) => setCorrectionMinutes(event.target.value)}
+              />
+            </FormField>
+            <FormField id="correction-reason-code" label="Kode alasan" required>
+              <Select id="correction-reason-code" value={correctionReasonCode} onChange={(event) => setCorrectionReasonCode(event.target.value)}>
+                <option value="MISSED_CLOCK">Jam mulai/jeda terlewat</option>
+                <option value="TIME_ENTRY_ERROR">Kesalahan pencatatan waktu</option>
+                <option value="OTHER">Alasan lain</option>
+              </Select>
+            </FormField>
+            <FormField id="correction-reason" label="Penjelasan dan bukti alasan" required>
+              <Textarea id="correction-reason" minLength={3} maxLength={500} required value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} rows={3} />
+            </FormField>
+            <p className="text-xs text-muted">Koreksi menyimpan nilai sebelumnya, perubahan, alasan, dan akun pengubah dalam riwayat operasi.</p>
+            <div className="dialog-actions">
+              <Button onClick={() => setCorrectionSessionId(null)}>Batal</Button>
+              <Button type="submit" variant="primary" disabled={correctIntervalMutation.isPending}>
+                {correctIntervalMutation.isPending ? 'Menyimpan…' : 'Simpan koreksi'}
               </Button>
             </div>
           </form>
@@ -964,28 +1092,28 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
             {actionError && <p role="alert" className="text-danger">{actionError}</p>}
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
-                Issue Title / Summary
+                Judul/ringkasan issue
               </label>
               <input
                 type="text"
                 required
                 value={issueTitle}
                 onChange={(e) => setIssueTitle(e.target.value)}
-                placeholder="e.g. Spindle overheating above tolerance"
+                placeholder="Contoh: suhu spindle melebihi batas"
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
-                Issue Category & Reason
+                Kategori dan alasan issue
               </label>
               <Select
                 value={selectedReasonId}
                 onChange={(e: any) => setSelectedReasonId(e.target.value)}
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
               >
-                <option value="">Select standard blocker/issue reason (optional)...</option>
+                <option value="">Pilih alasan issue/hambatan (opsional)…</option>
                 {issueReasons?.map((r) => (
                   <option key={r.id} value={r.id}>
                     [{r.category}] {r.code} - {r.label}
@@ -996,28 +1124,28 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
-                Severity Level
+                Tingkat keparahan
               </label>
               <Select
                 value={issueSeverity}
                 onChange={(e: any) => setIssueSeverity(e.target.value)}
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
               >
-                <option value="LOW">Low (Informational, non-blocking)</option>
-                <option value="MEDIUM">Medium (Degraded performance)</option>
-                <option value="HIGH">High (Blocks work start / safety alert)</option>
-                <option value="CRITICAL">Critical (Immediate workstation shutdown)</option>
+                <option value="LOW">Rendah (informasi, tidak menghambat)</option>
+                <option value="MEDIUM">Sedang (kinerja menurun)</option>
+                <option value="HIGH">Tinggi (menghambat mulai kerja/peringatan keselamatan)</option>
+                <option value="CRITICAL">Kritis (perlu penghentian kerja segera)</option>
               </Select>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
-                Description & Notes
+                Uraian dan catatan
               </label>
               <Textarea
                 value={issueDescription}
                 onChange={(e) => setIssueDescription(e.target.value)}
-                placeholder="Observed readings, error codes, tooling wear..."
+                placeholder="Hasil pengukuran, kode error, atau keausan alat…"
                 rows={3}
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
               />
@@ -1075,20 +1203,20 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         <Dialog
           isOpen
           onClose={() => { setShowResolveModal(false); setResolvingIssueId(null); }}
-          title="Resolve Task Issue"
+          title="Selesaikan issue"
           size="sm"
           pending={resolveIssueMutation.isPending}
         >
           <form onSubmit={handleResolveIssue} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
-                Resolution Notes
+                Catatan penyelesaian
               </label>
               <Textarea
                 required
                 value={resolutionNotes}
                 onChange={(e) => setResolutionNotes(e.target.value)}
-                placeholder="Action taken to clear the blocker (e.g. replaced worn insert, cleaned cooling port)..."
+                placeholder="Tindakan untuk mengatasi hambatan, misalnya mengganti insert aus atau membersihkan saluran pendingin…"
                 rows={3}
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
               />
@@ -1096,14 +1224,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
             <div className="dialog-actions">
               <Button onClick={() => { setShowResolveModal(false); setResolvingIssueId(null); }}>
-                Cancel
+                Batal
               </Button>
               <Button
                 type="submit"
                 variant="primary"
                 disabled={!isOnline || resolveIssueMutation.isPending}
               >
-                {resolveIssueMutation.isPending ? "Resolving..." : "Confirm Resolution"}
+                {resolveIssueMutation.isPending ? "Menyelesaikan…" : "Selesaikan issue"}
               </Button>
             </div>
           </form>
@@ -1115,14 +1243,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         <Dialog
           isOpen
           onClose={() => { setShowScanModal(false); setScanResult(null); setScanError(null); }}
-          title="Scan Task / Job / Order Code"
+          title="Pindai kode tugas/job/pesanan"
           size="sm"
           pending={scanMutation.isPending}
         >
           <form onSubmit={handleScanSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-ink mb-1" htmlFor="workstation-scan-input">
-                Barcode / QR Code String
+                Kode barcode/QR
               </label>
               <input
                 id="workstation-scan-input"
@@ -1131,7 +1259,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 autoFocus
                 value={scanCode}
                 onChange={(e) => setScanCode(e.target.value)}
-                placeholder="Scan or enter TASK:, JOB: or ORDER: code..."
+                placeholder="Pindai atau masukkan kode TASK:, JOB:, atau ORDER:…"
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink font-mono focus:outline-none focus:border-primary"
               />
             </div>
@@ -1150,7 +1278,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 <p className="text-ink m-0">{scanResult.title}</p>
                 {scanResult.taskId && getScanOpenPath(scanResult, principal?.permissions.includes('order.read') ?? false) && (
                   <Button type="button" variant="primary" size="small" onClick={openScannedEntity}>
-                    Open
+                    Buka
                   </Button>
                 )}
               </div>
@@ -1158,14 +1286,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
             <div className="dialog-actions">
               <Button onClick={() => { setShowScanModal(false); setScanResult(null); setScanError(null); }}>
-                Close
+                Tutup
               </Button>
               <Button
                 type="submit"
                 variant="primary"
                 disabled={!isOnline || scanMutation.isPending}
               >
-                {scanMutation.isPending ? "Verifying..." : "Verify Code"}
+                {scanMutation.isPending ? "Memeriksa…" : "Periksa kode"}
               </Button>
             </div>
           </form>

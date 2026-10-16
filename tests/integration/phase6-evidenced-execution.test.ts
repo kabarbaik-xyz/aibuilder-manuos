@@ -4,6 +4,9 @@ import { WorkflowService } from '@/server/modules/workflow/service';
 import { OrderService } from '@/server/modules/orders/service';
 import { EngineeringService } from '@/server/modules/engineering/service';
 import { ExecutionService } from '@/server/modules/execution/service';
+import { CreateTaskIssueSchema } from '@/server/modules/execution/contracts';
+import { DocumentRepository } from '@/server/modules/documents/repository';
+import { DocumentService } from '@/server/modules/documents/service';
 import { InventoryService } from '@/server/modules/inventory/service';
 import { MastersService } from '@/server/modules/masters/service';
 import { PortalService } from '@/server/modules/portal/service';
@@ -15,6 +18,14 @@ import { parseQuantity } from '@/domain/quantity';
 import { BadRequestError, NotFoundError } from '@/domain/errors';
 
 describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Milestones', () => {
+  it('rejects client-supplied evidence URLs instead of treating them as uploaded evidence', () => {
+    expect(() => CreateTaskIssueSchema.parse({
+      taskId: 'task-id',
+      title: 'Unsafe external evidence',
+      evidence: ['https://example.invalid/fabricated.jpg'],
+    })).toThrow();
+  });
+
   let fixture: FactoryFixture;
   let workflowService: WorkflowService;
   let orderService: OrderService;
@@ -253,6 +264,64 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
       'idemp-resume-op10'
     );
     expect(resumeRes.data.task.status).toBe('RUNNING');
+
+    const closedRun = await fixture.db.workSession.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, taskId: op10TaskId, sessionType: 'RUNNING', endedAt: { not: null } },
+      orderBy: { startedAt: 'asc' },
+    });
+    const durationBeforeCorrection = (await fixture.db.task.findUniqueOrThrow({ where: { id: op10TaskId } })).actualDurationMinutes;
+    const correctionInput = {
+      sessionId: closedRun.id,
+      correctedDurationMinutes: (closedRun.durationMinutes ?? 0) + 7,
+      reasonCode: 'TIME_ENTRY_ERROR',
+      reason: 'Clock-out was recorded seven minutes early.',
+    };
+    await executionService.correctWorkInterval(
+      fixture.alpha.users.planner.principal,
+      op10TaskId,
+      correctionInput,
+      'idemp-correct-op10-interval',
+    );
+    await executionService.correctWorkInterval(
+      fixture.alpha.users.planner.principal,
+      op10TaskId,
+      correctionInput,
+      'idemp-correct-op10-interval',
+    );
+    const correctedSession = await fixture.db.workSession.findUniqueOrThrow({ where: { id: closedRun.id } });
+    const taskAfterCorrection = await fixture.db.task.findUniqueOrThrow({ where: { id: op10TaskId } });
+    expect(correctedSession.durationMinutes).toBe(correctionInput.correctedDurationMinutes);
+    expect(taskAfterCorrection.actualDurationMinutes).toBe(durationBeforeCorrection + 7);
+
+    const detail = await executionService.getTaskExecutionDetail(operator, op10TaskId);
+    const planner = await fixture.db.user.findUniqueOrThrow({
+      where: { id: fixture.alpha.users.planner.userId },
+      select: { name: true },
+    });
+    expect(detail.intervalCorrections).toHaveLength(1);
+    expect(detail.intervalCorrections[0]).toMatchObject({
+      sessionId: closedRun.id,
+      previousDurationMinutes: closedRun.durationMinutes,
+      correctedDurationMinutes: correctionInput.correctedDurationMinutes,
+      deltaMinutes: 7,
+      reasonCode: 'TIME_ENTRY_ERROR',
+      actorUserId: fixture.alpha.users.planner.userId,
+      actorName: planner.name,
+    });
+    expect(detail.canStart).toBe(false);
+    expect(detail.stageQuantitySummary.stageInputCapAtoms).toBe(detail.order.targetAtoms);
+    await expect(executionService.correctWorkInterval(
+      operator,
+      op10TaskId,
+      correctionInput,
+      'idemp-operator-correct-op10',
+    )).rejects.toThrow();
+    await expect(executionService.correctWorkInterval(
+      fixture.alpha.users.planner.principal,
+      op10TaskId,
+      { ...correctionInput, sessionId: resumeRes.data.session.id },
+      'idemp-correct-active-op10',
+    )).rejects.toThrow('Only closed work intervals can be corrected.');
   });
 
   // -----------------------------------------------------------------
@@ -261,6 +330,18 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
   it('records blocker issue, enforces task block guard, and unblocks upon resolution', async () => {
     const operator = fixture.alpha.users.operator.principal;
     const planner = fixture.alpha.users.planner.principal;
+    const documents = new DocumentService(new DocumentRepository(fixture.db), fixture.db);
+    const uploadedEvidence = await documents.uploadDocument(operator, {
+      fileName: 'issue-broken-tool.jpg',
+      mimeType: 'image/jpeg',
+      content: Buffer.from('fixture image evidence'),
+      link: { parentType: 'TASK', parentId: op10TaskId, customerVisible: false },
+    });
+    const materialDemand = await fixture.db.materialDemand.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, orderId },
+      select: { itemId: true },
+    });
+    const expectedResolutionAt = new Date('2026-10-20T10:00:00.000Z').toISOString();
 
     // 1. Create a CRITICAL blocker issue on OP-10
     const createIssueRes = await executionService.createTaskIssue(
@@ -272,7 +353,9 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
         description: 'End mill snapped during rapid traverse',
         severity: 'CRITICAL',
         ownerUserId: fixture.alpha.users.planner.userId,
-        evidence: ['https://storage.manuos.internal/photos/issue-broken-tool.jpg'],
+        affectedMaterialId: materialDemand.itemId,
+        expectedResolutionAt,
+        evidenceDocumentIds: [uploadedEvidence.id],
       },
       'idemp-create-issue-op10'
     );
@@ -328,6 +411,9 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
     expect(issuesList.length).toBeGreaterThanOrEqual(1);
     expect(issuesList[0].id).toBe(createdIssueId);
     expect(issuesList[0].evidence.length).toBe(1);
+    expect(issuesList[0].evidence[0]).toBe(`/api/documents/${encodeURIComponent(uploadedEvidence.id)}/download`);
+    expect(issuesList[0].affectedMaterialId).toBe(materialDemand.itemId);
+    expect(issuesList[0].expectedResolutionAt).toBe(expectedResolutionAt);
   });
 
   // -----------------------------------------------------------------
