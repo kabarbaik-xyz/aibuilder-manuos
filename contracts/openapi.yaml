@@ -443,6 +443,7 @@ paths:
   /api/ai/extract-rfq:
     post:
       summary: Extract engineering requirements from customer RFQ
+      description: Requires an authenticated workspace principal with order.create or engineering.write. Returns unavailable with aiResult null if generation fails; no synthetic draft is substituted.
       requestBody:
         required: true
         content:
@@ -496,10 +497,20 @@ paths:
                   reason:
                     type: string
                     nullable: true
+                  error:
+                    type: string
+                    nullable: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/ai/generate-workflow:
     post:
       summary: Propose dynamic workflow DAG configuration
+      description: Requires an authenticated workspace principal with engineering.write, workflow.create, or workflow.edit_draft. Returns unavailable with aiResult null if generation fails; proposals must be verified before use.
       requestBody:
         required: true
         content:
@@ -545,6 +556,15 @@ paths:
                   reason:
                     type: string
                     nullable: true
+                  error:
+                    type: string
+                    nullable: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/ai/promise-explain:
     post:

@@ -37,6 +37,7 @@ export function IntakeModal() {
   const [workflowEdges, setWorkflowEdges] = useState<WorkflowEdge[]>([]);
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [workflowName, setWorkflowName] = useState(PRESETS.panel.name);
 
   const applyPreset = (key: keyof typeof PRESETS) => {
@@ -49,6 +50,8 @@ export function IntakeModal() {
   const handleExtract = async () => {
     if (!rfqText.trim()) return;
     setLoading(true);
+    setRequestError(null);
+    setExtractedDraft(null);
 
     try {
       const res = await fetch('/api/ai/extract-rfq', {
@@ -57,101 +60,29 @@ export function IntakeModal() {
         body: JSON.stringify({ rfqText }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.aiResult) {
-          const rawRouting = data.aiResult.routing || data.aiResult.draftRouting;
-          const normalizedRouting = Array.isArray(rawRouting)
-            ? rawRouting.map((r: any) =>
-                typeof r === 'string' ? r : r.operation || r.name || 'Step'
-              )
-            : ['CNC Machining', 'Press Bending', 'Assembly', 'QC Inspection'];
-
-          setExtractedDraft({
-            ...data.aiResult,
-            routing: normalizedRouting,
-            ambiguities: Array.isArray(data.aiResult.ambiguities)
-              ? data.aiResult.ambiguities
-              : [],
-          });
-          if (data.aiResult.partName) {
-            setWorkflowName(data.aiResult.partName);
-          }
-          setLoading(false);
-          return;
-        }
+      const data = await res.json();
+      if (!res.ok || !data.aiResult) {
+        setRequestError(data.error ?? 'RFQ extraction is unavailable. Retry later.');
+        return;
       }
+      const rawRouting = data.aiResult.routing || data.aiResult.draftRouting;
+      setExtractedDraft({
+        ...data.aiResult,
+        routing: Array.isArray(rawRouting) ? rawRouting.map((r: any) => typeof r === 'string' ? r : r.operation || r.name) : [],
+        ambiguities: Array.isArray(data.aiResult.ambiguities) ? data.aiResult.ambiguities : [],
+      });
+      if (data.aiResult.partName) setWorkflowName(data.aiResult.partName);
     } catch {
-      // Fallback below
+      setRequestError('RFQ extraction is unavailable. Retry later.');
+    } finally {
+      setLoading(false);
     }
-
-    // Deterministic fallback extraction
-    const isAerospace =
-      rfqText.toLowerCase().includes('titanium') ||
-      rfqText.toLowerCase().includes('actuator');
-    const isBracket =
-      rfqText.toLowerCase().includes('bracket') ||
-      rfqText.toLowerCase().includes('stainless');
-
-    if (isAerospace) {
-      setExtractedDraft({
-        customer: 'AeroDynamics Propulsion',
-        partName: 'Titanium Ti-6Al-4V Actuator Manifold',
-        qty: 60,
-        material: 'Titanium Ti-6Al-4V Grade 5',
-        routing: [
-          '5-Axis CNC Milling',
-          'Wire EDM Port Cutting',
-          'Hydrostatic Pressure Test',
-          'CMM First Article QC',
-        ],
-        ambiguities: [
-          'Anodizing specification type (Type II vs Type III Hardcoat)',
-          'Secondary deburring edge break radius',
-        ],
-        isFallback: true,
-      });
-      setWorkflowName('Titanium Ti-6Al-4V Actuator Manifold');
-    } else if (isBracket) {
-      setExtractedDraft({
-        customer: 'Nusantara Rail Transit',
-        partName: 'Precision Mounting Bracket SS316',
-        qty: 300,
-        material: 'Stainless Steel 316L',
-        routing: [
-          'Fiber Laser Cutting',
-          'Press Brake Bending',
-          'Nitric Passivation',
-          'Dimensional QC',
-        ],
-        ambiguities: [
-          'Passivation ASTM standard (ASTM A967 or AMS 2700)',
-          'Internal cutout corner radius tolerance',
-        ],
-        isFallback: true,
-      });
-      setWorkflowName('Precision Mounting Bracket SS316');
-    } else {
-      setExtractedDraft({
-        customer: 'Meridian Energy',
-        partName: 'Custom control panel',
-        qty: 120,
-        material: 'Aluminum 6061-T6',
-        routing: ['CNC Machining', 'Press Bending', 'Electrical Assembly', 'QC Inspection'],
-        ambiguities: [
-          'Which surface finish is required? (Clear anodized, powder coated, or mill finish?)',
-          'What dimensional tolerances apply to enclosure mounting holes? (Standard ±0.1mm assumed)',
-        ],
-        isFallback: true,
-      });
-      setWorkflowName('Custom control panel');
-    }
-
-    setLoading(false);
   };
 
   const handleGenerateWorkflow = async () => {
     setLoading(true);
+    setRequestError(null);
+    setShowWorkflow(false);
 
     try {
       const res = await fetch('/api/ai/generate-workflow', {
@@ -163,9 +94,8 @@ export function IntakeModal() {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.aiResult?.nodes && data.aiResult?.edges) {
+      const data = await res.json();
+      if (res.ok && data.aiResult?.nodes && data.aiResult?.edges) {
           const validation = validateWorkflowDAG(
             data.aiResult.nodes,
             data.aiResult.edges
@@ -174,79 +104,22 @@ export function IntakeModal() {
             setWorkflowNodes(data.aiResult.nodes);
             setWorkflowEdges(data.aiResult.edges);
             setShowWorkflow(true);
-            setLoading(false);
             return;
           }
-        }
+          setRequestError('The generated workflow did not pass DAG validation. Review the input and retry.');
+      } else {
+        setRequestError(data.error ?? 'Workflow generation is unavailable. Retry later.');
       }
     } catch {
-      // Fallback
+      setRequestError('Workflow generation is unavailable. Retry later.');
+    } finally {
+      setLoading(false);
     }
-
-    const isAerospace =
-      workflowName.toLowerCase().includes('titanium') ||
-      workflowName.toLowerCase().includes('actuator');
-    const isBracket =
-      workflowName.toLowerCase().includes('bracket') ||
-      workflowName.toLowerCase().includes('stainless');
-
-    let defaultNodes: WorkflowNode[];
-    let defaultEdges: WorkflowEdge[];
-
-    if (isAerospace) {
-      defaultNodes = [
-        { id: '1', name: 'Raw titanium billet sawing', department: 'Preparation' },
-        { id: '2', name: '5-Axis CNC rough & finish milling', department: 'Machining' },
-        { id: '3', name: 'Wire EDM micro-orifice cutting', department: 'Machining' },
-        { id: '4', name: '350-bar hydrostatic pressure testing', department: 'Testing' },
-        { id: '5', name: 'Coordinate measuring machine (CMM) QC', department: 'Quality' },
-      ];
-      defaultEdges = [
-        { from: '1', to: '2' },
-        { from: '2', to: '3' },
-        { from: '3', to: '4' },
-        { from: '4', to: '5' },
-      ];
-    } else if (isBracket) {
-      defaultNodes = [
-        { id: '1', name: 'CNC fiber laser sheet cutting', department: 'Machining' },
-        { id: '2', name: 'Press brake precision bending', department: 'Forming' },
-        { id: '3', name: 'Chemical nitric acid passivation', department: 'Surface' },
-        { id: '4', name: 'Optical comparator & final QC', department: 'Quality' },
-      ];
-      defaultEdges = [
-        { from: '1', to: '2' },
-        { from: '2', to: '3' },
-        { from: '3', to: '4' },
-      ];
-    } else {
-      defaultNodes = [
-        { id: '1', name: 'Saw cutting raw plate', department: 'Preparation' },
-        { id: '2', name: '5-Axis CNC milling', department: 'Machining' },
-        { id: '3', name: 'Press brake bending', department: 'Forming' },
-        { id: '4', name: 'Electrical harness wiring & assembly', department: 'Assembly' },
-        { id: '5', name: 'Final dimensional & electrical QC', department: 'Quality' },
-      ];
-      defaultEdges = [
-        { from: '1', to: '2' },
-        { from: '2', to: '3' },
-        { from: '3', to: '4' },
-        { from: '4', to: '5' },
-      ];
-    }
-
-    const validation = validateWorkflowDAG(defaultNodes, defaultEdges);
-    if (validation.isValid) {
-      setWorkflowNodes(defaultNodes);
-      setWorkflowEdges(defaultEdges);
-      setShowWorkflow(true);
-    }
-    setLoading(false);
   };
 
   const handleConfirmDraftOrder = () => {
     store.showToast(
-      'Sample order draft confirmed. Unresolved questions retained.'
+      'Draft preview closed. No order was created.'
     );
     closeModal();
   };
@@ -292,6 +165,8 @@ export function IntakeModal() {
           Supports multi-line inquiries, materials (6061-T6, Ti-6Al-4V, SS316), and manufacturing operations.
         </span>
       </div>
+
+      {requestError && <p role="alert" className="mt-2 text-sm text-red-700">{requestError}</p>}
 
       <div className="flex gap-2">
         <Button
@@ -344,9 +219,7 @@ export function IntakeModal() {
                     )}
                   </React.Fragment>
                 ))
-              ) : (
-                <strong>CNC Machining → Press Bending → Assembly → QC</strong>
-              )}
+              ) : <span className="muted">No routing steps returned.</span>}
             </div>
           </div>
 
@@ -405,7 +278,7 @@ export function IntakeModal() {
               </div>
 
               <p className="small muted mt-2">
-                Topologically sorted sequence · Enforces role coverage and material inputs.
+                AI proposal only. Verify steps, qualifications, materials, and capacity before use.
               </p>
 
               <Button
@@ -415,7 +288,7 @@ export function IntakeModal() {
                 icon="check"
                 onClick={handleConfirmDraftOrder}
               >
-                Confirm draft order
+                Close preview
               </Button>
             </div>
           )}

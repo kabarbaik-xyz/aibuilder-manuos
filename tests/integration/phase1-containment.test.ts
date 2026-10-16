@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import * as geminiClient from '@/server/ai/gemini-client';
 import { POST as explainImpactHandler } from '@/app/api/ai/explain-impact/route';
@@ -7,6 +8,8 @@ import { POST as partnerFitHandler } from '@/app/api/ai/partner-fit/route';
 import { POST as recoveryOptionsHandler } from '@/app/api/ai/recovery-options/route';
 import { POST as promiseExplainHandler } from '@/app/api/ai/promise-explain/route';
 import { POST as memoryRecommendHandler } from '@/app/api/ai/memory-recommend/route';
+import { POST as extractRfqHandler } from '@/app/api/ai/extract-rfq/route';
+import { POST as generateWorkflowHandler } from '@/app/api/ai/generate-workflow/route';
 import { ExecutionService } from '@/server/modules/execution/service';
 import { recordOutput } from '@/server/modules/execution/output';
 import { PassportService } from '@/server/modules/quality/passport';
@@ -55,11 +58,13 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
       { name: 'recovery-options', handler: recoveryOptionsHandler, body: { disruption: {}, constraints: {}, capacity: {} } },
       { name: 'promise-explain', handler: promiseExplainHandler, body: { request: {}, feasibilityResult: {} } },
       { name: 'memory-recommend', handler: memoryRecommendHandler, body: { query: {}, stats: {} } },
+      { name: 'extract-rfq', handler: extractRfqHandler, body: { rfqText: 'Customer request for a machined bracket.' } },
+      { name: 'generate-workflow', handler: generateWorkflowHandler, body: { orderTypeName: 'Bracket', description: 'Machine a bracket.' } },
     ];
 
     for (const ep of aiEndpoints) {
       it(`rejects unauthenticated requests to ${ep.name} with 401`, async () => {
-        const req = new Request(`http://localhost:3000/api/ai/${ep.name}`, {
+        const req = new NextRequest(`http://localhost:3000/api/ai/${ep.name}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(ep.body),
@@ -71,7 +76,7 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
 
       it(`rejects unauthorized customer access to ${ep.name} with 403`, async () => {
         const { alpha } = fixture;
-        const req = new Request(`http://localhost:3000/api/ai/${ep.name}`, {
+        const req = new NextRequest(`http://localhost:3000/api/ai/${ep.name}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -93,7 +98,7 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
         });
 
         try {
-          const req = new Request(`http://localhost:3000/api/ai/${ep.name}`, {
+          const req = new NextRequest(`http://localhost:3000/api/ai/${ep.name}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
