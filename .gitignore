@@ -62,3 +62,4 @@ artifacts/ui-restoration/
 # Local database backup manifests and generated storage
 storage/*
 backups/
+.superpowers/

@@ -6,6 +6,7 @@ import { ConflictError, NotFoundError, BadRequestError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 import { instantiateWorkflow, InstantiationResult } from '@/server/modules/workflow/instantiate';
 import { assertRequiredFormsFinalized } from '@/server/modules/forms/completion';
+import { NotificationService } from '@/server/modules/notifications/service';
 
 export interface OrderReleaseResult extends InstantiationResult {
   jobs: InstantiationResult[];
@@ -204,6 +205,12 @@ export async function releaseOrder(
       const releasedOrder = await tx.order.findFirst({
         where: { id: order.id, workspaceId: principal.workspaceId },
         select: { version: true },
+      });
+
+      await new NotificationService(tx).notifyFacilityMembers(principal.workspaceId, order.facilityId, 'planning.read', {
+        category: 'RELEASE', title: `Order dirilis: ${order.orderNumber}`,
+        body: `${jobs.length} job tersedia untuk penjadwalan.`, subjectType: 'ORDER', subjectId: order.id,
+        dedupeKey: `order-release:${order.id}`,
       });
 
       return {

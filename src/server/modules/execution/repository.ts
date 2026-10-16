@@ -1,15 +1,15 @@
 import { PrismaClient } from '@prisma/client';
+import type { Principal } from '@/server/auth/principal';
+import { executionTaskScope } from './scope';
 
 export class ExecutionRepository {
   constructor(private readonly db: PrismaClient) {}
 
-  async findTaskWithExecutionDetails(workspaceId: string, taskId: string) {
-    return this.db.task.findUnique({
+  async findTaskWithExecutionDetails(principal: Principal, taskId: string) {
+    return this.db.task.findFirst({
       where: {
-        workspaceId_id: {
-          workspaceId,
-          id: taskId,
-        },
+        ...executionTaskScope(principal),
+        id: taskId,
       },
       include: {
         instance: {
@@ -20,7 +20,7 @@ export class ExecutionRepository {
                 edges: true,
               },
             },
-            engineeringRevision: true,
+            engineeringRevision: { include: { drawingRevision: { include: { document: true } } } },
             order: {
               include: {
                 customer: true,
@@ -119,12 +119,20 @@ export class ExecutionRepository {
   async listTasksForExecution(
     workspaceId: string,
     technicianId?: string | null,
-    isSupervisor: boolean = false
+    isSupervisor: boolean = false,
+    facilityIds?: string[]
   ) {
+    if (!isSupervisor && !technicianId) return [];
     const where: any = {
       workspaceId,
       status: { notIn: ['COMPLETED', 'CANCELLED'] },
     };
+
+    if (facilityIds) {
+      where.instance = {
+        is: { order: { is: { facilityId: { in: facilityIds } } } },
+      };
+    }
 
     if (technicianId && !isSupervisor) {
       where.assignedTechnicianId = technicianId;

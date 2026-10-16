@@ -179,7 +179,9 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
       name: 'Precision Mounting Bracket X1',
       itemType: 'FINISHED',
       baseUomId: pcsUom.data.id,
-      tracking: 'SERIAL',
+      // Batch scenarios require lot tracking; serialized-unit scenarios create
+      // a dedicated SERIAL item and record each physical unit explicitly.
+      tracking: 'LOT',
     },
     'key-fg-alpha'
   );

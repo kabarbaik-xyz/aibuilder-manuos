@@ -22,14 +22,15 @@ export async function GET(req: NextRequest) {
     }
     const limit = parsedLimit.data;
 
-    const [items, unreadCount] = await Promise.all([
+    const [items, unreadCount, delivery] = await Promise.all([
       service.listNotifications(principal, { unreadOnly, limit }),
       service.getUnreadCount(principal),
+      service.getDeliverySummary(principal),
     ]);
 
     return NextResponse.json({
       data: items,
-      meta: { unreadCount },
+      meta: { unreadCount, delivery },
     });
   } catch (err) {
     return formatErrorResponse(err);

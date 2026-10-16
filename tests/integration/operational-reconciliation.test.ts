@@ -228,6 +228,8 @@ describe('O09: Full Operational Loop & Double-Entry Ledger Reconciliation', () =
     );
     taskId = released.data.taskIds['OP-10'];
     expect(taskId).toBeDefined();
+    // Explicit assignment is a prerequisite for operator-scoped execution.
+    await fixture.db.task.update({ where: { id: taskId }, data: { assignedTechnicianId: alpha.masters.technicianId } });
 
     // Demand reservation & Issue from RAW to WIP (10 units)
     const demand = await fixture.db.materialDemand.findFirst({
@@ -495,7 +497,7 @@ describe('O09: Full Operational Loop & Double-Entry Ledger Reconciliation', () =
       serialNumber: unitSerial,
       orderId: customerOrderId,
       itemId: alpha.masters.fgItemId,
-    })).rejects.toThrow('Passport publication is unavailable');
+    })).rejects.toThrow('Passport requires one unambiguous recorded unit identity');
 
     // 2. Customer user accesses portal order details
     const portalOrder = await portalService.getCustomerOrder(

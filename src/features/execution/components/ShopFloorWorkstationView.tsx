@@ -4,6 +4,9 @@ import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { FormField } from '@/components/ui/form-field';
+import { DatePicker } from '@/components/ui/date-picker';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -58,7 +61,12 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const { data: issueReasons } = useIssueReasons();
   const { data: pauseReasons, isLoading: pauseReasonsLoading } = useIssueReasons('PAUSE');
   const [selectedReasonId, setSelectedReasonId] = useState("");
-  const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [issueEvidence, setIssueEvidence] = useState<Array<{ id: string; fileName: string }>>([]);
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
+  const [issueOwnerId, setIssueOwnerId] = useState('');
+  const [issueMaterialId, setIssueMaterialId] = useState('');
+  const [issueEtaDate, setIssueEtaDate] = useState('');
+  const [issueEtaTime, setIssueEtaTime] = useState('17:00');
 
   useEffect(() => {
     if (!pauseReasons?.length) {
@@ -93,6 +101,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const [outputQty, setOutputQty] = useState('');
   const [destLocationId, setDestLocationId] = useState('');
   const [lotNumber, setLotNumber] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
   const [isFinal, setIsFinal] = useState(true);
   const [outputNotes, setOutputNotes] = useState('');
   const [locations, setLocations] = useState<Location[]>([]);
@@ -169,18 +178,36 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           severity: issueSeverity,
           description: issueDescription.trim() || undefined,
           issueReasonId: selectedReasonId || undefined,
-          evidence: evidenceUrl.trim() ? [evidenceUrl.trim()] : undefined,
+          evidenceDocumentIds: issueEvidence.map((document) => document.id),
+          ownerUserId: issueOwnerId || undefined,
+          affectedMaterialId: issueMaterialId || undefined,
+          expectedResolutionAt: issueEtaDate ? new Date(`${issueEtaDate}T${issueEtaTime || '17:00'}`).toISOString() : undefined,
         },
       });
       setShowIssueModal(false);
       setIssueTitle("");
       setIssueDescription("");
       setSelectedReasonId("");
-      setEvidenceUrl("");
+      setIssueEvidence([]); setIssueOwnerId(''); setIssueMaterialId(''); setIssueEtaDate('');
       refetchIssues();
     } catch (err: any) {
       setActionError(err.message || "Failed to report issue");
     }
+  };
+
+  const uploadIssueEvidence = async (file: File) => {
+    if (!isOnline || uploadingEvidence) return;
+    if (file.size > 10 * 1024 * 1024) { setActionError('Ukuran bukti maksimal 10 MB.'); return; }
+    setUploadingEvidence(true); setActionError(null);
+    try {
+      const body = new FormData();
+      body.set('file', file); body.set('parentType', 'TASK'); body.set('parentId', task.id);
+      const response = await fetch('/api/documents/upload', { method: 'POST', body });
+      if (!response.ok) throw new Error('Upload bukti gagal. Periksa akses task dan koneksi Anda.');
+      const document = await response.json() as { id: string; fileName: string };
+      setIssueEvidence((current) => [...current, document]);
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : 'Upload bukti gagal.'); }
+    finally { setUploadingEvidence(false); }
   };
 
   const handleResolveIssue = async (e: React.FormEvent) => {
@@ -318,12 +345,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         taskId: task.id,
         outputAtoms: atoms,
         destinationLocationId: destLocationId,
-        lotNumber: lotNumber.trim() || undefined,
+        lotNumber: task.order.itemTracking !== 'SERIAL' ? lotNumber.trim() || undefined : undefined,
+        serialNumber: task.order.itemTracking === 'SERIAL' ? serialNumber.trim() || undefined : undefined,
         isFinal,
         notes: outputNotes.trim() || undefined,
       });
       setShowOutputModal(false);
       setOutputNotes('');
+      setSerialNumber(''); setOutputQty('');
       refetch();
     } catch (err: any) {
       setActionError(err.message || 'Failed to record output');
@@ -377,7 +406,12 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
             <strong className="text-ink">{task.order.customerName}</strong>
           </p>
           <div className="mt-2">
-            <Badge variant="warning">Work instruction content unavailable · revision v{task.instructionRevision}</Badge>
+            {task.workInstruction ? <div className="page-stack">
+              <Badge variant="blue">Drawing {task.workInstruction.drawingNumber} · rev. {task.workInstruction.revisionCode}</Badge>
+              <a className="text-primary text-xs hover:underline" href={`/api/documents/${encodeURIComponent(task.workInstruction.documentId)}/download`} target="_blank" rel="noreferrer">Buka instruksi / drawing yang dirilis: {task.workInstruction.fileName}</a>
+              <span className="small muted">Engineering rev. {task.workInstruction.engineeringRevisionNumber} · dokumen dipin ke job ini</span>
+              {task.workInstruction.notes && <p className="small">{task.workInstruction.notes}</p>}
+            </div> : <Badge variant="warning">Drawing / instruksi belum dipin · revisi v{task.instructionRevision}</Badge>}
           </div>
         </div>
 
@@ -866,18 +900,11 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               </Select>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-ink mb-1">
-                Lot / Batch Number (Optional)
-              </label>
-              <input
-                type="text"
-                value={lotNumber}
-                onChange={(e) => setLotNumber(e.target.value)}
-                placeholder="Auto-generated if left blank"
-                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
-              />
-            </div>
+            {task.order.itemTracking === 'SERIAL' ? <FormField id="output-serial" label="Nomor seri unit" required help="Satu unit per pencatatan pada operasi produksi final. Rework memakai output yang sudah ada.">
+              <Input value={serialNumber} onChange={(event) => setSerialNumber(event.target.value)} required />
+            </FormField> : <FormField id="output-lot" label="Nomor lot / batch" help="Dibuat otomatis bila dikosongkan.">
+              <Input value={lotNumber} onChange={(event) => setLotNumber(event.target.value)} />
+            </FormField>}
 
             <div className="flex items-center gap-2 pt-1">
               <input
@@ -928,11 +955,13 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
         <Dialog
           isOpen
           onClose={() => setShowIssueModal(false)}
-          title="Report Task Issue or Blocker"
+          title="Laporkan issue / hambatan"
           size="md"
-          pending={createIssueMutation.isPending}
+          pending={createIssueMutation.isPending || uploadingEvidence}
+          dirty={Boolean(issueTitle || issueDescription || issueEvidence.length)}
         >
           <form onSubmit={handleReportIssue} className="space-y-4">
+            {actionError && <p role="alert" className="text-danger">{actionError}</p>}
             <div>
               <label className="block text-xs font-medium text-ink mb-1">
                 Issue Title / Summary
@@ -994,32 +1023,47 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-ink mb-1">
-                Photographic / Attachment Evidence URL
-              </label>
-              <input
-                type="text"
-                value={evidenceUrl}
-                onChange={(e) => setEvidenceUrl(e.target.value)}
-                placeholder="e.g. https://... or /evidence/tooling-crack.jpg"
-                className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
-              />
-              <span className="text-xs text-muted block mt-1">
-                Link to captured machine inspection photograph or annotated document.
-              </span>
+            <FormField id="issue-owner" label="Penanggung jawab" required={issueSeverity === 'HIGH' || issueSeverity === 'CRITICAL'}>
+              <Select value={issueOwnerId} required={issueSeverity === 'HIGH' || issueSeverity === 'CRITICAL'} onChange={(event) => setIssueOwnerId(event.target.value)}>
+                <option value="">Belum ditentukan</option>
+                {task.issueOwnerOptions.map((owner) => <option key={owner.userId} value={owner.userId}>{owner.name}</option>)}
+              </Select>
+            </FormField>
+            <FormField id="issue-material" label="Material terdampak">
+              <Select value={issueMaterialId} onChange={(event) => setIssueMaterialId(event.target.value)}>
+                <option value="">Tidak terkait material tertentu</option>
+                {[...new Map(task.materialReadiness.demands.map((demand) => [demand.itemId, demand])).values()].map((demand) => <option key={demand.itemId} value={demand.itemId}>{demand.itemCode} · {demand.itemName}</option>)}
+              </Select>
+            </FormField>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField id="issue-eta-date" label="Target penyelesaian">
+                <DatePicker value={issueEtaDate} onChange={setIssueEtaDate} clearable />
+              </FormField>
+              <FormField id="issue-eta-time" label="Waktu perangkat" help={Intl.DateTimeFormat().resolvedOptions().timeZone}>
+                <Input type="time" value={issueEtaTime} onChange={(event) => setIssueEtaTime(event.target.value)} />
+              </FormField>
             </div>
+            <FormField id="issue-evidence" label="Foto / dokumen bukti" help="PNG, JPEG, atau PDF, maksimal 10 MB per file. Bukti tersimpan sebagai dokumen internal task ini.">
+              <Input type="file" accept="image/png,image/jpeg,application/pdf" disabled={!isOnline || uploadingEvidence || issueEvidence.length >= 10} onChange={(event) => {
+                const file = event.target.files?.[0]; event.target.value = ''; if (file) void uploadIssueEvidence(file);
+              }} />
+            </FormField>
+            {uploadingEvidence && <p role="status" className="small muted">Mengunggah bukti…</p>}
+            {issueEvidence.length > 0 && <ul className="space-y-2">{issueEvidence.map((document) => <li key={document.id} className="flex justify-between items-center gap-2">
+              <a className="text-primary text-xs hover:underline" href={`/api/documents/${encodeURIComponent(document.id)}/download`} target="_blank" rel="noreferrer">{document.fileName}</a>
+              <Button variant="text" size="small" disabled={createIssueMutation.isPending} onClick={() => setIssueEvidence((current) => current.filter((item) => item.id !== document.id))}>Lepas lampiran</Button>
+            </li>)}</ul>}
 
             <div className="dialog-actions">
-              <Button onClick={() => setShowIssueModal(false)}>
-                Cancel
+              <Button type="button" data-dialog-dismiss disabled={uploadingEvidence || createIssueMutation.isPending}>
+                Batal
               </Button>
               <Button
                 type="submit"
                 variant="primary"
-                disabled={!isOnline || createIssueMutation.isPending}
+                disabled={!isOnline || uploadingEvidence || createIssueMutation.isPending}
               >
-                {createIssueMutation.isPending ? "Submitting..." : "Report Issue"}
+                {createIssueMutation.isPending ? "Menyimpan…" : "Laporkan issue"}
               </Button>
             </div>
           </form>

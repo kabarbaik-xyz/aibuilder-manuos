@@ -76,6 +76,10 @@ export async function createTaskIssue(
     severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
     issueReasonId?: string;
     evidence?: string[];
+    evidenceDocumentIds?: string[];
+    ownerUserId?: string;
+    affectedMaterialId?: string;
+    expectedResolutionAt?: string;
   }
 ) {
   return apiRequest("/api/execution/tasks/" + taskId + "/issues", {

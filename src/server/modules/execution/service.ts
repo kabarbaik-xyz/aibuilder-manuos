@@ -5,6 +5,7 @@ import { requireAnyPermission, hasPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
 import { BadRequestError, NotFoundError, ForbiddenError } from '@/domain/errors';
 import { ExecutionRepository } from './repository';
+import { executionTaskScope } from './scope';
 import { ConsumptionService } from '../inventory/consumption';
 import {
   StartTaskInput,
@@ -55,6 +56,15 @@ function findUndercoveredDemands(readiness: Awaited<ReturnType<ConsumptionServic
   );
 }
 
+function authorizedFacilityIds(principal: Principal): string[] {
+  return principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
+}
+
+// No facility grant means no operational access, including legacy unassigned orders.
+function facilityAccessFilter(facilityIds: string[]) {
+  return { facilityId: { in: facilityIds } };
+}
+
 export class ExecutionService {
   private readonly repo: ExecutionRepository;
   private readonly consumptionService: ConsumptionService;
@@ -80,7 +90,7 @@ export class ExecutionService {
     const input: StartTaskInput = StartTaskSchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
 
-    const task = await this.repo.findTaskWithExecutionDetails(workspaceId, input.taskId);
+    const task = await this.repo.findTaskWithExecutionDetails(principal, input.taskId);
     if (!task) {
       throw new NotFoundError(`Task '${input.taskId}' not found`);
     }
@@ -196,7 +206,7 @@ export class ExecutionService {
       prismaClient: this.db,
       handler: async (tx) => {
         const currentTask = await tx.task.findUnique({
-          where: { workspaceId_id: { workspaceId, id: task.id } },
+          where: { workspaceId_id: { workspaceId, id: task.id }, ...executionTaskScope(principal) },
           include: {
             predecessorDeps: { include: { predecessor: true } },
             instance: { include: { order: true } },
@@ -347,7 +357,7 @@ export class ExecutionService {
     const input: PauseTaskInput = PauseTaskSchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
 
-    const task = await this.repo.findTaskWithExecutionDetails(workspaceId, input.taskId);
+    const task = await this.repo.findTaskWithExecutionDetails(principal, input.taskId);
     if (!task) {
       throw new NotFoundError(`Task '${input.taskId}' not found`);
     }
@@ -386,7 +396,7 @@ export class ExecutionService {
       prismaClient: this.db,
       handler: async (tx) => {
         const currentTask = await tx.task.findUnique({
-          where: { workspaceId_id: { workspaceId, id: task.id } },
+          where: { workspaceId_id: { workspaceId, id: task.id }, ...executionTaskScope(principal) },
         });
         if (!currentTask || currentTask.status !== 'RUNNING') {
           throw new BadRequestError(`Task '${task.nodeKey}' is no longer RUNNING and cannot be paused.`);
@@ -513,7 +523,7 @@ export class ExecutionService {
     const input: ResumeTaskInput = ResumeTaskSchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
 
-    const task = await this.repo.findTaskWithExecutionDetails(workspaceId, input.taskId);
+    const task = await this.repo.findTaskWithExecutionDetails(principal, input.taskId);
     if (!task) {
       throw new NotFoundError(`Task '${input.taskId}' not found`);
     }
@@ -552,7 +562,7 @@ export class ExecutionService {
       prismaClient: this.db,
       handler: async (tx) => {
         const currentTask = await tx.task.findUnique({
-          where: { workspaceId_id: { workspaceId, id: task.id } },
+          where: { workspaceId_id: { workspaceId, id: task.id }, ...executionTaskScope(principal) },
         });
         if (!currentTask || currentTask.status !== 'PAUSED') {
           throw new BadRequestError(`Task '${task.nodeKey}' is no longer PAUSED and cannot be resumed.`);
@@ -659,13 +669,29 @@ export class ExecutionService {
     taskId: string
   ): Promise<TaskExecutionDetailDTO> {
     const workspaceId = principal.workspaceId;
-    const task = await this.repo.findTaskWithExecutionDetails(workspaceId, taskId);
+    const task = await this.repo.findTaskWithExecutionDetails(principal, taskId);
     if (!task) {
       throw new NotFoundError(`Task '${taskId}' not found`);
     }
 
     const readiness = await this.consumptionService.getTaskMaterialReadiness(principal, taskId);
     const node = task.instance.workflowVersion.nodes.find((n) => n.key === task.nodeKey);
+    const revision = task.instance.engineeringRevision;
+    const targetItem = task.targetItemId ? await this.db.item.findFirst({ where: { workspaceId, id: task.targetItemId } }) : task.instance.order.item;
+    if (!targetItem) throw new NotFoundError('Task target item not found');
+    const drawing = revision?.drawingRevision;
+    const ownerMemberships = await this.db.membership.findMany({
+      where: {
+        workspaceId, status: 'ACTIVE', customerId: null,
+        OR: [{ facilityId: task.instance.order.facilityId }, { facilityGrants: { some: { facilityId: task.instance.order.facilityId ?? '__unassigned__', workspaceId } } }],
+        AND: [{ OR: [
+          { userId: principal.userId },
+          { roles: { some: { role: { permissions: { some: { permissionCode: { in: ['task.assign', 'planning.write'] } } } } } } },
+        ] }],
+      },
+      select: { userId: true, user: { select: { name: true } } },
+      orderBy: { user: { name: 'asc' } },
+    });
 
     const sessionsDTO: WorkSessionDTO[] = task.workSessions.map((s) => ({
       id: s.id,
@@ -732,12 +758,20 @@ export class ExecutionService {
         orderNumber: task.instance.order.orderNumber,
         customerId: task.instance.order.customer.id,
         customerName: task.instance.order.customer.name,
-        itemId: task.instance.order.item.id,
-        itemCode: task.instance.order.item.code,
-        itemName: task.instance.order.item.name,
+        itemId: targetItem.id,
+        itemCode: targetItem.code,
+        itemName: targetItem.name,
+        itemTracking: targetItem.tracking,
         targetAtoms: task.targetAtoms.toString(),
       },
       instructionRevision: task.jobsheet?.instructionRevision || 1,
+      workInstruction: drawing ? {
+        engineeringRevisionId: revision.id, engineeringRevisionNumber: revision.revisionNumber,
+        drawingNumber: drawing.drawingNumber, revisionCode: drawing.revisionCode,
+        documentId: drawing.documentId, fileName: drawing.document.fileName,
+        checksumSha256: drawing.document.checksumSha256, notes: drawing.notes,
+      } : null,
+      issueOwnerOptions: ownerMemberships.map((membership) => ({ userId: membership.userId, name: membership.user.name })),
       predecessors,
       materialReadiness: readiness,
       activeSession,
@@ -758,8 +792,12 @@ export class ExecutionService {
     const tasks = await this.repo.listTasksForExecution(
       workspaceId,
       principal.technicianId,
-      isSupervisor
+      isSupervisor,
+      authorizedFacilityIds(principal)
     );
+
+    const targetItems = await this.db.item.findMany({ where: { workspaceId, id: { in: tasks.map((task) => task.targetItemId ?? task.instance.order.itemId) } }, select: { id: true, name: true } });
+    const targetNames = new Map(targetItems.map((item) => [item.id, item.name]));
 
     return tasks.map((t) => {
       const node = t.instance.workflowVersion.nodes.find((n) => n.key === t.nodeKey);
@@ -800,7 +838,7 @@ export class ExecutionService {
         status: t.status,
         orderNumber: t.instance.order.orderNumber,
         customerName: t.instance.order.customer.name,
-        itemName: t.instance.order.item.name,
+        itemName: targetNames.get(t.targetItemId ?? t.instance.order.itemId) ?? t.instance.order.item.name,
         plannedDurationMinutes: t.plannedDurationMinutes,
         actualDurationMinutes: t.actualDurationMinutes,
         currentElapsedMinutes,
@@ -831,10 +869,43 @@ export class ExecutionService {
       payload: input,
       prismaClient: this.db,
       handler: async (tx) => {
-        const task = await tx.task.findUnique({
-          where: { workspaceId_id: { workspaceId, id: input.taskId } },
+        const task = await tx.task.findFirst({
+          where: {
+            ...executionTaskScope(principal), id: input.taskId,
+          },
+          include: { instance: { select: { order: { select: { id: true, facilityId: true } } } } },
         });
         if (!task) throw new NotFoundError(`Task '${input.taskId}' not found`);
+
+        if (['HIGH', 'CRITICAL'].includes(input.severity) && !input.ownerUserId) throw new BadRequestError('A blocking issue requires an explicit responsible owner');
+
+        if (input.ownerUserId) {
+          const owner = await tx.membership.findFirst({
+            where: {
+              workspaceId, userId: input.ownerUserId, status: 'ACTIVE', customerId: null,
+              OR: [{ facilityId: task.instance.order.facilityId }, { facilityGrants: { some: { workspaceId, facilityId: task.instance.order.facilityId } } }],
+              AND: [{ OR: [{ userId: principal.userId }, { roles: { some: { role: { permissions: { some: { permissionCode: { in: ['task.assign', 'planning.write'] } } } } } } }] }],
+            },
+            select: { id: true },
+          });
+          if (!owner) throw new BadRequestError('Issue owner must be an active responsible member of this facility');
+        }
+
+        if (input.affectedMaterialId) {
+          const demand = await tx.materialDemand.findFirst({
+            where: { workspaceId, orderId: task.instance.order.id, itemId: input.affectedMaterialId },
+            select: { id: true },
+          });
+          if (!demand) throw new BadRequestError('Affected material must belong to this task order');
+        }
+        const documentIds = [...new Set(input.evidenceDocumentIds ?? [])];
+        if (documentIds.length) {
+          const documents = await tx.document.findMany({
+            where: { workspaceId, id: { in: documentIds }, links: { some: { workspaceId, parentType: 'TASK', parentId: task.id, customerVisible: false } } },
+            select: { id: true },
+          });
+          if (documents.length !== documentIds.length) throw new BadRequestError('Evidence must be an authorized document attached to this task');
+        }
 
         if (input.issueReasonId) {
           const reason = await tx.issueReason.findFirst({
@@ -854,9 +925,10 @@ export class ExecutionService {
             description: input.description,
             severity: input.severity,
             ownerUserId: input.ownerUserId,
+            affectedMaterialId: input.affectedMaterialId,
             reporterUserId: principal.userId,
             expectedResolutionAt: input.expectedResolutionAt ? new Date(input.expectedResolutionAt) : null,
-            evidenceJson: JSON.stringify(input.evidence || []),
+            evidenceJson: JSON.stringify([...(input.evidence || []), ...documentIds.map((id) => `/api/documents/${encodeURIComponent(id)}/download`)]),
             historyJson: JSON.stringify([
               {
                 action: 'CREATED',
@@ -896,6 +968,8 @@ export class ExecutionService {
           await new NotificationService(tx).sendNotification(workspaceId, {
             userId: input.ownerUserId,
             title: `Issue Assigned: ${input.title}`,
+            category: 'BLOCKER',
+            facilityId: task.instance.order.facilityId ?? undefined,
             body: `New ${input.severity} severity issue raised on task ${task.nodeKey}: ${input.title}`,
             subjectType: 'TASK_ISSUE',
             subjectId: issue.id,
@@ -934,8 +1008,11 @@ export class ExecutionService {
       payload: { issueId, ...input },
       prismaClient: this.db,
       handler: async (tx) => {
-        const issue = await tx.taskIssue.findUnique({
-          where: { workspaceId_id: { workspaceId, id: issueId } },
+        const issue = await tx.taskIssue.findFirst({
+          where: {
+            workspaceId, id: issueId,
+            task: { is: executionTaskScope(principal) },
+          },
           include: { task: true },
         });
         if (!issue) throw new NotFoundError(`TaskIssue '${issueId}' not found`);
@@ -1021,8 +1098,11 @@ export class ExecutionService {
       payload: { issueId, ...input },
       prismaClient: this.db,
       handler: async (tx) => {
-        const issue = await tx.taskIssue.findUnique({
-          where: { workspaceId_id: { workspaceId, id: issueId } },
+        const issue = await tx.taskIssue.findFirst({
+          where: {
+            workspaceId, id: issueId,
+            task: { is: executionTaskScope(principal) },
+          },
           include: { task: true },
         });
         if (!issue) throw new NotFoundError(`TaskIssue '${issueId}' not found`);
@@ -1073,7 +1153,10 @@ export class ExecutionService {
     const workspaceId = principal.workspaceId;
 
     const issues = await this.db.taskIssue.findMany({
-      where: { workspaceId, taskId },
+      where: {
+        workspaceId, taskId,
+        task: { is: executionTaskScope(principal) },
+      },
       include: {
         issueReason: true,
         reporterUser: true,
@@ -1094,6 +1177,7 @@ export class ExecutionService {
       status: i.status as any,
       severity: i.severity as any,
       ownerUserId: i.ownerUserId,
+      affectedMaterialId: i.affectedMaterialId,
       ownerUserName: i.ownerUser?.name,
       reporterUserId: i.reporterUserId,
       reporterUserName: i.reporterUser?.name,
@@ -1121,6 +1205,7 @@ export class ExecutionService {
     // Order data (number, customer item, status) may only be scanned by principals
     // holding the same read permission the order detail endpoint enforces.
     const canReadOrders = hasPermission(principal, 'order.read');
+    const facilityIds = authorizedFacilityIds(principal);
 
     // 1. Task lookup
     const taskId = trimmed.startsWith('TASK:') ? trimmed.slice(5) : trimmed;
@@ -1128,6 +1213,7 @@ export class ExecutionService {
       where: {
         workspaceId,
         id: taskId,
+        instance: { is: { order: { is: { ...facilityAccessFilter(facilityIds) } } } },
         ...(!canReadAllTasks
           ? canReadAssignedTasks && principal.technicianId
             ? { assignedTechnicianId: principal.technicianId }
@@ -1160,6 +1246,7 @@ export class ExecutionService {
     const order = canReadOrders ? await this.db.order.findFirst({
       where: {
         workspaceId,
+        ...facilityAccessFilter(facilityIds),
         OR: [{ id: orderId }, { orderNumber: trimmed }],
       },
       include: { item: true },
@@ -1178,6 +1265,7 @@ export class ExecutionService {
     const mo = await this.db.manufacturingOrder.findFirst({
       where: {
         workspaceId,
+        order: { is: facilityAccessFilter(facilityIds) },
         OR: [{ id: trimmed }, { moNumber: trimmed }],
       },
     });
@@ -1188,6 +1276,7 @@ export class ExecutionService {
       const matchingTask = canOpenTasks ? await this.db.task.findFirst({
         where: {
           workspaceId,
+          instance: { is: { order: { is: { ...facilityAccessFilter(facilityIds) } } } },
           jobsheet: { manufacturingOrderId: mo.id },
           status: { notIn: ['COMPLETED', 'CANCELLED'] },
           ...(canReadAssignedTasks

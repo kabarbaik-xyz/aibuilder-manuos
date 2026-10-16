@@ -1,9 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import { db as defaultDb } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
-import { requireAnyPermission } from '@/server/auth/permissions';
+import { hasPermission, requireAnyPermission } from '@/server/auth/permissions';
 import { ForbiddenError, NotFoundError } from '@/domain/errors';
 import { DocumentRepository } from './repository';
+import { executionTaskScope } from '../execution/scope';
 import {
   CreateDocumentInput,
   LinkDocumentInput,
@@ -29,7 +30,16 @@ export class DocumentService {
       'quality.inspect',
       'delivery.dispatch',
       'admin.access',
+      'task.execute_assigned',
+      'task.assign',
     ]);
+
+    const taskOnly = hasPermission(principal, 'task.execute_assigned') && !['documents.upload', 'document.upload', 'order.write', 'quality.inspect', 'delivery.dispatch', 'admin.access', 'task.assign'].some((permission) => hasPermission(principal, permission));
+    if (taskOnly && input.link?.parentType !== 'TASK') throw new ForbiddenError('Operator uploads must be attached to an assigned task');
+    if (input.link?.parentType === 'TASK') {
+      await this.assertTaskAccess(principal, input.link.parentId);
+      if (input.link.customerVisible) throw new ForbiddenError('Task evidence is internal');
+    }
 
     return this.repo.saveFile(
       principal.workspaceId,
@@ -52,12 +62,22 @@ export class DocumentService {
       'quality.inspect',
       'delivery.dispatch',
       'admin.access',
+      'task.execute_assigned',
+      'task.assign',
     ]);
+
+    if (input.parentType === 'TASK') {
+      await this.assertTaskAccess(principal, input.parentId);
+      if (input.customerVisible) throw new ForbiddenError('Task evidence is internal');
+    } else if (hasPermission(principal, 'task.execute_assigned') && !['document.upload', 'order.write', 'quality.inspect', 'delivery.dispatch', 'admin.access', 'task.assign'].some((permission) => hasPermission(principal, permission))) {
+      throw new ForbiddenError('Operators may only link evidence to assigned tasks');
+    }
 
     const doc = await this.repo.findById(principal.workspaceId, input.documentId);
     if (!doc) {
       throw new NotFoundError(`Document not found: ${input.documentId}`);
     }
+    await this.assertDocumentAccess(principal, doc);
 
     return this.repo.linkDocument(principal.workspaceId, input);
   }
@@ -103,6 +123,8 @@ export class DocumentService {
     // If customer, verify ownership of parent
     if (isCustomer) {
       await this.assertCustomerParentOwnership(principal, parentType, parentId);
+    } else if (parentType === 'TASK') {
+      await this.assertTaskAccess(principal, parentId);
     } else {
       requireAnyPermission(principal, [
         'document.read',
@@ -155,6 +177,23 @@ export class DocumentService {
         );
       }
     } else {
+      const taskLinks = doc.links?.filter((link) => link.parentType === 'TASK') ?? [];
+      if (taskLinks.length) {
+        const task = await this.prisma.task.findFirst({ where: { ...executionTaskScope(principal), id: { in: taskLinks.map((link) => link.parentId) } }, select: { id: true } });
+        if (!task) throw new ForbiddenError('Access denied: task evidence is outside your assigned scope');
+        requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.read', 'document.read', 'quality.read', 'admin.access']);
+        return;
+      }
+      if (hasPermission(principal, 'task.execute_assigned')) {
+        const pinnedTask = await this.prisma.task.findFirst({
+          where: {
+            ...executionTaskScope(principal),
+            AND: [{ instance: { is: { engineeringRevision: { is: { drawingRevision: { is: { documentId: doc.id } } } } } } }],
+          },
+          select: { id: true },
+        });
+        if (pinnedTask) return;
+      }
       // Staff user
       requireAnyPermission(principal, [
         'document.read',
@@ -165,6 +204,12 @@ export class DocumentService {
         'admin.access',
       ]);
     }
+  }
+
+  private async assertTaskAccess(principal: Principal, taskId: string): Promise<void> {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.read', 'document.read', 'quality.read', 'quality.inspect', 'admin.access']);
+    const task = await this.prisma.task.findFirst({ where: { ...executionTaskScope(principal), id: taskId }, select: { id: true } });
+    if (!task) throw new NotFoundError('Task not found in your authorized facility and assignment');
   }
 
   private async assertCustomerParentOwnership(
@@ -212,7 +257,7 @@ export class DocumentService {
         where: { id: parentId, workspaceId: principal.workspaceId },
         include: { order: { select: { customerId: true } } },
       });
-      return passport?.order?.customerId === principal.customerId;
+      return passport?.status === 'RELEASED' && Boolean(passport.snapshotJson) && passport.sharedCustomerId === principal.customerId && passport.order?.customerId === principal.customerId;
     }
 
     // Tasks and Inspections are internal staff entities by default

@@ -71,9 +71,21 @@ export interface TaskExecutionDetailDTO {
     itemId: string;
     itemCode: string;
     itemName: string;
+    itemTracking: string;
     targetAtoms: string;
   };
   instructionRevision: number;
+  workInstruction: {
+    engineeringRevisionId: string;
+    engineeringRevisionNumber: number;
+    drawingNumber: string;
+    revisionCode: string;
+    documentId: string;
+    fileName: string;
+    checksumSha256: string;
+    notes: string | null;
+  } | null;
+  issueOwnerOptions: Array<{ userId: string; name: string }>;
   predecessors: Array<{
     taskId: string;
     nodeKey: string;
@@ -110,6 +122,8 @@ export const CreateTaskIssueSchema = z.object({
   ownerUserId: z.string().optional(),
   expectedResolutionAt: z.string().datetime().or(z.date()).optional(),
   evidence: z.array(z.string()).optional(),
+  evidenceDocumentIds: z.array(z.string().min(1)).max(10).optional(),
+  affectedMaterialId: z.string().min(1).optional(),
 });
 
 export type CreateTaskIssueInput = z.infer<typeof CreateTaskIssueSchema>;
@@ -138,6 +152,7 @@ export interface TaskIssueDTO {
   status: 'OPEN' | 'RESOLVED' | 'REOPENED';
   severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   ownerUserId: string | null;
+  affectedMaterialId: string | null;
   ownerUserName?: string;
   reporterUserId: string;
   reporterUserName?: string;

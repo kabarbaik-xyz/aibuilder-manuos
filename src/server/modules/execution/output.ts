@@ -9,6 +9,7 @@ import { MovementType, MovementReferenceType } from '../inventory/contracts';
 import { assertRequiredFormsFinalized } from '../forms/completion';
 import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
+import { executionTaskScope } from './scope';
 
 function hasDownstreamProductionOperation(
   taskId: string,
@@ -67,12 +68,10 @@ export async function recordOutput(
   const workspaceId = principal.workspaceId;
 
   // 1. Fetch Task with relations
-  const task = await db.task.findUnique({
+  const task = await db.task.findFirst({
     where: {
-      workspaceId_id: {
-        workspaceId,
-        id: input.taskId,
-      },
+      ...executionTaskScope(principal),
+      id: input.taskId,
     },
     include: {
       instance: {
@@ -176,7 +175,10 @@ export async function recordOutput(
 
       // Re-read task and existing outputs inside the transaction
       const currentTask = await tx.task.findUnique({
-        where: { workspaceId_id: { workspaceId, id: input.taskId } },
+        where: {
+          workspaceId_id: { workspaceId, id: input.taskId },
+          ...executionTaskScope(principal),
+        },
         include: {
           instance: { include: { workflowVersion: { include: { nodes: true } } } },
           jobsheet: { include: { manufacturingOrder: true } },
@@ -338,6 +340,26 @@ export async function recordOutput(
         lotId = lot.id;
       }
 
+      let serialId: string | null = null;
+      if (currentItemRecord.tracking === 'SERIAL') {
+        if (!isFinalOp || !input.serialNumber || input.outputAtoms !== 1_000_000n) {
+          throw new BadRequestError('Serialized output requires one complete unit, an explicit serial number, and a final production operation');
+        }
+        if (input.lotNumber) throw new BadRequestError('Serialized output uses a dedicated unit lot; omit the batch lot number');
+        const existingSerial = await tx.serial.findFirst({ where: { workspaceId, serialNumber: input.serialNumber } });
+        if (existingSerial) throw new BadRequestError('Serial number already exists; record rework against its existing output instead');
+        const unitLot = await tx.lot.create({ data: {
+          workspaceId, itemId: currentItemRecord.id, lotNumber: `SERIAL:${input.serialNumber}`, receivedAt: now,
+        } });
+        lotId = unitLot.id;
+        const serial = await tx.serial.create({ data: {
+          workspaceId, itemId: currentItemRecord.id, lotId, serialNumber: input.serialNumber, status: 'AVAILABLE',
+        } });
+        serialId = serial.id;
+      } else if (input.serialNumber) {
+        throw new BadRequestError('Serial numbers may only be recorded for serial-tracked items');
+      }
+
       // Post physical inventory movement for the produced goods into destination location
       const movement = await postMovement(
         tx,
@@ -463,6 +485,7 @@ export async function recordOutput(
           attemptNumber: currentTask.attemptNumber,
           itemId: currentItemRecord.id,
           lotId,
+          serialId,
           outputAtoms: input.outputAtoms,
           destinationLocationId: currentDestination.id,
           movementId: movement.id,

@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { postMovement } from '../inventory/ledger';
 import { MovementType, MovementReferenceType } from '../inventory/contracts';
 import { assertRequiredFormsFinalized } from '../forms/completion';
+import { executionTaskScope } from '../execution/scope';
 import {
   CreateInspectionSchema,
   FinalizeInspectionSchema,
@@ -182,6 +183,7 @@ export async function createInspection(
           workspaceId,
           id: input.productionOutputId,
         },
+        task: { is: executionTaskScope(principal) },
       },
       include: {
         item: true,
@@ -227,8 +229,8 @@ export async function createInspection(
       let committedInspectedAtoms: bigint = inspectedAtoms!;
       if (input.productionOutputId) {
         const currentOutput = await tx.productionOutput.findUnique({
-          where: { workspaceId_id: { workspaceId, id: input.productionOutputId } },
-          select: { id: true, outputAtoms: true, status: true },
+          where: { workspaceId_id: { workspaceId, id: input.productionOutputId }, task: { is: executionTaskScope(principal) } },
+          select: { id: true, outputAtoms: true, status: true, serialId: true },
         });
         if (!currentOutput || currentOutput.status === 'REJECTED') {
           throw new NotFoundError(`Production output '${input.productionOutputId}' is not available for inspection`);
@@ -254,6 +256,7 @@ export async function createInspection(
         committedInspectedAtoms = input.inspectedAtoms === undefined
           ? remainingAtoms
           : parseAtomInput(input.inspectedAtoms);
+        if (currentOutput.serialId && committedInspectedAtoms !== 1_000_000n) throw new BadRequestError('Serialized QC must inspect one complete unit');
       }
 
       const inspection = await tx.inspection.create({
@@ -370,6 +373,13 @@ export async function finalizeInspection(
         throw new BadRequestError(
           `Conservation of mass violated: passed (${input.passedAtoms}) + rework (${input.reworkAtoms}) + scrap (${input.scrappedAtoms}) != inspected (${currentInspection.inspectedAtoms})`
         );
+      }
+      if (currentInspection.productionOutput) {
+        const task = await tx.task.findFirst({ where: { ...executionTaskScope(principal), id: currentInspection.productionOutput.taskId }, select: { id: true } });
+        if (!task) throw new NotFoundError('Inspection not found in your facility scope');
+        if (currentInspection.productionOutput.serialId && [input.passedAtoms, input.reworkAtoms, input.scrappedAtoms].some((atoms) => atoms !== 0n && atoms !== 1_000_000n)) {
+          throw new BadRequestError('A serialized unit cannot be split between QC dispositions');
+        }
       }
       assertChecklistReadings(currentInspection.qcChecklist, input.results);
       if (input.passedAtoms > 0n) {
@@ -650,6 +660,9 @@ export async function authorizeRework(
       if (!currentInspection || currentInspection.status !== 'FINALIZED' || !currentInspection.productionOutput) {
         throw new BadRequestError('Rework authorization requires a finalized inspection linked to production output.');
       }
+      const authorizedTask = await tx.task.findFirst({ where: { ...executionTaskScope(principal), id: currentInspection.productionOutput.taskId }, select: { id: true } });
+      if (!authorizedTask) throw new NotFoundError('Inspection not found in your facility scope');
+      if (currentInspection.productionOutput.serialId && input.targetAtoms !== 1_000_000n) throw new BadRequestError('Serialized rework must authorize one complete unit');
       const currentAttempts = await tx.reworkAttempt.findMany({
         where: { workspaceId, inspectionId: currentInspection.id, status: { not: 'CANCELLED' } },
       });
@@ -773,6 +786,13 @@ export async function recordReinspection(
       });
       if (!currentOriginal || currentOriginal.status !== 'FINALIZED' || currentOriginal.reworkAtoms <= 0n) {
         throw new BadRequestError('Reinspection requires a finalized original inspection with rework atoms.');
+      }
+      if (currentOriginal.productionOutput) {
+        const task = await tx.task.findFirst({ where: { ...executionTaskScope(principal), id: currentOriginal.productionOutput.taskId }, select: { id: true } });
+        if (!task) throw new NotFoundError('Inspection not found in your facility scope');
+        if (currentOriginal.productionOutput.serialId && (input.passedAtoms + input.scrappedAtoms !== 1_000_000n || [input.passedAtoms, input.scrappedAtoms].some((atoms) => atoms !== 0n && atoms !== 1_000_000n))) {
+          throw new BadRequestError('Serialized reinspection must reclassify one complete existing unit');
+        }
       }
       assertChecklistReadings(currentOriginal.qcChecklist, input.results);
 

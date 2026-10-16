@@ -1,96 +1,47 @@
 'use client';
 
-import React from 'react';
-import { useGraphStore } from '../../store/graph-store';
-import { Icon } from '../../components/icons';
-import { Button } from '../../components/ui/button';
-import { Badge } from '../../components/ui/badge';
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { ButtonLink } from '@/components/ui/button-link';
+import { Badge } from '@/components/ui/badge';
+import { EmptyState, ErrorState } from '@/components/ui/resource-state';
+import type { UnitPassportDTO } from '@/server/modules/quality/passport';
 
-export function PassportModal({ serial = 'SN-1042-078' }: { serial?: string }) {
-  const store = useGraphStore();
-  const { closeModal } = store;
-
+export function PassportModal({ serial }: { serial: string }) {
+  const [passport, setPassport] = useState<UnitPassportDTO | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    if (!serial) return;
+    const controller = new AbortController();
+    setLoading(true); setError(null); setPassport(null);
+    void fetch(`/api/passports/${encodeURIComponent(serial)}`, { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Passport tidak tersedia atau akses Anda belum diberikan.');
+        const payload = await response.json() as UnitPassportDTO;
+        if (!controller.signal.aborted) setPassport(payload);
+      })
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Passport tidak dapat dimuat.'); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [serial, reload]);
   const downloadRecord = () => {
-    const text = `MANUOS · UNIT PASSPORT TRACEABILITY RECORD\nSerial Number: ${serial}\nOrder: #CO-2026-1042\nMaterial Lot: AL-89240 (Aluminum 6061-T6 MTR Verified)\nStatus: QC Passed (Rework Corrected)\nSign-off: Siti Nurhaliza (ISO 9001 Lead Auditor)\nTimestamp: 2026-11-22T11:05:00Z\n`;
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Passport-${serial}.txt`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    store.showToast('Unit passport record downloaded.');
+    if (!passport) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(passport, null, 2)], { type: 'application/json' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `Passport-${passport.serialNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`; anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-
-  return (
-    <div>
-      <div className="passport-detail-head">
-        <Icon name="shield" className="w-8 h-8 text-primary" />
-        <div>
-          <strong>QC verified · Ready for shipment</strong>
-          <p>Aluminum 6061-T6 · Material lot AL-89240</p>
-        </div>
-      </div>
-
-      <ol className="timeline">
-        <li>
-          <div className="between">
-            <h3>Material verified</h3>
-            <time>Nov 18 · 08:34</time>
-          </div>
-          <p>6061-T6 · Lot AL-89240 incoming inspection verified</p>
-        </li>
-        <li>
-          <div className="between">
-            <h3>CNC machining complete</h3>
-            <time>Nov 19 · 14:12</time>
-          </div>
-          <p>Hendra Wijaya · CNC-02 · Drawing rev 2</p>
-        </li>
-        <li className="warning">
-          <div className="between">
-            <h3>Inspection & rework</h3>
-            <time>Nov 20 · 10:45</time>
-          </div>
-          <p>
-            Bend angle 91.5° outside tolerance. Corrected on press brake and
-            reinspected.
-          </p>
-          <Badge variant="warning">Rework recorded</Badge>
-        </li>
-        <li>
-          <div className="between">
-            <h3>Final QC passed</h3>
-            <time>Nov 21 · 16:30</time>
-          </div>
-          <p>Dimensions, electrical checks and torque verified.</p>
-        </li>
-        <li>
-          <div className="between">
-            <h3>Released for delivery</h3>
-            <time>Nov 22 · 11:05</time>
-          </div>
-          <p>Signed off by Siti Nurhaliza. Unit serial 078.</p>
-        </li>
-      </ol>
-
-      <p className="approval-note">
-        Manufacturing passport traceability. Verifies material origin, machine logs, and rework correction.
-      </p>
-
-      <div className="dialog-actions mt flex items-center gap-2">
-        <a
-          href={`/passports/${encodeURIComponent(serial)}`}
-          className="btn primary flex-1 text-center"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open Certified Passport →
-        </a>
-        <Button variant="default" icon="download" onClick={downloadRecord}>
-          Download record
-        </Button>
-      </div>
-    </div>
-  );
+  if (!serial) return <EmptyState title="Nomor seri belum dipilih" description="Buka passport melalui unit yang tercatat pada order atau inspeksi." />;
+  if (loading) return <p role="status" className="muted">Memuat bukti passport…</p>;
+  if (error) return <ErrorState title="Passport tidak tersedia" message={error} onRetry={() => setReload((value) => value + 1)} />;
+  if (!passport) return null;
+  return <div className="page-stack">
+    <div><Badge variant={passport.status === 'RELEASED' ? 'success' : 'warning'}>{passport.status}</Badge><h3>{passport.serialNumber}</h3><p className="small muted">{passport.order?.orderNumber} · {passport.order?.itemName}</p></div>
+    {passport.publicationVersion && <p className="small muted">Publikasi v{passport.publicationVersion} · identitas unit dengan bukti input batch job. Kuantitas material adalah total konsumsi batch, bukan alokasi per unit.</p>}
+    {passport.lot && <p>Lot: <strong>{passport.lot.lotNumber}</strong></p>}
+    {passport.qcEvents.length > 0 && <ol className="timeline">{passport.qcEvents.map((event) => <li key={event.inspectionId}><strong>{event.disposition}</strong><time dateTime={event.inspectedAt}>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(event.inspectedAt))}</time><p>{event.checks.length} hasil pemeriksaan tercatat</p></li>)}</ol>}
+    {passport.digestSha256 && <p className="small break-all">SHA-256: <code>{passport.digestSha256}</code></p>}
+    <div className="dialog-actions"><ButtonLink href={`/passports/${encodeURIComponent(serial)}`}>Buka bukti lengkap</ButtonLink><Button icon="download" onClick={downloadRecord}>Unduh data tercatat</Button></div>
+  </div>;
 }

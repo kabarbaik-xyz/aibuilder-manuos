@@ -180,6 +180,8 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
     expect(releaseRes.status).toBe(200);
     const releaseJson = await releaseRes.json();
     taskId = releaseJson.data.taskIds['OP-10'];
+    // Explicit assignment is a prerequisite for operator-scoped execution.
+    await fixture.db.task.update({ where: { id: taskId }, data: { assignedTechnicianId: alpha.masters.technicianId } });
     expect(taskId).toBeDefined();
 
     // Issue Raw material to WIP
@@ -390,7 +392,7 @@ describe('O09: Full Operational Loop Acceptance E2E', () => {
       serialNumber: unitSerial,
       orderId,
       itemId: alpha.masters.fgItemId,
-    })).rejects.toThrow('Passport publication is unavailable');
+    })).rejects.toThrow('Passport requires one unambiguous recorded unit identity');
 
     // 1. Customer views portal order detail via HTTP GET
     const portalReq = new NextRequest(`http://localhost:3000/api/portal/orders/${orderId}`, {

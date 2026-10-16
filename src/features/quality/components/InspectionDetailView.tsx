@@ -15,6 +15,7 @@ import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { formatQuantity, parseQuantity } from "@/domain/quantity";
+import { PassportPublicationActions } from '@/features/passport/passport-publication-actions';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -209,6 +210,13 @@ export function InspectionDetailView({
           </ButtonLink>
         }
       />
+
+      {inspection.serialNumber && inspection.status === 'FINALIZED' && inspection.passedAtoms > 0n && inspection.productionOutput?.item && <PassportPublicationActions
+        serialNumber={inspection.serialNumber} itemId={inspection.productionOutput.item.id}
+        orderId={inspection.productionOutput.task?.instance?.order?.id}
+        published={inspection.passport?.published ?? false} shared={inspection.passport?.shared ?? false}
+        onChanged={() => { void refetch(); }}
+      />}
 
       {formError && (
         <div className="p-4 bg-danger-soft border border-line rounded-xl text-xs text-danger">

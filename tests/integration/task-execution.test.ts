@@ -8,7 +8,8 @@ import { PlanningService } from '@/server/modules/planning/service';
 import { ExecutionService } from '@/server/modules/execution/service';
 import { InventoryService } from '@/server/modules/inventory/service';
 import { MastersService } from '@/server/modules/masters/service';
-import { BadRequestError, ConflictError, ForbiddenError } from '@/domain/errors';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@/domain/errors';
+import { recordOutput } from '@/server/modules/execution/output';
 
 describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
   let fixture: FactoryFixture;
@@ -170,6 +171,28 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
 
   afterAll(async () => {
     await fixture.close();
+  });
+
+  it('denies execution reads, writes, issues, and scan across facilities even for supervisors', async () => {
+    const { alpha } = fixture;
+    const otherSite = await fixture.db.facility.create({ data: { workspaceId: alpha.workspaceId, code: 'OTHER-SITE', name: 'Other site' } });
+    const owner = alpha.users.owner.principal;
+    const restricted = { ...alpha.users.planner.principal, facilityId: otherSite.id, facilityIds: [otherSite.id] };
+    const ungranted = { ...alpha.users.planner.principal, facilityId: null, facilityIds: [] };
+    expect((await executionService.getTaskExecutionDetail(owner, op10TaskId)).id).toBe(op10TaskId);
+    for (const principal of [restricted, ungranted]) {
+      expect(await executionService.getMyTasks(principal)).toEqual([]);
+      await expect(executionService.getTaskExecutionDetail(principal, op10TaskId)).rejects.toThrow(NotFoundError);
+      for (const method of ['startTask', 'pauseTask', 'resumeTask'] as const) {
+        await expect(executionService[method](principal, { taskId: op10TaskId })).rejects.toThrow(NotFoundError);
+      }
+      await expect(recordOutput(fixture.db, principal, { taskId: op10TaskId, outputAtoms: '1000000', destinationLocationId: alpha.masters.rawLocationId })).rejects.toThrow(NotFoundError);
+      await expect(executionService.createTaskIssue(principal, { taskId: op10TaskId, title: 'Unauthorized issue' })).rejects.toThrow(NotFoundError);
+      expect(await executionService.listTaskIssues(principal, op10TaskId)).toEqual([]);
+      await expect(executionService.scanCode(principal, { code: `TASK:${op10TaskId}` })).rejects.toThrow(NotFoundError);
+      await expect(executionService.scanCode(principal, { code: `ORDER:${orderId}` })).rejects.toThrow(NotFoundError);
+    }
+    expect(await fixture.db.productionOutput.count({ where: { taskId: op10TaskId } })).toBe(0);
   });
 
   it('evaluates assignment eligibility and rejects unqualified resources', async () => {
@@ -606,7 +629,7 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
     // Attempting to start QC-20 before OP-10 completes must be rejected
     await expect(
       executionService.startTask(
-        alpha.users.operator.principal,
+        alpha.users.planner.principal,
         { taskId: qc20TaskId },
         'cmd-start-qc20-fail'
       )

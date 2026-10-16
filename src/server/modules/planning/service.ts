@@ -409,7 +409,9 @@ export class PlanningService {
               workspaceId,
               id: input.taskId,
             },
+            instance: { is: { order: { is: { facilityId: { in: principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []) } } } } },
           },
+          include: { instance: { include: { order: true } } },
         });
 
         if (!task) {
@@ -562,12 +564,14 @@ export class PlanningService {
           });
           if (assignedTech?.membershipId) {
             const member = await tx.membership.findFirst({
-              where: { id: assignedTech.membershipId, workspaceId },
+              where: { id: assignedTech.membershipId, workspaceId, status: 'ACTIVE' },
             });
             if (member?.userId) {
               await new NotificationService(tx).sendNotification(workspaceId, {
                 userId: member.userId,
                 title: `Task Assigned: ${task.nodeKey}`,
+                category: 'ASSIGNMENT',
+                facilityId: task.instance.order.facilityId ?? undefined,
                 body: `You have been assigned to task ${task.nodeKey} (${startAt.toISOString().slice(11, 16)} - ${endAt.toISOString().slice(11, 16)})`,
                 subjectType: 'TASK',
                 subjectId: task.id,

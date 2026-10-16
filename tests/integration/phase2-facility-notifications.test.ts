@@ -224,6 +224,45 @@ describe('Phase 2: Facility Scope, Reference Data, Notifications & Audit Correla
       expect(plannerNotifications.some((n) => n.id === notificationId1)).toBe(false);
       expect(plannerNotifications.some((n) => n.id === notificationId2)).toBe(false);
     });
+
+    it('persists scoped preferences, enforces stale versions and replays without duplicate changes', async () => {
+      const principal = fixture.alpha.users.operator.principal;
+      const current = await notificationService.getPreferences(principal);
+      const preferences = { ...current.preferences, ASSIGNMENT: false };
+      const input = { preferences, expectedVersion: current.version };
+      const result = await notificationService.updatePreferences(principal, input, 'notification-prefs-update');
+      const replay = await notificationService.updatePreferences(principal, input, 'notification-prefs-update');
+      expect(replay.meta.replayed).toBe(true);
+      expect(replay.data).toEqual(result.data);
+      await expect(notificationService.updatePreferences(principal, input, 'notification-prefs-stale')).rejects.toThrow(ConflictError);
+      expect((await notificationService.getPreferences(fixture.alpha.users.planner.principal)).preferences.ASSIGNMENT).toBe(true);
+      const forgedMembership = { ...principal, membershipId: fixture.beta.users.owner.principal.membershipId };
+      await expect(notificationService.getPreferences(forgedMembership)).rejects.toThrow(NotFoundError);
+    });
+
+    it('records muted delivery exactly once without increasing unread counts and rolls back with its command', async () => {
+      const { alpha, beta } = fixture;
+      const principal = alpha.users.operator.principal;
+      const unreadBefore = await notificationService.getUnreadCount(principal);
+      const input = { userId: principal.userId, category: 'ASSIGNMENT' as const, title: 'Muted assignment', dedupeKey: 'muted-assignment' };
+      const first = await notificationService.sendNotification(alpha.workspaceId, input);
+      const second = await notificationService.sendNotification(alpha.workspaceId, input);
+      expect(first.id).toBe(second.id);
+      expect(first.deliveryStatus).toBe('SUPPRESSED');
+      expect(first.deliveryReason).toBe('PREFERENCE_DISABLED');
+      expect(await notificationService.getUnreadCount(principal)).toBe(unreadBefore);
+      expect((await notificationService.listNotifications(principal)).some((item) => item.id === first.id)).toBe(false);
+      expect((await notificationService.getDeliverySummary(principal)).suppressed).toBe(1);
+      await expect(notificationService.sendNotification(alpha.workspaceId, { ...input, facilityId: beta.users.owner.principal.facilityId! })).rejects.toThrow(NotFoundError);
+      await expect(executeCommand({
+        principal, commandType: 'test.notification.rollback', idempotencyKey: 'notification-rollback', payload: {}, prismaClient: fixture.db,
+        handler: async (tx) => {
+          await new NotificationService(tx).sendNotification(alpha.workspaceId, { ...input, dedupeKey: 'rolled-back-notification' });
+          throw new Error('Rollback');
+        },
+      })).rejects.toThrow('Rollback');
+      expect(await fixture.db.notificationInbox.count({ where: { dedupeKey: 'rolled-back-notification' } })).toBe(0);
+    });
   });
 
   describe('4. Configurable Issue & Blocker Reasons Catalog', () => {

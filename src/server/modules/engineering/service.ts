@@ -6,6 +6,7 @@ import { ConflictError, NotFoundError, BadRequestError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
 import { parseQuantity } from '@/domain/quantity';
+import { NotificationService } from '@/server/modules/notifications/service';
 
 export class EngineeringService {
   constructor(private readonly prisma: PrismaClient = defaultDb) {}
@@ -331,6 +332,12 @@ export class EngineeringService {
             data: { status: 'READY', version: { increment: 1 } },
           });
         }
+
+        await new NotificationService(tx).notifyFacilityMembers(principal.workspaceId, rev.order.facilityId, 'planning.read', {
+          category: 'APPROVAL', title: `Engineering disetujui: ${rev.order.orderNumber}`,
+          body: `Revisi ${rev.revisionNumber} disetujui.`, subjectType: 'ORDER', subjectId: rev.orderId,
+          dedupeKey: `engineering-approved:${rev.id}`,
+        });
 
         return {
           data: updated,

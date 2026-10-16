@@ -179,6 +179,8 @@ describe('QLT-01: pinned QC plan enforces required readings and numeric limits',
 
     const releaseRes = await releaseOrder(owner, orderId, 'key-order-qc-limits-rel', fixture.db);
     taskId = releaseRes.data.taskIds['OP-10'];
+    // Explicit assignment is a prerequisite for operator-scoped execution.
+    await fixture.db.task.update({ where: { id: taskId }, data: { assignedTechnicianId: alpha.masters.technicianId } });
 
     const demand = await fixture.db.materialDemand.findFirst({
       where: { workspaceId: alpha.workspaceId, orderId },

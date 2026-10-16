@@ -142,6 +142,8 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
 
     taskId = releaseRes.data.taskIds['OP-10'];
     expect(taskId).toBeDefined();
+    // Output-focused tests begin with a real assigned operator.
+    await fixture.db.task.update({ where: { id: taskId }, data: { assignedTechnicianId: alpha.masters.technicianId } });
 
     // 6. Issue 10 units from RAW to WIP
     const demand = await fixture.db.materialDemand.findFirst({
@@ -244,6 +246,7 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
         instanceId: sourceTask.instanceId,
         jobsheetId: sourceTask.jobsheetId,
         nodeKey: 'OP-CLIENT-FINAL-OVERRIDE',
+        assignedTechnicianId: alpha.masters.technicianId,
         status: 'READY',
         targetItemId: alpha.masters.fgItemId,
         targetAtoms: parseQuantity('1'),
@@ -325,6 +328,7 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
         instanceId: sourceTask.instanceId,
         jobsheetId: sourceTask.jobsheetId,
         nodeKey: 'OP-SECOND-FINAL',
+        assignedTechnicianId: alpha.masters.technicianId,
         status: 'READY',
         targetItemId: alpha.masters.fgItemId,
         targetAtoms: parseQuantity('10'),

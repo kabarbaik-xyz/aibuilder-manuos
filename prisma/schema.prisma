@@ -190,6 +190,7 @@ model Membership {
   status       String           @default("ACTIVE") // ACTIVE | DISABLED
   customerId   String?          @map("customer_id")
   technicianId String?          @map("technician_id")
+  notificationPreferencesJson String @default("{}") @map("notification_preferences_json")
   version      Int              @default(1)
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
@@ -1791,6 +1792,12 @@ model Passport {
   lotId        String?   @map("lot_id")
   status       String    @default("RELEASED") // DRAFT | RELEASED | REVOKED
   digestSha256 String    @map("digest_sha256")
+  snapshotJson String?   @map("snapshot_json")
+  publicationVersion Int @default(1) @map("publication_version")
+  publishedById String?  @map("published_by_id")
+  sharedCustomerId String? @map("shared_customer_id")
+  sharedAt DateTime?     @map("shared_at")
+  shareRevokedAt DateTime? @map("share_revoked_at")
   publishedAt  DateTime  @default(now()) @map("published_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -2016,6 +2023,9 @@ model NotificationInbox {
   title        String
   body         String?
   status       String    @default("UNREAD") // UNREAD | READ | ARCHIVED
+  category     String    @default("GENERAL")
+  deliveryStatus String  @default("DELIVERED") @map("delivery_status")
+  deliveryReason String? @map("delivery_reason")
   subjectType  String?   @map("subject_type")
   subjectId    String?   @map("subject_id")
   dedupeKey    String?   @map("dedupe_key")
@@ -2195,6 +2205,7 @@ model TaskIssue {
   status                String       @default("OPEN") // OPEN | RESOLVED | REOPENED
   severity              String       @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
   ownerUserId           String?      @map("owner_user_id")
+  affectedMaterialId    String?      @map("affected_material_id")
   reporterUserId        String       @map("reporter_user_id")
   expectedResolutionAt DateTime?    @map("expected_resolution_at")
   resolvedAt            DateTime?    @map("resolved_at")

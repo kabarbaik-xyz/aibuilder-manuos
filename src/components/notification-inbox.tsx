@@ -7,6 +7,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { ButtonLink } from '@/components/ui/button-link';
 import { EmptyState, ErrorState } from '@/components/ui/resource-state';
 import { getNotificationHref } from '@/features/notifications/notification-links';
+import { NotificationPreferencesDialog } from './notification-preferences-dialog';
 
 type Notification = {
   id: string;
@@ -19,10 +20,12 @@ type Notification = {
   createdAt: string;
 };
 
-type InboxResponse = { data: Notification[]; meta: { unreadCount: number } };
+type InboxResponse = { data: Notification[]; meta: { unreadCount: number; delivery: { delivered: number; suppressed: number } } };
 
 export function NotificationInbox() {
   const [open, setOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [suppressedCount, setSuppressedCount] = useState(0);
   const [items, setItems] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +41,7 @@ export function NotificationInbox() {
       const payload = (await response.json()) as InboxResponse;
       setItems(payload.data);
       setUnreadCount(payload.meta.unreadCount);
+      setSuppressedCount(payload.meta.delivery.suppressed);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Terjadi kesalahan saat memuat notifikasi.');
     } finally {
@@ -48,6 +52,12 @@ export function NotificationInbox() {
   useEffect(() => {
     if (open) void refresh();
   }, [open, refresh]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
 
   const markRead = async (notificationId?: string) => {
     setPendingId(notificationId ?? 'all');
@@ -90,11 +100,12 @@ export function NotificationInbox() {
       footer={<Button onClick={() => setOpen(false)}>Tutup</Button>}
     >
       <div className="notification-toolbar">
-        <span className="small muted">Terbaru</span>
+        <Button variant="text" size="small" onClick={() => { setOpen(false); setPreferencesOpen(true); }}>Preferensi</Button>
         <Button variant="text" size="small" disabled={unreadCount === 0 || pendingId !== null} onClick={() => void markRead()}>
           Tandai semua dibaca
         </Button>
       </div>
+      {suppressedCount > 0 && <p className="small muted">{suppressedCount} notifikasi dibisukan sesuai preferensi akun.</p>}
       {error && <ErrorState title="Notifikasi tidak tersedia" message={error} onRetry={() => void refresh()} />}
       {!error && loading && items.length === 0 && <p className="muted">Memuat notifikasi…</p>}
       {!error && !loading && items.length === 0 && <EmptyState title="Belum ada notifikasi" description="Pembaruan yang dikirim ke akun Anda akan muncul di sini." />}
@@ -121,5 +132,6 @@ export function NotificationInbox() {
       </ul>}
       {pendingId && <span className="sr-only" role="status">Memperbarui notifikasi…</span>}
     </Dialog>
+    <NotificationPreferencesDialog isOpen={preferencesOpen} onClose={() => { setPreferencesOpen(false); setOpen(true); }} />
   </>;
 }

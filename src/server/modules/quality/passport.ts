@@ -4,6 +4,7 @@ import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { NotFoundError, ForbiddenError, BadRequestError } from '@/domain/errors';
 import { formatQuantity } from '@/domain/quantity';
+import { publishPassportSnapshot, readPublishedPassport } from './passport-publication';
 
 export interface PassportMaterialInput {
   itemCode: string;
@@ -58,6 +59,12 @@ export interface PassportShipmentEvidence {
 }
 
 export interface UnitPassportDTO {
+  schemaVersion?: number;
+  publicationVersion?: number;
+  genealogyScope?: 'UNIT_WITH_JOB_BATCH_INPUTS';
+  sourceOutputId?: string;
+  sourceJobId?: string | null;
+  documents?: Array<{ id: string; fileName: string; checksumSha256: string; downloadUrl: string }>;
   serialNumber: string;
   status: string;
   digestSha256: string | null;
@@ -89,6 +96,8 @@ export class PassportService {
     principal: Principal,
     serialNumber: string
   ): Promise<UnitPassportDTO> {
+    const published = await readPublishedPassport(this.prisma, principal, serialNumber);
+    if (published) return published;
     // 1. Find passport record or serial in the current workspace
     const passportRecord = await this.prisma.passport.findFirst({
       where: {
@@ -369,11 +378,9 @@ export class PassportService {
       orderId?: string;
       itemId: string;
       lotId?: string;
-    }
+    },
+    idempotencyKey?: string
   ): Promise<{ id: string; serialNumber: string; digestSha256: string }> {
-    requireAnyPermission(principal, ['quality.inspect', 'delivery.dispatch', 'admin.access']);
-    throw new BadRequestError(
-      'Passport publication is unavailable until immutable per-unit genealogy snapshots and verified publication versions are implemented.'
-    );
+    return publishPassportSnapshot(this.prisma, principal, input, idempotencyKey);
   }
 }

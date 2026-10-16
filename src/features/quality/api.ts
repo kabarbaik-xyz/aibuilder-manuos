@@ -6,6 +6,8 @@ async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export interface InspectionDTO {
+  serialNumber?: string | null;
+  passport?: { published: boolean; shared: boolean } | null;
   id: string;
   workspaceId: string;
   sourceType: 'PRODUCTION_OUTPUT' | 'GOODS_RECEIPT';

@@ -80,6 +80,10 @@ describe('Phase 5: Atomic Qualified Manual Dispatch, Eligibility & Readiness', (
       },
     });
     owner.facilityIds = [...new Set([...(owner.facilityIds ?? []), facility1Id])];
+    const plannerMembership = alpha.users.planner.principal;
+    await fixture.db.membershipFacilityGrant.create({ data: { workspaceId: alpha.workspaceId, membershipId: plannerMembership.membershipId, facilityId: facility1Id } });
+    plannerMembership.facilityIds = [...(plannerMembership.facilityIds ?? []), facility1Id];
+
 
     // 3. Create machine in primary facility and machine in other facility
     testMachineId = alpha.masters.machineId;

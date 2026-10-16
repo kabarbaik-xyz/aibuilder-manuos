@@ -257,7 +257,7 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
 
       await expect(
         executionService.startTask(alpha.users.operator.principal, { taskId: testTaskId })
-      ).rejects.toThrow(ForbiddenError);
+      ).rejects.toThrow(NotFoundError);
 
       await expect(
         executionService.pauseTask(alpha.users.operator.principal, { taskId: testTaskId })
@@ -273,7 +273,7 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
           outputAtoms: parseQuantity('1'),
           destinationLocationId: alpha.masters.quarantineLocationId,
         })
-      ).rejects.toThrow(ForbiddenError);
+      ).rejects.toThrow(NotFoundError);
     });
 
     it('rejects task start when task has no assigned technician and caller has no technician profile', async () => {

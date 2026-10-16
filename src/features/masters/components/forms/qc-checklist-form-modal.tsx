@@ -6,6 +6,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { FormErrorSummary, FieldError } from '@/components/ui/form-errors';
 import { ApiError } from '@/lib/api/client';
+import { serializeQcChecklistLimits } from './qc-checklist-limits';
 import {
   useCreateCustomer,
   useCreateSupplier,
@@ -35,6 +36,9 @@ export function CreateQcChecklistModal({ isOpen, onClose }: { isOpen: boolean; o
     checkDesc: 'Initial visual & dimensional check',
     checkMethod: 'MEASUREMENT',
     checkUnit: 'mm',
+    checkMin: '',
+    checkMax: '',
+    checkRequired: true,
   });
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -54,8 +58,12 @@ export function CreateQcChecklistModal({ isOpen, onClose }: { isOpen: boolean; o
             description: formData.checkDesc.trim(),
             method: formData.checkMethod,
             unit: formData.checkUnit || null,
-            limitsJson: JSON.stringify({ required: true }),
-            isRequired: true,
+            limitsJson: serializeQcChecklistLimits({
+              required: formData.checkRequired,
+              min: formData.checkMin,
+              max: formData.checkMax,
+            }),
+            isRequired: formData.checkRequired,
           },
         ],
       });
@@ -68,6 +76,9 @@ export function CreateQcChecklistModal({ isOpen, onClose }: { isOpen: boolean; o
         checkDesc: 'Initial visual & dimensional check',
         checkMethod: 'MEASUREMENT',
         checkUnit: 'mm',
+        checkMin: '',
+        checkMax: '',
+        checkRequired: true,
       });
     } catch (err: any) {
       setError(err);
@@ -138,6 +149,29 @@ export function CreateQcChecklistModal({ isOpen, onClose }: { isOpen: boolean; o
               onChange={(e) => setFormData({ ...formData, checkDesc: e.target.value })}
               className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-primary/20 focus:outline-none"
             /></label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Unit
+                <Input value={formData.checkUnit} onChange={(e) => setFormData({ ...formData, checkUnit: e.target.value })} placeholder="e.g. mm" />
+              </label>
+            </div>
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-2 text-xs text-ink">
+                <input type="checkbox" checked={formData.checkRequired} onChange={(e) => setFormData({ ...formData, checkRequired: e.target.checked })} />
+                Required check
+              </label>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Minimum
+                <Input inputMode="decimal" value={formData.checkMin} onChange={(e) => setFormData({ ...formData, checkMin: e.target.value })} placeholder="Optional" />
+              </label>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Maximum
+                <Input inputMode="decimal" value={formData.checkMax} onChange={(e) => setFormData({ ...formData, checkMax: e.target.value })} placeholder="Optional" />
+              </label>
+            </div>
           </div>
         </div>
         <div className="form-actions flex justify-end gap-2 pt-4 border-t border-line">

@@ -91,6 +91,13 @@ export async function seedTestAccess(
     }
   }
 
+  // Use the same default-facility ownership that the upgrade migration assigns.
+  const facility = await db.facility.upsert({
+    where: { workspaceId_code: { workspaceId: workspace.id, code: 'FAC-DEFAULT' } },
+    update: {},
+    create: { workspaceId: workspace.id, code: 'FAC-DEFAULT', name: 'Default Operating Site', isDefault: true },
+  });
+
   // 5. Membership
   const membership = await db.membership.create({
     data: {
@@ -99,6 +106,7 @@ export async function seedTestAccess(
       status,
       customerId,
       technicianId: options.technicianId || null,
+      facilityId: facility.id,
     },
   });
 

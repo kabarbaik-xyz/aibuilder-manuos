@@ -176,6 +176,8 @@ describe('Phase 6: Evidenced Execution, QC Dispositions & Truthful Customer Mile
     instanceId = releaseRes.data.instanceId;
     op10TaskId = releaseRes.data.taskIds['OP-10'];
     qc20TaskId = releaseRes.data.taskIds['QC-20'];
+    // Explicit assignment is a prerequisite for operator-scoped execution.
+    await fixture.db.task.update({ where: { id: op10TaskId }, data: { assignedTechnicianId: alpha.masters.technicianId } });
 
     // 8. Issue 10 units from RAW to WIP
     const demand = await fixture.db.materialDemand.findFirst({

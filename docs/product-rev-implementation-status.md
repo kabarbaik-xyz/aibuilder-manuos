@@ -6,6 +6,12 @@ Current execution workspace: `/Users/ardian/.codex/worktrees/2789/manuos-sg`, br
 
 This file records current-session evidence. The [gap audit](product-rev-gap-audit.md) remains the 79-capability assessment; this status file records implementation and verification as they happen. Source database and pilot evidence are not inferred from disposable test data.
 
+### Current inline implementation — 2026-10-16 (verification in progress)
+
+The uncommitted patch after `7051b36` implements strict facility and assigned-task access, notification preferences and transactional assignment/release/approval/blocker delivery, task evidence uploads/material/owner/ETA, pinned engineering drawing display, real serialized final-output identities, indivisible serialized QC, and immutable passport snapshots with canonical content hashes and explicit owning-customer share/revocation. The passport drawer now loads actual authorized data instead of a fabricated traceability timeline. Three additive migrations introduce preferences/delivery dispositions, affected issue material, and immutable passport snapshots; no duplicate dedupe-key migration was added.
+
+Typecheck and the mechanical UI detector pass. Incremental migration on a disposable copy of the local **DEMO-only** dataset passes; reconciliation is balanced (194 movements, 113 buckets), `integrity_check` is `ok`, and `foreign_key_check` returns no violations. The full serial suite is in progress and has exposed failures being corrected; this patch is not yet verified or committed. No browser/pilot/production evidence is claimed. Customer sharing is explicit; job-batch material quantities are labeled as batch evidence rather than inferred unit allocations. Serial recording currently supports one complete unit at a final production operation; unsupported multi-stage serial movement is rejected.
+
 ### Revalidation note — 2026-10-16
 
 The completion plan remains the gate authority. Historical phase summaries below are implementation claims from earlier execution contexts and do **not** close the current plan: 66 of 93 checkboxes are marked implemented/evidenced and 27 remain open. This checkbox ratio is implementation tracking, not release readiness. Browser/pilot gates, incomplete R3 capabilities, migration/restore and final reconciliation remain open; operational dataset and pilot evidence are absent. Treat phases 1–13 as **partial and open** until each plan deliverable is rechecked and its listed evidence is attached. Do not use the historical Phase 13 row below as a current release claim.
@@ -185,6 +191,8 @@ The [gap audit matrix](product-rev-gap-audit.md#complete-capability-matrix) cont
 ## Phase 2 — facility scope and notifications
 
 ### Implementation evidence
+
+- **Execution facility-boundary correction (2026-10-16, pending verification)**: Reused Principal facility grants to scope Shop Floor task list/detail/start/pause/resume, output recording, issue create/list/resolve/reopen, and task/order/manufacturing-order scans through the owning Order. No facility grant means no operational access, including unassigned legacy rows; fixtures now use migrated default-facility membership. Regression tests, typecheck, and API/UI runtime evidence have not yet been run for this correction.
 
 - [x] **Facility Model & Multi-Site Architecture**:
   - Additive `Facility` model under `Workspace` (`prisma/schema.prisma`) with `code`, `name`, `timezone`, `status`, `address`, `isDefault`.

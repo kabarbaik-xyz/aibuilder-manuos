@@ -96,7 +96,7 @@ export default function PassportPage() {
               )}
             </div>
             <p className="text-muted text-xs mt-1">
-              Cryptographically verified unit genealogy, shop-floor execution
+              Published unit evidence, shop-floor execution
               records, and inspection history.
             </p>
           </div>
@@ -134,7 +134,7 @@ export default function PassportPage() {
                   <div>
                     <h3>Verification & Material Traceability</h3>
                     <p>
-                      Certified unit credentials and production batch provenance
+                      Identitas output unit dan bukti QC dari snapshot publikasi
                     </p>
                   </div>
                   <Badge variant={passport.status === "RELEASED" ? "success" : "warning"}>
@@ -190,13 +190,15 @@ export default function PassportPage() {
                 </div>
               </div>
 
+              {passport.publicationVersion && <Panel className="p-4"><p className="small">Publikasi v{passport.publicationVersion}. Genealogi unit memakai identitas output dan lot khusus. Kuantitas input material adalah konsumsi batch job yang terkait.</p></Panel>}
+              {Boolean(passport.documents?.length) && <Panel className="p-4"><h3>Dokumen yang dipublikasikan</h3><ul>{passport.documents?.map((document) => <li key={document.id}><a className="text-primary hover:underline" href={document.downloadUrl} target="_blank" rel="noreferrer">{document.fileName}</a><p className="small muted break-all">SHA-256: {document.checksumSha256}</p></li>)}</ul></Panel>}
               {/* Material Provenance */}
               {passport.materials.length > 0 && (
                 <div className="panel">
                   <div className="panel-head">
                     <div>
-                      <h3>Material Provenance & Inbound Lots</h3>
-                      <p>Raw materials consumed and issued to production</p>
+                      <h3>Konsumsi Material Batch Job</h3>
+                      <p>Total konsumsi aktual batch job; bukan alokasi material per unit</p>
                     </div>
                   </div>
                   <div className="panel-body">
@@ -331,8 +333,7 @@ export default function PassportPage() {
                         </time>
                       </div>
                       <p>
-                        Certified unit released for customer delivery with
-                        cryptographic authenticity seal.
+                        Snapshot diterbitkan setelah identitas unit dan penerimaan QC diverifikasi. Hash mencakup isi snapshot.
                       </p>
                     </li>}
                   </ol>
@@ -427,7 +428,7 @@ export default function PassportPage() {
                       className="btn full"
                     >
                       <Icon name="file" />
-                      Print Certified Passport
+                      Cetak Snapshot Passport
                     </button>
                   </div>
                 </div>

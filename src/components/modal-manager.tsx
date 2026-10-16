@@ -99,9 +99,9 @@ export function ModalManager() {
           isOpen
           onClose={closeModal}
           title="Manufacturing passport"
-          subtitle="SN-1042-078 · Order #CO-2026-1042"
+          subtitle={modalData?.serial || 'Pilih nomor seri yang tercatat'}
         >
-          <PassportModal serial={modalData?.serial || 'SN-1042-078'} />
+          <PassportModal serial={modalData?.serial || ''} />
         </Dialog>
       )}
 
