@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { BadRequestError, NotFoundError, ForbiddenError } from '@/domain/errors';
+import { executeCommand } from '@/server/db/transaction';
 import { CreateOrderChangeRequestInput, CreateOrderChangeRequestSchema } from '../engineering/change-contracts';
 
 export class CustomerChangeRequestService {
@@ -102,5 +103,60 @@ export class CustomerChangeRequestService {
       submittedAt: r.submittedAt?.toISOString() || null,
       approvedAt: r.approvedAt?.toISOString() || null,
     }));
+  }
+
+  /**
+   * Approves a customer change request with an audited command (CUS-02).
+   */
+  async approveCustomerChangeRequest(principal: Principal, changeRequestId: string, idempotencyKey?: string) {
+    requireAnyPermission(principal, ['customer_order.acknowledge_own', 'order.create', 'owner', 'admin.access']);
+    const workspaceId = principal.workspaceId;
+
+    const record = await this.prisma.orderChangeRequest.findUnique({
+      where: { id: changeRequestId },
+      include: { order: true },
+    });
+    if (!record || record.workspaceId !== workspaceId) {
+      throw new NotFoundError(`Change request '${changeRequestId}' not found.`);
+    }
+
+    if (principal.customerId && record.order.customerId !== principal.customerId) {
+      throw new ForbiddenError('You can only approve change requests for your own company orders.');
+    }
+
+    if (record.status !== 'SUBMITTED' && record.status !== 'DRAFT') {
+      throw new BadRequestError(`Cannot approve change request in status '${record.status}'.`);
+    }
+
+    const key = idempotencyKey || `customer-ocr-approve-${changeRequestId}`;
+    return executeCommand({
+      principal,
+      commandType: 'customer.change_request.approve',
+      idempotencyKey: key,
+      payload: { changeRequestId, orderId: record.orderId },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const updated = await tx.orderChangeRequest.update({
+          where: { id: changeRequestId },
+          data: {
+            status: 'APPROVED',
+            approvedAt: new Date(),
+            approvedByUserId: principal.userId,
+          },
+        });
+
+        return {
+          data: {
+            id: updated.id,
+            requestNumber: updated.requestNumber,
+            status: updated.status,
+            approvedAt: updated.approvedAt?.toISOString() || null,
+          },
+          aggregateType: 'ORDER_CHANGE_REQUEST',
+          aggregateId: updated.id,
+          resourceVersion: 1,
+        };
+      },
+    });
   }
 }

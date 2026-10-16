@@ -354,3 +354,42 @@ export type CreateMachineDowntimeInput = z.input<typeof createMachineDowntimeSch
 export type CreateShiftTemplateInput = z.input<typeof createShiftTemplateSchema>;
 export type PublishRosterBatchInput = z.input<typeof publishRosterBatchSchema>;
 export type PublishRosterIntervalInput = z.input<typeof publishRosterIntervalSchema>;
+
+export const requestOvertimeSchema = z.object({
+  technicianId: z.string().min(1),
+  facilityId: z.string().optional(),
+  startAt: z.string(),
+  endAt: z.string(),
+  reason: z.string().min(1).max(500),
+  notes: z.string().max(500).optional(),
+});
+export type RequestOvertimeInput = z.infer<typeof requestOvertimeSchema>;
+
+export interface ReassessmentQueueQuery {
+  daysAhead?: number;
+  facilityId?: string;
+  technicianId?: string;
+}
+
+export interface ReassessmentQueueItem {
+  id: string;
+  itemType: 'SKILL' | 'CERTIFICATION';
+  technicianId: string;
+  technicianCode: string;
+  technicianName: string;
+  facilityId: string | null;
+  referenceId: string;
+  name: string;
+  code: string;
+  level?: number | null;
+  assessmentStatus: string;
+  validFrom: string | null;
+  expiresAt: string | null;
+  isExpired: boolean;
+  daysUntilExpiry: number | null;
+  urgency: 'EXPIRED' | 'EXPIRING_SOON' | 'UNVERIFIED' | 'REVOKED';
+  evidence?: string | null;
+  notes?: string | null;
+  assessedAt?: string | null;
+  assessedBy?: string | null;
+}

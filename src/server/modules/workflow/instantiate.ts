@@ -176,6 +176,61 @@ export async function instantiateWorkflow(
 
     taskMap.set(node.key, task);
     taskIdRecord[node.key] = task.id;
+
+    // Automatic bound form instance expansion (WFL-06)
+    const nodeBindings = await tx.formBinding.findMany({
+      where: {
+        workspaceId: principal.workspaceId,
+        context: 'WORKFLOW_NODE',
+        workflowNodeKey: node.key,
+        workflowVersionId: publishedVersion.id,
+      },
+    });
+    for (const binding of nodeBindings) {
+      await tx.formInstance.create({
+        data: {
+          workspaceId: principal.workspaceId,
+          formVersionId: binding.formVersionId,
+          formBindingId: binding.id,
+          subjectType: 'TASK',
+          subjectId: task.id,
+          status: 'PENDING',
+        },
+      });
+    }
+  }
+
+  // Automatic order-level bound form expansion (WFL-06)
+  if (order.orderTypeId) {
+    const orderBindings = await tx.formBinding.findMany({
+      where: {
+        workspaceId: principal.workspaceId,
+        context: 'ORDER_TYPE',
+        orderTypeId: order.orderTypeId,
+      },
+    });
+    for (const binding of orderBindings) {
+      const existing = await tx.formInstance.findFirst({
+        where: {
+          workspaceId: principal.workspaceId,
+          subjectType: 'ORDER',
+          subjectId: order.id,
+          formVersionId: binding.formVersionId,
+        },
+      });
+      if (!existing) {
+        await tx.formInstance.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            formVersionId: binding.formVersionId,
+            formBindingId: binding.id,
+            subjectType: 'ORDER',
+            subjectId: order.id,
+            status: 'PENDING',
+          },
+        });
+      }
+    }
   }
 
   // 7. Create Task Dependencies

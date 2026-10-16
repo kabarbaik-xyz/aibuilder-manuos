@@ -2380,6 +2380,288 @@ export class MastersService {
       },
     });
   }
-}
 
+  async getReassessmentQueue(
+    principal: Principal,
+    query?: { daysAhead?: number; facilityId?: string; technicianId?: string }
+  ): Promise<contracts.ReassessmentQueueItem[]> {
+    requireAnyPermission(principal, ['resource.manage', 'planning.read', 'planning.write', 'admin.access', 'owner']);
+
+    const daysAhead = query?.daysAhead ?? 30;
+    const now = new Date();
+    const threshold = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+
+    const queue: contracts.ReassessmentQueueItem[] = [];
+
+    // 1. Fetch technician skills that are expiring, expired, or unverified/revoked
+    const techSkills = await this.prisma.technicianSkill.findMany({
+      where: {
+        workspaceId: principal.workspaceId,
+        ...(query?.technicianId ? { technicianId: query.technicianId } : {}),
+        technician: {
+          ...(query?.facilityId ? { facilityId: query.facilityId } : {}),
+          isActive: true,
+        },
+      },
+      include: {
+        skill: true,
+        technician: true,
+      },
+    });
+
+    for (const ts of techSkills) {
+      const isRevoked = ts.assessmentStatus === 'REVOKED';
+      const isUnverified = ts.assessmentStatus === 'CLAIMED' || ts.assessmentStatus === 'OBSERVED';
+      const hasExpiry = Boolean(ts.expiresAt);
+      const isExpired = hasExpiry && ts.expiresAt! <= now;
+      const isExpiringSoon = hasExpiry && !isExpired && ts.expiresAt! <= threshold;
+
+      if (isRevoked || isUnverified || isExpired || isExpiringSoon) {
+        let urgency: 'EXPIRED' | 'EXPIRING_SOON' | 'UNVERIFIED' | 'REVOKED' = 'EXPIRING_SOON';
+        if (isRevoked) urgency = 'REVOKED';
+        else if (isExpired) urgency = 'EXPIRED';
+        else if (isExpiringSoon) urgency = 'EXPIRING_SOON';
+        else if (isUnverified) urgency = 'UNVERIFIED';
+
+        const daysUntilExpiry = ts.expiresAt
+          ? Math.ceil((ts.expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+          : null;
+
+        queue.push({
+          id: ts.id,
+          itemType: 'SKILL',
+          technicianId: ts.technicianId,
+          technicianCode: ts.technician.code,
+          technicianName: ts.technician.name,
+          facilityId: ts.technician.facilityId,
+          referenceId: ts.skillId,
+          name: ts.skill.name,
+          code: ts.skill.code,
+          level: ts.level,
+          assessmentStatus: ts.assessmentStatus,
+          validFrom: ts.validFrom?.toISOString() || null,
+          expiresAt: ts.expiresAt?.toISOString() || null,
+          isExpired,
+          daysUntilExpiry,
+          urgency,
+          evidence: ts.evidence,
+          notes: ts.notes,
+          assessedAt: ts.assessedAt?.toISOString() || null,
+          assessedBy: ts.assessedBy,
+        });
+      }
+    }
+
+    // 2. Fetch technician certifications that are expiring, expired, or REVOKED
+    const techCerts = await this.prisma.technicianCertification.findMany({
+      where: {
+        workspaceId: principal.workspaceId,
+        ...(query?.technicianId ? { technicianId: query.technicianId } : {}),
+        technician: {
+          ...(query?.facilityId ? { facilityId: query.facilityId } : {}),
+          isActive: true,
+        },
+      },
+      include: {
+        certification: true,
+        technician: true,
+      },
+    });
+
+    const thresholdDateStr = threshold.toISOString().slice(0, 10);
+    const nowDateStr = now.toISOString().slice(0, 10);
+
+    for (const tc of techCerts) {
+      const isRevoked = tc.status === 'REVOKED';
+      const isExpired = tc.status === 'EXPIRED' || tc.validUntil < nowDateStr;
+      const isExpiringSoon = !isExpired && tc.validUntil <= thresholdDateStr;
+
+      if (isRevoked || isExpired || isExpiringSoon) {
+        let urgency: 'EXPIRED' | 'EXPIRING_SOON' | 'UNVERIFIED' | 'REVOKED' = 'EXPIRING_SOON';
+        if (isRevoked) urgency = 'REVOKED';
+        else if (isExpired) urgency = 'EXPIRED';
+        else if (isExpiringSoon) urgency = 'EXPIRING_SOON';
+
+        const certExpDate = new Date(`${tc.validUntil}T23:59:59.999Z`);
+        const daysUntilExpiry = Math.ceil((certExpDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        queue.push({
+          id: tc.id,
+          itemType: 'CERTIFICATION',
+          technicianId: tc.technicianId,
+          technicianCode: tc.technician.code,
+          technicianName: tc.technician.name,
+          facilityId: tc.technician.facilityId,
+          referenceId: tc.certificationId,
+          name: tc.certification.name,
+          code: tc.certification.code,
+          level: null,
+          assessmentStatus: tc.status,
+          validFrom: tc.issuedDate,
+          expiresAt: tc.validUntil,
+          isExpired,
+          daysUntilExpiry,
+          urgency,
+          evidence: tc.evidence,
+          notes: tc.notes,
+          assessedAt: tc.createdAt?.toISOString() || null,
+          assessedBy: null,
+        });
+      }
+    }
+
+    const urgencyOrder = { EXPIRED: 0, REVOKED: 1, EXPIRING_SOON: 2, UNVERIFIED: 3 };
+    queue.sort((a, b) => {
+      const diff = urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
+      if (diff !== 0) return diff;
+      if (a.daysUntilExpiry !== null && b.daysUntilExpiry !== null) {
+        return a.daysUntilExpiry - b.daysUntilExpiry;
+      }
+      return a.technicianName.localeCompare(b.technicianName);
+    });
+
+    return queue;
+  }
+
+  async requestOvertime(
+    principal: Principal,
+    input: contracts.RequestOvertimeInput,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.write', 'task.assign', 'task.execute', 'admin.access', 'owner']);
+    const validated = contracts.requestOvertimeSchema.parse(input);
+
+    return executeCommand({
+      principal,
+      commandType: 'overtime.request',
+      idempotencyKey,
+      payload: validated,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const startAt = new Date(validated.startAt);
+        const endAt = new Date(validated.endAt);
+        if (startAt >= endAt) {
+          throw new BadRequestError(`Invalid interval: startAt (${validated.startAt}) must precede endAt (${validated.endAt})`);
+        }
+
+        const durationHours = (endAt.getTime() - startAt.getTime()) / (1000 * 60 * 60);
+        if (durationHours > 8) {
+          throw new BadRequestError(`Overtime request exceeds maximum single-shift limit of 8 hours (requested: ${durationHours.toFixed(1)}h)`);
+        }
+
+        const tech = await tx.technician.findFirst({
+          where: { id: validated.technicianId, workspaceId: principal.workspaceId, isActive: true },
+        });
+        if (!tech) {
+          throw new NotFoundError(`Technician '${validated.technicianId}' not found or inactive`);
+        }
+
+        // Check daily overtime limit
+        const dayStart = new Date(startAt);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(startAt);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        const existingOvertimeToday = await tx.rosterInterval.findMany({
+          where: {
+            workspaceId: principal.workspaceId,
+            technicianId: validated.technicianId,
+            intervalType: 'OVERTIME',
+            status: { in: ['DRAFT', 'PUBLISHED'] },
+            startAt: { gte: dayStart, lte: dayEnd },
+          },
+        });
+
+        const totalHoursToday = existingOvertimeToday.reduce(
+          (acc: number, cur: any) => acc + (cur.endAt.getTime() - cur.startAt.getTime()) / (1000 * 60 * 60),
+          0
+        );
+
+        if (totalHoursToday + durationHours > 8) {
+          throw new BadRequestError(
+            `Total overtime on ${startAt.toISOString().slice(0, 10)} would exceed daily safety limit of 8 hours (existing: ${totalHoursToday}h, requested: ${durationHours}h)`
+          );
+        }
+
+        // Create DRAFT overtime interval - unapproved overtime is NOT published and not available
+        const record = await tx.rosterInterval.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            facilityId: validated.facilityId || tech.facilityId,
+            technicianId: validated.technicianId,
+            intervalType: 'OVERTIME',
+            startAt,
+            endAt,
+            status: 'DRAFT',
+            notes: `Reason: ${validated.reason}${validated.notes ? ` | ${validated.notes}` : ''}`,
+          },
+        });
+
+        return {
+          data: record,
+          aggregateType: 'ROSTER_INTERVAL',
+          aggregateId: record.id,
+          resourceVersion: record.version,
+        };
+      },
+    });
+  }
+
+  async approveOvertime(
+    principal: Principal,
+    intervalId: string,
+    idempotencyKey: string
+  ) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.write', 'admin.access', 'owner']);
+
+    return executeCommand({
+      principal,
+      commandType: 'overtime.approve',
+      idempotencyKey,
+      payload: { intervalId },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const interval = await tx.rosterInterval.findFirst({
+          where: { id: intervalId, workspaceId: principal.workspaceId },
+        });
+        if (!interval) {
+          throw new NotFoundError(`Roster interval '${intervalId}' not found`);
+        }
+
+        if (interval.intervalType !== 'OVERTIME') {
+          throw new BadRequestError(`Cannot approve interval of type '${interval.intervalType}'. Must be 'OVERTIME'.`);
+        }
+
+        if (interval.status === 'PUBLISHED') {
+          return {
+            data: interval,
+            aggregateType: 'ROSTER_INTERVAL',
+            aggregateId: interval.id,
+            resourceVersion: interval.version,
+          };
+        }
+
+        if (interval.status === 'CANCELLED') {
+          throw new BadRequestError(`Cannot approve CANCELLED overtime interval '${intervalId}'.`);
+        }
+
+        const updated = await tx.rosterInterval.update({
+          where: { id: intervalId },
+          data: {
+            status: 'PUBLISHED',
+            version: { increment: 1 },
+          },
+        });
+
+        return {
+          data: updated,
+          aggregateType: 'ROSTER_INTERVAL',
+          aggregateId: updated.id,
+          resourceVersion: updated.version,
+        };
+      },
+    });
+  }
+
+}
 export const mastersService = new MastersService();

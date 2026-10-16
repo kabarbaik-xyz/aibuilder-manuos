@@ -1764,6 +1764,139 @@ paths:
         '401': { $ref: "#/components/responses/Unauthorized" }
         '403': { $ref: "#/components/responses/Forbidden" }
 
+  /api/technicians/reassessment-queue:
+    get:
+      summary: Retrieve qualification expiry and reassessment queue
+      description: Returns upcoming skill and certification expiries, unverified skills, and revocations for workforce compliance.
+      parameters:
+        - in: query
+          name: daysAhead
+          schema: { type: integer, default: 30 }
+        - in: query
+          name: facilityId
+          schema: { type: string }
+        - in: query
+          name: technicianId
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of reassessment queue items
+        '401': { $ref: "#/components/responses/Unauthorized" }
+
+  /api/planning/overtime/request:
+    post:
+      summary: Request technician overtime interval
+      description: Submits a draft overtime request subject to daily safety limits (<= 8 hours) and supervisor approval.
+      parameters:
+        - $ref: "#/components/parameters/AccessIdempotency"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [technicianId, startAt, endAt, reason]
+              properties:
+                technicianId: { type: string }
+                facilityId: { type: string }
+                startAt: { type: string, format: date-time }
+                endAt: { type: string, format: date-time }
+                reason: { type: string }
+                notes: { type: string }
+      responses:
+        '201':
+          description: Created draft overtime interval
+        '400': { $ref: "#/components/responses/BadRequest" }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+
+  /api/planning/overtime/{id}/approve:
+    post:
+      summary: Approve requested technician overtime
+      description: Promotes draft overtime interval to PUBLISHED, making it available for production scheduling.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/AccessIdempotency"
+      responses:
+        '200':
+          description: Approved published overtime interval
+        '400': { $ref: "#/components/responses/BadRequest" }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+        '404': { $ref: "#/components/responses/NotFound" }
+
+  /api/portal/orders/{id}/drawing-approval:
+    post:
+      summary: Formal customer approval for released engineering drawing revision
+      description: Audited customer approval for released drawing associated with order.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/AccessIdempotency"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [drawingRevisionId]
+              properties:
+                drawingRevisionId: { type: string }
+                notes: { type: string }
+      responses:
+        '200':
+          description: Audited approval confirmation
+        '400': { $ref: "#/components/responses/BadRequest" }
+        '401': { $ref: "#/components/responses/Unauthorized" }
+        '404': { $ref: "#/components/responses/NotFound" }
+
+  /api/portal/change-requests:
+    get:
+      summary: List customer order change requests
+      parameters:
+        - in: query
+          name: orderId
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of change requests
+    post:
+      summary: Submit customer order change request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, changeType, reason, requestedChanges]
+              properties:
+                orderId: { type: string }
+                changeType: { type: string, enum: [QUANTITY, DATE, SPECIFICATION, CANCEL] }
+                reason: { type: string }
+                requestedChanges: { type: object }
+      responses:
+        '201':
+          description: Submitted change request
+        '400': { $ref: "#/components/responses/BadRequest" }
+
+  /api/portal/change-requests/{id}/approve:
+    post:
+      summary: Customer approval of proposed change request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/AccessIdempotency"
+      responses:
+        '200':
+          description: Approved change request
+        '400': { $ref: "#/components/responses/BadRequest" }
+        '404': { $ref: "#/components/responses/NotFound" }
+
 components:
   parameters:
     AccessIdempotency:
