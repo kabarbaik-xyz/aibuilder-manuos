@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { formatQuantity, parseQuantity } from '@/domain/quantity';
 import { mastersApi, Location } from '@/features/masters/api';
+import { useOnlineStatus } from '../use-online-status';
 
 export interface ShopFloorWorkstationViewProps {
   taskId: string;
@@ -35,6 +36,7 @@ export interface ShopFloorWorkstationViewProps {
 export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewProps) {
   const router = useRouter();
   const { principal } = useWorkspaceNavigation();
+  const isOnline = useOnlineStatus();
   const { data: task, isLoading, error, refetch } = useTaskExecutionDetail(taskId);
 
   const startMutation = useStartTask();
@@ -131,7 +133,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     return (
       <div className="flex flex-col items-center justify-center p-16 text-muted">
         <Icon name="clock" className="w-10 h-10 animate-spin mb-4 text-primary" />
-        <p className="text-sm">Loading workstation telemetry & material custody...</p>
+        <p className="text-sm">Loading task and material custody...</p>
       </div>
     );
   }
@@ -155,6 +157,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const handleReportIssue = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionError(null);
+    if (!isOnline) {
+      setActionError('You are offline. Issue changes are not queued and require a server connection.');
+      return;
+    }
     try {
       await createIssueMutation.mutateAsync({
         taskId: task.id,
@@ -181,6 +187,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     e.preventDefault();
     if (!resolvingIssueId) return;
     setActionError(null);
+    if (!isOnline) {
+      setActionError('You are offline. Issue changes are not queued and require a server connection.');
+      return;
+    }
     try {
       await resolveIssueMutation.mutateAsync({
         issueId: resolvingIssueId,
@@ -197,6 +207,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
   const handleReopenIssue = async (issueId: string) => {
     setActionError(null);
+    if (!isOnline) {
+      setActionError('You are offline. Issue changes are not queued and require a server connection.');
+      return;
+    }
     try {
       await reopenIssueMutation.mutateAsync({
         issueId,
@@ -212,6 +226,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     e.preventDefault();
     const code = scanCode.trim();
     if (!code) return;
+    if (!isOnline) {
+      setScanError('You are offline. Scan lookup requires a server connection.');
+      return;
+    }
     setScanError(null);
     try {
       const res = await scanMutation.mutateAsync(code);
@@ -234,6 +252,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
   const handleStart = async () => {
     setActionError(null);
+    if (!isOnline) {
+      setActionError('You are offline. Execution changes are not queued and require a server connection.');
+      return;
+    }
     try {
       await startMutation.mutateAsync({ taskId: task.id });
       refetch();
@@ -245,6 +267,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const handlePauseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionError(null);
+    if (!isOnline) {
+      setActionError('You are offline. Execution changes are not queued and require a server connection.');
+      return;
+    }
     const selectedPauseReason = pauseReasons?.find((reason) => reason.id === pauseReasonId);
     if (!selectedPauseReason) {
       setActionError('Configure an active Pause reason before pausing this task.');
@@ -267,6 +293,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
   const handleResume = async () => {
     setActionError(null);
+    if (!isOnline) {
+      setActionError('You are offline. Execution changes are not queued and require a server connection.');
+      return;
+    }
     try {
       await resumeMutation.mutateAsync({ taskId: task.id });
       refetch();
@@ -278,6 +308,10 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const handleOutputSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionError(null);
+    if (!isOnline) {
+      setActionError('You are offline. Execution changes are not queued and require a server connection.');
+      return;
+    }
     try {
       const atoms = parseQuantity(outputQty, 0);
       await recordOutputMutation.mutateAsync({
@@ -306,6 +340,15 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
 
   return (
     <div className="space-y-6">
+      <div role="status" className="p-3 bg-surface border border-line rounded-xl flex flex-wrap items-center gap-2 text-xs text-muted">
+        <Badge variant={isOnline ? 'success' : 'warning'}>{isOnline ? 'Browser online' : 'Offline'}</Badge>
+        <span>
+          {isOnline
+            ? 'Execution changes require a successful server response and are not queued offline.'
+            : 'Scan, execution, output and issue changes are disabled until you reconnect.'}
+        </span>
+      </div>
+
       {/* Workstation Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-surface border border-line p-6 rounded-2xl">
         <div>
@@ -338,11 +381,11 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           </div>
         </div>
 
-        {/* Live Telemetry Display */}
+        {/* Task timer and online-only actions */}
         <div className="flex items-center gap-6 bg-surface border border-line p-4 rounded-xl">
           <div>
             <div className="text-xs font-medium text-muted uppercase tracking-wider">
-              Elapsed Time
+              Task Timer
             </div>
             <div
               className={`text-2xl font-mono font-bold tracking-tight mt-0.5 ${
@@ -362,12 +405,14 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           <div className="flex items-center gap-2">
             <Button
               onClick={() => { setScanResult(null); setScanCode(""); setShowScanModal(true); }}
+              disabled={!isOnline}
               icon="search"
             >
               Scan Barcode
             </Button>
             <Button
               onClick={() => setShowIssueModal(true)}
+              disabled={!isOnline}
               icon="alert"
             >
               Report Issue
@@ -376,7 +421,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <Button
                 variant="primary"
                 onClick={handleStart}
-                disabled={startMutation.isPending || isExecutionBlocked}
+                disabled={!isOnline || startMutation.isPending || isExecutionBlocked}
                 icon="bolt"
               >
                 {startMutation.isPending ? "Starting..." : isExecutionBlocked ? "Blocked by Issue" : "Start Operation"}
@@ -387,7 +432,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <>
                 <Button
                   onClick={() => setShowPauseModal(true)}
-                  disabled={pauseMutation.isPending}
+                  disabled={!isOnline || pauseMutation.isPending}
                   icon="clock"
                 >
                   Pause Work
@@ -398,7 +443,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                     setOutputQty(formatQuantity(BigInt(task.order.targetAtoms)));
                     setShowOutputModal(true);
                   }}
-                  disabled={recordOutputMutation.isPending}
+                  disabled={!isOnline || recordOutputMutation.isPending}
                   icon="check"
                 >
                   Record Output
@@ -410,7 +455,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <Button
                 variant="primary"
                 onClick={handleResume}
-                disabled={resumeMutation.isPending}
+                disabled={!isOnline || resumeMutation.isPending}
                 icon="reset"
               >
                 {resumeMutation.isPending ? 'Resuming...' : 'Resume Operation'}
@@ -611,7 +656,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               Task Issues, Blockers & Downtime
             </h3>
             <p className="text-xs text-muted">
-              Active disruptions, machine fault telemetry, and operator resolution log
+              Reported task blockers, downtime context, and resolution history
             </p>
           </div>
           <Button
@@ -690,7 +735,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                         <Button
                           size="small"
                           onClick={() => handleReopenIssue(iss.id)}
-                          disabled={reopenIssueMutation.isPending}
+                          disabled={!isOnline || reopenIssueMutation.isPending}
                         >
                           Reopen
                         </Button>
@@ -729,7 +774,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 
                 <Select
                   value={pauseReasonId}
-                  disabled={pauseReasonsLoading || !pauseReasons?.length || pauseMutation.isPending}
+                  disabled={!isOnline || pauseReasonsLoading || !pauseReasons?.length || pauseMutation.isPending}
                   onChange={(e) => setPauseReasonId(e.target.value)}
                   className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-warning/20"
                 >
@@ -765,7 +810,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={pauseMutation.isPending || pauseReasonsLoading || !pauseReasonId}
+                  disabled={!isOnline || pauseMutation.isPending || pauseReasonsLoading || !pauseReasonId}
                 >
                   {pauseMutation.isPending ? 'Pausing...' : 'Confirm Pause'}
                 </Button>
@@ -869,7 +914,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <Button
                 type="submit"
                 variant="primary"
-                disabled={recordOutputMutation.isPending}
+                disabled={!isOnline || recordOutputMutation.isPending}
               >
                 {recordOutputMutation.isPending ? 'Recording Output...' : 'Confirm Output'}
               </Button>
@@ -972,7 +1017,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <Button
                 type="submit"
                 variant="primary"
-                disabled={createIssueMutation.isPending}
+                disabled={!isOnline || createIssueMutation.isPending}
               >
                 {createIssueMutation.isPending ? "Submitting..." : "Report Issue"}
               </Button>
@@ -1012,7 +1057,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <Button
                 type="submit"
                 variant="primary"
-                disabled={resolveIssueMutation.isPending}
+                disabled={!isOnline || resolveIssueMutation.isPending}
               >
                 {resolveIssueMutation.isPending ? "Resolving..." : "Confirm Resolution"}
               </Button>
@@ -1074,7 +1119,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
               <Button
                 type="submit"
                 variant="primary"
-                disabled={scanMutation.isPending}
+                disabled={!isOnline || scanMutation.isPending}
               >
                 {scanMutation.isPending ? "Verifying..." : "Verify Code"}
               </Button>

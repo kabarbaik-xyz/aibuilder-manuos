@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/resource-state";
 import { useMyTasks, useScanBarcode } from "../hooks";
 import { getScanOpenPath } from "../scan-routing";
+import { useOnlineStatus } from "../use-online-status";
 
 function formatMinutes(value: number) {
   return value < 60 ? `${value}m` : `${Math.floor(value / 60)}h${value % 60 ? ` ${value % 60}m` : ""}`;
@@ -19,6 +20,7 @@ function formatMinutes(value: number) {
 export function ShopFloorTodayView() {
   const router = useRouter();
   const { principal } = useWorkspaceNavigation();
+  const isOnline = useOnlineStatus();
   const [scanCode, setScanCode] = useState("");
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const scanMutation = useScanBarcode();
@@ -29,6 +31,10 @@ export function ShopFloorTodayView() {
     e.preventDefault();
     const code = scanCode.trim();
     if (!code) return;
+    if (!isOnline) {
+      setScanMessage('You are offline. Scan lookup requires a server connection.');
+      return;
+    }
     setScanMessage(null);
     try {
       const result = await scanMutation.mutateAsync(code);
@@ -84,15 +90,19 @@ export function ShopFloorTodayView() {
         </ButtonLink>
       </div>
 
-      {/* Online Mutation & Roster Badge */}
+      {/* Online-only mutation state */}
       <div className="p-3 bg-surface border border-line rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
-          <strong className="text-ink font-medium">Online Mode</strong>
-          <span className="text-muted">— Server-authoritative live execution</span>
+          <Badge variant={isOnline ? "success" : "warning"}>
+            {isOnline ? "Browser online" : "Offline"}
+          </Badge>
+          <span className="text-muted">
+            {isOnline
+              ? "Changes require a server connection and are not queued offline."
+              : "Scan and execution actions are unavailable until you reconnect."}
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="blue">Assigned Shift: Active</Badge>
           {principal?.facilityId && <Badge variant="default">Facility: {principal.facilityId}</Badge>}
         </div>
       </div>
@@ -111,7 +121,7 @@ export function ShopFloorTodayView() {
             onChange={(e) => setScanCode(e.target.value)}
           />
         </div>
-        <Button type="submit" variant="primary" disabled={!scanCode.trim() || scanMutation.isPending}>
+        <Button type="submit" variant="primary" disabled={!isOnline || !scanCode.trim() || scanMutation.isPending}>
           {scanMutation.isPending ? "Checking…" : "Scan & Open"}
         </Button>
         {scanMessage && (
