@@ -161,6 +161,24 @@ export class RecoveryService {
     const input: ApproveRecoveryInput = ApproveRecoverySchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
 
+    // Validate order status first
+    const preOrder = await this.db.order.findUnique({
+      where: {
+        workspaceId_id: {
+          workspaceId,
+          id: input.orderId,
+        },
+      },
+    });
+
+    if (!preOrder) {
+      throw new NotFoundError(`Order '${input.orderId}' not found for recovery approval`);
+    }
+
+    if (preOrder.status === 'DELIVERED' || preOrder.status === 'CANCELLED') {
+      throw new BadRequestError(`Cannot approve recovery for order in status ${preOrder.status}`);
+    }
+
     // Resolve and re-validate persisted recovery proposal
     const proposal = getRecoveryStore().get(input.proposalId);
     if (!proposal || proposal.workspaceId !== workspaceId) {

@@ -196,7 +196,6 @@ export async function finalizeInspection(
               task: true,
             },
           },
-          supplyReceipt: true,
         },
       });
       if (!currentInspection) {

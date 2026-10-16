@@ -33,7 +33,7 @@ export async function recordOutput(
   rawInput: unknown,
   idempotencyKey?: string
 ) {
-  requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'owner']);
+  requireAnyPermission(principal, ['task.execute_assigned', 'task.assign']);
   const input = RecordOutputSchema.parse(rawInput);
   const workspaceId = principal.workspaceId;
 

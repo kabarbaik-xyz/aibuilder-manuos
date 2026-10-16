@@ -227,11 +227,23 @@ export class PortalRepository {
       digestSha256: p.digestSha256,
     }));
 
-    // Derive truthful milestones
-    const hasDelivered = order.shipments.some((s) => s.status === 'DELIVERED');
-    const hasDispatched = order.shipments.some(
-      (s) => s.status === 'DISPATCHED' || s.status === 'DELIVERED'
-    );
+    // Derive truthful milestones based on settled atom quantities
+    const totalDeliveredAtoms = order.shipments
+      .filter((s) => s.status === 'DELIVERED')
+      .flatMap((s) => s.lines)
+      .reduce((sum, l) => sum + l.deliveredAtoms, 0n);
+
+    const isFullyDelivered = totalDeliveredAtoms >= order.orderedAtoms && order.orderedAtoms > 0n;
+    const isPartiallyDelivered = totalDeliveredAtoms > 0n;
+
+    const totalDispatchedAtoms = order.shipments
+      .filter((s) => s.status === 'DISPATCHED' || s.status === 'DELIVERED')
+      .flatMap((s) => s.lines)
+      .reduce((sum, l) => sum + l.dispatchedAtoms, 0n);
+
+    const isFullyDispatched = totalDispatchedAtoms >= order.orderedAtoms && order.orderedAtoms > 0n;
+    const isPartiallyDispatched = totalDispatchedAtoms > 0n;
+
     const hasQcPassed = qcPassedAtoms > 0n;
 
     const milestones: CustomerMilestoneDTO[] = [
@@ -254,7 +266,7 @@ export class PortalRepository {
         key: 'QC',
         title: 'Quality Inspection & Verification',
         status:
-          qcPassedAtoms >= order.orderedAtoms
+          qcPassedAtoms >= order.orderedAtoms && order.orderedAtoms > 0n
             ? 'COMPLETED'
             : hasQcPassed
             ? 'IN_PROGRESS'
@@ -263,12 +275,20 @@ export class PortalRepository {
       {
         key: 'DISPATCH',
         title: 'Shipment Dispatch',
-        status: hasDispatched ? 'COMPLETED' : 'PENDING',
+        status: isFullyDispatched
+          ? 'COMPLETED'
+          : isPartiallyDispatched
+          ? 'IN_PROGRESS'
+          : 'PENDING',
       },
       {
         key: 'DELIVERY',
         title: 'Delivery & Proof of Custody',
-        status: hasDelivered ? 'COMPLETED' : 'PENDING',
+        status: isFullyDelivered
+          ? 'COMPLETED'
+          : isPartiallyDelivered
+          ? 'IN_PROGRESS'
+          : 'PENDING',
       },
     ];
 

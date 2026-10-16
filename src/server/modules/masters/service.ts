@@ -1240,7 +1240,7 @@ export class MastersService {
 
         const effectiveMax = Math.min(skill.scaleMax, 4);
         if (input.level < 0 || input.level > effectiveMax) {
-          throw new BadRequestError(`Skill level must be between 0 and scale max of ${effectiveMax}`);
+          throw new BadRequestError(`Skill level cannot exceed scale max: must be between 0 and ${effectiveMax}`);
         }
 
         const validFrom = input.validFrom ? new Date(input.validFrom) : null;

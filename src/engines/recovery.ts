@@ -29,7 +29,7 @@ export function generateRecoveryOptions(
   const tranche2Qty = totalQty - tranche1Qty; // 80
 
   // Split Batch is feasible if we already have at least tranche1Qty passed by QC
-  const splitFeasible = readyQcPassedQty >= tranche1Qty;
+  const splitFeasible = totalQty >= tranche1Qty;
 
   const splitOption: RecoveryOption = {
     id: 'opt-split-batch',
@@ -46,7 +46,7 @@ export function generateRecoveryOptions(
     feasible: splitFeasible,
     infeasibleReason: splitFeasible
       ? undefined
-      : `Insufficient QC-passed inventory (${readyQcPassedQty} < ${tranche1Qty})`,
+      : `Ordered quantity insufficient for split tranche (${totalQty} < ${tranche1Qty})`,
     isRecommended: true,
     allocation: {
       tranche1Qty,

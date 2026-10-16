@@ -4,6 +4,7 @@ import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
 import { BadRequestError, ConflictError, NotFoundError } from '@/domain/errors';
+import { db } from '@/server/db/client';
 import { PlanningRepository } from './repository';
 import {
   ScheduleTasksRequest,
@@ -14,7 +15,11 @@ import {
   AssignTaskSchema,
   AssignmentEvaluationResult,
   TaskPlanningDTO,
+  RescheduleAssignmentSchema,
+  CancelAssignmentSchema,
+  TaskDispatchReadinessDTO,
 } from './contracts';
+import { NotificationService } from '../notifications/service';
 import {
   scheduleTasks as runScheduleEngine,
   addWorkingMinutes,
@@ -27,10 +32,15 @@ import {
 } from '@/engines/schedule';
 
 export class PlanningService {
+  private readonly db: PrismaClient;
   private readonly repo: PlanningRepository;
+  private readonly notificationService: NotificationService;
 
-  constructor(private readonly db: PrismaClient) {
-    this.repo = new PlanningRepository(db);
+  constructor(prismaClient?: PrismaClient) {
+    const activeDb = prismaClient ?? db;
+    this.db = activeDb;
+    this.repo = new PlanningRepository(activeDb);
+    this.notificationService = new NotificationService(activeDb);
   }
 
   /**
@@ -107,6 +117,57 @@ export class PlanningService {
       violations.push('Task requirements require a machine assignment');
     }
 
+    // Facility match check if order has facility scope
+    const orderFacilityId = task.instance?.order?.facilityId;
+    if (orderFacilityId) {
+      if (input.technicianId) {
+        const techFac = await client.technician.findFirst({
+          where: { id: input.technicianId, workspaceId },
+        });
+        if (techFac && techFac.facilityId && techFac.facilityId !== orderFacilityId) {
+          let hasGrant = false;
+          if (techFac.membershipId) {
+            const grant = await client.membershipFacilityGrant.findFirst({
+              where: { workspaceId, membershipId: techFac.membershipId, facilityId: orderFacilityId },
+            });
+            hasGrant = !!grant;
+          }
+          if (!hasGrant) {
+            violations.push(
+              `Technician '${techFac.name}' belongs to facility '${techFac.facilityId}' and lacks access to order facility '${orderFacilityId}'`
+            );
+          }
+        }
+      }
+
+      if (input.machineId) {
+        const machFac = await client.machine.findFirst({
+          where: { id: input.machineId, workspaceId },
+        });
+        if (machFac && machFac.facilityId && machFac.facilityId !== orderFacilityId) {
+          violations.push(
+            `Machine '${machFac.name}' belongs to facility '${machFac.facilityId}' and does not match order facility '${orderFacilityId}'`
+          );
+        }
+      }
+    }
+
+    // Material demands coverage check (advisory warnings)
+    const demands = await client.materialDemand.findMany({
+      where: { workspaceId, taskId: task.id },
+      include: { item: true, reservations: true },
+    });
+    for (const d of demands) {
+      const allocatedAtoms = d.reservations
+        .filter((r) => r.status === 'ACTIVE')
+        .reduce((sum, r) => sum + r.reservedAtoms, 0n);
+      if (d.status !== 'ALLOCATED' && d.status !== 'ISSUED' && allocatedAtoms < d.requiredAtoms) {
+        warnings.push(
+          `Material demand for '${d.item.name}' is only partially allocated (${allocatedAtoms.toString()}/${d.requiredAtoms.toString()} atoms)`
+        );
+      }
+    }
+
     // 1. Evaluate Technician
     if (input.technicianId) {
       const technician = await client.technician.findUnique({
@@ -145,6 +206,10 @@ export class PlanningService {
               violations.push(
                 `Technician '${technician.name}' skill level (${techSkill.level}) is below required minimum (${reqSkill.minLevel})`
               );
+            } else if (techSkill.assessmentStatus && techSkill.assessmentStatus !== 'VERIFIED') {
+              violations.push(
+                `Technician '${technician.name}' skill '${reqSkill.skillId}' has unverified status '${techSkill.assessmentStatus}'`
+              );
             }
           }
         }
@@ -163,13 +228,22 @@ export class PlanningService {
               violations.push(
                 `Technician '${technician.name}' lacks required certification '${certId}'`
               );
+            } else if (techCert.status && techCert.status !== 'ACTIVE') {
+              violations.push(
+                `Technician '${technician.name}' certification '${techCert.certification.name}' is revoked or inactive`
+              );
             } else if (techCert.validUntil < nowStr) {
               violations.push(
                 `Technician '${technician.name}' certification '${techCert.certification.name}' expired on ${techCert.validUntil}`
               );
+            } else if (input.scheduledEndAt && techCert.expiresAtDate && techCert.expiresAtDate < new Date(input.scheduledEndAt)) {
+              violations.push(
+                `Technician '${technician.name}' certification '${techCert.certification.name}' expires on ${techCert.expiresAtDate.toISOString()}, before task end`
+              );
             }
           }
         }
+
 
         // Check Booking Conflicts
         if (input.scheduledStartAt && input.scheduledEndAt) {
@@ -221,6 +295,24 @@ export class PlanningService {
           violations.push(
             `Machine '${machine.name}' belongs to class '${machine.machineClass.name}', but task requires '${requirements.machineClassId}'`
           );
+        }
+
+        // Check Machine Downtime
+        if (input.scheduledStartAt && input.scheduledEndAt) {
+          const mStart = new Date(input.scheduledStartAt);
+          const mEnd = new Date(input.scheduledEndAt);
+          const dt = await client.machineDowntime.findFirst({
+            where: {
+              workspaceId,
+              machineId: input.machineId,
+              status: { in: ['SCHEDULED', 'ACTIVE'] },
+              startAt: { lt: mEnd },
+              endAt: { gt: mStart },
+            },
+          });
+          if (dt) {
+            violations.push(`Machine '${machine.name}' has scheduled downtime: ${dt.reason}`);
+          }
         }
 
         // Check Booking Conflicts
@@ -432,6 +524,31 @@ export class PlanningService {
           bookingsToCreate
         );
 
+        // Send notification to assigned technician if membership exists
+        if (effectiveTechnicianId) {
+          const assignedTech = await tx.technician.findFirst({
+            where: { id: effectiveTechnicianId, workspaceId },
+          });
+          if (assignedTech?.membershipId) {
+            const member = await tx.membership.findFirst({
+              where: { id: assignedTech.membershipId, workspaceId },
+            });
+            if (member?.userId) {
+              await tx.notificationInbox.create({
+                data: {
+                  workspaceId,
+                  userId: member.userId,
+                  title: `Task Assigned: ${task.nodeKey}`,
+                  body: `You have been assigned to task ${task.nodeKey} (${startAt.toISOString().slice(11, 16)} - ${endAt.toISOString().slice(11, 16)})`,
+                  subjectType: 'TASK',
+                  subjectId: task.id,
+                  status: 'UNREAD',
+                },
+              });
+            }
+          }
+        }
+
         // Record workflow event if status transitioned
         if (newStatus !== task.status) {
           await tx.workflowEvent.create({
@@ -585,7 +702,286 @@ export class PlanningService {
 
     return scheduleResult;
   }
+
+  /**
+   * Cancels a task assignment, releases confirmed resource bookings, and returns task to READY status.
+   */
+  async cancelTaskAssignment(
+    principal: Principal,
+    taskId: string,
+    input?: { notes?: string },
+    idempotencyKey?: string
+  ) {
+    requireAnyPermission(principal, ['task.assign', 'planning.write', 'resource.manage']);
+    const workspaceId = principal.workspaceId;
+
+    return executeCommand({
+      principal,
+      commandType: 'task.assignment.cancel',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: { taskId, ...input },
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const task = await tx.task.findUnique({
+          where: { workspaceId_id: { workspaceId, id: taskId } },
+        });
+        if (!task) throw new NotFoundError(`Task '${taskId}' not found`);
+
+        if (['RUNNING', 'COMPLETED', 'CANCELLED'].includes(task.status)) {
+          throw new BadRequestError(`Cannot cancel assignment for task in status '${task.status}'`);
+        }
+
+        // Cancel confirmed bookings
+        await tx.resourceBooking.updateMany({
+          where: { workspaceId, taskId, status: 'CONFIRMED' },
+          data: { status: 'CANCELLED' },
+        });
+
+        const updatedTask = await tx.task.update({
+          where: { workspaceId_id: { workspaceId, id: taskId } },
+          data: {
+            assignedTechnicianId: null,
+            assignedMachineId: null,
+            status: 'READY',
+            version: { increment: 1 },
+          },
+        });
+
+        await tx.workflowEvent.create({
+          data: {
+            workspaceId,
+            instanceId: task.instanceId,
+            taskId: task.id,
+            fromStatus: task.status,
+            toStatus: 'READY',
+            action: 'CANCEL_ASSIGNMENT',
+            actorUserId: principal.userId,
+            detailJson: JSON.stringify({ notes: input?.notes }),
+          },
+        });
+
+        return {
+          data: updatedTask,
+          aggregateType: 'TASK',
+          aggregateId: task.id,
+          previousVersion: task.version,
+          resourceVersion: updatedTask.version,
+        };
+      },
+    });
+  }
+
+  /**
+   * Reschedules an assigned task to a new time window, validating eligibility and replacing bookings atomically.
+   */
+  async rescheduleTaskAssignment(
+    principal: Principal,
+    taskId: string,
+    rawInput: unknown,
+    idempotencyKey?: string
+  ) {
+    requireAnyPermission(principal, ['task.assign', 'planning.write', 'resource.manage']);
+    const input = RescheduleAssignmentSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+
+    this.validateAssignmentWindow(input.startAt, input.endAt);
+
+    return executeCommand({
+      principal,
+      commandType: 'task.assignment.reschedule',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      expectedVersion: input.expectedVersion,
+      payload: { taskId, ...input },
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const task = await tx.task.findUnique({
+          where: { workspaceId_id: { workspaceId, id: taskId } },
+        });
+        if (!task) throw new NotFoundError(`Task '${taskId}' not found`);
+
+        if (task.version !== input.expectedVersion) {
+          throw new ConflictError(
+            `Resource version mismatch: expected ${input.expectedVersion}, but found ${task.version}`,
+            'STALE_VERSION',
+            true
+          );
+        }
+
+        if (!['ASSIGNED', 'READY', 'PENDING'].includes(task.status)) {
+          throw new BadRequestError(`Cannot reschedule task in status '${task.status}'`);
+        }
+
+        const startAt = new Date(input.startAt);
+        const endAt = new Date(input.endAt);
+
+        const evalResult = await this.evaluateAssignmentWithClient(tx, principal, {
+          taskId,
+          technicianId: task.assignedTechnicianId,
+          machineId: task.assignedMachineId,
+          scheduledStartAt: startAt,
+          scheduledEndAt: endAt,
+        });
+
+        if (!evalResult.isEligible) {
+          throw new BadRequestError(
+            `Reschedule rejected due to violations:\n${evalResult.violations.join('\n')}`
+          );
+        }
+
+        // Replace bookings
+        const bookingsToCreate: Array<{
+          resourceType: 'TECHNICIAN' | 'MACHINE';
+          resourceId: string;
+          startAt: Date;
+          endAt: Date;
+        }> = [];
+
+        if (task.assignedTechnicianId) {
+          bookingsToCreate.push({
+            resourceType: 'TECHNICIAN',
+            resourceId: task.assignedTechnicianId,
+            startAt,
+            endAt,
+          });
+        }
+        if (task.assignedMachineId) {
+          bookingsToCreate.push({
+            resourceType: 'MACHINE',
+            resourceId: task.assignedMachineId,
+            startAt,
+            endAt,
+          });
+        }
+
+        const createdBookings = await this.repo.replaceBookingsForTask(
+          tx,
+          workspaceId,
+          taskId,
+          bookingsToCreate
+        );
+
+        const updatedTask = await tx.task.update({
+          where: { workspaceId_id: { workspaceId, id: taskId } },
+          data: {
+            version: { increment: 1 },
+          },
+        });
+
+        await tx.workflowEvent.create({
+          data: {
+            workspaceId,
+            instanceId: task.instanceId,
+            taskId: task.id,
+            fromStatus: task.status,
+            toStatus: task.status,
+            action: 'RESCHEDULE',
+            actorUserId: principal.userId,
+            detailJson: JSON.stringify({
+              startAt: startAt.toISOString(),
+              endAt: endAt.toISOString(),
+              notes: input.notes,
+            }),
+          },
+        });
+
+        return {
+          data: {
+            task: updatedTask,
+            bookings: createdBookings,
+            evaluation: evalResult,
+          },
+          aggregateType: 'TASK',
+          aggregateId: task.id,
+          previousVersion: task.version,
+          resourceVersion: updatedTask.version,
+        };
+      },
+    });
+  }
+
+  /**
+   * Returns comprehensive dispatch readiness model with predecessor status, material coverage, and evaluation.
+   */
+  async getTaskDispatchReadiness(
+    principal: Principal,
+    taskId: string
+  ): Promise<TaskDispatchReadinessDTO> {
+    requireAnyPermission(principal, ['planning.read', 'task.assign']);
+    const workspaceId = principal.workspaceId;
+
+    const task = await this.db.task.findUnique({
+      where: { workspaceId_id: { workspaceId, id: taskId } },
+      include: {
+        instance: {
+          include: {
+            order: true,
+            workflowVersion: { include: { nodes: true } },
+          },
+        },
+      },
+    });
+    if (!task) throw new NotFoundError(`Task '${taskId}' not found`);
+
+    const predecessorDeps = await this.db.taskDependency.findMany({
+      where: { workspaceId, successorTaskId: task.id },
+      include: { predecessor: true },
+    });
+    const uncompletedPreds = predecessorDeps
+      .filter((d) => d.predecessor.status !== 'COMPLETED')
+      .map((d) => ({
+        id: d.predecessor.id,
+        nodeKey: d.predecessor.nodeKey,
+        status: d.predecessor.status,
+      }));
+
+    const demands = await this.db.materialDemand.findMany({
+      where: { workspaceId, taskId: task.id },
+      include: { reservations: true },
+    });
+    const uncoveredDemands = demands
+      .map((d) => {
+        const allocatedAtoms = d.reservations
+          .filter((r) => r.status === 'ACTIVE')
+          .reduce((sum, r) => sum + r.reservedAtoms, 0n);
+        const isCovered =
+          d.status === 'ALLOCATED' || d.status === 'ISSUED' || allocatedAtoms >= d.requiredAtoms;
+        return {
+          id: d.id,
+          itemId: d.itemId,
+          requiredAtoms: d.requiredAtoms.toString(),
+          allocatedAtoms: allocatedAtoms.toString(),
+          isCovered,
+        };
+      })
+      .filter((d) => !d.isCovered)
+      .map(({ id, itemId, requiredAtoms, allocatedAtoms }) => ({
+        id,
+        itemId,
+        requiredAtoms,
+        allocatedAtoms,
+      }));
+
+    const evaluation = await this.evaluateAssignmentWithClient(this.db, principal, {
+      taskId,
+      technicianId: task.assignedTechnicianId,
+      machineId: task.assignedMachineId,
+    });
+
+    let readinessStatus: TaskDispatchReadinessDTO['readinessStatus'] = 'READY';
+    if (task.status === 'RUNNING') readinessStatus = 'IN_PROGRESS';
+    else if (task.status === 'COMPLETED') readinessStatus = 'COMPLETED';
+    else if (task.status === 'ASSIGNED') readinessStatus = 'ASSIGNED';
+    else if (uncompletedPreds.length > 0) readinessStatus = 'WAITING_PREDECESSOR';
+    else if (uncoveredDemands.length > 0) readinessStatus = 'BLOCKED_MATERIAL';
+
+    return {
+      taskId: task.id,
+      readinessStatus,
+      uncompletedPredecessors: uncompletedPreds,
+      uncoveredDemands,
+      evaluation,
+    };
+  }
 }
 
-import { db } from '@/server/db/client';
-export const planningService = new PlanningService(db);
+export const planningService = new PlanningService();

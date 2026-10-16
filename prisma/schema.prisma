@@ -35,6 +35,8 @@ model User {
   authorizedReworks   ReworkAttempt[]
   uploadedDocuments   Document[]
   notifications       NotificationInbox[]
+  reportedIssues      TaskIssue[]         @relation("IssueReporter")
+  ownedIssues         TaskIssue[]         @relation("IssueOwner")
 
   @@map("users")
 }
@@ -111,6 +113,7 @@ model Workspace {
   membershipFacilityGrants MembershipFacilityGrant[]
   issueReasons      IssueReason[]
   notifications     NotificationInbox[]
+  taskIssues        TaskIssue[]
   roles             Role[]
   numberSequences   NumberSequence[]
   commandReceipts   CommandReceipt[]
@@ -1107,6 +1110,7 @@ model Task {
   workSessions           WorkSession[]
   productionOutputs      ProductionOutput[]
   reworkAttempts         ReworkAttempt[]
+  issues                 TaskIssue[]
 
   @@unique([instanceId, nodeKey, attemptNumber])
   @@unique([workspaceId, id])
@@ -1960,7 +1964,10 @@ model IssueReason {
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
+  issues      TaskIssue[]
+
   @@unique([workspaceId, category, code])
+  @@unique([workspaceId, id])
   @@map("issue_reasons")
 }
 
@@ -2135,4 +2142,33 @@ model RosterInterval {
   @@index([workspaceId, technicianId, startAt, endAt])
   @@index([workspaceId, machineId, startAt, endAt])
   @@map("roster_intervals")
+}
+
+model TaskIssue {
+  id                    String       @id @default(uuid())
+  workspaceId           String       @map("workspace_id")
+  taskId                String       @map("task_id")
+  issueReasonId         String?      @map("issue_reason_id")
+  title                 String
+  description           String?
+  status                String       @default("OPEN") // OPEN | RESOLVED | REOPENED
+  severity              String       @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  ownerUserId           String?      @map("owner_user_id")
+  reporterUserId        String       @map("reporter_user_id")
+  expectedResolutionAt DateTime?    @map("expected_resolution_at")
+  resolvedAt            DateTime?    @map("resolved_at")
+  evidenceJson          String?      @default("[]") @map("evidence_json")
+  historyJson           String?      @default("[]") @map("history_json")
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+
+  workspace             Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task                  Task         @relation(fields: [workspaceId, taskId], references: [workspaceId, id], onDelete: Cascade)
+  issueReason           IssueReason? @relation(fields: [workspaceId, issueReasonId], references: [workspaceId, id])
+  ownerUser             User?        @relation("IssueOwner", fields: [ownerUserId], references: [id])
+  reporterUser          User         @relation("IssueReporter", fields: [reporterUserId], references: [id])
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, taskId])
+  @@map("task_issues")
 }

@@ -16,15 +16,24 @@ import {
   TaskExecutionDetailDTO,
   MyTaskSummaryDTO,
   WorkSessionDTO,
+  CreateTaskIssueSchema,
+  ResolveTaskIssueSchema,
+  ReopenTaskIssueSchema,
+  TaskIssueDTO,
+  ScanCodeSchema,
+  ScanResultDTO,
 } from './contracts';
+import { NotificationService } from '../notifications/service';
 
 export class ExecutionService {
   private readonly repo: ExecutionRepository;
   private readonly consumptionService: ConsumptionService;
+  private readonly notificationService: NotificationService;
 
   constructor(private readonly db: PrismaClient) {
     this.repo = new ExecutionRepository(db);
     this.consumptionService = new ConsumptionService(db);
+    this.notificationService = new NotificationService(db);
   }
 
   /**
@@ -62,6 +71,20 @@ export class ExecutionService {
       );
     }
 
+    const blockingIssue = await this.db.taskIssue.findFirst({
+      where: {
+        workspaceId,
+        taskId: task.id,
+        status: { in: ['OPEN', 'REOPENED'] },
+        severity: { in: ['CRITICAL', 'HIGH'] },
+      },
+    });
+    if (blockingIssue) {
+      throw new BadRequestError(
+        `Cannot start task '${task.nodeKey}': task is blocked by unresolved issue '${blockingIssue.title}'`
+      );
+    }
+
     // 2. Predecessor dependencies validation
     for (const dep of task.predecessorDeps) {
       if (dep.predecessor.status !== 'COMPLETED') {
@@ -79,10 +102,12 @@ export class ExecutionService {
       hasPermission(principal, 'owner');
 
     let effectiveTechnicianId = task.assignedTechnicianId;
-    if (input.technicianId) {
+    if (input.technicianId && input.technicianId !== principal.technicianId) {
       if (!isSupervisor) {
         throw new ForbiddenError('Only supervisors can start a task on behalf of another technician.');
       }
+      effectiveTechnicianId = input.technicianId;
+    } else if (input.technicianId && input.technicianId === principal.technicianId) {
       effectiveTechnicianId = input.technicianId;
     } else if (principal.technicianId) {
       if (task.assignedTechnicianId && task.assignedTechnicianId !== principal.technicianId) {
@@ -655,6 +680,375 @@ export class ExecutionService {
         blockReason,
       };
     });
+  }
+
+  /**
+   * Creates a recorded blocker or operational issue for a task, notifying responsible owners.
+   */
+  async createTaskIssue(
+    principal: Principal,
+    rawInput: unknown,
+    idempotencyKey?: string
+  ) {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.write']);
+    const input = CreateTaskIssueSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+
+    return executeCommand({
+      principal,
+      commandType: 'task.issue.create',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: input,
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const task = await tx.task.findUnique({
+          where: { workspaceId_id: { workspaceId, id: input.taskId } },
+        });
+        if (!task) throw new NotFoundError(`Task '${input.taskId}' not found`);
+
+        if (input.issueReasonId) {
+          const reason = await tx.issueReason.findFirst({
+            where: { id: input.issueReasonId, workspaceId, isActive: true },
+          });
+          if (!reason) {
+            throw new BadRequestError(`IssueReason '${input.issueReasonId}' not found or inactive`);
+          }
+        }
+
+        const issue = await tx.taskIssue.create({
+          data: {
+            workspaceId,
+            taskId: task.id,
+            issueReasonId: input.issueReasonId,
+            title: input.title,
+            description: input.description,
+            severity: input.severity,
+            ownerUserId: input.ownerUserId,
+            reporterUserId: principal.userId,
+            expectedResolutionAt: input.expectedResolutionAt ? new Date(input.expectedResolutionAt) : null,
+            evidenceJson: JSON.stringify(input.evidence || []),
+            historyJson: JSON.stringify([
+              {
+                action: 'CREATED',
+                userId: principal.userId,
+                timestamp: new Date().toISOString(),
+              },
+            ]),
+          },
+          include: {
+            issueReason: true,
+            reporterUser: true,
+            ownerUser: true,
+          },
+        });
+
+        if (input.severity === 'CRITICAL' || input.severity === 'HIGH') {
+          await tx.task.update({
+            where: { workspaceId_id: { workspaceId, id: task.id } },
+            data: { status: 'BLOCKED', version: { increment: 1 } },
+          });
+        }
+
+        await tx.workflowEvent.create({
+          data: {
+            workspaceId,
+            instanceId: task.instanceId,
+            taskId: task.id,
+            fromStatus: task.status,
+            toStatus: (input.severity === 'CRITICAL' || input.severity === 'HIGH') ? 'BLOCKED' : task.status,
+            action: 'RECORD_ISSUE',
+            actorUserId: principal.userId,
+            detailJson: JSON.stringify({ issueId: issue.id, severity: input.severity, title: input.title }),
+          },
+        });
+
+        if (input.ownerUserId) {
+          await tx.notificationInbox.create({
+            data: {
+              workspaceId,
+              userId: input.ownerUserId,
+              title: `Issue Assigned: ${input.title}`,
+              body: `New ${input.severity} severity issue raised on task ${task.nodeKey}: ${input.title}`,
+              subjectType: 'TASK_ISSUE',
+              subjectId: issue.id,
+              status: 'UNREAD',
+            },
+          });
+        }
+
+        return {
+          data: issue,
+          aggregateType: 'TASK_ISSUE',
+          aggregateId: issue.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  /**
+   * Resolves a task issue and unblocks task if no other blocking issues remain.
+   */
+  async resolveTaskIssue(
+    principal: Principal,
+    issueId: string,
+    rawInput: unknown,
+    idempotencyKey?: string
+  ) {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.write']);
+    const input = ResolveTaskIssueSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+
+    return executeCommand({
+      principal,
+      commandType: 'task.issue.resolve',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: { issueId, ...input },
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const issue = await tx.taskIssue.findUnique({
+          where: { workspaceId_id: { workspaceId, id: issueId } },
+          include: { task: true },
+        });
+        if (!issue) throw new NotFoundError(`TaskIssue '${issueId}' not found`);
+
+        if (issue.status === 'RESOLVED') {
+          throw new BadRequestError('Issue is already resolved');
+        }
+
+        const history = JSON.parse(issue.historyJson || '[]');
+        history.push({
+          action: 'RESOLVED',
+          userId: principal.userId,
+          timestamp: new Date().toISOString(),
+          notes: input.notes,
+        });
+
+        const updatedIssue = await tx.taskIssue.update({
+          where: { workspaceId_id: { workspaceId, id: issueId } },
+          data: {
+            status: 'RESOLVED',
+            resolvedAt: new Date(),
+            historyJson: JSON.stringify(history),
+          },
+        });
+
+        const otherOpenIssues = await tx.taskIssue.findMany({
+          where: {
+            workspaceId,
+            taskId: issue.taskId,
+            status: { in: ['OPEN', 'REOPENED'] },
+            severity: { in: ['CRITICAL', 'HIGH'] },
+            id: { not: issueId },
+          },
+        });
+
+        if (otherOpenIssues.length === 0 && issue.task.status === 'BLOCKED') {
+          const newStatus = issue.task.assignedTechnicianId ? 'ASSIGNED' : 'READY';
+          await tx.task.update({
+            where: { workspaceId_id: { workspaceId, id: issue.taskId } },
+            data: { status: newStatus, version: { increment: 1 } },
+          });
+          await tx.workflowEvent.create({
+            data: {
+              workspaceId,
+              instanceId: issue.task.instanceId,
+              taskId: issue.taskId,
+              fromStatus: 'BLOCKED',
+              toStatus: newStatus,
+              action: 'UNBLOCK',
+              actorUserId: principal.userId,
+              detailJson: JSON.stringify({ resolvedIssueId: issueId }),
+            },
+          });
+        }
+
+        return {
+          data: updatedIssue,
+          aggregateType: 'TASK_ISSUE',
+          aggregateId: issue.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  /**
+   * Reopens a resolved task issue.
+   */
+  async reopenTaskIssue(
+    principal: Principal,
+    issueId: string,
+    rawInput: unknown,
+    idempotencyKey?: string
+  ) {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.write']);
+    const input = ReopenTaskIssueSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+
+    return executeCommand({
+      principal,
+      commandType: 'task.issue.reopen',
+      idempotencyKey: idempotencyKey || randomUUID(),
+      payload: { issueId, ...input },
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const issue = await tx.taskIssue.findUnique({
+          where: { workspaceId_id: { workspaceId, id: issueId } },
+          include: { task: true },
+        });
+        if (!issue) throw new NotFoundError(`TaskIssue '${issueId}' not found`);
+
+        if (issue.status !== 'RESOLVED') {
+          throw new BadRequestError('Only resolved issues can be reopened');
+        }
+
+        const history = JSON.parse(issue.historyJson || '[]');
+        history.push({
+          action: 'REOPENED',
+          userId: principal.userId,
+          timestamp: new Date().toISOString(),
+          notes: input.notes,
+        });
+
+        const updatedIssue = await tx.taskIssue.update({
+          where: { workspaceId_id: { workspaceId, id: issueId } },
+          data: {
+            status: 'REOPENED',
+            resolvedAt: null,
+            historyJson: JSON.stringify(history),
+          },
+        });
+
+        if (issue.severity === 'CRITICAL' || issue.severity === 'HIGH') {
+          await tx.task.update({
+            where: { workspaceId_id: { workspaceId, id: issue.taskId } },
+            data: { status: 'BLOCKED', version: { increment: 1 } },
+          });
+        }
+
+        return {
+          data: updatedIssue,
+          aggregateType: 'TASK_ISSUE',
+          aggregateId: issue.id,
+          resourceVersion: 1,
+        };
+      },
+    });
+  }
+
+  /**
+   * Lists all issues recorded for a given task.
+   */
+  async listTaskIssues(principal: Principal, taskId: string): Promise<TaskIssueDTO[]> {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.read']);
+    const workspaceId = principal.workspaceId;
+
+    const issues = await this.db.taskIssue.findMany({
+      where: { workspaceId, taskId },
+      include: {
+        issueReason: true,
+        reporterUser: true,
+        ownerUser: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return issues.map((i) => ({
+      id: i.id,
+      workspaceId: i.workspaceId,
+      taskId: i.taskId,
+      issueReasonId: i.issueReasonId,
+      issueReasonCode: i.issueReason?.code,
+      issueReasonLabel: i.issueReason?.label,
+      title: i.title,
+      description: i.description,
+      status: i.status as any,
+      severity: i.severity as any,
+      ownerUserId: i.ownerUserId,
+      ownerUserName: i.ownerUser?.name,
+      reporterUserId: i.reporterUserId,
+      reporterUserName: i.reporterUser?.name,
+      expectedResolutionAt: i.expectedResolutionAt?.toISOString() || null,
+      resolvedAt: i.resolvedAt?.toISOString() || null,
+      evidence: JSON.parse(i.evidenceJson || '[]'),
+      history: JSON.parse(i.historyJson || '[]'),
+      createdAt: i.createdAt.toISOString(),
+      updatedAt: i.updatedAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Scans a QR or barcode string safely, re-authorizing against tenant and returning entity info.
+   */
+  async scanCode(principal: Principal, rawInput: unknown): Promise<ScanResultDTO> {
+    requireAnyPermission(principal, ['task.execute_assigned', 'task.assign', 'planning.read', 'order.read']);
+    const input = ScanCodeSchema.parse(rawInput);
+    const workspaceId = principal.workspaceId;
+    const trimmed = input.code.trim();
+
+    // 1. Task lookup
+    const taskId = trimmed.startsWith('TASK:') ? trimmed.slice(5) : trimmed;
+    const task = await this.db.task.findFirst({
+      where: { workspaceId, id: taskId },
+      include: {
+        instance: {
+          include: {
+            order: true,
+            workflowVersion: { include: { nodes: true } },
+          },
+        },
+      },
+    });
+    if (task) {
+      const node = task.instance.workflowVersion.nodes.find((n) => n.key === task.nodeKey);
+      return {
+        type: 'TASK',
+        entityId: task.id,
+        displayCode: task.nodeKey,
+        title: node?.name || task.nodeKey,
+        status: task.status,
+        taskId: task.id,
+      };
+    }
+
+    // 2. Order lookup
+    const orderId = trimmed.startsWith('ORDER:') ? trimmed.slice(6) : trimmed;
+    const order = await this.db.order.findFirst({
+      where: {
+        workspaceId,
+        OR: [{ id: orderId }, { orderNumber: trimmed }],
+      },
+      include: { item: true },
+    });
+    if (order) {
+      return {
+        type: 'ORDER',
+        entityId: order.id,
+        displayCode: order.orderNumber,
+        title: `Order ${order.orderNumber} (${order.item.name})`,
+        status: order.status,
+      };
+    }
+
+    // 3. Manufacturing order lookup
+    const mo = await this.db.manufacturingOrder.findFirst({
+      where: {
+        workspaceId,
+        OR: [{ id: trimmed }, { moNumber: trimmed }],
+      },
+    });
+    if (mo) {
+      return {
+        type: 'JOB',
+        entityId: mo.id,
+        displayCode: mo.moNumber,
+        title: `Job ${mo.moNumber}`,
+        status: mo.status,
+      };
+    }
+
+    throw new NotFoundError(`No operational entity found for code '${trimmed}'`);
   }
 }
 

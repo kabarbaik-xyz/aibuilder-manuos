@@ -147,7 +147,7 @@ export class OrderService {
         // Optional Facility check
         if (input.facilityId) {
           const facility = await tx.facility.findFirst({
-            where: { id: input.facilityId, workspaceId: principal.workspaceId, isActive: true },
+            where: { id: input.facilityId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
           });
           if (!facility) throw new BadRequestError(`Facility '${input.facilityId}' not found or inactive`);
         }

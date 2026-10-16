@@ -99,3 +99,66 @@ export interface MyTaskSummaryDTO {
   canStart: boolean;
   blockReason?: string;
 }
+
+export const CreateTaskIssueSchema = z.object({
+  taskId: z.string().min(1),
+  issueReasonId: z.string().optional(),
+  title: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('MEDIUM'),
+  ownerUserId: z.string().optional(),
+  expectedResolutionAt: z.string().datetime().or(z.date()).optional(),
+  evidence: z.array(z.string()).optional(),
+});
+
+export type CreateTaskIssueInput = z.infer<typeof CreateTaskIssueSchema>;
+
+export const ResolveTaskIssueSchema = z.object({
+  notes: z.string().max(1000).optional(),
+});
+
+export type ResolveTaskIssueInput = z.infer<typeof ResolveTaskIssueSchema>;
+
+export const ReopenTaskIssueSchema = z.object({
+  notes: z.string().max(1000).optional(),
+});
+
+export type ReopenTaskIssueInput = z.infer<typeof ReopenTaskIssueSchema>;
+
+export interface TaskIssueDTO {
+  id: string;
+  workspaceId: string;
+  taskId: string;
+  issueReasonId: string | null;
+  issueReasonCode?: string;
+  issueReasonLabel?: string;
+  title: string;
+  description: string | null;
+  status: 'OPEN' | 'RESOLVED' | 'REOPENED';
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  ownerUserId: string | null;
+  ownerUserName?: string;
+  reporterUserId: string;
+  reporterUserName?: string;
+  expectedResolutionAt: string | null;
+  resolvedAt: string | null;
+  evidence: string[];
+  history: Array<{ action: string; userId: string; timestamp: string; notes?: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const ScanCodeSchema = z.object({
+  code: z.string().trim().min(1),
+});
+
+export type ScanCodeInput = z.infer<typeof ScanCodeSchema>;
+
+export interface ScanResultDTO {
+  type: 'TASK' | 'JOB' | 'ORDER';
+  entityId: string;
+  displayCode: string;
+  title: string;
+  status: string;
+  taskId?: string;
+}

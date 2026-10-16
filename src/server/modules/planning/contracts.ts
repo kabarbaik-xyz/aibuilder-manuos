@@ -84,3 +84,26 @@ export interface TaskPlanningDTO {
   };
   bookings: ResourceBookingDTO[];
 }
+
+export const RescheduleAssignmentSchema = z.object({
+  expectedVersion: z.number().int().min(1),
+  startAt: z.string().datetime().or(z.date()),
+  endAt: z.string().datetime().or(z.date()),
+  notes: z.string().max(500).optional(),
+});
+
+export type RescheduleAssignmentInput = z.infer<typeof RescheduleAssignmentSchema>;
+
+export const CancelAssignmentSchema = z.object({
+  notes: z.string().max(500).optional(),
+});
+
+export type CancelAssignmentInput = z.infer<typeof CancelAssignmentSchema>;
+
+export interface TaskDispatchReadinessDTO {
+  taskId: string;
+  readinessStatus: 'READY' | 'WAITING_PREDECESSOR' | 'BLOCKED_MATERIAL' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED';
+  uncompletedPredecessors: Array<{ id: string; nodeKey: string; status: string }>;
+  uncoveredDemands: Array<{ id: string; itemId: string; requiredAtoms: string; allocatedAtoms: string }>;
+  evaluation: AssignmentEvaluationResult;
+}
