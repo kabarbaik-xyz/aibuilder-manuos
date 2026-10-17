@@ -1,5 +1,6 @@
 @import "react-day-picker/style.css";
 @import "../components/ui/operational-views.css";
+@import "../components/marketing/landing.css";
 @import "tailwindcss";
 
 @theme {
@@ -2848,3 +2849,47 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
   .inventory-filter-toolbar .ui-tabs-right { flex-basis: 100%; }
   .inventory-filter-actions { width: 100%; }
 }
+
+/* CoreAI task directory: readable actions before implementation details. */
+.coreai-task-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px; border-bottom: 1px solid var(--line); }
+.coreai-task-row:last-child { border-bottom: 0; }
+.coreai-task-copy { min-width: 0; max-width: 72ch; }
+.coreai-task-copy h3 { font-size: 16px; font-weight: 700; }
+.coreai-task-copy p { margin-top: 6px; color: var(--muted); overflow-wrap: anywhere; }
+.coreai-task-copy details { margin-top: 10px; font-size: 13px; color: var(--muted); }
+.coreai-task-copy summary { cursor: pointer; color: var(--ink); }
+.coreai-task-row > .btn { flex-shrink: 0; }
+@media (max-width: 640px) { .coreai-task-row { align-items: flex-start; flex-direction: column; gap: 16px; padding: 20px; } .coreai-task-row > .btn { width: 100%; justify-content: center; } }
+
+/* Assistant responses keep prose and navigable evidence distinct. */
+.workspace-brain-answer { width: 100%; min-width: 0; gap: 18px; }
+.workspace-brain-answer-text { display: grid; gap: 14px; max-width: 70ch; overflow-wrap: anywhere; }
+.workspace-brain-answer .workspace-brain-answer-text p { line-height: 1.75; }
+.workspace-brain-answer-text ul { list-style: disc; padding-left: 22px; display: grid; gap: 8px; font-size: 14px; line-height: 1.75; }
+.workspace-brain-sources { width: 100%; max-width: 70ch; padding-top: 16px; border-top: 1px solid var(--line); }
+.workspace-brain-sources h4 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.workspace-brain-sources .workspace-brain-evidence { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.workspace-brain-source-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--primary); text-decoration: none; }
+.workspace-brain-source-link span { overflow-wrap: anywhere; min-width: 0; }
+.workspace-brain-source-link .icon { width: 14px; height: 14px; flex-shrink: 0; }
+.workspace-brain-source-link:hover { background: var(--primary-soft); }
+.schedule-proposal-notice { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 8px; background: var(--primary-soft); color: var(--ink); font-size: 13px; }
+.schedule-proposal-notice .icon { width: 18px; height: 18px; color: var(--primary); flex-shrink: 0; }
+.schedule-delivery-check { border-top: 1px solid var(--line); padding-top: 16px; }
+.schedule-delivery-check > summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.schedule-delivery-check > summary span { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 8px; }
+.schedule-delivery-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); align-items: start; gap: 16px; }
+.schedule-delivery-fields > div { min-width: 0; }
+.schedule-delivery-fields > button { justify-self: start; }
+.schedule-proposal-footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.schedule-proposal-footer details { max-width: 60ch; font-size: 12px; color: var(--muted); }
+.schedule-proposal-footer summary { cursor: pointer; }
+.schedule-proposal-footer > button { flex-shrink: 0; }
+@media (max-width: 640px) { .workspace-brain-sources .workspace-brain-evidence, .schedule-delivery-fields { grid-template-columns: minmax(0,1fr); } .schedule-proposal-footer { flex-wrap: wrap; } }
+
+.workspace-brain-answer-section { display: grid; gap: 8px; }
+.workspace-brain-answer-section h4 { font-size: 14px; font-weight: 700; color: var(--ink); margin: 4px 0 0; }
+.workspace-brain-answer-section ul { margin: 0; }
+
+.coreai-task-steps { list-style: decimal; padding-left: 20px; margin: 12px 0 0; display: grid; gap: 8px; line-height: 1.65; color: var(--ink); }
+.coreai-task-copy .coreai-task-limit { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }

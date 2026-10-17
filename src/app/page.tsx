@@ -1,9 +1,42 @@
+import React from 'react';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { requirePrincipal } from '@/server/auth/auth';
-import { getAdminNavigation, getWorkflowNavigation, getMasterNavigation } from '@/lib/master-navigation';
-export default async function Home(){
- let destination='/login';
- try {const principal=await requirePrincipal(await headers());const permissions=[...principal.permissions];const roles=principal.roles??[];destination=getWorkflowNavigation(permissions, roles, principal.customerId)[0]?.href||getMasterNavigation(permissions, roles)[0]?.href||getAdminNavigation(permissions, roles)[0]?.href||'/account';}catch{}
- redirect(destination);
+import { getLandingPage } from '@/lib/persona-navigation';
+import { LandingPage } from '@/components/marketing/landing-page';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'ManuOS · Precision Make-to-Order Manufacturing OS',
+  description:
+    'Coordinates custom manufacturing through connected orders, DAG workflows, integer-atom inventory ledgers, shop floor execution, and immutable product passports.',
+};
+
+export default async function Home() {
+  try {
+    const principal = await requirePrincipal(await headers());
+    const permissions = [...principal.permissions];
+    const roles = principal.roles ?? [];
+    const destination = getLandingPage(
+      permissions,
+      roles,
+      principal.customerId,
+      principal.landingPage
+    );
+    redirect(destination);
+  } catch (err: unknown) {
+    // If the error is a Next.js redirect, rethrow it so navigation happens
+    if (
+      err &&
+      typeof err === 'object' &&
+      'digest' in err &&
+      typeof (err as { digest?: unknown }).digest === 'string' &&
+      ((err as { digest: string }).digest.startsWith('NEXT_REDIRECT') ||
+        (err as { digest: string }).digest.startsWith('NEXT_NOT_FOUND'))
+    ) {
+      throw err;
+    }
+    // Unauthenticated visitor -> render authoritative Landing Page
+    return <LandingPage />;
+  }
 }
