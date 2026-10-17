@@ -59,7 +59,7 @@ export default async function PlanningTaskDetailPage({
   const remainingQty = formatQuantity(BigInt(task.stageQuantitySummary?.remainingRecordableAtoms || '0'));
 
   return (
-    <div className="page-stack">
+    <div className="page-stack planning-task-detail">
       <header className="od-header">
         <div className="od-identity">
           <Link href="/planning" className="od-back">
@@ -72,9 +72,9 @@ export default async function PlanningTaskDetailPage({
             <Badge variant={getStatusVariant(task.status)}>
               {statusLabelMap[task.status] || task.status}
             </Badge>
-            <Badge variant={task.canStart ? 'success' : task.readinessReasons.length > 0 ? 'warning' : 'default'}>
+            {(task.canStart || task.readinessReasons.length > 0) && <Badge variant={task.canStart ? 'success' : task.readinessReasons.length > 0 ? 'warning' : 'default'}>
               {task.canStart ? 'Siap mulai' : task.readinessReasons.length > 0 ? `${task.readinessReasons.length} prasyarat tertahan` : statusLabelMap[task.status] || task.status}
-            </Badge>
+            </Badge>}
           </div>
           <p className="od-subtitle">
             Order <Link href={`/orders/${task.order.id}`} className="font-semibold text-primary hover:underline">{task.order.orderNumber}</Link> ({task.order.customerName}) · Item: <strong>{task.order.itemCode}</strong> — {task.order.itemName}
@@ -87,9 +87,9 @@ export default async function PlanningTaskDetailPage({
             <span>Detail order</span>
           </ButtonLink>
           {canAskAi && (
-            <ButtonLink href={`/ai/assistant?taskId=${encodeURIComponent(task.id)}`}>
+            <ButtonLink href={`/ai/assistant?taskId=${encodeURIComponent(task.id)}`} title="Tanyakan status, durasi, dan order terkait operasi ini. Jadwal tidak berubah dari tombol ini.">
               <Icon name="spark" />
-              <span>Tanya AI</span>
+              <span>Tanya AI tentang operasi</span>
             </ButtonLink>
           )}
           <ButtonLink href={`/shop-floor/tasks/${task.id}`} variant="primary">
@@ -98,6 +98,7 @@ export default async function PlanningTaskDetailPage({
           </ButtonLink>
         </div>
       </header>
+
 
       {task.readinessReasons.length > 0 && (
         <div className="od-banner warning" role="status">
@@ -136,12 +137,12 @@ export default async function PlanningTaskDetailPage({
           <small>{task.assignedMachine ? `Kode ${task.assignedMachine.code}` : 'Stasiun kerja belum dipilih'}</small>
         </div>
         <div className="od-fact">
-          <span>Durasi operasi</span>
+          <span>Waktu aktual / rencana</span>
           <strong>{task.currentElapsedMinutes} / {task.plannedDurationMinutes} mnt</strong>
-          <small>Percobaan ke-{task.attemptNumber} · Rencana {task.plannedDurationMinutes} menit</small>
+          <small>Percobaan ke-{task.attemptNumber}</small>
         </div>
         <div className="od-fact">
-          <span>Capaian kuantitas tahap</span>
+          <span>Hasil tahap / target</span>
           <strong>{recordedQty} / {targetQty} unit</strong>
           <small>Sisa {remainingQty} unit dapat dicatat</small>
         </div>
@@ -151,30 +152,14 @@ export default async function PlanningTaskDetailPage({
         <section className="od-card">
           <header className="od-card-head">
             <div>
-              <h3>Sumber daya & instruksi kerja</h3>
-              <p>Alokasi operator, mesin, dan acuan revisi engineering</p>
+              <h3>Acuan kerja</h3>
+              <p>Revisi engineering dan gambar untuk operasi ini</p>
             </div>
             <Badge variant={task.assignedTechnician && task.assignedMachine ? 'success' : 'warning'}>
               {task.assignedTechnician && task.assignedMachine ? 'Lengkap' : 'Perlu alokasi'}
             </Badge>
           </header>
           <dl className="od-kv">
-            <div>
-              <dt>Teknisi</dt>
-              <dd>{task.assignedTechnician ? `${task.assignedTechnician.name} (${task.assignedTechnician.code})` : 'Belum ditugaskan'}</dd>
-            </div>
-            <div>
-              <dt>Mesin / Stasiun</dt>
-              <dd>{task.assignedMachine ? `${task.assignedMachine.name} (${task.assignedMachine.code})` : 'Belum ditugaskan'}</dd>
-            </div>
-            <div>
-              <dt>Durasi rencana</dt>
-              <dd>{task.plannedDurationMinutes} menit</dd>
-            </div>
-            <div>
-              <dt>Durasi berjalan</dt>
-              <dd>{task.currentElapsedMinutes} menit</dd>
-            </div>
             <div>
               <dt>Revisi engineering</dt>
               <dd>
@@ -203,8 +188,8 @@ export default async function PlanningTaskDetailPage({
         <section className="od-card">
           <header className="od-card-head">
             <div>
-              <h3>Status prasyarat & urutan</h3>
-              <p>Ketergantungan operasi pendahulu pada alur kerja produksi</p>
+              <h3>Urutan & kesiapan mulai</h3>
+              <p>Operasi pendahulu dan prasyarat eksekusi</p>
             </div>
             <Badge variant={task.predecessors.every((p) => p.isCompleted) ? 'success' : 'warning'}>
               {task.predecessors.length === 0
@@ -217,8 +202,8 @@ export default async function PlanningTaskDetailPage({
             <div className="od-callout is-success">
               <Icon name="check" />
               <div>
-                <strong>Tidak ada operasi pendahulu yang disyaratkan</strong>
-                <p>Operasi {task.nodeKey} berada di tahap awal dan siap dieksekusi sesuai jadwal.</p>
+                <strong>Tidak ada operasi pendahulu</strong>
+                <p>Operasi ini tidak perlu menunggu penyelesaian operasi lain. Kesiapan mulai tetap mengikuti prasyarat di bawah.</p>
               </div>
             </div>
           ) : (

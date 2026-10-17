@@ -2893,3 +2893,35 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 
 .coreai-task-steps { list-style: decimal; padding-left: 20px; margin: 12px 0 0; display: grid; gap: 8px; line-height: 1.65; color: var(--ink); }
 .coreai-task-copy .coreai-task-limit { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+
+/* Planning operation detail: compact evidence without repeated allocation rows. */
+.planning-task-detail { max-width:1200px; width:100%; margin-inline:auto; gap:20px; }
+.planning-task-detail .od-header { gap:16px; }
+.planning-task-detail .od-identity { flex:1 1 520px; min-width:0; }
+.planning-task-detail .od-subtitle { max-width:75ch; margin-top:8px; line-height:1.6; }
+.planning-task-detail .od-actions { gap:8px; flex-wrap:wrap; }
+.planning-task-detail .od-title-row { flex-wrap:wrap; gap:10px; }
+.planning-task-detail .planning-ai-hint { margin-top:-8px; max-width:85ch; }
+.planning-task-detail .od-fact { padding:16px 20px; }
+.planning-task-detail .od-fact > strong { font-size:16px; }
+.planning-task-detail .od-grid { align-items:start; gap:20px; }
+.planning-task-detail .od-card { padding:20px; gap:16px; }
+.planning-task-detail .od-card-head p { max-width:60ch; font-size:12px; }
+.planning-task-detail .od-card-foot { margin-top:0; padding-top:12px; }
+.planning-task-detail .od-kv > div { align-items:flex-start; padding:10px 0; }
+.planning-task-detail .od-kv dt { flex:1 1 40%; }
+.planning-task-detail .od-kv dd { flex:1 1 60%; overflow-wrap:anywhere; }
+.planning-task-detail .od-callout { padding:14px; }
+.planning-task-detail .od-callout p { max-width:65ch; font-size:12px; line-height:1.6; }
+@media(max-width:700px) {
+ .planning-task-detail .od-card { padding:16px; }
+ .planning-task-detail .od-actions { width:100%; }
+ .planning-task-detail .od-facts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .planning-task-detail .od-fact { padding:14px; }
+ .planning-task-detail .od-fact:nth-child(2) { border-right:0; }
+ .planning-task-detail .od-fact:nth-child(3) { border-bottom:0; }
+}
+@media(max-width:400px) {
+ .planning-task-detail .od-kv > div { flex-direction:column; gap:4px; }
+ .planning-task-detail .od-kv dd { text-align:left; }
+}

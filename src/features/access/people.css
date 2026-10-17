@@ -13,3 +13,57 @@
 @media(max-width:700px) { .people-facts,.people-menu-preview { grid-template-columns:minmax(0,1fr); } }
 
 .people-week { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:12px; font-size:12px; } .people-week dt { color:var(--muted); margin-bottom:6px; } .people-week dd { overflow-wrap:anywhere; } @media(max-width:800px) { .people-week { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* Person and commercial details share a compact, readable content measure. */
+.person-detail,.commercial-detail { width:100%; max-width:1200px; margin-inline:auto; }
+.person-detail > .person-section,.commercial-detail > .person-section { min-width:0; }
+.person-section { padding:24px; display:flex; flex-direction:column; align-items:stretch; gap:16px; min-width:0; }
+.person-section h2 { font-size:16px; font-weight:700; line-height:1.5; }
+.person-section h3 { font-size:14px; font-weight:600; }
+.person-section p { max-width:75ch; }
+.person-section > .btn { align-self:flex-start; }
+.person-section .people-section-head p { margin-top:4px; }
+.person-account { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.person-account > .badge { margin-left:auto; align-self:center; }
+.person-avatar { width:44px; height:44px; display:grid; place-items:center; background:var(--surface-muted); border:1px solid var(--line); border-radius:12px; font-size:18px; font-weight:700; }
+.person-subheading { display:flex; align-items:center; gap:8px; padding-top:16px; border-top:1px solid var(--line); }
+.person-subheading span { color:var(--muted); font-size:12px; font-weight:500; }
+.person-detail .people-records li { justify-content:flex-start; align-items:flex-start; column-gap:24px; padding:12px 0; }
+.person-detail .people-records li > :first-child { flex:1 1 260px; min-width:0; overflow-wrap:anywhere; }
+.person-detail .people-records li > span { flex:0 1 360px; font-size:13px; font-variant-numeric:tabular-nums; }
+.person-detail .people-records li > .badge { flex:0 0 auto; }
+.person-detail .people-records li > strong { font-size:14px; }
+.person-detail .people-range { padding:16px 20px; background:var(--surface); border:1px solid var(--line); border-radius:14px; gap:16px; }
+.person-detail .people-range > p { flex:1 1 280px; align-self:center; max-width:65ch; }
+.person-availability { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; align-items:start; }
+.person-availability > :first-child,.person-swaps { grid-column:1 / -1; }
+.person-availability > :nth-child(2) { grid-column:1 / -1; }
+.person-detail .people-week { gap:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.person-detail .people-week > div { padding:12px; background:var(--surface-muted); border-right:1px solid var(--line); }
+.person-detail .people-week > div:last-child { border:0; }
+.person-detail .people-week dd { margin:0; font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
+.person-detail .people-facts { gap:20px 32px; }
+.person-detail .people-facts dd { margin:0; }
+.person-detail .people-menu-preview { padding-top:8px; }
+.commercial-state { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.commercial-state .badge { align-self:center; }
+.commercial-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 32px; margin:0; }
+.commercial-facts > div { min-width:0; }
+.commercial-facts dt { font-size:12px; color:var(--muted); margin-bottom:6px; }
+.commercial-facts dd { margin:0; font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+.commercial-address { grid-column:1 / -1; padding-top:20px; border-top:1px solid var(--line); }
+@media(max-width:800px) {
+ .person-section { padding:20px; }
+ .person-availability { grid-template-columns:minmax(0,1fr); }
+ .person-detail .people-week { grid-template-columns:repeat(4,minmax(0,1fr)); }
+ .person-detail .people-week > div { border-bottom:1px solid var(--line); }
+ .person-detail .people-records li { gap:6px; }
+ .person-detail .people-records li > span { flex-basis:100%; }
+}
+@media(max-width:480px) {
+ .person-section { padding:16px; }
+ .commercial-facts { grid-template-columns:minmax(0,1fr); gap:20px; }
+ .person-detail .people-range { padding:16px; }
+ .person-detail .people-week { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .person-section .people-section-head { gap:12px; }
+}
