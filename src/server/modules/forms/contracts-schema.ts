@@ -29,6 +29,17 @@ export const formDraftVersionRequestSchema = z.object({
   definition: formDefinitionSchema,
 }).strict();
 
+export const formTemplateCreateRequestSchema = z.object({
+  code: z.string().trim().min(1).max(100),
+  name: z.string().trim().min(1).max(160),
+  purpose: z.enum(['ORDER_SPEC', 'TASK_EVIDENCE', 'QC_EVIDENCE']),
+  description: z.string().trim().max(2000).optional(),
+}).strict();
+
+export const formVersionForkRequestSchema = z.object({
+  fromVersionId: z.string().uuid(),
+}).strict();
+
 export type FormDraftRequest = z.infer<typeof formDraftRequestSchema>;
 export type FormFinalizationRequest = z.infer<typeof formFinalizationRequestSchema>;
 export type FormCorrectionRequest = z.infer<typeof formCorrectionRequestSchema>;

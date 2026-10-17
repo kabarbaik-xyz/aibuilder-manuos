@@ -34,6 +34,23 @@ describe('DF02: Form Versioning, Publication Lifecycle, and Pinned Instances', (
     expect(tpl.versions[0].status).toBe('DRAFT');
   });
 
+  it('replays template creation and version forks without creating duplicates', async () => {
+    const input = {
+      code: 'IDEMPOTENT_FORM_CREATE',
+      name: 'Idempotent form create',
+      purpose: 'ORDER_SPEC' as const,
+    };
+    const created = await formService.createTemplate(fixture.alpha.users.owner.principal, input, 'form-create-replay');
+    const replayed = await formService.createTemplate(fixture.alpha.users.owner.principal, input, 'form-create-replay');
+    expect(replayed).toEqual(created);
+    expect(await fixture.db.formTemplate.count({ where: { workspaceId: fixture.alpha.workspaceId, code: input.code } })).toBe(1);
+
+    const forked = await formService.forkVersion(fixture.alpha.users.owner.principal, created.templateId, created.versionId, 'form-fork-replay');
+    const forkReplay = await formService.forkVersion(fixture.alpha.users.owner.principal, created.templateId, created.versionId, 'form-fork-replay');
+    expect(forkReplay).toEqual(forked);
+    expect(await fixture.db.formVersion.count({ where: { templateId: created.templateId } })).toBe(2);
+  });
+
   it('updates draft version with a valid definition and enforces optimistic version check', async () => {
     const created = await formService.createTemplate(fixture.alpha.users.owner.principal, {
       code: 'TASK_WELD_EVIDENCE',

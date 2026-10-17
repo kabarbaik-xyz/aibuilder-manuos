@@ -120,22 +120,10 @@ export class FormService {
 
   async createTemplate(
     principal: Principal,
-    input: CreateFormTemplateInput
+    input: CreateFormTemplateInput,
+    idempotencyKey: string = crypto.randomUUID()
   ): Promise<{ templateId: string; versionId: string }> {
     FormPolicy.requireCreate(principal);
-
-    const existing = await this.prisma.formTemplate.findUnique({
-      where: {
-        workspaceId_code: {
-          workspaceId: principal.workspaceId,
-          code: input.code.trim().toUpperCase(),
-        },
-      },
-    });
-
-    if (existing) {
-      throw new ConflictError(`Form template code '${input.code}' already exists in this workspace`);
-    }
 
     const defaultDefinition: FormDefinition = {
       schemaVersion: 1,
@@ -153,33 +141,49 @@ export class FormService {
 
     const hash = computeDefinitionHash(defaultDefinition);
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const template = await tx.formTemplate.create({
-        data: {
-          workspace: { connect: { id: principal.workspaceId } },
-          code: input.code.trim().toUpperCase(),
-          name: input.name.trim(),
-          purpose: input.purpose,
-          description: input.description?.trim(),
-        },
-      });
+    const committed = await executeCommand({
+      principal,
+      commandType: 'forms.template.create',
+      idempotencyKey,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const existing = await tx.formTemplate.findUnique({
+          where: { workspaceId_code: { workspaceId: principal.workspaceId, code: input.code.trim().toUpperCase() } },
+        });
+        if (existing) throw new ConflictError(`Form template code '${input.code}' already exists in this workspace`);
 
-      const version = await tx.formVersion.create({
-        data: {
-          workspace: { connect: { id: principal.workspaceId } },
-          template: { connect: { id: template.id } },
-          versionNumber: 1,
-          status: 'DRAFT',
-          schemaVersion: 1,
-          definitionJson: JSON.stringify(defaultDefinition),
-          contentHash: hash,
-        },
-      });
-
-      return { templateId: template.id, versionId: version.id };
+        const template = await tx.formTemplate.create({
+          data: {
+            workspace: { connect: { id: principal.workspaceId } },
+            code: input.code.trim().toUpperCase(),
+            name: input.name.trim(),
+            purpose: input.purpose,
+            description: input.description?.trim(),
+          },
+        });
+        const version = await tx.formVersion.create({
+          data: {
+            workspace: { connect: { id: principal.workspaceId } },
+            template: { connect: { id: template.id } },
+            versionNumber: 1,
+            status: 'DRAFT',
+            schemaVersion: 1,
+            definitionJson: JSON.stringify(defaultDefinition),
+            contentHash: hash,
+          },
+        });
+        const data = { templateId: template.id, versionId: version.id };
+        return {
+          data,
+          aggregateType: 'FormTemplate',
+          aggregateId: template.id,
+          resourceVersion: 1,
+          auditDetails: { code: template.code, purpose: template.purpose, initialVersionId: version.id },
+        };
+      },
     });
-
-    return created;
+    return committed.data;
   }
 
   async updateDraftVersion(
@@ -384,43 +388,47 @@ export class FormService {
   async forkVersion(
     principal: Principal,
     templateId: string,
-    sourceVersionId: string
+    sourceVersionId: string,
+    idempotencyKey: string = crypto.randomUUID()
   ): Promise<{ versionId: string; versionNumber: number }> {
     FormPolicy.requireCreate(principal);
-
-    const template = await this.prisma.formTemplate.findFirst({
-      where: { id: templateId, workspaceId: principal.workspaceId },
-      include: {
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-        },
+    const committed = await executeCommand({
+      principal,
+      commandType: 'forms.version.fork',
+      idempotencyKey,
+      payload: { templateId, sourceVersionId },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const template = await tx.formTemplate.findFirst({
+          where: { id: templateId, workspaceId: principal.workspaceId },
+          include: { versions: { orderBy: { versionNumber: 'desc' } } },
+        });
+        if (!template) throw new NotFoundError(`Form template '${templateId}' not found`);
+        const sourceVersion = template.versions.find((version: { id: string }) => version.id === sourceVersionId);
+        if (!sourceVersion) throw new NotFoundError(`Source version '${sourceVersionId}' not found`);
+        const nextVerNumber = template.versions[0] ? template.versions[0].versionNumber + 1 : 1;
+        const forked = await tx.formVersion.create({
+          data: {
+            workspace: { connect: { id: principal.workspaceId } },
+            template: { connect: { id: templateId } },
+            versionNumber: nextVerNumber,
+            status: 'DRAFT',
+            schemaVersion: sourceVersion.schemaVersion,
+            definitionJson: sourceVersion.definitionJson,
+            contentHash: sourceVersion.contentHash,
+          },
+        });
+        const data = { versionId: forked.id, versionNumber: forked.versionNumber };
+        return {
+          data,
+          aggregateType: 'FormVersion',
+          aggregateId: forked.id,
+          resourceVersion: 1,
+          auditDetails: { templateId, sourceVersionId, versionNumber: forked.versionNumber },
+        };
       },
     });
-
-    if (!template) {
-      throw new NotFoundError(`Form template '${templateId}' not found`);
-    }
-
-    const sourceVersion = template.versions.find((v) => v.id === sourceVersionId);
-    if (!sourceVersion) {
-      throw new NotFoundError(`Source version '${sourceVersionId}' not found`);
-    }
-
-    const nextVerNumber = template.versions[0] ? template.versions[0].versionNumber + 1 : 1;
-
-    const forked = await this.prisma.formVersion.create({
-      data: {
-        workspace: { connect: { id: principal.workspaceId } },
-        template: { connect: { id: templateId } },
-        versionNumber: nextVerNumber,
-        status: 'DRAFT',
-        schemaVersion: sourceVersion.schemaVersion,
-        definitionJson: sourceVersion.definitionJson,
-        contentHash: sourceVersion.contentHash,
-      },
-    });
-
-    return { versionId: forked.id, versionNumber: forked.versionNumber };
+    return committed.data;
   }
 
   async bindFormVersion(

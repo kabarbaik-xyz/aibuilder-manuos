@@ -2052,6 +2052,48 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /api/forms:
+    get:
+      summary: List form templates available in the workspace
+      responses:
+        '200': { description: Form templates and their version summaries }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a form template with its initial draft version
+      description: Requires forms.create. Template and first draft version are created in one audited transaction. Idempotency-Key replays the same result; unknown request properties are rejected.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormTemplateCreate' }
+      responses:
+        '201': { description: Template and version IDs created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/forms/{id}/versions:
+    post:
+      summary: Fork a form version into a new draft
+      description: Requires forms.create. The source definition and content hash are copied into a new immutable-version lineage. Idempotency-Key replays the same fork result; unknown request properties are rejected.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormVersionFork' }
+      responses:
+        '201': { description: New draft version created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/form-instances/{id}:
     get:
       summary: Read one form instance and its latest submission
@@ -3530,6 +3572,21 @@ components:
       properties:
         expectedVersion: { type: integer, minimum: 1 }
         definition: { type: object, description: Validated FormDefinition for ORDER_SPEC, TASK_EVIDENCE or QC_EVIDENCE }
+    FormTemplateCreate:
+      type: object
+      required: [code, name, purpose]
+      additionalProperties: false
+      properties:
+        code: { type: string, minLength: 1, maxLength: 100 }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        purpose: { type: string, enum: [ORDER_SPEC, TASK_EVIDENCE, QC_EVIDENCE] }
+        description: { type: string, maxLength: 2000 }
+    FormVersionFork:
+      type: object
+      required: [fromVersionId]
+      additionalProperties: false
+      properties:
+        fromVersionId: { type: string, format: uuid }
     NotificationPreferences:
       type: object
       additionalProperties: false
