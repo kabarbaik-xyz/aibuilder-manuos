@@ -87,6 +87,9 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     const context = await buildAuthorizedContext(planner.principal, fixture.db, { orderId: order.data.id });
     expect(context.orders).toEqual([]);
     expect(context.lifecycleStages).toEqual([]);
+    await expect(brainService.answerProductionQuestion(planner.principal, 'Summarize this order', {
+      type: 'ORDER', id: order.data.id,
+    })).rejects.toThrow(/not available/i);
   });
 
   it('grounds AI context in active lifecycle ownership while hiding it from customer users', async () => {
