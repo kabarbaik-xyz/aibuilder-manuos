@@ -1,4 +1,5 @@
 import React from 'react';
+import { LandingScrollEffects } from './landing-scroll-effects';
 import { LandingNav } from './landing-nav';
 import { LandingHero } from './landing-hero';
 import { LandingFlow } from './landing-flow';
@@ -15,7 +16,7 @@ export function LandingPage() {
         Skip to main content
       </a>
       <LandingNav />
-      <main id="main-content" className="l-main">
+      <main id="main-content" className="l-main" tabIndex={-1}>
         <LandingHero />
         <LandingFlow />
         <LandingPersonas />
@@ -24,6 +25,7 @@ export function LandingPage() {
         <LandingCTA />
       </main>
       <LandingFooter />
+      <LandingScrollEffects />
     </div>
   );
 }

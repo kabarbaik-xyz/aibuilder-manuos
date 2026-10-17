@@ -1,110 +1,137 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Icon } from '@/components/icons';
 import { ButtonLink } from '@/components/ui/button-link';
 
-const STATS = [
-  { value: '10⁶', label: 'Integer precision' },
-  { value: '0', label: 'Ledger drift' },
-  { value: '8', label: 'Connected stages' },
-  { value: '1', label: 'Source of truth' },
-];
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const ROWS = ['Laser', 'CNC-01', 'CNC-02', 'Inspect'];
 
 export function LandingHero() {
   const [rerouted, setRerouted] = useState(false);
+  const [hovered, setHovered] = useState(false);
+
+  // Gentle autoplay between the two states; pauses while the card is hovered.
+  useEffect(() => {
+    if (hovered) return;
+    const id = setInterval(() => setRerouted((v) => !v), 4600);
+    return () => clearInterval(id);
+  }, [hovered]);
+
+  const millRow = rerouted ? 2 : 1;
 
   return (
-    <section className="l-hero-min" aria-labelledby="hero-heading">
-      <div className="l-hero-min-inner">
-        <p className="l-hero-eyebrow">Manufacturing Orchestrating System</p>
-
-        <h1 id="hero-heading" className="l-hero-min-title">
-          Every order, from RFQ to delivery.
-        </h1>
-
-        <p className="l-hero-min-sub">One system for orders, engineering, floor, quality, and shipment.</p>
-
-        <div className="l-hero-min-actions">
-          <ButtonLink
-            href="/demo"
-            variant="primary"
-            id="hero-demo-button"
-            className="flex items-center gap-2"
-          >
-            <span>Launch demo</span>
-            <Icon name="arrow" className="w-4 h-4" />
-          </ButtonLink>
-          <ButtonLink href="/login" variant="default" id="hero-signin-button">
-            Sign in
-          </ButtonLink>
+    <section className="l-hero-v3" aria-labelledby="hero-heading">
+      <div className="l-hero-v3-inner">
+        <div className="l-hero-v3-copy">
+          <h1 id="hero-heading" className="l-hero-v3-title">
+            Orchestrate your factory <span>with CoreAI.</span>
+          </h1>
+          <p className="l-hero-v3-sub">Connect orders, production and delivery. Let CoreAI help you see risks sooner and compare recovery options.</p>
+          <p className="l-hero-v3-assurance">AI proposes. Your team reviews and approves.</p>
+          <div className="l-hero-v3-actions">
+            <ButtonLink
+              href="/demo"
+              variant="primary"
+              id="hero-demo-button"
+              className="flex items-center gap-2"
+            >
+              <span>Launch demo</span>
+              <Icon name="arrow" className="w-4 h-4" />
+            </ButtonLink>
+            <ButtonLink href="/login" variant="default" id="hero-signin-button">
+              Sign in
+            </ButtonLink>
+          </div>
         </div>
 
-        {/* Product visual: one minimal routing graph */}
-        <div className="l-hero-card" aria-label="Order routing preview">
-          <div className="l-hero-card-head">
-            <div className="l-hero-card-order">
-              <span className="l-hero-card-id">MO-2026-8812</span>
-              <span className="l-hero-card-name">Servo Mount · 120 units</span>
+        <div
+          className="l-gt-card"
+          aria-label="Production schedule preview"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          <div className="l-gt-head">
+            <div className="l-gt-title">
+              <strong>CoreAI recovery preview</strong>
+              <span>Interactive demo</span>
             </div>
-            <span className={`l-hero-card-status ${rerouted ? 'ok' : 'risk'}`}>
-              <span className="l-hero-card-status-dot" aria-hidden="true" />
-              {rerouted ? 'On track' : 'At risk'}
+            <span className={`l-gt-chip ${rerouted ? 'ok' : 'risk'}`}>
+              <i aria-hidden="true" />
+              Ship Fri 16:00 · {rerouted ? 'On track' : 'At risk'}
             </span>
           </div>
 
-          <div className="l-hero-board-scroll">
-            <div className="l-hero-board" role="img" aria-label="Routing graph: receive, cut, mill, inspect, ship">
-              <div className="l-hn done">
-                <span className="l-hn-code">01</span>
-                <span className="l-hn-name">Receive</span>
-                <span className="l-hn-meta">Lot verified</span>
+          <div className="l-gt-scroll">
+            <div className="l-gt-grid">
+              <div className="l-gt-corner" />
+              <div className="l-gt-days">
+                {DAYS.map((d) => (
+                  <span key={d}>{d}</span>
+                ))}
               </div>
 
-              <span className="l-hl done" aria-hidden="true" />
-
-              <div className="l-hn done">
-                <span className="l-hn-code">02</span>
-                <span className="l-hn-name">Cut</span>
-                <span className="l-hn-meta">120 / 120</span>
+              <div className="l-gt-labels">
+                {ROWS.map((r) => (
+                  <span key={r}>{r}</span>
+                ))}
               </div>
 
-              <span className={`l-hl fork ${rerouted ? 'flow' : ''}`} aria-hidden="true" />
-
-              <div className="l-hn-stack">
-                <div className={`l-hn ${rerouted ? 'active' : 'delay'}`}>
-                  <span className="l-hn-code">03A</span>
-                  <span className="l-hn-name">Mill</span>
-                  <span className="l-hn-meta">{rerouted ? '80 units' : '+42 min'}</span>
+              <div className="l-gt-track">
+                <div className="l-gt-now" style={{ left: '40%' }}>
+                  <em>Now</em>
                 </div>
-                <div className={`l-hn ${rerouted ? 'active' : 'idle'}`}>
-                  <span className="l-hn-code">03B</span>
-                  <span className="l-hn-name">Mill</span>
-                  <span className="l-hn-meta">{rerouted ? '40 units' : 'Standby'}</span>
+                <div className="l-gt-deadline" style={{ left: '92%' }} />
+
+                {/* Laser */}
+                <div className="l-gt-bar done" style={{ left: '0%', width: '19%', top: 0 }}>
+                  <span>MO-8810</span>
                 </div>
-              </div>
+                <div className="l-gt-bar done" style={{ left: '21%', width: '17%', top: 0 }}>
+                  <span>8812 · Cut</span>
+                </div>
 
-              <span className={`l-hl join ${rerouted ? 'flow' : ''}`} aria-hidden="true" />
+                {/* CNC-01 */}
+                <div className="l-gt-bar done" style={{ left: '0%', width: '30%', top: 56 }}>
+                  <span>MO-8809</span>
+                </div>
 
-              <div className="l-hn idle">
-                <span className="l-hn-code">04</span>
-                <span className="l-hn-name">Inspect</span>
-                <span className="l-hn-meta">Gate armed</span>
-              </div>
+                {/* CNC-02 */}
+                <div className="l-gt-bar neutral" style={{ left: '8%', width: '26%', top: 112 }}>
+                  <span>MO-8815</span>
+                </div>
 
-              <span className="l-hl idle" aria-hidden="true" />
+                {/* The mill operation: moves between machines */}
+                <div
+                  className={`l-gt-bar mill ${rerouted ? 'ok' : 'delay'}`}
+                  style={{
+                    left: '40%',
+                    width: rerouted ? '24%' : '38%',
+                    top: millRow * 56,
+                  }}
+                >
+                  <span>8812 · Mill</span>
+                  {!rerouted && <b>+42m</b>}
+                </div>
 
-              <div className="l-hn idle">
-                <span className="l-hn-code">05</span>
-                <span className="l-hn-name">Ship</span>
-                <span className="l-hn-meta">Fri 16:00</span>
+                {/* Inspect */}
+                <div
+                  className={`l-gt-bar qc ${rerouted ? 'ok' : 'delay'}`}
+                  style={{
+                    left: rerouted ? '66%' : '80%',
+                    width: '16%',
+                    top: 168,
+                  }}
+                >
+                  <span>8812 · QC</span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="l-hero-card-foot">
-            <span className="l-hero-card-hint">
-              {rerouted ? 'Reroute approved by supervisor' : 'Milling is 42 min behind plan'}
+          <div className="l-gt-foot">
+            <span className="l-gt-note">
+              {rerouted ? 'Preview: mill moved to CNC-02' : '42 min delay · CoreAI suggests CNC-02'}
             </span>
             <button
               type="button"
@@ -112,7 +139,7 @@ export function LandingHero() {
               onClick={() => setRerouted((v) => !v)}
             >
               {rerouted ? (
-                'Reset'
+                'Undo'
               ) : (
                 <>
                   <Icon name="check" className="w-3.5 h-3.5" />
@@ -122,15 +149,6 @@ export function LandingHero() {
             </button>
           </div>
         </div>
-
-        <dl className="l-hero-stats">
-          {STATS.map((s) => (
-            <div key={s.label} className="l-hero-stat">
-              <dt>{s.label}</dt>
-              <dd>{s.value}</dd>
-            </div>
-          ))}
-        </dl>
       </div>
     </section>
   );
