@@ -7,9 +7,9 @@ import { LandingPage } from '@/components/marketing/landing-page';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'ManuOS · Precision Make-to-Order Manufacturing OS',
+  title: 'ManuOS · Manufacturing Orchestrating System',
   description:
-    'Coordinates custom manufacturing through connected orders, DAG workflows, integer-atom inventory ledgers, shop floor execution, and immutable product passports.',
+    'Coordinates custom make-to-order manufacturing through connected orders, DAG workflows, double-entry inventory ledgers, shop floor execution, and digital product passports.',
 };
 
 export default async function Home() {

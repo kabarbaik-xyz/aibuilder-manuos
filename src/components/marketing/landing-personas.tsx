@@ -9,61 +9,57 @@ interface Persona {
   subtitle: string;
   route: string;
   icon: IconName;
-  quote: string;
-  features: string[];
+  summary: string;
+  highlights: string[];
 }
 
 const PERSONAS: Persona[] = [
   {
-    role: 'Factory Owner & Executive',
-    subtitle: 'Command Center & Margin Oversight',
+    role: 'Factory Executive',
+    subtitle: 'Command & Margin Oversight',
     route: '/dashboard',
     icon: 'chart',
-    quote: 'I need immediate clarity on order delivery risk and capacity bottlenecks without waiting for end-of-day reports.',
-    features: [
-      'Enterprise delivery risk and promise date tracking',
-      'Critical path bottleneck detection across work centers',
-      'One-click human review and sign-off on AI recovery plans',
-      'Real-time double-entry inventory reconciliation audit',
+    summary: 'Real-time visibility into delivery risk, work-center bottlenecks, and inventory health.',
+    highlights: [
+      'Live On-Time Delivery SLA tracker',
+      'Critical-path bottleneck alerts',
+      '1-click AI recovery approval',
     ],
   },
   {
-    role: 'Production Planner & Supervisor',
-    subtitle: 'Finite Scheduling & Task DAGs',
+    role: 'Production Planner',
+    subtitle: 'Finite Scheduling & DAGs',
     route: '/planning',
     icon: 'calendar',
-    quote: 'I coordinate machine capacity, operator certifications, and material readiness before dispatching work.',
-    features: [
-      'Interactive multi-order DAG dependency timeline',
-      'Technician qualification and active certification gate',
-      'Versioned published schedules with change audit trail',
-      'Automated material demand reservation against WIP',
+    summary: 'Coordinate machine calendars, technician certifications, and raw material readiness.',
+    highlights: [
+      'Visual multi-order DAG timeline',
+      'Operator certification gates',
+      'Automated WIP lot reservation',
     ],
   },
   {
-    role: 'Technician & Station Operator',
-    subtitle: 'Workstation Queue & Mass Capture',
+    role: 'Station Technician',
+    subtitle: 'Touch Workstation Queue',
     route: '/shop-floor',
     icon: 'work',
-    quote: 'I want unambiguous work orders, pinned engineering specs, and quick output logging right at my station.',
-    features: [
-      'Touch-friendly queue organized by assigned work center',
-      'Pinned drawing previews and step-by-step instructions',
-      'Mass-conserving output, rework, and scrap reporting',
-      'Clear online/offline indicators with mutation protection',
+    summary: 'Clear prioritized job queues, pinned drawings, and fast output logging at the machine.',
+    highlights: [
+      'Pinned Rev-locked work specs',
+      'Pass, rework & scrap capture',
+      'Overproduction guardrails',
     ],
   },
   {
-    role: 'Customer & Procurement Partner',
-    subtitle: 'Transparent Portal & Product Passport',
+    role: 'Customer & Buyer',
+    subtitle: 'Live Portal & Passports',
     route: '/portal/orders',
     icon: 'shield',
-    quote: 'I want live order milestones and verified quality certificates without having to chase account managers.',
-    features: [
-      'Strict customer-isolated self-service tracking portal',
-      'Engineering change order (ECO) review and sign-off',
-      'Tamper-evident Digital Product Passport with serial history',
-      'Downloadable QC inspection results and certificates',
+    summary: 'Self-service order milestone tracking, ECO sign-offs, and serialized quality certificates.',
+    highlights: [
+      'Live production stage tracking',
+      'Online ECO review & approval',
+      'Digital Product Passports',
     ],
   },
 ];
@@ -73,13 +69,12 @@ export function LandingPersonas() {
     <section id="personas" className="l-section" aria-labelledby="personas-heading">
       <div className="l-section-inner">
         <div className="l-section-header">
-          <span className="l-section-tag">Role-Tailored Experiences</span>
+          <span className="l-section-tag">Role-Tailored Cockpits</span>
           <h2 id="personas-heading" className="l-section-title">
-            Built for every seat in the manufacturing enterprise
+            Purpose-built workspaces for every role.
           </h2>
           <p className="l-section-desc">
-            ManuOS routes users automatically to their tailored operational cockpit based on verified permissions
-            and RBAC roles.
+            Every user lands directly in a focused operational cockpit matched to their responsibilities.
           </p>
         </div>
 
@@ -96,12 +91,10 @@ export function LandingPersonas() {
                 </div>
               </div>
 
-              <blockquote className="l-persona-quote">
-                &ldquo;{p.quote}&rdquo;
-              </blockquote>
+              <p className="l-persona-summary">{p.summary}</p>
 
               <ul className="l-persona-features">
-                {p.features.map((feature, idx) => (
+                {p.highlights.map((feature, idx) => (
                   <li key={idx}>
                     <Icon name="check" />
                     <span>{feature}</span>
@@ -109,9 +102,9 @@ export function LandingPersonas() {
                 ))}
               </ul>
 
-              <div className="pt-4 border-t border-line mt-auto">
+              <div className="pt-3.5 border-t border-line mt-auto">
                 <Link href={p.route} className="l-persona-footer-link">
-                  <span>Explore {p.subtitle.split('&')[0].trim()}</span>
+                  <span>Open {p.role} View</span>
                   <Icon name="arrow" className="w-3.5 h-3.5" />
                 </Link>
               </div>

@@ -1,127 +1,158 @@
 'use client';
 
 import React from 'react';
-import { Icon } from '@/components/icons';
+import { Icon, type IconName } from '@/components/icons';
+
+interface IntegrityPillar {
+  badge: string;
+  title: string;
+  icon: IconName;
+  metricValue: string;
+  metricLabel: string;
+  equation: string;
+  summary: string;
+  tags: string[];
+  outcome: string;
+}
+
+const INTEGRITY_PILLARS: IntegrityPillar[] = [
+  {
+    badge: 'MASS CONSERVATION',
+    title: 'Zero Material & Scrap Leakage',
+    icon: 'ruler',
+    metricValue: '100%',
+    metricLabel: 'WIP Accounted',
+    equation: 'Output = Passed + Rework + Scrap',
+    summary: 'Every unit issued to the shop floor must be accounted for before an operation can close.',
+    tags: ['10⁶ Integer Precision', 'No Double-Counted Rework', 'Overproduction Guard'],
+    outcome: 'Eliminates hidden scrap & surprise write-offs',
+  },
+  {
+    badge: 'DOUBLE-ENTRY LEDGER',
+    title: 'Financial-Grade Stock Accounting',
+    icon: 'box',
+    metricValue: '0',
+    metricLabel: 'Phantom Stock',
+    equation: 'Available = Receipts − WIP − Shipped',
+    summary: 'Every physical transfer posts balanced debit and credit entries with non-negative stock guards.',
+    tags: ['Dual Debit/Credit Ledger', 'Zero Negative Balances', 'Quarantine Ring-Fencing'],
+    outcome: 'Perpetual stock accuracy in real time',
+  },
+  {
+    badge: 'FAULT TOLERANCE',
+    title: 'Replay-Safe Floor Execution',
+    icon: 'lock',
+    metricValue: '0%',
+    metricLabel: 'Duplicate Commits',
+    equation: 'Network Retry → Single State Commit',
+    summary: 'Idempotent command protection ensures unstable factory Wi-Fi or double-taps never duplicate work.',
+    tags: ['Idempotent Commands', 'Atomic Rollback', 'Offline Mutation Guard'],
+    outcome: 'Reliable data capture in harsh floor environments',
+  },
+  {
+    badge: 'TAMPER-EVIDENT AUDIT',
+    title: 'Write-Once Genealogy Ledger',
+    icon: 'shield',
+    metricValue: '100%',
+    metricLabel: 'Immutable History',
+    equation: 'Audit Events = Append-Only & Locked',
+    summary: 'Write-once event logs lock every engineering change, operator sign-off, and material lot movement.',
+    tags: ['Write-Once Event Store', 'Lot-to-Serial Genealogy', 'Digital CoC Export'],
+    outcome: 'Instant end-to-end production traceability',
+  },
+];
+
+const LEDGER_FLOW_NODES = [
+  { label: 'Raw Lot Receipt', status: '+500.00 kg Verified', tone: 'blue' },
+  { label: 'WIP Reservation', status: '−120.00 kg Allocated', tone: 'blue' },
+  { label: 'Floor & QC Gate', status: '114 Pass · 4 Rework · 2 Scrap', tone: 'amber' },
+  { label: 'Verified Dispatch', status: '118 Shipped + Passport', tone: 'emerald' },
+];
 
 export function LandingIntegrity() {
   return (
     <section id="architecture" className="l-section l-section-alt" aria-labelledby="integrity-heading">
       <div className="l-section-inner">
         <div className="l-section-header">
-          <span className="l-section-tag">Mathematical & Architectural Rigor</span>
+          <span className="l-section-tag">Zero-Leakage Operational Control</span>
           <h2 id="integrity-heading" className="l-section-title">
-            Zero floating-point drift. Double-entry balance conservation.
+            Financial-grade accounting for physical manufacturing.
           </h2>
           <p className="l-section-desc">
-            Manufacturing demands absolute mathematical integrity. ManuOS is built upon strict invariants
-            enforced at the transactional domain boundary and database schema.
+            Every gram of raw material, rework loop, and customer shipment is reconciled automatically.
           </p>
         </div>
 
+        {/* Animated Continuous Ledger Ribbon */}
+        <div className="l-ledger-ribbon" aria-label="Continuous Material & Mass Reconciliation Flow">
+          <div className="l-ledger-ribbon-head">
+            <div className="l-ledger-ribbon-title">
+              <span className="l-live-pulse-dot" aria-hidden="true" />
+              <span>Live Mass &amp; Inventory Reconciliation Stream</span>
+            </div>
+            <span className="l-ledger-ribbon-badge">0 Unexplained Discrepancies</span>
+          </div>
+          <div className="l-ledger-ribbon-steps">
+            {LEDGER_FLOW_NODES.map((node, idx) => (
+              <React.Fragment key={node.label}>
+                <div className="l-ledger-node">
+                  <span className="l-ledger-node-step">0{idx + 1}</span>
+                  <div>
+                    <div className="l-ledger-node-label">{node.label}</div>
+                    <div className={`l-ledger-node-status tone-${node.tone}`}>{node.status}</div>
+                  </div>
+                </div>
+                {idx < LEDGER_FLOW_NODES.length - 1 && (
+                  <div className="l-ledger-arrow-pulse hidden lg:flex" aria-hidden="true">
+                    <Icon name="arrow" className="w-4 h-4 text-primary" />
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        {/* 4 Concise, Visual Pillar Cards */}
         <div className="l-integrity-grid">
-          {/* Invariant 1: Integer Atoms */}
-          <div className="l-integrity-card">
-            <div className="l-integrity-top">
-              <div className="l-integrity-icon" aria-hidden="true">
-                <Icon name="ruler" className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="l-integrity-title">64-bit Integer Atom Precision</h3>
-                <p className="l-integrity-sub">Scale: 1 Display Unit = 1,000,000 Atoms (10⁶)</p>
-              </div>
-            </div>
+          {INTEGRITY_PILLARS.map((pillar) => (
+            <article key={pillar.title} className="l-integrity-card">
+              <div className="l-integrity-card-header">
+                <div className="l-integrity-top">
+                  <div className="l-integrity-icon" aria-hidden="true">
+                    <Icon name={pillar.icon} className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="l-integrity-badge">{pillar.badge}</span>
+                    <h3 className="l-integrity-title">{pillar.title}</h3>
+                  </div>
+                </div>
 
-            <div className="l-code-callout">
-              <div>// Invariant: Exact mass conservation</div>
-              <div className="text-primary font-bold">
-                inspectedAtoms = passedAtoms + reworkAtoms + scrappedAtoms
+                <div className="l-integrity-metric-box">
+                  <span className="l-integrity-metric-val">{pillar.metricValue}</span>
+                  <span className="l-integrity-metric-lbl">{pillar.metricLabel}</span>
+                </div>
               </div>
-            </div>
 
-            <p>
-              Quantities across intake, bills of materials, reservations, WIP consumption, and finished goods
-              are stored and calculated strictly as 64-bit BigInt atoms. Floating-point arithmetic is strictly
-              prohibited, eliminating subtle rounding drift across high-volume production runs.
-            </p>
-          </div>
+              <p className="l-integrity-desc">{pillar.summary}</p>
 
-          {/* Invariant 2: Double-Entry Ledger */}
-          <div className="l-integrity-card">
-            <div className="l-integrity-top">
-              <div className="l-integrity-icon" aria-hidden="true">
-                <Icon name="box" className="w-5 h-5" />
+              <div className="l-integrity-rule-banner">
+                <span className="l-integrity-rule-eq">{pillar.equation}</span>
               </div>
-              <div>
-                <h3 className="l-integrity-title">Double-Entry Stock Ledger</h3>
-                <p className="l-integrity-sub">Authoritative movements & zero negative balances</p>
-              </div>
-            </div>
 
-            <div className="l-code-callout">
-              <div>// Invariant: Balance projection derived from movements</div>
-              <div className="text-primary font-bold">
-                totalDebits - totalCredits = currentOnHandAtoms (Discrepancies = 0)
+              <div className="l-stage-tags">
+                {pillar.tags.map((tag) => (
+                  <span key={tag} className="l-stage-tag-pill">
+                    {tag}
+                  </span>
+                ))}
               </div>
-            </div>
 
-            <p>
-              Every physical movement (receipt, issue to WIP, return, scrap disposition, shipment) writes dual
-              debit/credit records in an append-only stock movement ledger. Stock balance records update
-              atomically in the same transaction, with non-negative balance checks enforced at all times.
-            </p>
-          </div>
-
-          {/* Invariant 3: Idempotent Command Pipeline */}
-          <div className="l-integrity-card">
-            <div className="l-integrity-top">
-              <div className="l-integrity-icon" aria-hidden="true">
-                <Icon name="lock" className="w-5 h-5" />
+              <div className="l-integrity-outcome">
+                <Icon name="check" className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{pillar.outcome}</span>
               </div>
-              <div>
-                <h3 className="l-integrity-title">Idempotent Command Pipeline</h3>
-                <p className="l-integrity-sub">SHA-256 payload caching & atomic rollback</p>
-              </div>
-            </div>
-
-            <div className="l-code-callout">
-              <div>// Invariant: Replay-safe state transitions</div>
-              <div className="text-primary font-bold">
-                executeCommand(action, idempotencyKey, payloadHash)
-              </div>
-            </div>
-
-            <p>
-              All mutating business events pass through a centralized command harness. Incoming requests are
-              fingerprinted with cryptographic SHA-256 hashes. Network retries safely replay cached responses
-              without duplicating production orders, reserving excess inventory, or corrupting state.
-            </p>
-          </div>
-
-          {/* Invariant 4: Database WAL & Append-Only Audit */}
-          <div className="l-integrity-card">
-            <div className="l-integrity-top">
-              <div className="l-integrity-icon" aria-hidden="true">
-                <Icon name="shield" className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="l-integrity-title">Append-Only Audit & WAL Persistence</h3>
-                <p className="l-integrity-sub">SQLite WAL mode with immutable event triggers</p>
-              </div>
-            </div>
-
-            <div className="l-code-callout">
-              <div>// Invariant: Database triggers block history tampering</div>
-              <div className="text-primary font-bold">
-                BEFORE UPDATE/DELETE ON audit_events: RAISE(ABORT, &apos;Immutable&apos;)
-              </div>
-            </div>
-
-            <p>
-              Built upon SQLite in WAL mode with strict foreign key constraints and transactional boundaries.
-              Database-level triggers reject any mutation or deletion of historical audit logs, ensuring
-              full regulatory traceability for every manufacturing order and quality signoff.
-            </p>
-          </div>
+            </article>
+          ))}
         </div>
       </div>
     </section>

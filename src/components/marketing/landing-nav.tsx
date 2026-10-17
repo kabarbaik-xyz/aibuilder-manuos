@@ -26,7 +26,7 @@ export function LandingNav() {
           </div>
           <div>
             <span className="l-brand-title">ManuOS</span>
-            <span className="l-brand-tagline">Manufacturing Orchestration</span>
+            <span className="l-brand-tagline">Manufacturing Orchestrating System</span>
           </div>
         </Link>
 
