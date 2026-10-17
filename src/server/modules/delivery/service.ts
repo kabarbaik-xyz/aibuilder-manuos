@@ -16,6 +16,7 @@ import {
   findShipmentById,
   getNextShipmentNumber,
 } from './repository';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 
 function resolveOrderLine(order: any, shipmentLine: { orderLineId?: string; itemId: string }) {
   if (order.lines.length > 0) {
@@ -639,6 +640,13 @@ export class DeliveryService {
               status: 'DELIVERED',
               version: { increment: 1 },
             },
+          });
+          await completeLifecycleAction(tx, {
+            workspaceId,
+            orderId: currentOrder.id,
+            action: 'CONFIRM_DELIVERY',
+            actorUserId: principal.userId,
+            commandId: requestId,
           });
         }
 

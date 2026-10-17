@@ -18,6 +18,7 @@ export default function NewWorkflowPage() {
   const orderTypes = orderTypesRes?.data || [];
 
   const [orderTypeId, setOrderTypeId] = useState('');
+  const [kind, setKind] = useState<'PRODUCTION_ROUTING' | 'ORDER_LIFECYCLE'>('PRODUCTION_ROUTING');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -35,6 +36,7 @@ export default function NewWorkflowPage() {
     createTemplate.mutate(
       {
         orderTypeId,
+        kind,
         code: code.trim().toUpperCase(),
         name: name.trim(),
         description: description.trim() || undefined,
@@ -52,11 +54,19 @@ export default function NewWorkflowPage() {
 
   return (
     <div className="page-stack order-intake">
-      <PageHeader title="New workflow" description="Define a reusable production routing, then add its stages and dependencies in the editor." />
+      <PageHeader title="New workflow" description="Create production routing for engineering, or an order lifecycle for cross-department ownership and handoffs." />
 
       {errorMsg && <FormErrorSummary message={errorMsg} />}
 
       <form onSubmit={handleSubmit} className="form-section space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-ink">Workflow purpose *
+          <Select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)} className="w-full rounded border px-3 py-2 text-sm mt-1 border-line" required>
+            <option value="PRODUCTION_ROUTING">Production routing · Engineering operations and dependencies</option>
+            <option value="ORDER_LIFECYCLE">Order lifecycle · Stakeholder stages, ownership and handoffs</option>
+          </Select></label>
+          <p className="field-help">These are separate workflow types. A lifecycle stage can point to an approved production routing.</p>
+        </div>
         <div>
           <label className="block text-sm font-medium text-ink">Order Type *
           <Select

@@ -2041,6 +2041,91 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/form-instances:
+    get:
+      summary: List authorized form evidence for one order, task or inspection
+      parameters:
+        - { name: subjectType, in: query, required: true, schema: { type: string, enum: [ORDER, TASK, INSPECTION] } }
+        - { name: subjectId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Authorized form instances with pinned form definitions and latest submissions }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/forms/bindings:
+    post:
+      summary: Bind a published form version to an order type, draft workflow node or QC checklist
+      description: Workflow node bindings can only be added while the target workflow version is DRAFT. Publishing freezes the executable form-binding set for that version.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [formVersionId, context]
+              properties:
+                formVersionId: { type: string, format: uuid }
+                context: { type: string, enum: [ORDER_TYPE, WORKFLOW_NODE, QC_CHECKLIST] }
+                orderTypeId: { type: string, format: uuid }
+                workflowVersionId: { type: string, format: uuid }
+                workflowNodeKey: { type: string }
+                qcChecklistId: { type: string, format: uuid }
+                required: { type: boolean, default: true }
+              additionalProperties: false
+      responses:
+        '201': { description: Form binding created and audited }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/workflows/lifecycle-members:
+    get:
+      summary: List active members for a lifecycle stage department assignment
+      description: Requires workflow.author. The response is limited to active memberships in the caller's workspace and selected active department, with display names and active role names only.
+      parameters:
+        - { name: departmentId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Active department membership options for workflow assignment authoring }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/order-lifecycle/work-items:
+    get:
+      summary: List lifecycle stages assigned to the current membership or its eligible department queue
+      description: Requires an operational read capability. Personal results include direct membership assignments and department-queue stages whose configured role codes match the caller. Facility scope is enforced from the authenticated principal; callers cannot choose another department or workspace.
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [mine, department], default: mine } }
+      responses:
+        '200': { description: Bounded lifecycle stage summaries with order, owner department, schedule, predecessor keys, and pinned form references }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/order-lifecycle/stages/{id}/claim:
+    post:
+      summary: Claim a ready department-queue lifecycle stage
+      description: Claims a stage for the caller's active membership using an expected version. Requires the stage action permission, configured department and eligible role, plus facility scope. A successful claim is audited and only the claimant retains the personal work item.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+              additionalProperties: false
+      responses:
+        '200': { description: Stage claimed by the authenticated membership }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/orders:
     post:
       summary: Create an order draft with one or more item lines
@@ -2057,6 +2142,8 @@ paths:
               properties:
                 customerId: { type: string }
                 orderTypeId: { type: string }
+                workflowVersionId: { type: string, format: uuid, description: Optional explicit published production-routing version compatible with the selected order type. Omitted uses the latest published version for that order type. }
+                lifecycleWorkflowVersionId: { type: string, format: uuid, description: Optional published ORDER_LIFECYCLE version. The order and its initial stages are created atomically with this immutable workflow pin. }
                 itemId: { type: string, description: Legacy single-item compatibility field }
                 orderedQuantity: { oneOf: [{ type: string, pattern: '^\\d+(\\.\\d+)?$' }, { type: number, exclusiveMinimum: 0 }] }
                 requestedDate: { type: string, format: date-time }
@@ -3295,6 +3382,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     BadRequest:
       description: Malformed or invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource version changed or command idempotency key conflicts with a prior payload
       content:
         application/json:
           schema:

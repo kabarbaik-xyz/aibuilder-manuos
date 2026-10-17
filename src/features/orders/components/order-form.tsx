@@ -16,21 +16,37 @@ import { FormErrorSummary } from '@/components/ui/form-errors';
 import { ErrorState, LoadingState } from '@/components/ui/resource-state';
 import { useWorkspaceNavigation } from '@/components/workspace-navigation-context';
 import { apiRequest } from '@/lib/api/client';
+import { useWorkflowTemplates } from '@/features/workflows/hooks';
 
 export function OrderForm() {
   const router = useRouter();
   const [rfqDraftId, setRfqDraftId] = useState<string | null>(null);
   const prefix = useId();
   const createOrder = useCreateOrderDraft();
+  const [customerId, setCustomerId] = useState('');
+  const [orderTypeId, setOrderTypeId] = useState('');
+  const [workflowVersionId, setWorkflowVersionId] = useState('');
+  const [lifecycleWorkflowVersionId, setLifecycleWorkflowVersionId] = useState('');
   const customersQuery = useCustomers();
   const typesQuery = useOrderTypes();
   const itemsQuery = useItems();
+  const workflowsQuery = useWorkflowTemplates();
   const { principal } = useWorkspaceNavigation();
   const customers = customersQuery.data?.data || [];
   const orderTypes = typesQuery.data?.data || [];
   const items = itemsQuery.data?.data || [];
-  const [customerId, setCustomerId] = useState('');
-  const [orderTypeId, setOrderTypeId] = useState('');
+  const compatibleWorkflows = (workflowsQuery.data ?? [])
+    .filter(workflow => workflow.orderTypeId === orderTypeId && workflow.kind === 'PRODUCTION_ROUTING')
+    .flatMap(workflow => (workflow.versions ?? [])
+      .filter(version => version.status === 'PUBLISHED')
+      .map(version => ({ ...version, workflowName: workflow.name })))
+    .sort((a, b) => b.versionNumber - a.versionNumber);
+  const compatibleLifecycles = (workflowsQuery.data ?? [])
+    .filter(workflow => workflow.orderTypeId === orderTypeId && workflow.kind === 'ORDER_LIFECYCLE')
+    .flatMap(workflow => (workflow.versions ?? [])
+      .filter(version => version.status === 'PUBLISHED')
+      .map(version => ({ ...version, workflowName: workflow.name })))
+    .sort((a, b) => b.versionNumber - a.versionNumber);
   const lineSequence = useRef(1);
   const [lines, setLines] = useState([{ key: 1, itemId: '', quantity: '' }]);
   const [requestedDate, setRequestedDate] = useState('');
@@ -73,7 +89,7 @@ export function OrderForm() {
       setError(new Error('Set an item and a positive quantity for every order line.'));
       return;
     }
-    createOrder.mutate({ customerId, orderTypeId, itemId: lines[0].itemId, lines: lines.map(line => ({ itemId: line.itemId, orderedQuantity: line.quantity })), requestedDate: new Date(requestedDate).toISOString(), promisedDate: promisedDate ? new Date(promisedDate).toISOString() : null, rfqText: rfqDraftId ? '' : rfqText, rfqSourceType, ...(rfqDraftId ? { rfqDraftId } : {}) }, {
+    createOrder.mutate({ customerId, orderTypeId, ...(workflowVersionId ? { workflowVersionId } : {}), ...(lifecycleWorkflowVersionId ? { lifecycleWorkflowVersionId } : {}), itemId: lines[0].itemId, lines: lines.map(line => ({ itemId: line.itemId, orderedQuantity: line.quantity })), requestedDate: new Date(requestedDate).toISOString(), promisedDate: promisedDate ? new Date(promisedDate).toISOString() : null, rfqText: rfqDraftId ? '' : rfqText, rfqSourceType, ...(rfqDraftId ? { rfqDraftId } : {}) }, {
       onSuccess: response => router.push(`/orders/${response.data.id}`),
       onError: err => setError(err),
     });
@@ -93,8 +109,9 @@ export function OrderForm() {
       <FormErrorSummary error={error} />
       <section className="form-section page-stack"><div><h2>Order details</h2><p className="field-help">Fields marked * are required.</p></div><div className="form-grid">
         <FormField id={`${prefix}-customer`} label="Customer" required><Select value={customerId} onChange={e => setCustomerId(e.target.value)} disabled={!ready || pending}><option value="">Select customer…</option>{customers.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}</Select></FormField>
-        <FormField id={`${prefix}-type`} label="Order type" required><Select value={orderTypeId} onChange={e => setOrderTypeId(e.target.value)} disabled={!ready || pending}><option value="">Select order type…</option>{orderTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></FormField>
+        <FormField id={`${prefix}-type`} label="Order type" required><Select value={orderTypeId} onChange={e => { setOrderTypeId(e.target.value); setWorkflowVersionId(''); setLifecycleWorkflowVersionId(''); }} disabled={!ready || pending}><option value="">Select order type…</option>{orderTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></FormField>
       </div></section>
+      {orderTypeId && <section className="form-section page-stack"><div><h2>Order workflow</h2><p className="field-help">Lifecycle mengatur stage lintas departemen dan PIC. Production routing menentukan operasi Engineering dan kapasitas yang dijadwalkan.</p></div><FormField id={`${prefix}-lifecycle`} label="Order lifecycle"><Select value={lifecycleWorkflowVersionId} onChange={event => setLifecycleWorkflowVersionId(event.target.value)} disabled={pending || workflowsQuery.isPending}><option value="">Legacy order flow · tanpa lifecycle stage</option>{compatibleLifecycles.map(version => <option key={version.id} value={version.id}>{version.workflowName} · v{version.versionNumber}</option>)}</Select></FormField><FormField id={`${prefix}-workflow`} label="Production routing"><Select value={workflowVersionId} onChange={event => setWorkflowVersionId(event.target.value)} disabled={pending || workflowsQuery.isPending}><option value="">Order type default</option>{compatibleWorkflows.map(version => <option key={version.id} value={version.id}>{version.workflowName} · v{version.versionNumber}</option>)}</Select></FormField>{workflowsQuery.error && <p className="text-xs text-warning">Daftar workflow belum tersedia; lifecycle dan routing dapat dipilih setelah workflow dimuat.</p>}</section>}
       <section className="form-section page-stack"><div className="flex items-start justify-between gap-4"><div><h2>Order lines</h2><p className="field-help">Each item is tracked and released as its own manufacturing job.</p></div><Button icon="plus" onClick={addLine} disabled={!ready || pending}>Add item</Button></div>
         {lines.map((line, index) => <div className="form-grid order-line-row" key={line.key}>
           <FormField id={`${prefix}-line-${line.key}-item`} label={`Item ${index + 1}`} required><Select value={line.itemId} onChange={event => setLines(current => current.map(row => row.key === line.key ? { ...row, itemId: event.target.value } : row))} disabled={!ready || pending}><option value="">Select item…</option>{items.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</Select></FormField>

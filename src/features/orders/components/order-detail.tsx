@@ -41,6 +41,7 @@ import { formatQuantity } from '@/domain/quantity';
 import { apiRequest } from '@/lib/api/client';
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { memoryHrefForItem } from '@/features/intelligence/memory-navigation';
+import { SubjectFormEvidence } from '@/features/forms/components/subject-form-evidence';
 
 interface OrderDetailProps {
   order: OrderDto;
@@ -339,6 +340,24 @@ export function OrderDetail({ order }: OrderDetailProps) {
         {canRelease && <Button variant="primary" onClick={handleRelease} disabled={releaseMutation.isPending}>{releaseMutation.isPending ? 'Releasing…' : 'Release to production'}</Button>}
       </Panel>}
 
+      {order.lifecycleInstances?.[0] && (() => {
+        const lifecycle = order.lifecycleInstances[0];
+        return <Panel className="p-5 page-stack">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-base font-semibold text-ink">{lifecycle.workflowVersion.template.name}</h2><p className="field-help">Order lifecycle · version {lifecycle.workflowVersion.versionNumber} · stage ownership and handoffs</p></div>
+            <Badge variant={lifecycle.status === 'COMPLETED' ? 'success' : lifecycle.status === 'BLOCKED' ? 'warning' : 'blue'}>{lifecycle.status.replaceAll('_', ' ').toLowerCase()}</Badge>
+          </div>
+          <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {lifecycle.stages.map((stage) => <li key={stage.id} className="rounded-lg border border-line bg-surface-muted p-3">
+              <div className="flex items-start justify-between gap-2"><strong className="text-sm text-ink">{stage.name}</strong><Badge variant={stage.state === 'COMPLETED' ? 'success' : stage.state === 'BLOCKED' ? 'warning' : stage.state === 'READY' || stage.state === 'ACTIVE' ? 'blue' : 'default'}>{stage.state.replaceAll('_', ' ').toLowerCase()}</Badge></div>
+              <p className="small muted mt-1">{stage.department.name} · {stage.action.replaceAll('_', ' ').toLowerCase()}</p>
+              <p className="small mt-2 text-ink">{stage.assignedMembership?.user.name ?? 'Department queue'}</p>
+              {stage.dueAt && <p className="small muted mt-1">Due {formatDateTime(stage.dueAt)}</p>}
+            </li>)}
+          </ol>
+        </Panel>;
+      })()}
+
       {/* 4 Harmonized Metric Tiles */}
       {order.lines && order.lines.length > 1 && <Panel className="p-5 page-stack">
         <div><h2 className="text-sm font-semibold text-ink">Order lines</h2><p className="field-help">Each line has its own engineering revision and manufacturing jobs.</p></div>
@@ -426,7 +445,14 @@ export function OrderDetail({ order }: OrderDetailProps) {
 
       {/* TAB 1: Overview */}
       {activeTab === 'overview' && (
-        <div className="od-grid">
+        <div className="page-stack">
+          <SubjectFormEvidence
+            subjectType="ORDER"
+            subjectId={order.id}
+            title="Order specification forms"
+            description="Review and submit required customer specifications before the order is released."
+          />
+          <div className="od-grid">
           <section className="od-card" aria-labelledby="od-rfq-title">
             <header className="od-card-head">
               <h2 id="od-rfq-title"><FileText className="w-4 h-4" /> RFQ intake &amp; commercial notes</h2>
@@ -499,6 +525,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
               {documentUploadMessage && <p role="status" className="od-sub">{documentUploadMessage}</p>}
             </section>
           </PermissionGate>
+          </div>
         </div>
       )}
 

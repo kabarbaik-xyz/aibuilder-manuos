@@ -46,8 +46,39 @@ export const workflowDefinitionSchema = z.object({
   edges: z.array(workflowEdgeDefinitionSchema).default([]),
 });
 
+export const lifecycleActionSchema = z.enum([
+  'ORDER_CONFIRM', 'ENGINEERING_APPROVE', 'PLAN_PRODUCTION', 'EXECUTE_PRODUCTION',
+  'FINALIZE_QC', 'CONFIRM_DELIVERY', 'REVIEW_EVIDENCE',
+]);
+export const orderLifecycleDefinitionSchema = z.object({
+  schemaVersion: z.literal(1),
+  name: z.string().trim().min(1).max(200),
+  stages: z.array(z.object({
+    key: z.string().trim().min(1).max(50),
+    name: z.string().trim().min(1).max(200),
+    action: lifecycleActionSchema,
+    departmentId: z.string().min(1),
+    assignment: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('MEMBER'), membershipId: z.string().min(1), departmentId: z.string().optional() }),
+      z.object({ kind: z.literal('DEPARTMENT_QUEUE'), departmentId: z.string().min(1), eligibleRoleCodes: z.array(z.string().min(1)).min(1) }),
+    ]),
+    schedule: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('DEADLINE'), dueAfterMinutes: z.number().int().positive() }),
+      z.object({ kind: z.literal('RESOURCE_CAPACITY'), routingSource: z.literal('APPROVED_ENGINEERING') }),
+    ]),
+    predecessors: z.array(z.string().min(1)),
+    forms: z.array(z.object({
+      formVersionId: z.string().min(1),
+      contentHash: z.string().min(1),
+      required: z.boolean(),
+      completionPoint: z.enum(['BEFORE_ACTION', 'BEFORE_STAGE_COMPLETION']),
+    })),
+  })).min(1),
+});
+
 export const createWorkflowTemplateSchema = z.object({
   orderTypeId: z.string().min(1),
+  kind: z.enum(['PRODUCTION_ROUTING', 'ORDER_LIFECYCLE']).default('PRODUCTION_ROUTING'),
   code: z.string().min(1).max(50),
   name: z.string().min(1).max(200),
   description: z.string().max(1000).nullable().optional(),
@@ -59,7 +90,7 @@ export const createWorkflowVersionDraftSchema = z.object({
 
 export const saveWorkflowVersionDraftSchema = z.object({
   expectedVersion: z.number().int().min(1).optional(),
-  definition: workflowDefinitionSchema,
+  definition: z.union([workflowDefinitionSchema, orderLifecycleDefinitionSchema]),
 });
 
 export const workflowVersionActionSchema = z.object({

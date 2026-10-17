@@ -8,6 +8,7 @@ export interface OrderDto {
   facility?: { id: string; code: string; name: string } | null;
   customerId: string;
   orderTypeId: string;
+  lifecycleWorkflowVersionId?: string | null;
   itemId: string;
   orderedAtoms: string | number | bigint;
   requestedDate: string;
@@ -60,6 +61,22 @@ export interface OrderDto {
     engineeringRevisionId?: string;
     status: string;
     tasks?: any[];
+  }>;
+  lifecycleInstances?: Array<{
+    id: string;
+    status: string;
+    workflowVersion: { versionNumber: number; template: { name: string } };
+    stages: Array<{
+      id: string;
+      stageKey: string;
+      name: string;
+      action: string;
+      state: string;
+      dueAt: string | null;
+      department: { name: string };
+      assignedMembership?: { user: { name: string } } | null;
+      formPinsJson: string;
+    }>;
   }>;
   demands?: Array<{
     id: string;

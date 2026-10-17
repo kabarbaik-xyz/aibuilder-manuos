@@ -162,6 +162,23 @@ export async function instantiateWorkflow(
   const incomingEdgeNodes = new Set(publishedVersion.edges.map((e: any) => e.toNodeKey));
   const taskMap = new Map<string, any>();
   const taskIdRecord: Record<string, string> = {};
+  const lifecycleVersion = order.lifecycleWorkflowVersionId
+    ? await tx.workflowVersion.findFirst({
+        where: { id: order.lifecycleWorkflowVersionId, workspaceId: principal.workspaceId, status: 'PUBLISHED' },
+        select: { definitionJson: true },
+      })
+    : null;
+  let lifecycleTaskFormPins: Array<{ formVersionId: string; contentHash: string }> = [];
+  if (lifecycleVersion) {
+    try {
+      const lifecycleDefinition = JSON.parse(lifecycleVersion.definitionJson) as { stages?: Array<{ action?: string; forms?: Array<{ formVersionId: string; contentHash: string }> }> };
+      lifecycleTaskFormPins = (lifecycleDefinition.stages ?? [])
+        .filter((stage) => stage.action === 'PLAN_PRODUCTION' || stage.action === 'EXECUTE_PRODUCTION')
+        .flatMap((stage) => stage.forms ?? []);
+    } catch {
+      throw new BadRequestError('The order lifecycle version contains invalid pinned task form configuration.');
+    }
+  }
 
   for (const node of publishedVersion.nodes) {
     const isRoot = !incomingEdgeNodes.has(node.key);
@@ -203,6 +220,19 @@ export async function instantiateWorkflow(
           subjectId: task.id,
           status: 'PENDING',
         },
+      });
+    }
+    for (const pin of lifecycleTaskFormPins) {
+      const pinnedVersion = await tx.formVersion.findFirst({
+        where: { id: pin.formVersionId, workspaceId: principal.workspaceId, status: 'PUBLISHED', contentHash: pin.contentHash },
+        select: { id: true, template: { select: { purpose: true } } },
+      });
+      if (!pinnedVersion || pinnedVersion.template.purpose !== 'TASK_EVIDENCE') {
+        throw new BadRequestError('A production lifecycle task form pin is unpublished, changed, or incompatible.');
+      }
+      await tx.formInstance.createMany({
+        data: [{ workspaceId: principal.workspaceId, formVersionId: pin.formVersionId, subjectType: 'TASK', subjectId: task.id, status: 'PENDING' }],
+        skipDuplicates: true,
       });
     }
   }

@@ -6,6 +6,9 @@ import { ConflictError, NotFoundError, BadRequestError, ForbiddenError } from '@
 import { parseQuantity } from '@/domain/quantity';
 import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
+import { validateLifecycleDefinition, type OrderLifecycleDefinition } from '@/domain/order-lifecycle-definition';
+import { orderLifecycleDefinitionSchema } from '@/server/modules/workflow/contracts';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 
 export class OrderService {
   constructor(private readonly prisma: PrismaClient = defaultDb) {}
@@ -87,6 +90,13 @@ export class OrderService {
                 assignedMachine: true,
               },
             },
+          },
+        },
+        lifecycleInstances: {
+          include: {
+            workflowVersion: { include: { template: true } },
+            stages: { include: { department: true, assignedMembership: { include: { user: { select: { name: true } } } } }, orderBy: { createdAt: 'asc' } },
+            events: { orderBy: { occurredAt: 'asc' } },
           },
         },
         demands: {
@@ -226,12 +236,33 @@ export class OrderService {
         const requestedDate = new Date(input.requestedDate);
         const promisedDate = input.promisedDate ? new Date(input.promisedDate) : null;
 
+      const lifecycleVersion = input.lifecycleWorkflowVersionId
+        ? await tx.workflowVersion.findFirst({
+            where: {
+              id: input.lifecycleWorkflowVersionId,
+              workspaceId: principal.workspaceId,
+              status: 'PUBLISHED',
+              template: { kind: 'ORDER_LIFECYCLE', orderTypeId: input.orderTypeId, isArchived: false },
+            },
+          })
+        : null;
+      if (input.lifecycleWorkflowVersionId && !lifecycleVersion) {
+        throw new BadRequestError('Selected order lifecycle must be published and compatible with this order type.');
+      }
+      const lifecycleDefinition = lifecycleVersion
+        ? orderLifecycleDefinitionSchema.parse(JSON.parse(lifecycleVersion.definitionJson)) as OrderLifecycleDefinition
+        : null;
+      if (lifecycleDefinition && !validateLifecycleDefinition(lifecycleDefinition).isValid) {
+        throw new BadRequestError('Selected order lifecycle definition is no longer valid. Create a new published version.');
+      }
+
         const order = await tx.order.create({
           data: {
             workspaceId: principal.workspaceId,
             orderNumber,
             customerId: input.customerId,
             orderTypeId: input.orderTypeId,
+            lifecycleWorkflowVersionId: lifecycleVersion?.id ?? null,
             itemId: primaryItemId,
             orderedAtoms: totalOrderedAtoms,
             requestedDate,
@@ -286,6 +317,104 @@ export class OrderService {
           });
         }
 
+        // Snapshot the order type's published specification forms immediately so
+        // they can be reviewed before the order reaches its release gate.
+        const orderFormBindings = await tx.formBinding.findMany({
+          where: {
+            workspaceId: principal.workspaceId,
+            context: 'ORDER_TYPE',
+            orderTypeId: order.orderTypeId,
+            required: true,
+            formVersion: { status: 'PUBLISHED' },
+          },
+          select: { id: true, formVersionId: true },
+        });
+        for (const binding of orderFormBindings) {
+          await tx.formInstance.upsert({
+            where: {
+              workspaceId_subjectType_subjectId_formVersionId: {
+                workspaceId: principal.workspaceId,
+                subjectType: 'ORDER',
+                subjectId: order.id,
+                formVersionId: binding.formVersionId,
+              },
+            },
+            create: {
+              workspaceId: principal.workspaceId,
+              formVersionId: binding.formVersionId,
+              formBindingId: binding.id,
+              subjectType: 'ORDER',
+              subjectId: order.id,
+              status: 'PENDING',
+            },
+            // Existing instances are immutable pins; a later binding must not rewrite them.
+            update: {},
+          });
+        }
+
+        if (lifecycleVersion && lifecycleDefinition) {
+          const lifecycle = await tx.orderLifecycleInstance.create({
+            data: {
+              workspaceId: principal.workspaceId,
+              orderId: order.id,
+              workflowVersionId: lifecycleVersion.id,
+              status: 'ACTIVE',
+            },
+          });
+          await tx.orderLifecycleStage.createMany({
+            data: lifecycleDefinition.stages.map((stage) => ({
+              workspaceId: principal.workspaceId,
+              instanceId: lifecycle.id,
+              stageKey: stage.key,
+              name: stage.name,
+              action: stage.action,
+              departmentId: stage.departmentId,
+              assignedMembershipId: stage.assignment.kind === 'MEMBER' ? stage.assignment.membershipId : null,
+              assignmentJson: JSON.stringify(stage.assignment),
+              scheduleJson: JSON.stringify(stage.schedule),
+              formPinsJson: JSON.stringify(stage.forms),
+              predecessorKeysJson: JSON.stringify(stage.predecessors),
+              state: stage.predecessors.length === 0 ? 'READY' : 'PENDING',
+              dueAt: stage.schedule.kind === 'DEADLINE'
+                ? new Date(Date.now() + stage.schedule.dueAfterMinutes * 60_000)
+                : null,
+            })),
+          });
+          const orderScopedFormVersionIds = [...new Set(lifecycleDefinition.stages
+            .flatMap((stage) => stage.forms)
+            .map((form) => form.formVersionId))];
+          for (const formVersionId of orderScopedFormVersionIds) {
+            const formVersion = await tx.formVersion.findFirst({
+              where: { id: formVersionId, workspaceId: principal.workspaceId, status: 'PUBLISHED' },
+              include: { template: { select: { purpose: true } } },
+            });
+            if (!formVersion) throw new BadRequestError('A pinned lifecycle form version is no longer published.');
+            if (formVersion.template.purpose === 'ORDER_SPEC') {
+              await tx.formInstance.upsert({
+                where: {
+                  workspaceId_subjectType_subjectId_formVersionId: {
+                    workspaceId: principal.workspaceId,
+                    subjectType: 'ORDER',
+                    subjectId: order.id,
+                    formVersionId,
+                  },
+                },
+                create: { workspaceId: principal.workspaceId, formVersionId, subjectType: 'ORDER', subjectId: order.id, status: 'PENDING' },
+                update: {},
+              });
+            }
+          }
+          await tx.orderLifecycleEvent.create({
+            data: {
+              workspaceId: principal.workspaceId,
+              instanceId: lifecycle.id,
+              eventType: 'LIFECYCLE_STARTED',
+              actorUserId: principal.userId,
+              detailJson: JSON.stringify({ workflowVersionId: lifecycleVersion.id, definitionHash: lifecycleVersion.definitionHash }),
+            },
+          });
+        }
+
         // RFQ Context
         if (reviewedRfq) {
           const metadata = JSON.parse(reviewedRfq.extractedFieldsJson) as Record<string, unknown>;
@@ -309,14 +438,26 @@ export class OrderService {
         }
 
         // Initialize Engineering Revision 1
-        const publishedWf = await tx.workflowVersion.findFirst({
-          where: {
-            workspaceId: principal.workspaceId,
-            status: 'PUBLISHED',
-            template: { orderTypeId: input.orderTypeId },
-          },
-          orderBy: { versionNumber: 'desc' },
-        });
+        const publishedWf = input.workflowVersionId
+          ? await tx.workflowVersion.findFirst({
+              where: {
+                id: input.workflowVersionId,
+                workspaceId: principal.workspaceId,
+                status: 'PUBLISHED',
+                template: { orderTypeId: input.orderTypeId },
+              },
+            })
+          : await tx.workflowVersion.findFirst({
+              where: {
+                workspaceId: principal.workspaceId,
+                status: 'PUBLISHED',
+                template: { orderTypeId: input.orderTypeId },
+              },
+              orderBy: { versionNumber: 'desc' },
+            });
+        if (input.workflowVersionId && !publishedWf) {
+          throw new BadRequestError('Selected workflow must be published and compatible with this order type.');
+        }
 
         const engineeringLines = await tx.orderLine.findMany({
           where: { workspaceId: principal.workspaceId, orderId: order.id },
@@ -520,6 +661,14 @@ export class OrderService {
               orderBy: { lineNumber: 'asc' },
             },
           },
+        });
+
+        await completeLifecycleAction(tx, {
+          workspaceId: principal.workspaceId,
+          orderId: order.id,
+          action: 'ORDER_CONFIRM',
+          actorUserId: principal.userId,
+          commandId: idempotencyKey,
         });
 
         return {

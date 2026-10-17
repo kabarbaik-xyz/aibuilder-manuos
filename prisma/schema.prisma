@@ -143,6 +143,7 @@ model Workspace {
   workflowTemplates WorkflowTemplate[]
   workflowVersions  WorkflowVersion[]
   workflowInstances WorkflowInstance[]
+  orderLifecycleInstances OrderLifecycleInstance[]
   orders            Order[]
   orderLines        OrderLine[]
   drawingRevisions  DrawingRevision[]
@@ -221,6 +222,7 @@ model Membership {
   overtimeApprovalIntervals RosterInterval[]
   recoveryApprovals RecoveryProposal[]
   roles        MembershipRole[]
+  lifecycleStages OrderLifecycleStage[]
 
   @@unique([workspaceId, userId])
   @@unique([workspaceId, id])
@@ -543,6 +545,7 @@ model Department {
   machines            Machine[]
   technicians         Technician[]
   memberships         Membership[]
+  orderLifecycleStages OrderLifecycleStage[]
   manufacturingOrders ManufacturingOrder[]
 
   @@unique([workspaceId, code])
@@ -833,6 +836,7 @@ model WorkflowTemplate {
   id          String            @id @default(uuid())
   workspaceId String            @map("workspace_id")
   orderTypeId String            @map("order_type_id")
+  kind        String            @default("PRODUCTION_ROUTING") // PRODUCTION_ROUTING | ORDER_LIFECYCLE
   code        String
   name        String
   description String?
@@ -871,6 +875,7 @@ model WorkflowVersion {
   edges          WorkflowEdge[]
   instances      WorkflowInstance[]
   manufacturingOrders ManufacturingOrder[]
+  orderLifecycleInstances OrderLifecycleInstance[]
 
   @@unique([templateId, versionNumber])
   @@unique([workspaceId, id])
@@ -923,6 +928,7 @@ model Order {
   orderNumber          String                @map("order_number")
   customerId           String                @map("customer_id")
   orderTypeId          String                @map("order_type_id")
+  lifecycleWorkflowVersionId String?          @map("lifecycle_workflow_version_id")
   itemId               String                @map("item_id")
   orderedAtoms         BigInt                @map("ordered_atoms")
   requestedDate        DateTime              @map("requested_date")
@@ -950,6 +956,7 @@ model Order {
   lines                OrderLine[]
   engineeringRevisions EngineeringRevision[]
   instances            WorkflowInstance[]
+  lifecycleInstances   OrderLifecycleInstance[]
   manufacturingOrders  ManufacturingOrder[]
   demands              MaterialDemand[]
   reservations         StockReservation[]
@@ -1117,6 +1124,84 @@ model WorkflowInstance {
 
   @@unique([workspaceId, id])
   @@map("workflow_instances")
+}
+
+model OrderLifecycleInstance {
+  id                String   @id @default(uuid())
+  workspaceId       String   @map("workspace_id")
+  orderId           String   @map("order_id")
+  workflowVersionId String   @map("workflow_version_id")
+  status            String   @default("ACTIVE") // ACTIVE | COMPLETED | BLOCKED | CANCELLED
+  startedAt         DateTime @default(now()) @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+  version           Int      @default(1)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order          Order          @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  workflowVersion WorkflowVersion @relation(fields: [workspaceId, workflowVersionId], references: [workspaceId, id])
+  stages         OrderLifecycleStage[]
+  events         OrderLifecycleEvent[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, orderId])
+  @@index([workspaceId, status, createdAt])
+  @@map("order_lifecycle_instances")
+}
+
+model OrderLifecycleStage {
+  id                    String   @id @default(uuid())
+  workspaceId           String   @map("workspace_id")
+  instanceId            String   @map("instance_id")
+  stageKey              String   @map("stage_key")
+  name                  String
+  action                String
+  departmentId          String   @map("department_id")
+  assignmentJson        String   @map("assignment_json")
+  scheduleJson          String   @map("schedule_json")
+  formPinsJson          String   @default("[]") @map("form_pins_json")
+  predecessorKeysJson   String   @default("[]") @map("predecessor_keys_json")
+  state                 String   @default("PENDING") // PENDING | READY | ACTIVE | BLOCKED | WAITING_APPROVAL | COMPLETED | SKIPPED | CANCELLED
+  assignedMembershipId String?  @map("assigned_membership_id")
+  dueAt                 DateTime? @map("due_at")
+  startedAt             DateTime? @map("started_at")
+  completedAt           DateTime? @map("completed_at")
+  version               Int      @default(1)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  instance OrderLifecycleInstance @relation(fields: [workspaceId, instanceId], references: [workspaceId, id], onDelete: Cascade)
+  department Department @relation(fields: [workspaceId, departmentId], references: [workspaceId, id])
+  assignedMembership Membership? @relation(fields: [workspaceId, assignedMembershipId], references: [workspaceId, id], onDelete: Restrict)
+  events   OrderLifecycleEvent[]
+
+  @@unique([instanceId, stageKey])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, state, departmentId, dueAt])
+  @@index([workspaceId, assignedMembershipId, state])
+  @@map("order_lifecycle_stages")
+}
+
+model OrderLifecycleEvent {
+  id               String   @id @default(uuid())
+  workspaceId      String   @map("workspace_id")
+  instanceId       String   @map("instance_id")
+  stageId          String?  @map("stage_id")
+  eventType        String   @map("event_type")
+  fromState        String?  @map("from_state")
+  toState          String?  @map("to_state")
+  actorUserId      String   @map("actor_user_id")
+  commandId        String?  @map("command_id")
+  detailJson       String   @default("{}") @map("detail_json")
+  occurredAt       DateTime @default(now()) @map("occurred_at")
+
+  instance OrderLifecycleInstance @relation(fields: [workspaceId, instanceId], references: [workspaceId, id], onDelete: Cascade)
+  stage    OrderLifecycleStage?   @relation(fields: [workspaceId, stageId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([workspaceId, instanceId, occurredAt])
+  @@index([workspaceId, stageId, occurredAt])
+  @@map("order_lifecycle_events")
 }
 
 model ManufacturingOrder {

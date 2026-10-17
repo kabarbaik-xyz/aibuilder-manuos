@@ -10,6 +10,7 @@ import { assertRequiredFormsFinalized } from '../forms/completion';
 import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
 import { executionTaskScope } from './scope';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 
 function hasDownstreamProductionOperation(
   taskId: string,
@@ -180,7 +181,7 @@ export async function recordOutput(
           ...executionTaskScope(principal),
         },
         include: {
-          instance: { include: { workflowVersion: { include: { nodes: true } } } },
+          instance: { include: { workflowVersion: { include: { nodes: true } }, order: { select: { id: true } } } },
           jobsheet: { include: { manufacturingOrder: true } },
         },
       });
@@ -591,6 +592,25 @@ export async function recordOutput(
           }),
         },
       });
+
+      if (taskOutputComplete) {
+        const unfinishedProductionTasks = await tx.task.count({
+          where: {
+            workspaceId,
+            instance: { orderId: currentTask.instance.orderId },
+            status: { notIn: ['COMPLETED', 'CANCELLED', 'WAITING_QC'] },
+          },
+        });
+        if (unfinishedProductionTasks === 0) {
+          await completeLifecycleAction(tx, {
+            workspaceId,
+            orderId: currentTask.instance.orderId,
+            action: 'EXECUTE_PRODUCTION',
+            actorUserId: principal.userId,
+            commandId: requestId,
+          });
+        }
+      }
 
       return {
         data: {

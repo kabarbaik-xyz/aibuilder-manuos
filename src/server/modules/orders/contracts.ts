@@ -24,6 +24,8 @@ export const createOrderLineSchema = z.object({
 export const createOrderDraftSchema = z.object({
   customerId: z.string().min(1),
   orderTypeId: z.string().min(1),
+  workflowVersionId: z.string().optional(),
+  lifecycleWorkflowVersionId: z.string().optional(),
   itemId: z.string().optional(),
   orderedQuantity: positiveQuantitySchema.optional(),
   requestedDate: z.string(),
