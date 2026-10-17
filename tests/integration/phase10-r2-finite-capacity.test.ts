@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { PlanningService } from '@/server/modules/planning/service';
 import { TechnicianRecommendationService } from '@/server/modules/planning/recommendations';
@@ -356,6 +356,79 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(memory.hasSufficientHistory).toBe(false);
       expect(memory.recommendation).toBeDefined();
       expect(memory.recommendation.description).toContain('Workspace-wide averages are not shown');
+    });
+  });
+
+  describe('6. Transactional application of reviewed schedule proposals', () => {
+    it('rejects stale reviewed evidence without writes and applies a current proposal idempotently', async () => {
+      const { alpha } = fixture;
+      const planner = alpha.users.planner.principal;
+      await fixture.db.technicianCertification.updateMany({
+        where: { workspaceId: alpha.workspaceId, certificationId: certId },
+        data: { status: 'ACTIVE', revokedAt: null },
+      });
+      const machine = await fixture.db.machine.findUniqueOrThrow({ where: { id: alpha.masters.machineId } });
+      const instance = await fixture.db.workflowInstance.findUniqueOrThrow({ where: { id: testInstanceId } });
+      const nodes = await fixture.db.workflowNode.findMany({ where: { versionId: instance.workflowVersionId } });
+      await Promise.all(nodes.map((node) => fixture.db.workflowNode.update({
+        where: { id: node.id },
+        data: { requirementsJson: JSON.stringify({ machineClassId: machine.machineClassId, requiredCertIds: ['CERT-AERO-WELD'] }) },
+      })));
+      const slotStart = new Date('2026-10-19T08:00:00.000Z');
+      await fixture.db.rosterInterval.createMany({ data: [
+        { workspaceId: alpha.workspaceId, technicianId: alpha.masters.technicianId, intervalType: 'SHIFT', status: 'PUBLISHED', startAt: slotStart, endAt: new Date('2026-10-19T16:00:00.000Z') },
+        { workspaceId: alpha.workspaceId, machineId: alpha.masters.machineId, intervalType: 'SHIFT', status: 'PUBLISHED', startAt: slotStart, endAt: new Date('2026-10-19T16:00:00.000Z') },
+      ] });
+      const request = {
+        orderId: testOrderId,
+        instanceId: testInstanceId,
+        startHorizon: '2026-10-19T08:00:00.000Z',
+        horizonDays: 7,
+      };
+      const proposal = await scheduleProposalService.propose(planner, request);
+      expect(proposal.state).toBe('COMPLETE');
+      const reviewed = {
+        ...request,
+        expected: {
+          orderVersion: proposal.scope.orderVersion,
+          workflowVersionId: proposal.scope.workflowVersionId,
+          engineeringRevisionId: proposal.scope.engineeringRevisionId,
+          tasks: proposal.tasks.map(({ taskId, version, status, startAt, endAt, technicianId, machineId }) => ({
+            taskId, version, status, startAt, endAt, technicianId, machineId,
+          })),
+        },
+      };
+      const beforeBookings = await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } });
+      const stale = structuredClone(reviewed);
+      stale.expected.tasks[0].version += 1;
+      await expect(scheduleProposalService.applyReviewedProposal(planner, stale, 'phase10-schedule-apply-stale')).rejects.toMatchObject({ code: 'STALE_VERSION' });
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeBookings);
+      expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'SCHEDULE_PROPOSAL_APPLY' } })).toBe(0);
+
+      const originalEvaluation = PlanningService.prototype.evaluateAssignmentInTransaction;
+      let evaluationCount = 0;
+      const evaluationSpy = vi.spyOn(PlanningService.prototype, 'evaluateAssignmentInTransaction').mockImplementation(async function (this: PlanningService, ...args: Parameters<PlanningService['evaluateAssignmentInTransaction']>) {
+        evaluationCount += 1;
+        if (evaluationCount === 2) throw new Error('Injected second-task revalidation failure');
+        return originalEvaluation.apply(this, args);
+      });
+      try {
+        await expect(scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-rollback')).rejects.toThrow('Injected second-task revalidation failure');
+      } finally {
+        evaluationSpy.mockRestore();
+      }
+      expect(await fixture.db.task.count({ where: { workspaceId: alpha.workspaceId, instanceId: testInstanceId, status: { in: ['PENDING', 'READY'] } } })).toBe(2);
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeBookings);
+      expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'SCHEDULE_PROPOSAL_APPLY' } })).toBe(0);
+
+      const applied = await scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-ok');
+      const replay = await scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-ok');
+      expect(applied.data.state).toBe('APPLIED');
+      expect(replay.meta.replayed).toBe(true);
+      expect(await fixture.db.task.count({ where: { workspaceId: alpha.workspaceId, instanceId: testInstanceId, status: 'ASSIGNED' } })).toBe(2);
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, status: 'CONFIRMED' } })).toBe(4);
+      expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'SCHEDULE_PROPOSAL_APPLY' } })).toBe(2);
+      expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'planning.schedule-proposal.apply' } })).toBe(1);
     });
   });
 });

@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { BadRequestError, ConflictError, NotFoundError } from '@/domain/errors';
 import { executeCommand, hashPayload } from '@/server/db/transaction';
 import { z } from 'zod';
 import { ScheduleProposalService } from '@/server/modules/planning/schedule-proposals';
+import { PlanningService } from '@/server/modules/planning/service';
 
 const RejectProposalSchema = z.object({
   proposalId: z.string().uuid(),
@@ -46,7 +47,8 @@ function parseSavedProposal(value: string): RecoveryProposalDTO | null {
       taskVersions: z.array(z.object({ taskId: z.string(), version: z.number().int() })),
       tasks: z.array(z.object({
         taskId: z.string(), version: z.number().int(), nodeKey: z.string(), startAt: z.string().nullable(), endAt: z.string().nullable(),
-        technicianName: z.string().nullable(), machineName: z.string().nullable(), predecessorTaskIds: z.array(z.string()),
+        technicianId: z.string().nullable().optional(), technicianName: z.string().nullable(),
+        machineId: z.string().nullable().optional(), machineName: z.string().nullable(), predecessorTaskIds: z.array(z.string()),
       })),
       assumptions: z.array(z.string()),
     });
@@ -62,6 +64,12 @@ function parseSavedProposal(value: string): RecoveryProposalDTO | null {
   } catch {
     return null;
   }
+}
+
+function dateInTimezone(value: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
+  const fields = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  return `${fields.year}-${fields.month}-${fields.day}`;
 }
 import {
   ApproveRecoveryInput,
@@ -79,9 +87,11 @@ import { addWorkDays, DEFAULT_CALENDAR } from '@/engines/calendar';
 
 export class RecoveryService {
   private readonly scheduleProposals: ScheduleProposalService;
+  private readonly planning: PlanningService;
 
   constructor(private readonly db: PrismaClient) {
     this.scheduleProposals = new ScheduleProposalService(db);
+    this.planning = new PlanningService(db);
   }
 
   /** Save a schedule-grounded recovery review; applying it still requires revalidation. */
@@ -105,7 +115,7 @@ export class RecoveryService {
     const schedule = await this.scheduleProposals.propose(principal, {
       orderId: input.orderId,
       instanceId: input.instanceId,
-      startHorizon: new Date().toISOString(),
+      startHorizon: new Date(Date.now() + 5 * 60_000).toISOString(),
       horizonDays: 30,
     });
     if (schedule.state !== 'COMPLETE' || !schedule.projectedEndAt) {
@@ -139,11 +149,13 @@ export class RecoveryService {
         tasks: schedule.tasks.map((task) => ({
           taskId: task.taskId, version: task.version, nodeKey: task.nodeKey,
           startAt: task.startAt, endAt: task.endAt,
+          technicianId: task.technicianId, machineId: task.machineId,
           technicianName: task.technicianName, machineName: task.machineName,
           predecessorTaskIds: task.predecessorTaskIds,
         })),
         assumptions: [
           ...schedule.assumptions,
+          'The proposed horizon begins five minutes ahead to leave time for human review; apply rejects slots that have already started.',
           'Saved for review only; resource availability can change. Revalidate schedule and versions before any application.',
           'No shipment allocation, customer commitment, booking, or cost impact is included.',
         ],
@@ -156,7 +168,7 @@ export class RecoveryService {
       idempotencyKey,
       payload: input,
       prismaClient: this.db,
-      handler: async (tx) => {
+      handler: async (tx: Prisma.TransactionClient) => {
         const order = await tx.order.findFirst({
           where: { workspaceId: principal.workspaceId, id: input.orderId },
           select: { version: true },
@@ -240,6 +252,172 @@ export class RecoveryService {
       resolutionNote: row.resolutionNote,
       proposal: parseSavedProposal(row.proposalJson),
     };
+  }
+
+  /** Submit a current, schedule-grounded date suggestion to the existing approval workflow. */
+  async requestScheduleDateReview(principal: Principal, proposalId: string, idempotencyKey: string) {
+    requireAnyPermission(principal, ['planning.write', 'order.release']);
+    requireAnyPermission(principal, ['planning.read', 'task.assign']);
+    const saved = await this.db.recoveryProposal.findFirst({
+      where: { id: proposalId, workspaceId: principal.workspaceId },
+      include: { order: { select: { id: true, orderNumber: true, version: true, facility: { select: { timezone: true } } } } },
+    });
+    if (!saved) throw new NotFoundError(`Recovery proposal '${proposalId}' not found`);
+    if (saved.status !== 'PROPOSED') throw new BadRequestError('Only an open recovery proposal can request a date review.');
+    const proposal = parseSavedProposal(saved.proposalJson);
+    const snapshot = proposal?.mode === 'SCHEDULE_REVIEW' ? proposal.scheduleReview : null;
+    if (!proposal || !snapshot) throw new BadRequestError('Only schedule-grounded proposals can request a delivery-date review.');
+
+    const current = await this.scheduleProposals.propose(principal, {
+      orderId: saved.orderId, instanceId: snapshot.instanceId,
+      startHorizon: new Date().toISOString(), horizonDays: 30,
+    });
+    const timezone = current.scope.facilityTimezone;
+    if (current.state !== 'COMPLETE' || !current.projectedEndAt || !timezone || !saved.order.facility?.timezone) {
+      throw new ConflictError('Current capacity evidence no longer supports a complete date proposal. Re-evaluate recovery.', 'STALE_SCHEDULE', true);
+    }
+    const priorDate = dateInTimezone(snapshot.projectedEndAt, snapshot.facilityTimezone ?? timezone);
+    const currentDate = dateInTimezone(current.projectedEndAt, timezone);
+    if (saved.order.version !== current.scope.orderVersion || snapshot.workflowVersionId !== current.scope.workflowVersionId || snapshot.engineeringRevisionId !== current.scope.engineeringRevisionId || priorDate !== currentDate || snapshot.taskVersions.length !== current.tasks.length || snapshot.taskVersions.some(({ taskId, version }) => current.tasks.find((task) => task.taskId === taskId)?.version !== version)) {
+      throw new ConflictError('The saved schedule or its projected local date changed. Generate a fresh recovery proposal before requesting review.', 'STALE_SCHEDULE', true);
+    }
+
+    return executeCommand({
+      principal,
+      commandType: 'recovery.schedule-date-review.create',
+      idempotencyKey,
+      payload: { proposalId, requestedDate: currentDate },
+      prismaClient: this.db,
+      handler: async (tx) => {
+        const order = await tx.order.findUnique({ where: { workspaceId_id: { workspaceId: principal.workspaceId, id: saved.orderId } }, select: { version: true } });
+        if (!order || order.version !== saved.order.version) throw new ConflictError('Order changed before the date request was saved. Re-evaluate recovery.', 'STALE_VERSION', true);
+        const currentTasks = await tx.task.findMany({ where: { workspaceId: principal.workspaceId, id: { in: snapshot.taskVersions.map(({ taskId }) => taskId) } }, select: { id: true, version: true } });
+        if (currentTasks.length !== snapshot.taskVersions.length || snapshot.taskVersions.some(({ taskId, version }) => currentTasks.find((task: { id: string }) => task.id === taskId)?.version !== version)) {
+          throw new ConflictError('A task changed before the date request was saved. Re-evaluate recovery.', 'STALE_VERSION', true);
+        }
+        const requestCount = await tx.orderChangeRequest.count({ where: { workspaceId: principal.workspaceId } });
+        const request = await tx.orderChangeRequest.create({
+          data: {
+            workspaceId: principal.workspaceId, orderId: saved.orderId,
+            requestNumber: `OCR-${String(requestCount + 1).padStart(4, '0')}`,
+            changeType: 'DATE', status: 'SUBMITTED',
+            reason: `Requested from recovery proposal ${proposal.id} after current finite-capacity revalidation.`,
+            requestedChangesJson: JSON.stringify({ requestedDate: currentDate, recoveryProposalId: proposal.id, scheduleEvaluatedAt: current.evaluatedAt }),
+            submittedAt: new Date(),
+          },
+        });
+        return {
+          data: request, aggregateType: 'ORDER_CHANGE_REQUEST', aggregateId: request.id, resourceVersion: 1,
+          auditDetails: { recoveryProposalId: proposal.id, requestedDate: currentDate, taskCount: snapshot.taskVersions.length },
+        };
+      },
+    });
+  }
+
+  /** Apply only the exact reviewed assignments, after current transactional revalidation. */
+  async applyScheduleReview(principal: Principal, proposalId: string, idempotencyKey: string) {
+    requireAnyPermission(principal, ['planning.write', 'task.assign']);
+    const payload = { proposalId };
+    return executeCommand({
+      principal,
+      commandType: 'recovery.schedule-review.apply',
+      idempotencyKey,
+      payload,
+      prismaClient: this.db,
+      handler: async (tx: Prisma.TransactionClient) => {
+        const row = await tx.recoveryProposal.findFirst({
+          where: { id: proposalId, workspaceId: principal.workspaceId },
+          include: { order: { select: { id: true, version: true, status: true, facilityId: true } } },
+        });
+        if (!row) throw new NotFoundError(`Recovery proposal '${proposalId}' not found`);
+        const grantedFacilityIds = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
+        if (row.order.facilityId && !grantedFacilityIds.includes(row.order.facilityId)) throw new NotFoundError(`Recovery proposal '${proposalId}' not found`);
+        if (row.status !== 'PROPOSED') throw new BadRequestError('Only an open recovery proposal can be applied.');
+        if (row.order.status === 'DELIVERED' || row.order.status === 'CANCELLED') throw new BadRequestError(`Cannot apply recovery for order in status ${row.order.status}.`);
+        if (row.order.version !== row.orderVersion) throw new ConflictError('The order changed after this schedule was reviewed. Generate a fresh proposal.', 'STALE_VERSION', true);
+        const proposal = parseSavedProposal(row.proposalJson);
+        const snapshot = proposal?.mode === 'SCHEDULE_REVIEW' ? proposal.scheduleReview : null;
+        if (!proposal || !snapshot || !snapshot.tasks.length) throw new BadRequestError('Only a complete schedule review can be applied.');
+        if (snapshot.tasks.some((task) => !task.startAt || !task.endAt || task.technicianId === undefined || task.machineId === undefined)) {
+          throw new ConflictError('This saved review predates assignment evidence. Generate a fresh schedule review before applying.', 'STALE_SCHEDULE', true);
+        }
+        const instance = await tx.workflowInstance.findFirst({
+          where: { workspaceId: principal.workspaceId, id: snapshot.instanceId, orderId: row.orderId, status: 'ACTIVE' },
+          select: { id: true, workflowVersionId: true, engineeringRevisionId: true },
+        });
+        if (!instance || instance.workflowVersionId !== snapshot.workflowVersionId || instance.engineeringRevisionId !== snapshot.engineeringRevisionId) {
+          throw new ConflictError('The active job, workflow, or engineering revision changed after review.', 'STALE_SCHEDULE', true);
+        }
+        const taskIds = snapshot.tasks.map(({ taskId }) => taskId);
+        const openTaskIds = await tx.task.findMany({
+          where: { workspaceId: principal.workspaceId, instanceId: instance.id, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+          select: { id: true },
+        });
+        if (openTaskIds.length !== taskIds.length || openTaskIds.some(({ id }) => !taskIds.includes(id))) {
+          throw new ConflictError('The active job task set changed after this schedule was reviewed.', 'STALE_SCHEDULE', true);
+        }
+        const currentTasks = await tx.task.findMany({
+          where: { workspaceId: principal.workspaceId, id: { in: taskIds }, instanceId: instance.id },
+          include: { predecessorDeps: { include: { predecessor: { select: { id: true, status: true } } } }, demands: { include: { reservations: true } } },
+        });
+        if (currentTasks.length !== snapshot.tasks.length || snapshot.tasks.some((saved) => currentTasks.find((task) => task.id === saved.taskId)?.version !== saved.version)) {
+          throw new ConflictError('One or more tasks changed after this schedule was reviewed.', 'STALE_VERSION', true);
+        }
+        const savedById = new Map(snapshot.tasks.map((task) => [task.taskId, task]));
+        const applied: string[] = [];
+        for (const saved of snapshot.tasks) {
+          const task = currentTasks.find((candidate) => candidate.id === saved.taskId)!;
+          if (!saved.startAt || !saved.endAt) throw new ConflictError(`Task ${saved.nodeKey} has no reviewed schedule window.`, 'STALE_SCHEDULE', true);
+          if (new Date(saved.startAt).getTime() < Date.now()) throw new ConflictError(`The reviewed time window for ${saved.nodeKey} has already started. Generate a fresh recovery schedule.`, 'STALE_SCHEDULE', true);
+          if (!['PENDING', 'READY'].includes(task.status)) throw new ConflictError(`Task ${task.nodeKey} is no longer eligible for a new assignment.`, 'STALE_SCHEDULE', true);
+          for (const dependency of task.predecessorDeps) {
+            if (dependency.predecessor.status === 'COMPLETED') continue;
+            const predecessor = savedById.get(dependency.predecessor.id);
+            if (!predecessor?.endAt || !saved.startAt || new Date(predecessor.endAt).getTime() > new Date(saved.startAt).getTime()) {
+              throw new ConflictError(`Task ${task.nodeKey} no longer follows its current predecessor dependencies.`, 'STALE_SCHEDULE', true);
+            }
+          }
+          for (const demand of task.demands) {
+            if (demand.status === 'ISSUED') continue;
+            const reserved = demand.reservations.filter((reservation) => reservation.status === 'ACTIVE').reduce((sum, reservation) => sum + reservation.reservedAtoms, 0n);
+            if (reserved < demand.requiredAtoms) throw new ConflictError(`Material demand for task ${task.nodeKey} is no longer fully reserved or issued.`, 'MATERIAL_NOT_READY', true);
+          }
+          const evaluation = await this.planning.evaluateAssignmentInTransaction(tx, principal, {
+            taskId: task.id,
+            technicianId: saved.technicianId,
+            machineId: saved.machineId,
+            scheduledStartAt: saved.startAt,
+            scheduledEndAt: saved.endAt,
+          });
+          if (!evaluation.isEligible) throw new ConflictError(`Assignment for ${task.nodeKey} is no longer eligible: ${evaluation.violations.join('; ')}`, 'STALE_CAPACITY', true);
+          const updated = await tx.task.updateMany({
+            where: { workspaceId: principal.workspaceId, id: task.id, version: saved.version, status: { in: ['PENDING', 'READY'] } },
+            data: { assignedTechnicianId: saved.technicianId, assignedMachineId: saved.machineId, status: 'ASSIGNED', version: { increment: 1 } },
+          });
+          if (updated.count !== 1) throw new ConflictError(`Task ${task.nodeKey} changed during schedule application.`, 'STALE_VERSION', true);
+          const bookings = [
+            ...(saved.technicianId ? [{ resourceType: 'TECHNICIAN' as const, resourceId: saved.technicianId, startAt: new Date(saved.startAt), endAt: new Date(saved.endAt) }] : []),
+            ...(saved.machineId ? [{ resourceType: 'MACHINE' as const, resourceId: saved.machineId, startAt: new Date(saved.startAt), endAt: new Date(saved.endAt) }] : []),
+          ];
+          await this.planning.replaceBookingsInTransaction(tx, principal.workspaceId, task.id, bookings);
+          await tx.workflowEvent.create({ data: {
+            workspaceId: principal.workspaceId, instanceId: task.instanceId, taskId: task.id,
+            fromStatus: task.status, toStatus: 'ASSIGNED', action: 'RECOVERY_SCHEDULE_APPLY', actorUserId: principal.userId,
+            detailJson: JSON.stringify({ recoveryProposalId: proposalId, startAt: saved.startAt, endAt: saved.endAt, technicianId: saved.technicianId, machineId: saved.machineId }),
+          } });
+          applied.push(task.id);
+        }
+        const updatedProposal = await tx.recoveryProposal.update({
+          where: { id: row.id },
+          data: { status: 'APPROVED', resolvedById: principal.userId, resolvedAt: new Date(), resolutionNote: `Applied ${applied.length} reviewed task assignments.` },
+        });
+        return {
+          data: { proposalId: updatedProposal.id, status: updatedProposal.status, appliedTaskIds: applied },
+          aggregateType: 'RECOVERY_PROPOSAL', aggregateId: updatedProposal.id, resourceVersion: 1,
+          auditDetails: { mode: 'SCHEDULE_REVIEW', appliedTaskCount: applied.length, taskIds: applied },
+        };
+      },
+    });
   }
 
   /**

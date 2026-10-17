@@ -77,7 +77,9 @@ export interface RecoveryProposalDTO {
       nodeKey: string;
       startAt: string | null;
       endAt: string | null;
+      technicianId?: string | null;
       technicianName: string | null;
+      machineId?: string | null;
       machineName: string | null;
       predecessorTaskIds: string[];
     }>;

@@ -28,6 +28,7 @@ import { ScheduleProposalWorkbench } from './ScheduleProposalWorkbench';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState, LoadingState } from '@/components/ui/resource-state';
 import { ButtonLink } from '@/components/ui/button-link';
+import { toPublishedScheduleRange } from '../schedule-date-range';
 
 const slotFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const formatSlot = (value: string) => slotFormatter.format(new Date(value));
@@ -79,10 +80,10 @@ export function PlanningScheduleView() {
     e.preventDefault();
     try {
       setPublishError(null);
+      const period = toPublishedScheduleRange(publishPeriodStart, publishPeriodEnd);
       await publishMutation.mutateAsync({
         title: publishTitle.trim(),
-        periodStart: new Date(publishPeriodStart).toISOString(),
-        periodEnd: new Date(publishPeriodEnd).toISOString(),
+        ...period,
       });
       setShowPublishModal(false);
       refetchPublished();
@@ -520,7 +521,7 @@ export function PlanningScheduleView() {
         >
           <form onSubmit={handlePublishSubmit} className="space-y-4">
             <p className="text-xs text-muted">
-              Publishing commits this schedule revision as the authoritative operational plan. It establishes the baseline commitments for shop floor dispatch, customer promise dates, and supervisor tracking.
+              Publishes a versioned snapshot of confirmed resource bookings in this date range. This records the operational schedule for review; it does not create bookings or change customer delivery commitments.
             </p>
             <div>
               <label className="block text-xs font-medium text-ink mb-1">Schedule Revision Title</label>

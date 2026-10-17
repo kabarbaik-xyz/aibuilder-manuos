@@ -126,6 +126,13 @@ export const ordersApi = {
       body: JSON.stringify({}),
     });
   },
+
+  createChangeRequest: async (orderId: string, input: { changeType: string; reason: string; requestedChanges: Record<string, unknown> }) => {
+    return apiRequest<{ data: { id: string } }>(`/api/orders/${orderId}/change-requests`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
 };
 
 export interface OrderCostSummary {
@@ -157,12 +164,6 @@ export const orderCostingApi = {
   },
   recordCost: async (orderId: string, input: { costCategory: string; costType: string; amountCents: string; currency: string; notes?: string }) => {
     return apiRequest("/api/orders/" + orderId + "/costing", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-  },
-  createChangeRequest: async (orderId: string, input: { changeType: string; reason: string; requestedChanges: any }) => {
-    return apiRequest("/api/orders/" + orderId + "/change-requests", {
       method: "POST",
       body: JSON.stringify(input),
     });

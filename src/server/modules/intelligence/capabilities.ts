@@ -185,7 +185,7 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
     code: 'AII-06',
     title: 'Disruption Recovery Proposals',
     summary:
-      'Save and review a finite-capacity schedule snapshot for one released job. Alternative recovery strategies and application remain disabled.',
+      'Save and review a finite-capacity schedule snapshot for one released job; apply the reviewed assignments transactionally after current capacity and material revalidation. Alternative recovery strategies remain unavailable.',
     category: 'RECOVERY',
     href: '/ai/recovery',
     contextualEntryLabel: 'Recovery → Generate schedule review',
@@ -194,7 +194,7 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
       state: 'DETERMINISTIC_READY',
       availablePage: true,
       engineConfigured: true,
-      statusLabel: 'Schedule review available; recovery alternatives and Apply disabled',
+      statusLabel: 'Schedule review and transactional Apply available; alternatives unavailable',
       unavailableReason: 'Only complete finite-capacity schedule snapshots can be saved. Overtime, alternate routing, split shipment, subcontracting and cost impacts are not modeled.',
       prerequisite: 'Revalidate current bookings and versions, then implement an audited schedule or shipment command before enabling Apply.',
     }),

@@ -83,8 +83,8 @@ export function useRecordOrderCost(orderId: string) {
 export function useCreateOrderChangeRequest(orderId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: Parameters<typeof orderCostingApi.createChangeRequest>[1]) =>
-      orderCostingApi.createChangeRequest(orderId, input),
+    mutationFn: (input: Parameters<typeof ordersApi.createChangeRequest>[1]) =>
+      ordersApi.createChangeRequest(orderId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders", orderId] });
     },

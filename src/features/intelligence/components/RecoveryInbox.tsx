@@ -106,7 +106,7 @@ export function RecoveryInbox() {
       </div>}
       {proposalError && <p role="alert" className="small text-danger mt-2">{proposalError}</p>}
       {proposalResult?.state === 'NOT_CONNECTED' && <div className="mt-3 rounded-lg border border-line bg-surface-muted p-3"><p className="small font-medium">No complete schedule; nothing was saved.</p><p className="small muted mt-1">Schedule state: {proposalResult.scheduleState}</p>{proposalResult.missingInputs.map((reason) => <p key={reason} className="small text-danger mt-1">{reason}</p>)}</div>}
-      {proposalResult?.state === 'SAVED' && <p className="small text-success mt-3">Review saved: <Link className="text-primary hover:underline" href={`/ai/recovery/${proposalResult.id}`}>open schedule evidence</Link>. Apply remains disabled pending revalidation and real schedule commands.</p>}
+      {proposalResult?.state === 'SAVED' && <p className="small text-success mt-3">Review saved: <Link className="text-primary hover:underline" href={`/ai/recovery/${proposalResult.id}`}>open schedule evidence</Link>. Applying it revalidates and commits the exact reviewed assignments as one transaction.</p>}
     </section>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="small muted">Saved simulations are for review. Applying a proposal remains disabled until it can reserve real resources or shipment quantities.</p>

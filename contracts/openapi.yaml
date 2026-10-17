@@ -56,10 +56,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [orderId, instanceId, requestedDate]
+              required: [orderId, instanceId, requestedQuantity, requestedDate]
               properties:
                 orderId: { type: string, format: uuid }
                 instanceId: { type: string, format: uuid }
+                requestedQuantity: { type: string, pattern: '^\d+(\.\d+)?$', description: Positive decimal display quantity using the linked order-line UOM precision. Only the exact full selected manufacturing-order quantity is currently schedulable; partial quantities return NOT_CONNECTED. }
                 requestedDate:
                   oneOf:
                     - { type: string, format: date }
@@ -76,7 +77,7 @@ paths:
                 properties:
                   data:
                     type: object
-                    required: [state, evaluationId, inputHash, evaluatedAt, orderId, instanceId, requestedDate, feasibleDate, projectedEndAt, isFeasibleOnRequestedDate, deltaDays, scheduleState, bottleneckReason, missingInputs, assumptions, evidence]
+                    required: [state, evaluationId, inputHash, evaluatedAt, orderId, instanceId, requestedQuantity, requestedQuantityAtoms, quantityUom, requestedDate, feasibleDate, projectedEndAt, isFeasibleOnRequestedDate, deltaDays, scheduleState, bottleneckReason, missingInputs, assumptions, componentReadiness, evidence]
                     properties:
                       state: { type: string, enum: [EVALUATED, NOT_CONNECTED] }
                       evaluationId: { type: string, format: uuid }
@@ -84,6 +85,9 @@ paths:
                       evaluatedAt: { type: string, format: date-time }
                       orderId: { type: string, format: uuid }
                       instanceId: { type: string, format: uuid }
+                      requestedQuantity: { type: string }
+                      requestedQuantityAtoms: { type: string, pattern: '^\d+$' }
+                      quantityUom: { type: string, nullable: true }
                       requestedDate: { type: string, format: date }
                       feasibleDate: { type: string, format: date, nullable: true }
                       projectedEndAt: { type: string, format: date-time, nullable: true }
@@ -93,6 +97,32 @@ paths:
                       bottleneckReason: { type: string }
                       missingInputs: { type: array, items: { type: string } }
                       assumptions: { type: array, items: { type: string } }
+                      componentReadiness:
+                        type: array
+                        items:
+                          type: object
+                          required: [itemId, itemCode, itemName, quantityUom, requiredAtoms, issuedAtoms, reservedAtoms, availableRawAtoms, state, confirmedSupply]
+                          properties:
+                            itemId: { type: string, format: uuid }
+                            itemCode: { type: string }
+                            itemName: { type: string }
+                            quantityUom: { type: string }
+                            requiredAtoms: { type: string, pattern: '^\d+$' }
+                            issuedAtoms: { type: string, pattern: '^\d+$' }
+                            reservedAtoms: { type: string, pattern: '^\d+$' }
+                            availableRawAtoms: { type: string, pattern: '^\d+$', description: Workspace-wide unreserved RAW balance snapshot; not allocated to this job and not used to establish feasibility. }
+                            state: { type: string, enum: [ISSUED, RESERVED, UNALLOCATED] }
+                            confirmedSupply:
+                              type: array
+                              items:
+                                type: object
+                                required: [supplyOrderId, supplyOrderNumber, supplierName, expectedDate, remainingAtoms]
+                                properties:
+                                  supplyOrderId: { type: string, format: uuid }
+                                  supplyOrderNumber: { type: string }
+                                  supplierName: { type: string }
+                                  expectedDate: { type: string, format: date-time }
+                                  remainingAtoms: { type: string, pattern: '^\d+$' }
                       evidence:
                         type: object
                         nullable: true
@@ -218,7 +248,7 @@ paths:
   /api/intelligence/recovery/propose:
     post:
       summary: Save a finite-capacity schedule review for disruption recovery
-      description: Runs the same schedule proposal service used by Planning. Only COMPLETE proposals are saved, through an idempotent audited command that rechecks order and task versions. Partial results return NOT_CONNECTED without persistence. Apply remains disabled pending transactional revalidation and real schedule or shipment effects.
+      description: Runs the same schedule proposal service used by Planning. Only COMPLETE proposals are saved, through an idempotent audited command that rechecks order and task versions. Partial results return NOT_CONNECTED without persistence. The saved resource IDs are the reviewed assignment inputs for the separate transactional apply command.
       parameters:
         - $ref: '#/components/parameters/AccessIdempotency'
       requestBody:
@@ -269,6 +299,34 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/recovery/{id}/request-date:
+    post:
+      summary: Submit a revalidated recovery projected date for order-change approval
+      description: Recomputes the schedule, checks the saved order/workflow/engineering/task versions and facility-local date, then creates an audited DATE change request. It does not publish resource bookings or change the order date. Repeated requests with the same idempotency key replay the same result.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      responses:
+        '201': { description: Submitted order change request pending authorized review }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Current schedule, order, task or projected local date differs from the saved proposal; regenerate before requesting review }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/intelligence/recovery/{id}/apply:
+    post:
+      summary: Apply a reviewed finite-capacity recovery schedule
+      description: In one audited idempotent transaction, rechecks the saved order, active job, workflow and engineering revision, task versions/status, dependencies, issued or fully reserved material, qualifications and published resource availability. It creates task assignments and confirmed resource bookings, appends workflow events, and resolves the proposal. Any stale or infeasible task aborts the whole transaction. Historical simulation proposals and old snapshots without resource IDs cannot be applied.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      responses:
+        '200': { description: Proposal status and applied task IDs }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Saved evidence is stale or the assignment is no longer feasible; no task or booking is applied }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '404': { $ref: '#/components/responses/NotFound' }
   /api/intelligence/memory:
     get:
@@ -443,6 +501,56 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /api/planning/schedule-proposals/apply:
+    post:
+      summary: Apply the exact reviewed finite-capacity schedule proposal
+      description: Recomputes the proposal inside one audited idempotent transaction and compares its scope, order/task versions, time windows and resource assignments with the reviewed snapshot. It then revalidates open-task status, dependencies, issued or reserved materials, qualifications and current availability before assigning tasks, creating confirmed bookings and appending workflow events. Any stale or infeasible task aborts the complete transaction. This applies task assignments; publishing a versioned schedule snapshot remains a separate action.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [orderId, instanceId, startHorizon, horizonDays, expected]
+              properties:
+                orderId: { type: string, format: uuid }
+                instanceId: { type: string, format: uuid }
+                startHorizon: { type: string, format: date-time }
+                horizonDays: { type: integer, minimum: 1, maximum: 30 }
+                expected:
+                  type: object
+                  additionalProperties: false
+                  required: [orderVersion, workflowVersionId, engineeringRevisionId, tasks]
+                  properties:
+                    orderVersion: { type: integer, minimum: 1 }
+                    workflowVersionId: { type: string, format: uuid }
+                    engineeringRevisionId: { type: string, format: uuid }
+                    tasks:
+                      type: array
+                      minItems: 1
+                      maxItems: 50
+                      items:
+                        type: object
+                        additionalProperties: false
+                        required: [taskId, version, status, startAt, endAt, technicianId, machineId]
+                        properties:
+                          taskId: { type: string, format: uuid }
+                          version: { type: integer, minimum: 1 }
+                          status: { type: string, enum: [SCHEDULED] }
+                          startAt: { type: string, format: date-time }
+                          endAt: { type: string, format: date-time }
+                          technicianId: { type: string, format: uuid, nullable: true }
+                          machineId: { type: string, format: uuid, nullable: true }
+      responses:
+        '200': { description: Applied task IDs and committed resource version }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The reviewed proposal became stale or a required assignment is no longer feasible; all writes are rolled back }
   /api/planning/technician-recommendations:
     post:
       summary: Rank active, qualified technicians for a released task and time window

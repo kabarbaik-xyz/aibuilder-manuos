@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { formatQuantity } from '@/domain/quantity';
 import { LoadingState } from '@/components/ui/resource-state';
 import { apiRequest } from '@/lib/api/client';
 import { ordersApi, type OrderDto } from '@/features/orders/api';
@@ -17,6 +20,9 @@ interface PromiseEvaluation {
   evaluatedAt: string;
   orderId: string;
   instanceId: string;
+  requestedQuantity: string;
+  requestedQuantityAtoms: string;
+  quantityUom: string | null;
   requestedDate: string;
   feasibleDate: string | null;
   isFeasibleOnRequestedDate: boolean | null;
@@ -25,6 +31,11 @@ interface PromiseEvaluation {
   bottleneckReason: string;
   missingInputs: string[];
   assumptions: string[];
+  componentReadiness: Array<{
+    itemId: string; itemCode: string; itemName: string; quantityUom: string;
+    requiredAtoms: string; issuedAtoms: string; reservedAtoms: string; availableRawAtoms: string; state: 'ISSUED' | 'RESERVED' | 'UNALLOCATED';
+    confirmedSupply: Array<{ supplyOrderId: string; supplyOrderNumber: string; supplierName: string; expectedDate: string; remainingAtoms: string }>;
+  }>;
   evidence: null | {
     facilityTimezone: string | null;
     workflowVersionId: string;
@@ -40,11 +51,14 @@ export function PromiseModal() {
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [instances, setInstances] = useState<ActiveInstance[]>([]);
   const [instanceId, setInstanceId] = useState('');
+  const [requestedQuantity, setRequestedQuantity] = useState('');
   const [requestedDate, setRequestedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [result, setResult] = useState<PromiseEvaluation | null>(null);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadingInstance, setLoadingInstance] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [requestingChange, setRequestingChange] = useState(false);
+  const [changeRequestId, setChangeRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,7 +74,9 @@ export function PromiseModal() {
     setSelectedOrderId(orderId);
     setInstances([]);
     setInstanceId('');
+    setRequestedQuantity('');
     setResult(null);
+    setChangeRequestId(null);
     setError(null);
     if (!orderId) return;
     setLoadingInstance(true);
@@ -78,15 +94,33 @@ export function PromiseModal() {
     }
   }
 
+  async function requestDateChange() {
+    if (!result || result.state !== 'EVALUATED' || result.isFeasibleOnRequestedDate !== true || requestingChange) return;
+    setRequestingChange(true);
+    setError(null);
+    try {
+      const response = await ordersApi.createChangeRequest(result.orderId, {
+        changeType: 'DATE',
+        reason: `Requested after CoreAI finite-capacity estimate ${result.evaluationId}.`,
+        requestedChanges: { requestedDate: result.requestedDate },
+      });
+      setChangeRequestId(response.data.id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not submit the date change request.');
+    } finally {
+      setRequestingChange(false);
+    }
+  }
+
   async function evaluate() {
-    if (!selectedOrderId || !instanceId || submitting) return;
+    if (!selectedOrderId || !instanceId || !requestedQuantity.trim() || submitting) return;
     setSubmitting(true);
     setResult(null);
     setError(null);
     try {
       const response = await apiRequest<{ data: PromiseEvaluation }>('/api/intelligence/promise', {
         method: 'POST',
-        body: JSON.stringify({ orderId: selectedOrderId, instanceId, requestedDate }),
+        body: JSON.stringify({ orderId: selectedOrderId, instanceId, requestedQuantity: requestedQuantity.trim(), requestedDate }),
       });
       setResult(response.data);
     } catch (reason) {
@@ -108,21 +142,27 @@ export function PromiseModal() {
       </div>
       <div>
         <label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-job">Active job</label>
-        <Select id="promise-job" value={instanceId} disabled={!selectedOrderId || loadingInstance || submitting || instances.length <= 1} onChange={(event) => { setInstanceId(event.target.value); setResult(null); }}>
+        <Select id="promise-job" value={instanceId} disabled={!selectedOrderId || loadingInstance || submitting || instances.length <= 1} onChange={(event) => { setInstanceId(event.target.value); setRequestedQuantity(''); setResult(null); setChangeRequestId(null); }}>
           <option value="">{loadingInstance ? 'Loading jobs…' : 'Select a job'}</option>
           {instances.map((instance) => <option key={instance.id} value={instance.id}>Job {instance.id.slice(0, 8)}</option>)}
         </Select>
       </div>
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-request-date">Requested delivery</label>
-        <DatePicker id="promise-request-date" value={requestedDate} onChange={(value) => { setRequestedDate(value); setResult(null); }} />
+        <label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-quantity">Full job quantity</label>
+        <Input id="promise-quantity" inputMode="decimal" value={requestedQuantity} disabled={!instanceId || submitting} onChange={(event) => { setRequestedQuantity(event.target.value); setResult(null); setChangeRequestId(null); }} placeholder="Enter the released job quantity" />
+        <p className="small muted mt-1">Partial quantities are not scheduled; use the exact quantity of the selected released job.</p>
       </div>
-      <Button variant="primary" disabled={!selectedOrderId || !instanceId || loadingInstance || submitting} onClick={() => void evaluate()}>{submitting ? 'Evaluating…' : 'Check requested date'}</Button>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-request-date">Requested delivery</label>
+        <DatePicker id="promise-request-date" value={requestedDate} onChange={(value) => { setRequestedDate(value); setResult(null); setChangeRequestId(null); }} />
+      </div>
+      <Button variant="primary" disabled={!selectedOrderId || !instanceId || !requestedQuantity.trim() || loadingInstance || submitting} onClick={() => void evaluate()}>{submitting ? 'Evaluating…' : 'Check requested date'}</Button>
     </div>}
     {error && <p role="alert" className="small text-danger">{error}</p>}
     {result && <div className="rounded-lg border border-line bg-surface-muted p-3">
       <div className="flex flex-wrap items-center gap-2"><Badge variant={result.state === 'EVALUATED' ? result.isFeasibleOnRequestedDate ? 'success' : 'warning' : 'danger'}>{result.state === 'EVALUATED' ? result.isFeasibleOnRequestedDate ? 'Feasible by requested date' : 'Finishes after requested date' : 'Insufficient schedule evidence'}</Badge><span className="small muted">Schedule: {result.scheduleState ?? 'unavailable'}</span></div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <div className="rounded-md border border-line bg-surface p-3"><p className="small muted">Evaluated job quantity</p><p className="mt-1 text-sm font-semibold text-ink">{result.requestedQuantity} {result.quantityUom ?? ''}</p></div>
         <div className="rounded-md border border-line bg-surface p-3"><p className="small muted">Requested delivery</p><p className="mt-1 text-sm font-semibold text-ink">{result.requestedDate}</p></div>
         <div className="rounded-md border border-line bg-surface p-3"><p className="small muted">Projected completion</p><p className="mt-1 text-sm font-semibold text-ink">{result.feasibleDate ?? 'Unavailable'}</p></div>
       </div>
@@ -130,8 +170,21 @@ export function PromiseModal() {
       <p className="small muted mt-1">{result.bottleneckReason}</p>
       {result.missingInputs.map((item) => <p key={item} className="small text-danger mt-1">{item}</p>)}
       {result.evidence && <p className="small muted mt-2">Workflow {result.evidence.workflowVersionId.slice(0, 8)} · engineering {result.evidence.engineeringRevisionId.slice(0, 8)} · {result.evidence.taskVersions.length} task versions</p>}
+      {result.componentReadiness.length > 0 && <section className="mt-3 space-y-2" aria-label="Component readiness evidence">
+        <div><h3 className="small font-semibold text-ink">Component readiness</h3><p className="small muted">RAW availability and approved supply are workspace signals; neither is treated as allocated to this job.</p></div>
+        {result.componentReadiness.map((component, index) => <article key={`${component.itemId}-${index}`} className="rounded-md border border-line bg-surface p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2"><strong className="small text-ink">{component.itemCode} · {component.itemName}</strong><Badge variant={component.state === 'UNALLOCATED' ? 'warning' : 'success'}>{component.state}</Badge></div>
+          <p className="small muted mt-1">Required {formatQuantity(BigInt(component.requiredAtoms))} {component.quantityUom} · issued {formatQuantity(BigInt(component.issuedAtoms))} · reserved {formatQuantity(BigInt(component.reservedAtoms))}</p>
+          <p className="small muted mt-1">Unreserved RAW stock snapshot: {formatQuantity(BigInt(component.availableRawAtoms))} {component.quantityUom} · not allocated to this job</p>
+          {component.confirmedSupply.length > 0 ? <div className="mt-2 space-y-1"><p className="small muted">Approved PO quantities (not allocated to this job):</p>{component.confirmedSupply.map(line => <p key={line.supplyOrderId} className="small muted"><Link className="text-primary hover:underline" href={`/supply-orders/${line.supplyOrderId}`}>{line.supplyOrderNumber}</Link> · {line.supplierName} · ETA {new Date(line.expectedDate).toLocaleDateString()} · remaining {formatQuantity(BigInt(line.remainingAtoms))} {component.quantityUom}</p>)}</div> : <p className="small muted mt-1">No approved inbound supply line recorded.</p>}
+        </article>)}
+      </section>}
       <p className="small muted mt-2">Evaluation {new Date(result.evaluatedAt).toLocaleString()} · reference {result.evaluationId.slice(0, 8)} · input {result.inputHash.slice(0, 8)}</p>
       <p className="small muted mt-2">One schedule estimate only. Alternative recovery strategies are not modeled, and this evaluation does not change the customer commitment.</p>
+      {result.state === 'EVALUATED' && result.isFeasibleOnRequestedDate === true && <div className="mt-3 flex flex-wrap items-center gap-2">
+      <Button variant="soft" disabled={requestingChange || Boolean(changeRequestId)} onClick={() => void requestDateChange()}>{changeRequestId ? 'Date change submitted for review' : requestingChange ? 'Submitting request…' : 'Request date change'}</Button>
+        {changeRequestId && <span role="status" className="small muted">Submitted for authorized review; the order date has not changed.</span>}
+      </div>}
       <details className="mt-2"><summary className="small cursor-pointer">Assumptions</summary><ul className="mt-1 list-disc space-y-1 pl-5">{result.assumptions.map((item) => <li key={item} className="small muted">{item}</li>)}</ul></details>
     </div>}
   </div>;

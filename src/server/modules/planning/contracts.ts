@@ -27,6 +27,29 @@ export const ScheduleProposalRequestSchema = z.object({
 
 export type ScheduleProposalRequest = z.infer<typeof ScheduleProposalRequestSchema>;
 
+export const ApplyScheduleProposalSchema = z.object({
+  orderId: z.string().uuid(),
+  instanceId: z.string().uuid(),
+  startHorizon: z.string().datetime(),
+  horizonDays: z.number().int().min(1).max(30),
+  expected: z.object({
+    orderVersion: z.number().int().min(1),
+    workflowVersionId: z.string().uuid(),
+    engineeringRevisionId: z.string().uuid(),
+    tasks: z.array(z.object({
+      taskId: z.string().uuid(),
+      version: z.number().int().min(1),
+      status: z.literal('SCHEDULED'),
+      startAt: z.string().datetime(),
+      endAt: z.string().datetime(),
+      technicianId: z.string().uuid().nullable(),
+      machineId: z.string().uuid().nullable(),
+    }).strict().refine((task) => new Date(task.startAt) < new Date(task.endAt), 'Task schedule window must be positive.')).min(1).max(50),
+  }).strict(),
+}).strict();
+
+export type ApplyScheduleProposalInput = z.infer<typeof ApplyScheduleProposalSchema>;
+
 export const EvaluateAssignmentSchema = z.object({
   taskId: z.string().min(1),
   technicianId: z.string().nullable().optional(),

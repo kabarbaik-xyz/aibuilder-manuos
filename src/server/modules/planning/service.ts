@@ -59,6 +59,26 @@ export class PlanningService {
     return this.evaluateAssignmentWithClient(this.db, principal, input);
   }
 
+  /** Re-check a reviewed proposal inside its caller's domain transaction. */
+  async evaluateAssignmentInTransaction(
+    tx: Prisma.TransactionClient,
+    principal: Principal,
+    rawInput: unknown
+  ): Promise<AssignmentEvaluationResult> {
+    const input: EvaluateAssignmentInput = EvaluateAssignmentSchema.parse(rawInput);
+    this.validateAssignmentWindow(input.scheduledStartAt, input.scheduledEndAt);
+    return this.evaluateAssignmentWithClient(tx, principal, input);
+  }
+
+  async replaceBookingsInTransaction(
+    tx: Prisma.TransactionClient,
+    workspaceId: string,
+    taskId: string,
+    bookings: Array<{ resourceType: 'TECHNICIAN' | 'MACHINE'; resourceId: string; startAt: Date; endAt: Date }>
+  ) {
+    return this.repo.replaceBookingsForTask(tx, workspaceId, taskId, bookings);
+  }
+
   private validateAssignmentWindow(startAt?: string | Date, endAt?: string | Date) {
     if ((startAt === undefined) !== (endAt === undefined)) {
       throw new BadRequestError('Both assignment start and end times must be provided together');

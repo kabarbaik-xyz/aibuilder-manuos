@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { BadRequestError } from '@/domain/errors';
+import { parseQuantity } from '@/domain/quantity';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { ScheduleProposalService } from '@/server/modules/planning/schedule-proposals';
@@ -44,11 +45,137 @@ export class PromiseService {
       throw new BadRequestError('Requested date must be a valid calendar date.');
     }
 
+    const scopedInstance = await this.db.workflowInstance.findFirst({
+      where: { workspaceId: principal.workspaceId, orderId: input.orderId, id: input.instanceId, status: 'ACTIVE' },
+      select: {
+        engineeringRevisionId: true,
+        order: { select: { facility: { select: { timezone: true } } } },
+        engineeringRevision: {
+          select: {
+            orderLine: { select: { orderedAtoms: true, shippedAtoms: true, uom: { select: { code: true, precision: true } }, item: { select: { baseUom: { select: { code: true, precision: true } } } } } },
+          },
+        },
+      },
+    });
+    if (!scopedInstance) throw new BadRequestError('Select an active job belonging to this order.');
+    const manufacturingOrders = await this.db.manufacturingOrder.findMany({
+      where: { workspaceId: principal.workspaceId, orderId: input.orderId, engineeringRevisionId: scopedInstance.engineeringRevisionId, status: { in: ['RELEASED', 'IN_PROGRESS'] } },
+      select: { targetAtoms: true },
+      take: 2,
+    });
+    const linkedLine = scopedInstance.engineeringRevision.orderLine;
+    const uom = linkedLine?.uom ?? linkedLine?.item.baseUom ?? null;
+    const scopedTimezone = scopedInstance.order.facility?.timezone ?? 'UTC';
+    const normalizedRequestedDate = isDateOnly ? input.requestedDate : localDate(input.requestedDate, scopedTimezone);
+    let requestedAtoms: bigint;
+    try {
+      requestedAtoms = parseQuantity(input.requestedQuantity, uom?.precision ?? 6);
+    } catch (error) {
+      throw new BadRequestError(error instanceof Error ? error.message : 'Requested quantity is invalid.');
+    }
+    if (requestedAtoms <= 0n) throw new BadRequestError('Requested quantity must be greater than zero.');
+    const quantitySupported = Boolean(
+      linkedLine && manufacturingOrders.length === 1 &&
+      requestedAtoms === manufacturingOrders[0].targetAtoms &&
+      manufacturingOrders[0].targetAtoms <= linkedLine.orderedAtoms - linkedLine.shippedAtoms
+    );
+    const inputHash = crypto.createHash('sha256').update(JSON.stringify({
+      workspaceId: principal.workspaceId, orderId: input.orderId, instanceId: input.instanceId,
+      requestedDate: normalizedRequestedDate, requestedQuantityAtoms: requestedAtoms.toString(),
+      engineeringRevisionId: scopedInstance.engineeringRevisionId,
+    })).digest('hex');
+    if (!quantitySupported) {
+      return {
+        state: 'NOT_CONNECTED',
+        evaluationId: crypto.randomUUID(),
+        inputHash,
+        evaluatedAt: new Date().toISOString(),
+        orderId: input.orderId,
+        instanceId: input.instanceId,
+        requestedQuantity: input.requestedQuantity,
+        requestedQuantityAtoms: requestedAtoms.toString(),
+        quantityUom: uom?.code ?? null,
+        requestedDate: normalizedRequestedDate,
+        feasibleDate: null,
+        projectedEndAt: null,
+        isFeasibleOnRequestedDate: null,
+        deltaDays: null,
+        scheduleState: null,
+        bottleneckReason: 'A quantity-matched schedule cannot be established from the selected job evidence.',
+        missingInputs: [
+          ...(!linkedLine ? ['The selected engineering revision is not linked to one order line.'] : []),
+          ...(manufacturingOrders.length !== 1 ? ['The selected job does not resolve to exactly one manufacturing order.'] : []),
+          ...(manufacturingOrders.length === 1 && requestedAtoms !== manufacturingOrders[0].targetAtoms ? ['Partial or different-quantity scheduling is not supported; evaluate the full selected manufacturing-order quantity.'] : []),
+          ...(linkedLine && manufacturingOrders.length === 1 && manufacturingOrders[0].targetAtoms > linkedLine.orderedAtoms - linkedLine.shippedAtoms ? ['The selected job quantity exceeds the unshipped order-line quantity.'] : []),
+        ],
+        assumptions: ['No schedule is evaluated when its quantity cannot be matched to the selected released job.'],
+        componentReadiness: [],
+        evidence: null,
+      };
+    }
+
     const schedule = await this.scheduleProposals.propose(principal, {
       orderId: input.orderId,
       instanceId: input.instanceId,
-      startHorizon: new Date().toISOString(),
+      // Leave a short review window so Promise and Planning use the same
+      // actionable horizon instead of proposing work that starts immediately.
+      startHorizon: new Date(Date.now() + 5 * 60_000).toISOString(),
       horizonDays: 30,
+    });
+    const taskIds = schedule.tasks.map(({ taskId }) => taskId);
+    const demands = taskIds.length ? await this.db.materialDemand.findMany({
+      where: { workspaceId: principal.workspaceId, orderId: input.orderId, taskId: { in: taskIds }, status: { not: 'CLOSED' } },
+      include: { item: { include: { baseUom: true } }, reservations: true },
+      orderBy: [{ itemId: 'asc' }, { createdAt: 'asc' }],
+    }) : [];
+    const itemIds = [...new Set(demands.map(({ itemId }) => itemId))];
+    const [supplyLines, rawBalances] = itemIds.length ? await Promise.all([
+      this.db.supplyOrderLine.findMany({
+        where: { workspaceId: principal.workspaceId, itemId: { in: itemIds }, supplyOrder: { status: { in: ['APPROVED', 'PARTIALLY_RECEIVED'] } } },
+        include: { supplyOrder: { select: { id: true, orderNumber: true, expectedDate: true, supplier: { select: { name: true } } } } },
+        orderBy: { supplyOrder: { expectedDate: 'asc' } },
+        take: 100,
+      }),
+      this.db.stockBalance.findMany({
+        where: { workspaceId: principal.workspaceId, itemId: { in: itemIds }, location: { is: { kind: 'RAW', isActive: true } } },
+        select: { itemId: true, onHandAtoms: true, reservedAtoms: true },
+      }),
+    ]) : [[], []];
+    const supplyByItem = new Map<string, Array<{ supplyOrderId: string; supplyOrderNumber: string; supplierName: string; expectedDate: string; remainingAtoms: string }>>();
+    for (const line of supplyLines) {
+      const remainingAtoms = line.orderedAtoms - line.receivedAtoms;
+      if (remainingAtoms <= 0n) continue;
+      const rows = supplyByItem.get(line.itemId) ?? [];
+      rows.push({ supplyOrderId: line.supplyOrder.id, supplyOrderNumber: line.supplyOrder.orderNumber, supplierName: line.supplyOrder.supplier.name, expectedDate: line.supplyOrder.expectedDate.toISOString(), remainingAtoms: remainingAtoms.toString() });
+      supplyByItem.set(line.itemId, rows);
+    }
+    const rawAvailableByItem = new Map<string, bigint>();
+    for (const balance of rawBalances) {
+      const available = balance.onHandAtoms - balance.reservedAtoms;
+      rawAvailableByItem.set(balance.itemId, (rawAvailableByItem.get(balance.itemId) ?? 0n) + (available > 0n ? available : 0n));
+    }
+    const componentTotals = new Map<string, { item: (typeof demands)[number]['item']; requiredAtoms: bigint; issuedAtoms: bigint; reservedAtoms: bigint }>();
+    for (const demand of demands) {
+      const total = componentTotals.get(demand.itemId) ?? { item: demand.item, requiredAtoms: 0n, issuedAtoms: 0n, reservedAtoms: 0n };
+      total.requiredAtoms += demand.requiredAtoms;
+      if (demand.status === 'ISSUED') total.issuedAtoms += demand.requiredAtoms;
+      else total.reservedAtoms += demand.reservations.filter(({ status }) => status === 'ACTIVE').reduce((sum, reservation) => sum + reservation.reservedAtoms, 0n);
+      componentTotals.set(demand.itemId, total);
+    }
+    const componentReadiness = [...componentTotals.entries()].map(([itemId, total]) => {
+      const outstandingAtoms = total.requiredAtoms - total.issuedAtoms;
+      return {
+        itemId,
+        itemCode: total.item.code,
+        itemName: total.item.name,
+        quantityUom: total.item.baseUom.code,
+        requiredAtoms: total.requiredAtoms.toString(),
+        issuedAtoms: total.issuedAtoms.toString(),
+        reservedAtoms: total.reservedAtoms.toString(),
+        availableRawAtoms: (rawAvailableByItem.get(itemId) ?? 0n).toString(),
+        state: (outstandingAtoms === 0n ? 'ISSUED' : total.reservedAtoms >= outstandingAtoms ? 'RESERVED' : 'UNALLOCATED') as 'ISSUED' | 'RESERVED' | 'UNALLOCATED',
+        confirmedSupply: supplyByItem.get(itemId) ?? [],
+      };
     });
     const timezone = schedule.scope.facilityTimezone;
     const requestedDate = isDateOnly
@@ -65,11 +192,12 @@ export class PromiseService {
     ];
     const deltaDays = evaluated ? dayDifference(requestedDate, scheduledDate!) : null;
     const isFeasibleOnRequestedDate = deltaDays === null ? null : deltaDays <= 0;
-    const inputHash = crypto.createHash('sha256').update(JSON.stringify({
+    const scheduleInputHash = crypto.createHash('sha256').update(JSON.stringify({
       workspaceId: principal.workspaceId,
       orderId: input.orderId,
       instanceId: input.instanceId,
       requestedDate,
+      requestedQuantityAtoms: requestedAtoms.toString(),
       workflowVersionId: schedule.scope.workflowVersionId,
       engineeringRevisionId: schedule.scope.engineeringRevisionId,
       taskVersions: schedule.tasks.map(({ taskId, version }) => ({ taskId, version })),
@@ -78,10 +206,13 @@ export class PromiseService {
     return {
       state: evaluated ? 'EVALUATED' : 'NOT_CONNECTED',
       evaluationId: crypto.randomUUID(),
-      inputHash,
+      inputHash: scheduleInputHash,
       evaluatedAt: schedule.evaluatedAt,
       orderId: input.orderId,
       instanceId: input.instanceId,
+      requestedQuantity: input.requestedQuantity,
+      requestedQuantityAtoms: requestedAtoms.toString(),
+      quantityUom: uom?.code ?? null,
       requestedDate,
       feasibleDate: evaluated ? scheduledDate : null,
       projectedEndAt: evaluated ? schedule.projectedEndAt : null,
@@ -99,6 +230,7 @@ export class PromiseService {
         `Requested and projected dates are compared in the facility timezone (${timezone ?? 'unavailable'}).`,
         'This is an estimate for the selected existing job; it does not change the customer commitment or include an unmodeled partial-shipment allocation.',
       ],
+      componentReadiness,
       evidence: evaluated ? {
         facilityId: schedule.scope.facilityId,
         facilityTimezone: timezone,
