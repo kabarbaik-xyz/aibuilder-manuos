@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { requirePrincipal } from '@/server/auth/auth';
 import { formatErrorResponse } from '@/server/http/errors';
-import { jsonResponse } from '@/server/http/route-handler';
+import { jsonResponse, parseIdempotencyKey, parseJsonBody } from '@/server/http/route-handler';
 import { FormService } from '@/server/modules/forms/service';
+import { formVersionActionRequestSchema } from '@/server/modules/forms/contracts-schema';
 import { db } from '@/server/db/client';
-import { BadRequestError } from '@/domain/errors';
 
 const service = new FormService(db);
 
@@ -15,7 +15,7 @@ export async function POST(
   try {
     const { id: templateId, versionId } = await params;
     const principal = await requirePrincipal(request);
-    const body = await request.json();
+    const body = await parseJsonBody(request, formVersionActionRequestSchema);
     const action = body.action;
     const expectedVersion = body.expectedVersion;
 
@@ -25,7 +25,7 @@ export async function POST(
     }
 
     if (action === 'publish') {
-      const res = await service.publishFormVersion(principal, { templateId, versionId, expectedVersion });
+      const res = await service.publishFormVersion(principal, { templateId, versionId, expectedVersion }, parseIdempotencyKey(request));
       return jsonResponse({ data: res });
     }
 
@@ -34,7 +34,6 @@ export async function POST(
       return jsonResponse({ data: res });
     }
 
-    throw new BadRequestError(`Unknown action: '${action}'`);
   } catch (error) {
     return formatErrorResponse(error);
   }

@@ -130,6 +130,51 @@ describe('DF02: Form Versioning, Publication Lifecycle, and Pinned Instances', (
     expect(reloaded.versions.find((v) => v.versionNumber === 2)?.status).toBe('DRAFT');
   });
 
+  it('allows only one concurrent publication of the same draft version', async () => {
+    const created = await formService.createTemplate(fixture.alpha.users.owner.principal, {
+      code: 'CONCURRENT_FORM_PUBLISH',
+      name: 'Concurrent form publication',
+      purpose: 'ORDER_SPEC',
+    });
+
+    const formVersionDelegate = fixture.db.formVersion as any;
+    const originalFindFirst = formVersionDelegate.findFirst;
+    let readers = 0;
+    let releaseReaders!: () => void;
+    const bothReadDraft = new Promise<void>((resolve) => { releaseReaders = resolve; });
+    formVersionDelegate.findFirst = async (args: any) => {
+      const version = await originalFindFirst(args);
+      if (args?.where && 'id' in args.where && args.where.id === created.versionId) {
+        readers += 1;
+        if (readers === 2) releaseReaders();
+        await bothReadDraft;
+      }
+      return version;
+    };
+
+    try {
+      const results = await Promise.allSettled([
+        formService.publishFormVersion(fixture.alpha.users.owner.principal, {
+          templateId: created.templateId,
+          versionId: created.versionId,
+          expectedVersion: 1,
+        }),
+        formService.publishFormVersion(fixture.alpha.users.owner.principal, {
+          templateId: created.templateId,
+          versionId: created.versionId,
+          expectedVersion: 1,
+        }),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      await expect(formService.getTemplate(fixture.alpha.users.owner.principal, created.templateId))
+        .resolves.toMatchObject({ versions: [expect.objectContaining({ status: 'PUBLISHED', version: 2 })] });
+    } finally {
+      formVersionDelegate.findFirst = originalFindFirst;
+    }
+  });
+
   it('proves publishing v2 cannot alter an existing instance pinned to v1', async () => {
     const created = await formService.createTemplate(fixture.alpha.users.owner.principal, {
       code: 'PINNED_VERSION_TEST',

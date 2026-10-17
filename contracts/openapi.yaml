@@ -2148,6 +2148,26 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /api/forms/{id}/versions/{versionId}/actions:
+    post:
+      summary: Advance a form version through review, publication or retirement
+      description: Requires the permission for the selected action and the expected current version. Unknown request fields are rejected. For publish actions, Idempotency-Key enables payload-bound replay.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormVersionAction' }
+      responses:
+        '200': { description: Form version action completed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/workflows/lifecycle-members:
     get:
       summary: List active members for a lifecycle stage department assignment
@@ -3476,6 +3496,13 @@ components:
         expectedVersion: { type: integer, minimum: 1 }
         reason: { type: string, minLength: 1, maxLength: 1000 }
         answers: { type: object, additionalProperties: true }
+    FormVersionAction:
+      type: object
+      required: [action, expectedVersion]
+      additionalProperties: false
+      properties:
+        action: { type: string, enum: [submit_review, publish, retire] }
+        expectedVersion: { type: integer, minimum: 1 }
     NotificationPreferences:
       type: object
       additionalProperties: false

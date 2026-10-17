@@ -18,6 +18,12 @@ export const formCorrectionRequestSchema = z.object({
   answers: answersSchema,
 }).strict();
 
+export const formVersionActionRequestSchema = z.object({
+  action: z.enum(['submit_review', 'publish', 'retire']),
+  expectedVersion: z.number().int().positive(),
+}).strict();
+
 export type FormDraftRequest = z.infer<typeof formDraftRequestSchema>;
 export type FormFinalizationRequest = z.infer<typeof formFinalizationRequestSchema>;
 export type FormCorrectionRequest = z.infer<typeof formCorrectionRequestSchema>;
+export type FormVersionActionRequest = z.infer<typeof formVersionActionRequestSchema>;

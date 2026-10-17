@@ -3,6 +3,7 @@ import {
   formCorrectionRequestSchema,
   formDraftRequestSchema,
   formFinalizationRequestSchema,
+  formVersionActionRequestSchema,
 } from '@/server/modules/forms/contracts-schema';
 
 describe('form submission request contracts', () => {
@@ -19,5 +20,11 @@ describe('form submission request contracts', () => {
 
   it('requires a non-empty correction reason', () => {
     expect(formCorrectionRequestSchema.safeParse({ expectedVersion: 2, answers: {}, reason: '  ' }).success).toBe(false);
+  });
+
+  it('accepts only known form lifecycle actions with a positive expected version', () => {
+    expect(formVersionActionRequestSchema.safeParse({ action: 'publish', expectedVersion: 2 }).success).toBe(true);
+    expect(formVersionActionRequestSchema.safeParse({ action: 'delete', expectedVersion: 2 }).success).toBe(false);
+    expect(formVersionActionRequestSchema.safeParse({ action: 'publish', expectedVersion: 2, actorId: 'forged' }).success).toBe(false);
   });
 });

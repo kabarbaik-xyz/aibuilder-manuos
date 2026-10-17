@@ -266,44 +266,64 @@ export class FormService {
 
   async publishFormVersion(
     principal: Principal,
-    input: { templateId: string; versionId: string; expectedVersion: number }
+    input: { templateId: string; versionId: string; expectedVersion: number },
+    idempotencyKey: string = crypto.randomUUID()
   ): Promise<{ versionId: string; hash: string }> {
     FormPolicy.requirePublish(principal);
+    const committed = await executeCommand({
+      principal,
+      commandType: 'forms.version.publish',
+      idempotencyKey,
+      expectedVersion: input.expectedVersion,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const existing = await tx.formVersion.findFirst({
+          where: { id: input.versionId, templateId: input.templateId, workspaceId: principal.workspaceId },
+        });
+        if (!existing) throw new NotFoundError(`Form version '${input.versionId}' not found`);
+        if (existing.status !== 'DRAFT' && existing.status !== 'REVIEW') {
+          throw new ConflictError(`Cannot publish form version with status '${existing.status}'`);
+        }
+        if (existing.version !== input.expectedVersion) {
+          throw new ConflictError(`Version conflict: expected version ${input.expectedVersion}, but found ${existing.version}`);
+        }
 
-    const existing = await this.prisma.formVersion.findFirst({
-      where: { id: input.versionId, templateId: input.templateId, workspaceId: principal.workspaceId },
-    });
+        const validatedDef = validateDefinition(JSON.parse(existing.definitionJson));
+        const hash = computeDefinitionHash(validatedDef);
+        const claimed = await tx.formVersion.updateMany({
+          where: {
+            id: existing.id,
+            templateId: input.templateId,
+            workspaceId: principal.workspaceId,
+            version: input.expectedVersion,
+            status: { in: ['DRAFT', 'REVIEW'] },
+          },
+          data: {
+            status: 'PUBLISHED',
+            contentHash: hash,
+            publishedAt: new Date(),
+            publishedBy: principal.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (claimed.count !== 1) {
+          throw new ConflictError(`Form version '${input.versionId}' changed while publishing`);
+        }
 
-    if (!existing) {
-      throw new NotFoundError(`Form version '${input.versionId}' not found`);
-    }
-
-    if (existing.status !== 'DRAFT' && existing.status !== 'REVIEW') {
-      throw new ConflictError(`Cannot publish form version with status '${existing.status}'`);
-    }
-
-    if (existing.version !== input.expectedVersion) {
-      throw new ConflictError(
-        `Version conflict: expected version ${input.expectedVersion}, but found ${existing.version}`
-      );
-    }
-
-    const def = JSON.parse(existing.definitionJson);
-    const validatedDef = validateDefinition(def);
-    const hash = computeDefinitionHash(validatedDef);
-
-    const published = await this.prisma.formVersion.update({
-      where: { id: input.versionId },
-      data: {
-        status: 'PUBLISHED',
-        contentHash: hash,
-        publishedAt: new Date(),
-        publishedBy: principal.userId,
-        version: { increment: 1 },
+        const data = { versionId: existing.id, hash };
+        return {
+          data,
+          aggregateType: 'FormVersion',
+          aggregateId: existing.id,
+          previousVersion: existing.version,
+          resourceVersion: existing.version + 1,
+          auditDetails: { templateId: input.templateId, status: 'PUBLISHED', hash },
+        };
       },
     });
 
-    return { versionId: published.id, hash: published.contentHash };
+    return committed.data;
   }
 
   async retireFormVersion(
