@@ -84,6 +84,9 @@ ${context.inventory.map((i) => `  * ${i.itemCode} (${i.itemName}): On Hand: ${i.
 - Active Resources (${inventoryQuestion ? 'omitted: inventory-only question' : context.resources.length}):
 ${(inventoryQuestion ? [] : context.resources).map((r) => `  * ${r.code} (${r.name}, ${r.type}): Status: ${r.status}`).join('\n')}
 
+- Current Order Workflow Stages (${inventoryQuestion ? 'omitted: inventory-only question' : context.lifecycleStages.length}):
+${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.orderNumber}: ${stage.workflowName} v${stage.workflowVersion}, ${stage.name} (${stage.action.replaceAll('_', ' ')}) is ${stage.state.replaceAll('_', ' ').toLowerCase()} in ${stage.department}; owner ${stage.assignedTo ?? 'eligible department queue'}, due ${stage.dueAt ?? 'not set'}, scheduling ${stage.scheduleKind.toLowerCase()}`).join('\n')}
+
 - Assigned/Plannable Tasks (${context.tasks.length}):
 ${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.id}: ${task.orderNumber} / ${task.nodeKey}, status ${task.status}, planned ${task.plannedMinutes ?? 'unavailable'} minutes, actual ${task.actualMinutes ?? 'unavailable'} minutes`).join('\n')}
 
@@ -96,6 +99,7 @@ Rules:
 - For order status questions: group by human-readable status (In production, Released, Draft, Partially delivered, Delivered). State sample counts only when directly counted from the supplied records. Delivered and cancelled orders are not active. Do not enumerate every order.
 - For inventory: group relevant records into short bullets with item name/code, on-hand amount, and reserved amount when relevant. Never add quantities across different items or infer shortage/sufficiency from stock alone. Never invent a unit when none is supplied.
 - For production overview: separate Orders, Work in progress, and Resources when evidence exists. Do not describe completed tasks as open work, or resource status as confirmed scheduling availability.
+- For workflow questions: use only the supplied current stage, department, owner, due date, and scheduling policy. A stage state is not proof that its domain action or evidence has completed; use task, QC, and delivery records for those outcomes.
 - Translate enum values into natural words: IN_PRODUCTION → In production, PARTIALLY_DELIVERED → Partially delivered. Do not print raw status codes, UUIDs, or internal field names.
 - If there is an evidenced issue, finish with one concrete next step. If none is evidenced, do not invent urgency or recommendations. Make missing evidence explicit.
 - State briefly that this covers the accessible sample, not the whole factory. Never present sample counts as workspace totals. Do not claim an item is raw material or finished goods unless context explicitly supports that classification.
