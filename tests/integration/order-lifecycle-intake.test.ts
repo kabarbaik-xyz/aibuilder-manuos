@@ -212,6 +212,8 @@ describe('order lifecycle intake', () => {
 
     const result = await completeEvidenceReviewStage(fixture.db, owner.principal, { stageId: stage.id, expectedVersion: stage.version }, 'lifecycle-review-complete');
     expect(result.data).toMatchObject({ stageId: stage.id, state: 'COMPLETED' });
+    await expect(fixture.db.orderLifecycleEvent.findFirst({ where: { stageId: stage.id, eventType: 'STAGE_COMPLETED' } }))
+      .resolves.toMatchObject({ actorUserId: owner.userId, toState: 'COMPLETED' });
     await expect(completeEvidenceReviewStage(fixture.db, owner.principal, { stageId: stage.id, expectedVersion: stage.version }, 'lifecycle-review-stale'))
       .rejects.toThrow(/not found|changed|ready or active/i);
   });

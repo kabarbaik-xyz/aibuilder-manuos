@@ -77,6 +77,14 @@ export interface OrderDto {
       assignedMembership?: { user: { name: string } } | null;
       formPinsJson: string;
     }>;
+    events: Array<{
+      id: string;
+      stageId: string | null;
+      eventType: string;
+      fromState: string | null;
+      toState: string | null;
+      occurredAt: string;
+    }>;
   }>;
   demands?: Array<{
     id: string;

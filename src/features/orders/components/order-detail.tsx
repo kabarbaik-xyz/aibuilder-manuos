@@ -355,6 +355,18 @@ export function OrderDetail({ order }: OrderDetailProps) {
               {stage.dueAt && <p className="small muted mt-1">Due {formatDateTime(stage.dueAt)}</p>}
             </li>)}
           </ol>
+          {lifecycle.events.length > 0 && <div className="page-stack border-t border-line pt-4">
+            <div><h3 className="text-sm font-semibold text-ink">Workflow handoff history</h3><p className="field-help">Recorded stage changes from the lifecycle event log.</p></div>
+            <ol className="divide-y divide-line">
+              {lifecycle.events.map((event) => {
+                const stage = lifecycle.stages.find(candidate => candidate.id === event.stageId);
+                return <li key={event.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                  <span className="font-medium text-ink">{stage?.name ?? 'Workflow started'} · {event.eventType.replaceAll('_', ' ').toLowerCase()}</span>
+                  <span className="muted">{event.fromState && event.toState ? `${event.fromState.replaceAll('_', ' ')} → ${event.toState.replaceAll('_', ' ')} · ` : ''}{formatDateTime(event.occurredAt)}</span>
+                </li>;
+              })}
+            </ol>
+          </div>}
         </Panel>;
       })()}
 
