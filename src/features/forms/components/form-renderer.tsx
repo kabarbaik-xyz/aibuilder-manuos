@@ -126,17 +126,14 @@ export function FormRenderer({
               );
             case 'boolean':
               return (
-                <label className="flex items-center gap-2 cursor-pointer pt-1">
-                  <input
-                    id={inputId}
-                    type="checkbox"
-                    checked={Boolean(val)}
-                    onChange={(e) => handleFieldChange(field.key, e.target.checked)}
-                    disabled={readOnly}
-                    className="h-4 w-4 rounded border-line text-primary focus:ring-primary"
-                  />
-                  <span className="text-sm text-ink">{field.label}</span>
-                </label>
+                <input
+                  id={inputId}
+                  type="checkbox"
+                  checked={Boolean(val)}
+                  onChange={(e) => handleFieldChange(field.key, e.target.checked)}
+                  disabled={readOnly}
+                  className="h-4 w-4 rounded border-line text-primary focus:ring-primary"
+                />
               );
             case 'multiselect': {
               const selected = Array.isArray(val) ? val : [];
