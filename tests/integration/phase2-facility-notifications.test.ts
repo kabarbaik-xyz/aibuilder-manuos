@@ -388,6 +388,8 @@ describe('Phase 2: Facility Scope, Reference Data, Notifications & Audit Correla
 
     it('creates a machine and technician with valid facilityId', async () => {
       const { alpha } = fixture;
+      await mastersService.grantFacilityAccess(alpha.users.admin.principal, alpha.users.planner.membershipId, facWestId, 'grant-planner-west-resource-creation');
+      alpha.users.planner.principal.facilityIds = [...new Set([...(alpha.users.planner.principal.facilityIds ?? []), facWestId])];
 
       const machineRes = await mastersService.createMachine(
         alpha.users.planner.principal,
