@@ -93,6 +93,12 @@ describe('form subject access', () => {
     await fixture.db.task.update({ where: { id: task.id }, data: { assignedTechnicianId: fixture.alpha.masters.technicianId } });
     await expect(submissions.listInstancesForSubject(fixture.alpha.users.operator.principal, 'TASK', task.id))
       .resolves.toHaveLength(1);
+    await expect(submissions.createCorrection(fixture.alpha.users.operator.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      reason: 'Unauthorized correction attempt',
+      answers: {},
+    })).rejects.toThrow(/permission denied/i);
     const writes = await Promise.allSettled([
       submissions.saveDraft(fixture.alpha.users.operator.principal, { instanceId: instance.instanceId, expectedVersion: 1, answers: { notes: 'first' } }, 'form-race-a'),
       submissions.saveDraft(fixture.alpha.users.operator.principal, { instanceId: instance.instanceId, expectedVersion: 1, answers: { notes: 'second' } }, 'form-race-b'),
@@ -131,6 +137,49 @@ describe('form subject access', () => {
     await fixture.db.membership.update({
       where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: fixture.alpha.users.operator.membershipId } },
       data: { facilityId: fixture.alpha.users.operator.principal.facilityId },
+    });
+
+    const qcForm = await formService.createTemplate(fixture.alpha.users.owner.principal, {
+      code: `QC_FACILITY_CHECK_${randomUUID().slice(0, 8)}`,
+      name: 'QC facility access check',
+      purpose: 'QC_EVIDENCE',
+    });
+    await formService.publishFormVersion(fixture.alpha.users.owner.principal, {
+      templateId: qcForm.templateId,
+      versionId: qcForm.versionId,
+      expectedVersion: 1,
+    });
+    const output = await fixture.db.productionOutput.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      taskId: task.id,
+      itemId: fixture.alpha.masters.fgItemId,
+      outputAtoms: 1_000_000n,
+      destinationLocationId: fixture.alpha.masters.fgLocationId,
+      operatorUserId: fixture.alpha.users.operator.userId,
+    } });
+    const inspection = await fixture.db.inspection.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      sourceType: 'PRODUCTION_OUTPUT',
+      productionOutputId: output.id,
+      inspectedAtoms: 1_000_000n,
+      inspectorUserId: fixture.alpha.users.qc.userId,
+    } });
+    const inspectionForm = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: qcForm.versionId,
+      subjectType: 'INSPECTION',
+      subjectId: inspection.id,
+    }));
+    await expect(submissions.getInstance(fixture.alpha.users.qc.principal, inspectionForm.instanceId)).resolves.toBeDefined();
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: fixture.alpha.users.qc.membershipId } },
+      data: { facilityId: otherFacility.id },
+    });
+    await expect(submissions.getInstance(fixture.alpha.users.qc.principal, inspectionForm.instanceId))
+      .rejects.toThrow(/permission denied/i);
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: fixture.alpha.users.qc.membershipId } },
+      data: { facilityId: fixture.alpha.users.qc.principal.facilityId },
     });
 
     await fixture.db.membership.update({
