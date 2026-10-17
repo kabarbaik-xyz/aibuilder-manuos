@@ -28,6 +28,7 @@ interface LifecycleWorkItem {
   dueAt: string | null;
   schedule: { kind: string; dueAfterMinutes?: number };
   formPins: Array<{ formVersionId: string; required: boolean }>;
+  scheduledWork: Array<{ taskId: string; operation: string; status: string; bookings: Array<{ id: string; resourceType: string; startAt: string; endAt: string }> }>;
   predecessorKeys: string[];
   assignmentKind: 'MEMBER' | 'DEPARTMENT_QUEUE';
   claimedByMe: boolean;
@@ -84,6 +85,12 @@ export function LifecycleWorkQueue() {
               <div><dt className="muted">Assigned to</dt><dd className="font-medium">{row.assignedTo ?? 'Eligible department queue'}</dd></div>
               <div><dt className="muted">Due</dt><dd className="font-medium">{row.dueAt ? new Date(row.dueAt).toLocaleString() : row.schedule.kind === 'RESOURCE_CAPACITY' ? 'Production schedule' : 'No deadline'}</dd></div>
             </dl>
+            {row.schedule.kind === 'RESOURCE_CAPACITY' && <div className="rounded-lg border border-line bg-surface-muted px-3 py-2 text-sm">
+              <strong>Production schedule</strong>
+              {row.scheduledWork.length === 0
+                ? <p className="small muted">No released production tasks yet. Engineering release creates the tasks that Planning schedules.</p>
+                : <ul className="mt-2 grid gap-2 sm:grid-cols-2">{row.scheduledWork.map(task => <li key={task.taskId} className="flex flex-wrap justify-between gap-2"><span>{task.operation} · {task.status.replaceAll('_', ' ').toLowerCase()}</span><span className="muted">{task.bookings.length ? task.bookings.map(booking => `${booking.resourceType.toLowerCase()} · ${new Date(booking.startAt).toLocaleString()}–${new Date(booking.endAt).toLocaleTimeString()}`).join(' · ') : 'Not scheduled'}</span></li>)}</ul>}
+            </div>}
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
               <p className="text-xs text-muted">{row.predecessorKeys.length ? `After: ${row.predecessorKeys.join(', ')}` : 'No predecessor'} · {row.formPins.filter(form => form.required).length} required pinned form(s)</p>
               <div className="flex gap-2">
