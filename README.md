@@ -2,7 +2,7 @@
 
 ManuOS is a manufacturing operations workspace for make-to-order production. It connects customer orders, engineering, materials, production planning, shop-floor execution, quality inspections, and delivery in one application, with CoreAI assistance for supported workflows.
 
-This repository contains the Next.js application, server-side domain services, SQLite database schema and migrations, automated tests, and product documentation. Some product-revision capabilities remain partial; see the [implementation status](docs/product-rev-implementation-status.md) for detailed scope and evidence.
+This repository contains the Next.js application, server-side domain services, SQLite database schema and migrations, automated tests, and product documentation. Some product-revision capabilities remain partial; see internal product-revision documentation for detailed scope and evidence.
 
 ## Features
 
@@ -278,7 +278,7 @@ See [AGENTS.md](AGENTS.md) for the full repository rules.
 - [Product requirements](docs/PRD_MANUOS_PROTOTYPE.md)
 - [Software architecture](docs/SOFTWARE_ARCHITECTURE_MANUOS.md)
 - [Design system](docs/DESIGN.md)
-- [Product-revision implementation status](docs/product-rev-implementation-status.md)
+
 - [Access administration](docs/access-administration.md)
 - [Demo data guide](docs/demo-data-guide.md)
 - [API contract](contracts/openapi.yaml)
