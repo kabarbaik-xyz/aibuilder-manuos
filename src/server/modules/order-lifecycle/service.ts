@@ -51,10 +51,10 @@ export async function completeLifecycleAction(
     throw new BadRequestError(`Only the assigned person or eligible department queue can complete stage '${stage.name}'.`);
   }
 
-  const formPins = JSON.parse(stage.formPinsJson) as Array<{ formVersionId: string; required: boolean }>;
+  const formPins = JSON.parse(stage.formPinsJson) as Array<{ formVersionId: string; contentHash: string; required: boolean }>;
   for (const pin of formPins.filter((form) => form.required)) {
     const version = await tx.formVersion.findFirst({
-      where: { id: pin.formVersionId, workspaceId: input.workspaceId, status: 'PUBLISHED' },
+      where: { id: pin.formVersionId, workspaceId: input.workspaceId, contentHash: pin.contentHash },
       select: { template: { select: { purpose: true } } },
     });
     const purpose = version?.template.purpose;

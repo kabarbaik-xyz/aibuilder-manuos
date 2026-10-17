@@ -4,6 +4,8 @@ import { WorkflowService } from '@/server/modules/workflow/service';
 import { OrderService } from '@/server/modules/orders/service';
 import { listLifecycleDepartmentMembers, listLifecycleWorkItems } from '@/server/modules/order-lifecycle/queries';
 import { claimLifecycleStage } from '@/server/modules/order-lifecycle/assignments';
+import { FormService } from '@/server/modules/forms/service';
+import { FormSubmissionService } from '@/server/modules/forms/submissions';
 
 describe('order lifecycle intake', () => {
   let fixture: FactoryFixture;
@@ -122,5 +124,59 @@ describe('order lifecycle intake', () => {
       .toMatchObject({ state: 'ACTIVE', assignedMembershipId: owner.membershipId, version: 2 });
     await expect(listLifecycleWorkItems(fixture.db, fixture.alpha.users.planner.principal)).resolves.toHaveLength(0);
     await expect(listLifecycleWorkItems(fixture.db, owner.principal)).resolves.toContainEqual(expect.objectContaining({ id: stage.id, claimedByMe: true }));
+  });
+
+  it('keeps an order form pin usable after its published version is retired', async () => {
+    const owner = fixture.alpha.users.owner;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: fixture.alpha.masters.departmentId },
+    });
+    const forms = new FormService(fixture.db);
+    const submissions = new FormSubmissionService(fixture.db);
+    const form = await forms.createTemplate(owner.principal, {
+      code: 'LIFECYCLE_ORDER_SPEC_PIN', name: 'Order specification', purpose: 'ORDER_SPEC',
+    }, 'lifecycle-form-create');
+    await forms.updateDraftVersion(owner.principal, form.templateId, form.versionId, {
+      expectedVersion: 1,
+      definition: { schemaVersion: 1, purpose: 'ORDER_SPEC', fields: [{ key: 'finish', label: 'Finish', kind: 'text', required: true }] },
+    }, 'lifecycle-form-draft');
+    const published = await forms.publishFormVersion(owner.principal, {
+      templateId: form.templateId, versionId: form.versionId, expectedVersion: 2,
+    }, 'lifecycle-form-publish');
+    const template = await workflowService.createTemplate(owner.principal, {
+      orderTypeId: fixture.alpha.masters.orderTypeId, code: 'LIFECYCLE_RETIRED_FORM',
+      name: 'Pinned retired form journey', kind: 'ORDER_LIFECYCLE',
+    }, 'lifecycle-retired-form-template');
+    await workflowService.saveVersionDraft(owner.principal, template.data.initialVersionId!, {
+      definition: {
+        schemaVersion: 1, name: 'Pinned retired form journey', stages: [{
+          key: 'SALES-REVIEW', name: 'Review specification', action: 'ORDER_CONFIRM',
+          departmentId: fixture.alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: fixture.alpha.masters.departmentId },
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 }, predecessors: [],
+          forms: [{ formVersionId: published.versionId, contentHash: published.hash, required: true, completionPoint: 'BEFORE_ACTION' }],
+        }],
+      },
+    }, 'lifecycle-retired-form-draft');
+    await workflowService.publishVersion(owner.principal, template.data.initialVersionId!, 'lifecycle-retired-form-workflow-publish');
+    const order = await orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId, orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId, orderedQuantity: '1', requestedDate: '2026-11-01T00:00:00.000Z',
+      lifecycleWorkflowVersionId: template.data.initialVersionId,
+    }, 'lifecycle-retired-form-order-create');
+    const instance = await fixture.db.formInstance.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, subjectType: 'ORDER', subjectId: order.data.id, formVersionId: published.versionId },
+    });
+
+    await forms.retireFormVersion(owner.principal, {
+      templateId: form.templateId, versionId: published.versionId, expectedVersion: 3,
+    }, 'lifecycle-retire-pinned-form');
+    await submissions.finalizeSubmission(owner.principal, {
+      instanceId: instance.id, expectedVersion: 1, answers: { finish: 'matte' },
+    }, 'lifecycle-finalize-retired-pin');
+
+    await expect(orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-confirm-with-retired-pin'))
+      .resolves.toMatchObject({ data: { id: order.data.id } });
   });
 });
