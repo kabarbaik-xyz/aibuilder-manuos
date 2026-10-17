@@ -553,6 +553,8 @@ export class FormService {
         ...(input.formBindingId ? { formBinding: { connect: { id: input.formBindingId } } } : {}),
         subjectType: input.subjectType,
         subjectId: input.subjectId,
+        required: input.required ?? true,
+        completionPoint: input.completionPoint ?? 'BEFORE_ACTION',
         status: 'PENDING',
       },
     });

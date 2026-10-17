@@ -2048,7 +2048,7 @@ paths:
         - { name: subjectType, in: query, required: true, schema: { type: string, enum: [ORDER, TASK, INSPECTION] } }
         - { name: subjectId, in: query, required: true, schema: { type: string, format: uuid } }
       responses:
-        '200': { description: Authorized form instances with pinned form definitions and latest submissions }
+        '200': { description: Authorized form instances with pinned form definitions, snapshotted required/completionPoint values and latest submissions }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -2101,7 +2101,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        '200': { description: Authorized form instance with its pinned definition and latest submission }
+        '200': { description: Authorized form instance with its pinned definition, required/completionPoint snapshot and latest submission }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

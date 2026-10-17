@@ -339,19 +339,20 @@ export async function createInspection(
             workspaceId,
             context: 'QC_CHECKLIST',
             qcChecklistId: inspection.qcChecklistId,
-            required: true,
             formVersion: { status: 'PUBLISHED' },
           },
-          select: { id: true, formVersionId: true },
+          select: { id: true, formVersionId: true, required: true },
         });
         if (checklistBindings.length) {
           await tx.formInstance.createMany({
-            data: checklistBindings.map((binding: { id: string; formVersionId: string }) => ({
+            data: checklistBindings.map((binding: { id: string; formVersionId: string; required: boolean }) => ({
               workspaceId,
               formVersionId: binding.formVersionId,
               formBindingId: binding.id,
               subjectType: 'INSPECTION',
               subjectId: inspection.id,
+              required: binding.required,
+              completionPoint: 'BEFORE_ACTION',
               status: 'PENDING',
             })),
             skipDuplicates: true,
@@ -371,9 +372,9 @@ export async function createInspection(
           ? await tx.workflowVersion.findFirst({ where: { workspaceId, id: order.lifecycleWorkflowVersionId, status: 'PUBLISHED' }, select: { definitionJson: true } })
           : null;
         if (lifecycleVersion) {
-          let qcPins: Array<{ formVersionId: string; contentHash: string }> = [];
+          let qcPins: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }> = [];
           try {
-            const definition = JSON.parse(lifecycleVersion.definitionJson) as { stages?: Array<{ action?: string; forms?: Array<{ formVersionId: string; contentHash: string }> }> };
+            const definition = JSON.parse(lifecycleVersion.definitionJson) as { stages?: Array<{ action?: string; forms?: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }> }> };
             qcPins = (definition.stages ?? []).filter((stage) => stage.action === 'FINALIZE_QC').flatMap((stage) => stage.forms ?? []);
           } catch {
             throw new BadRequestError('The order lifecycle version contains invalid pinned QC form configuration.');
@@ -387,7 +388,7 @@ export async function createInspection(
               throw new BadRequestError('A lifecycle QC form pin is unpublished, changed, or incompatible.');
             }
             await tx.formInstance.createMany({
-              data: [{ workspaceId, formVersionId: pin.formVersionId, subjectType: 'INSPECTION', subjectId: inspection.id, status: 'PENDING' }],
+              data: [{ workspaceId, formVersionId: pin.formVersionId, subjectType: 'INSPECTION', subjectId: inspection.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' }],
               skipDuplicates: true,
             });
           }

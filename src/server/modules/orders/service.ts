@@ -324,10 +324,9 @@ export class OrderService {
             workspaceId: principal.workspaceId,
             context: 'ORDER_TYPE',
             orderTypeId: order.orderTypeId,
-            required: true,
             formVersion: { status: 'PUBLISHED' },
           },
-          select: { id: true, formVersionId: true },
+          select: { id: true, formVersionId: true, required: true },
         });
         for (const binding of orderFormBindings) {
           await tx.formInstance.upsert({
@@ -345,6 +344,8 @@ export class OrderService {
               formBindingId: binding.id,
               subjectType: 'ORDER',
               subjectId: order.id,
+              required: binding.required,
+              completionPoint: 'BEFORE_ACTION',
               status: 'PENDING',
             },
             // Existing instances are immutable pins; a later binding must not rewrite them.
@@ -380,10 +381,17 @@ export class OrderService {
                 : null,
             })),
           });
-          const orderScopedFormVersionIds = [...new Set(lifecycleDefinition.stages
-            .flatMap((stage) => stage.forms)
-            .map((form) => form.formVersionId))];
-          for (const formVersionId of orderScopedFormVersionIds) {
+          const orderScopedFormPins = new Map<string, { required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }>();
+          for (const form of lifecycleDefinition.stages.flatMap((stage) => stage.forms)) {
+            const previous = orderScopedFormPins.get(form.formVersionId);
+            orderScopedFormPins.set(form.formVersionId, {
+              required: Boolean(previous?.required || form.required),
+              completionPoint: previous?.completionPoint === 'BEFORE_ACTION' || form.completionPoint === 'BEFORE_ACTION'
+                ? 'BEFORE_ACTION'
+                : 'BEFORE_STAGE_COMPLETION',
+            });
+          }
+          for (const [formVersionId, pin] of orderScopedFormPins) {
             const formVersion = await tx.formVersion.findFirst({
               where: { id: formVersionId, workspaceId: principal.workspaceId, status: 'PUBLISHED' },
               include: { template: { select: { purpose: true } } },
@@ -399,8 +407,8 @@ export class OrderService {
                     formVersionId,
                   },
                 },
-                create: { workspaceId: principal.workspaceId, formVersionId, subjectType: 'ORDER', subjectId: order.id, status: 'PENDING' },
-                update: {},
+                create: { workspaceId: principal.workspaceId, formVersionId, subjectType: 'ORDER', subjectId: order.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' },
+                update: pin.required ? { required: true, completionPoint: pin.completionPoint } : {},
               });
             }
           }

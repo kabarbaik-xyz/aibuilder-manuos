@@ -38,6 +38,8 @@ export interface CreateFormInstanceInput {
   formBindingId?: string;
   subjectType: 'ORDER' | 'TASK' | 'INSPECTION';
   subjectId: string;
+  required?: boolean;
+  completionPoint?: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION';
 }
 
 export interface FormTemplateDTO {

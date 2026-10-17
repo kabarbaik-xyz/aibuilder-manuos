@@ -168,10 +168,10 @@ export async function instantiateWorkflow(
         select: { definitionJson: true },
       })
     : null;
-  let lifecycleTaskFormPins: Array<{ formVersionId: string; contentHash: string }> = [];
+  let lifecycleTaskFormPins: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }> = [];
   if (lifecycleVersion) {
     try {
-      const lifecycleDefinition = JSON.parse(lifecycleVersion.definitionJson) as { stages?: Array<{ action?: string; forms?: Array<{ formVersionId: string; contentHash: string }> }> };
+      const lifecycleDefinition = JSON.parse(lifecycleVersion.definitionJson) as { stages?: Array<{ action?: string; forms?: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }> }> };
       lifecycleTaskFormPins = (lifecycleDefinition.stages ?? [])
         .filter((stage) => stage.action === 'PLAN_PRODUCTION' || stage.action === 'EXECUTE_PRODUCTION')
         .flatMap((stage) => stage.forms ?? []);
@@ -218,6 +218,8 @@ export async function instantiateWorkflow(
           formBindingId: binding.id,
           subjectType: 'TASK',
           subjectId: task.id,
+          required: binding.required,
+          completionPoint: 'BEFORE_STAGE_COMPLETION',
           status: 'PENDING',
         },
       });
@@ -231,7 +233,7 @@ export async function instantiateWorkflow(
         throw new BadRequestError('A production lifecycle task form pin is unpublished, changed, or incompatible.');
       }
       await tx.formInstance.createMany({
-        data: [{ workspaceId: principal.workspaceId, formVersionId: pin.formVersionId, subjectType: 'TASK', subjectId: task.id, status: 'PENDING' }],
+        data: [{ workspaceId: principal.workspaceId, formVersionId: pin.formVersionId, subjectType: 'TASK', subjectId: task.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' }],
         skipDuplicates: true,
       });
     }
@@ -263,6 +265,8 @@ export async function instantiateWorkflow(
             formBindingId: binding.id,
             subjectType: 'ORDER',
             subjectId: order.id,
+            required: binding.required,
+            completionPoint: 'BEFORE_ACTION',
             status: 'PENDING',
           },
         });

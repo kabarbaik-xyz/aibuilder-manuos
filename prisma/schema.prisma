@@ -2109,6 +2109,8 @@ model FormInstance {
   formBindingId String?          @map("form_binding_id")
   subjectType   String           @map("subject_type") // ORDER | TASK | INSPECTION
   subjectId     String           @map("subject_id")
+  required      Boolean          @default(true)
+  completionPoint String          @default("BEFORE_ACTION") @map("completion_point")
   status        String           @default("PENDING") // PENDING | DRAFT | SUBMITTED
   version       Int              @default(1)
   createdAt     DateTime         @default(now()) @map("created_at")

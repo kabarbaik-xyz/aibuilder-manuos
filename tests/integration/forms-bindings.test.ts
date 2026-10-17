@@ -4,6 +4,7 @@ import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { FormService } from '@/server/modules/forms/service';
 import { OrderService } from '@/server/modules/orders/service';
 import { WorkflowService } from '@/server/modules/workflow/service';
+import { assertRequiredFormsFinalized } from '@/server/modules/forms/completion';
 
 describe('published form workflow bindings', () => {
   let fixture: FactoryFixture;
@@ -16,6 +17,44 @@ describe('published form workflow bindings', () => {
 
   afterAll(async () => {
     await fixture.close();
+  });
+
+  it('does not retroactively gate an existing order when a new required form binding is added', async () => {
+    const orderType = await fixture.db.orderType.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      code: `ORDER_TYPE_${randomUUID().slice(0, 8)}`,
+      name: 'Order type for pin snapshot test',
+    } });
+    const order = await new OrderService(fixture.db).createOrderDraft(fixture.alpha.users.owner.principal, {
+      customerId: fixture.alpha.masters.customerId,
+      orderTypeId: orderType.id,
+      itemId: fixture.alpha.masters.fgItemId,
+      orderedQuantity: 1,
+      requestedDate: '2026-11-01T00:00:00.000Z',
+    }, `pin-before-binding-${randomUUID()}`);
+
+    const form = await forms.createTemplate(fixture.alpha.users.owner.principal, {
+      code: `LATE_ORDER_FORM_${randomUUID().slice(0, 8)}`,
+      name: 'Late order form',
+      purpose: 'ORDER_SPEC',
+    });
+    await forms.publishFormVersion(fixture.alpha.users.owner.principal, {
+      templateId: form.templateId,
+      versionId: form.versionId,
+      expectedVersion: 1,
+    });
+    await forms.bindFormVersion(fixture.alpha.users.owner.principal, {
+      formVersionId: form.versionId,
+      context: 'ORDER_TYPE',
+      orderTypeId: orderType.id,
+      required: true,
+    }, `late-binding-${randomUUID()}`);
+
+    await expect(fixture.db.$transaction((tx) => assertRequiredFormsFinalized(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      subjectType: 'ORDER',
+      subjectId: order.data.id,
+    }))).resolves.toBeUndefined();
   });
 
   it('pins an order form to a valid order type and records the command', async () => {
@@ -41,7 +80,7 @@ describe('published form workflow bindings', () => {
     expect(await fixture.db.formBinding.findUniqueOrThrow({ where: { id: result.bindingId } }))
       .toMatchObject({ context: 'ORDER_TYPE', orderTypeId: fixture.alpha.masters.orderTypeId, required: true });
     expect(await fixture.db.commandReceipt.count({ where: { workspaceId: fixture.alpha.workspaceId, key: 'form-binding-spec' } })).toBe(1);
-    expect(await fixture.db.auditEvent.count({ where: { workspaceId: fixture.alpha.workspaceId, action: 'forms.binding.create' } })).toBe(1);
+    expect(await fixture.db.auditEvent.count({ where: { workspaceId: fixture.alpha.workspaceId, action: 'forms.binding.create', aggregateId: result.bindingId } })).toBe(1);
 
     const order = await new OrderService(fixture.db).createOrderDraft(fixture.alpha.users.owner.principal, {
       customerId: fixture.alpha.masters.customerId,
@@ -52,7 +91,7 @@ describe('published form workflow bindings', () => {
     }, 'form-binding-order-create');
     const orderId = order.data.id;
     expect(await fixture.db.formInstance.findMany({ where: { subjectType: 'ORDER', subjectId: orderId } }))
-      .toMatchObject([{ formVersionId: form.versionId, status: 'PENDING' }]);
+      .toMatchObject([{ formVersionId: form.versionId, status: 'PENDING', required: true, completionPoint: 'BEFORE_ACTION' }]);
   });
 
   it('rejects a task evidence form bound to an order intake context', async () => {
