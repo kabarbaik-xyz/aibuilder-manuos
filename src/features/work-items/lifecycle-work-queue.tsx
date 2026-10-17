@@ -46,6 +46,12 @@ export function LifecycleWorkQueue() {
     }),
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['order-lifecycle-work-items'] }); },
   });
+  const completeReviewMutation = useMutation({
+    mutationFn: (row: LifecycleWorkItem) => apiRequest(`/api/order-lifecycle/stages/${row.id}/complete`, {
+      method: 'POST', body: JSON.stringify({ expectedVersion: row.version }),
+    }),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['order-lifecycle-work-items'] }); },
+  });
   const rows = query.data?.data ?? [];
   const destinationFor = (row: LifecycleWorkItem) => {
     switch (row.action) {
@@ -82,10 +88,12 @@ export function LifecycleWorkQueue() {
               <p className="text-xs text-muted">{row.predecessorKeys.length ? `After: ${row.predecessorKeys.join(', ')}` : 'No predecessor'} · {row.formPins.filter(form => form.required).length} required pinned form(s)</p>
               <div className="flex gap-2">
                 {scope === 'department' && row.assignmentKind === 'DEPARTMENT_QUEUE' && !row.assignedTo && <Button variant="default" onClick={() => claimMutation.mutate(row)} disabled={claimMutation.isPending}>{claimMutation.isPending ? 'Claiming…' : 'Claim stage'}</Button>}
+                {row.action === 'REVIEW_EVIDENCE' && row.assignedTo && <Button variant="primary" onClick={() => completeReviewMutation.mutate(row)} disabled={completeReviewMutation.isPending}>{completeReviewMutation.isPending ? 'Completing…' : 'Complete review'}</Button>}
                 <ButtonLink href={destinationFor(row).href} variant="soft">{destinationFor(row).label}</ButtonLink>
               </div>
             </div>
           </Panel>)}</section>}
     {claimMutation.error && <p className="text-sm text-danger" role="alert">{claimMutation.error.message}</p>}
+    {completeReviewMutation.error && <p className="text-sm text-danger" role="alert">{completeReviewMutation.error.message}</p>}
   </div>;
 }
