@@ -33,7 +33,19 @@ fi
 if [ -f "$DATABASE_FILE" ]; then
   log "using existing database at $DATABASE_FILE"
 elif [ -n "$BACKUP_DIR" ] && [ -f "$BACKUP_DB" ]; then
-  if cp "$BACKUP_DB" "$DATABASE_FILE" 2>/dev/null; then
+  # GCSFuse reads can transiently fail during a rollout; retry before giving up
+  # so an instance never boots against an empty database while a baseline exists.
+  attempt=0
+  while [ "$attempt" -lt 5 ]; do
+    attempt=$((attempt + 1))
+    if cp "$BACKUP_DB" "$DATABASE_FILE" 2>/dev/null && [ -s "$DATABASE_FILE" ]; then
+      break
+    fi
+    rm -f "$DATABASE_FILE" 2>/dev/null || true
+    log "WARNING: restore attempt $attempt failed; retrying"
+    sleep 2
+  done
+  if [ -s "$DATABASE_FILE" ]; then
     log "restored database from $BACKUP_DB ($(wc -c < "$DATABASE_FILE" 2>/dev/null || echo '?') bytes)"
   else
     log "WARNING: failed to restore database from $BACKUP_DB"
@@ -43,27 +55,62 @@ else
 fi
 
 # --- Snapshotting ----------------------------------------------------------
+# A snapshot must never destroy the seeded baseline. Two guards protect it:
+#   1. the candidate must pass a SQLite integrity check, and
+#   2. it must not shrink a known-good baseline to a near-empty database. This
+#      is exactly what happens when an instance boots without a successful
+#      restore (empty db, a single 4096-byte header page) and then snapshots.
+snapshot_is_safe() {
+  candidate="$1"
+  [ -f "$candidate" ] || return 1
+  if command -v sqlite3 >/dev/null 2>&1; then
+    [ "$(sqlite3 "$candidate" 'PRAGMA integrity_check;' 2>/dev/null)" = "ok" ] || return 1
+  fi
+  if [ -f "$BACKUP_DB" ]; then
+    new_size=$(wc -c < "$candidate" 2>/dev/null || echo 0)
+    old_size=$(wc -c < "$BACKUP_DB" 2>/dev/null || echo 0)
+    if [ "$old_size" -gt 65536 ] && [ "$new_size" -lt $((old_size / 2)) ]; then
+      log "WARNING: refusing snapshot: would shrink baseline from $old_size to $new_size bytes"
+      return 1
+    fi
+  fi
+  return 0
+}
+
 snapshot() {
   [ -n "$BACKUP_DIR" ] || return 0
   [ -f "$DATABASE_FILE" ] || return 0
+  tmp="$DATA_DIR/.snapshot.db"
+  rm -f "$tmp" "$tmp-wal" 2>/dev/null || true
+
   if command -v sqlite3 >/dev/null 2>&1; then
-    tmp="$DATA_DIR/.snapshot.db"
-    rm -f "$tmp" 2>/dev/null || true
-    if sqlite3 "$DATABASE_FILE" ".backup '$tmp'" >/dev/null 2>&1 && cp "$tmp" "$BACKUP_DB" 2>/dev/null; then
+    if ! sqlite3 "$DATABASE_FILE" ".backup '$tmp'" >/dev/null 2>&1; then
+      log "WARNING: sqlite online snapshot failed"
       rm -f "$tmp" 2>/dev/null || true
-      log "snapshot written to $BACKUP_DB"
-      return 0
+      return 1
     fi
-    rm -f "$tmp" 2>/dev/null || true
-    log "WARNING: sqlite online snapshot failed"
+  else
+    # Fallback when the sqlite CLI is unavailable: copy the db plus its WAL.
+    if ! cp "$DATABASE_FILE" "$tmp" 2>/dev/null; then
+      log "WARNING: snapshot copy failed"
+      rm -f "$tmp" 2>/dev/null || true
+      return 1
+    fi
+    cp "$DATABASE_FILE-wal" "$tmp-wal" 2>/dev/null || true
+  fi
+
+  if ! snapshot_is_safe "$tmp"; then
+    rm -f "$tmp" "$tmp-wal" 2>/dev/null || true
     return 1
   fi
-  # Fallback when the sqlite CLI is unavailable: copy the db plus its WAL.
-  if cp "$DATABASE_FILE" "$BACKUP_DB" 2>/dev/null; then
-    cp "$DATABASE_FILE-wal" "$BACKUP_DB-wal" 2>/dev/null || true
-    log "coarse snapshot written to $BACKUP_DB"
+
+  if cp "$tmp" "$BACKUP_DB" 2>/dev/null; then
+    if [ -f "$tmp-wal" ]; then cp "$tmp-wal" "$BACKUP_DB-wal" 2>/dev/null || true; fi
+    rm -f "$tmp" "$tmp-wal" 2>/dev/null || true
+    log "snapshot written to $BACKUP_DB ($(wc -c < "$BACKUP_DB" 2>/dev/null || echo '?') bytes)"
     return 0
   fi
+  rm -f "$tmp" "$tmp-wal" 2>/dev/null || true
   log "WARNING: snapshot to $BACKUP_DB failed"
   return 1
 }
