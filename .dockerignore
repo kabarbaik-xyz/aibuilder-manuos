@@ -1,12 +1,21 @@
 node_modules
 .next
+.next-dev
 .git
 .agents
 scratch
 ui-prototype
 *.md
 docs
+# Secrets never enter the build context (Cloud Run injects them at runtime).
+.env
+.env.*
 .env*.local
+# Local database, backups and object storage are replaced by the runtime mount.
+prisma/data
+backups
+storage
+coverage
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

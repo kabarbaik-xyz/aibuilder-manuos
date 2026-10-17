@@ -1,34 +1,58 @@
+# Base image is overridable. Cloud Build pulls the mirrored copy from Artifact
+# Registry because Docker Hub returns 401 for unauthenticated CI pulls; local
+# builds can override with --build-arg BASE_IMAGE=node:20-alpine.
+ARG BASE_IMAGE=us-central1-docker.pkg.dev/aibuilder-manuos/manuos-repo/node:20-alpine
+
 # Stage 1: Dependencies
-FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat
+FROM ${BASE_IMAGE} AS deps
+# openssl is required by the Prisma query engine; libc6-compat for musl builds.
+RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
 # Stage 2: Builder
-FROM node:20-alpine AS builder
+FROM ${BASE_IMAGE} AS builder
+RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . ./
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# Build-time placeholders only: real values are injected by Cloud Run at runtime.
+# The app never queries the build database unless a route is statically rendered,
+# but supplying a valid SQLite URL (and an applied schema) keeps that safe.
+# BETTER_AUTH_SECRET is deliberately NOT set here: auth.ts falls back to a
+# non-production default during build, and the real value comes from Secret
+# Manager at runtime.
+ENV DATABASE_URL="file:/tmp/manuos-build.db"
 
 RUN npx prisma generate
+RUN npx prisma migrate deploy
 RUN npm run build
 
 # Stage 3: Runner
-FROM node:20-alpine AS runner
+FROM ${BASE_IMAGE} AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=8080
 ENV HOSTNAME="0.0.0.0"
+# Absolute SQLite path: Prisma resolves relative file: URLs against the schema
+# directory baked in at generate time, which does not exist in the runner.
+ENV DATABASE_URL="file:/app/data/manuos.db"
+ENV MANUOS_DATA_DIR="/app/data"
+ENV MANUOS_BACKUP_DIR="/mnt/backups"
+ENV MANUOS_BACKUP_INTERVAL_SECONDS="60"
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# sqlite3 powers the online snapshot taken by docker-entrypoint.sh.
+RUN apk add --no-cache sqlite libc6-compat openssl
+
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 
@@ -36,9 +60,16 @@ COPY --from=builder /app/public ./public
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --chown=nextjs:nodejs scripts/docker-entrypoint.sh ./docker-entrypoint.sh
+
+# /app/data holds the live database (tmpfs); /app/storage is replaced by a
+# symlink to durable storage by the entrypoint. Both must be writable by nextjs.
+RUN chmod 755 ./docker-entrypoint.sh \
+ && mkdir -p /app/data /app/storage \
+ && chown -R nextjs:nodejs /app
 
 USER nextjs
 
 EXPOSE 8080
 
-CMD ["node", "server.js"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

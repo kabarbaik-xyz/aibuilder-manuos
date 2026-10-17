@@ -24,6 +24,49 @@ This repository contains the Next.js application, server-side domain services, S
 
 **Capability boundaries:** AI suggestions require review and applicable permissions. Operational state changes run through server-side domain commands. A dependency sequence estimate is distinct from a capacity-validated schedule or customer delivery promise. AI availability depends on provider configuration and supported evidence; missing evidence is not a confirmed result.
 
+## Live Demo
+
+A hosted prototype runs on Google Cloud Run (`us-central1`), sized to stay inside the free tier (scales to zero, single instance):
+
+**https://manuos-web-111572702355.us-central1.run.app**
+
+Open the URL and sign in at `/login`. The workspace starts with the full seeded demo dataset — customer orders, engineering BOMs and routings, schedules, shop-floor tasks, inventory lots and ledger movements, inspections, and shipments.
+
+### Demo credentials
+
+Public self-registration is disabled. Every demo account below uses the password **`ManuOS4all!@#`**.
+
+| Account | Email | Roles |
+| --- | --- | --- |
+| **Operations lead — start here** | `seed.demo@manuos.test` | OWNER, ACCESS_ADMIN, ENGINEER, PLANNER, WAREHOUSE, QC, SALES, BUYER |
+| Planner | `planner.demo@manuos.test` | PLANNER |
+| Engineer | `engineer.demo@manuos.test` | ENGINEER |
+| Buyer | `buyer.demo@manuos.test` | BUYER |
+| Warehouse | `warehouse.demo@manuos.test` | WAREHOUSE |
+| Quality inspector | `qc.demo@manuos.test` | QC |
+| Sales | `sales.demo@manuos.test` | SALES |
+| Technicians | `operator1.demo@manuos.test` … `operator6.demo@manuos.test` | TECHNICIAN |
+| Customers | `customer1.demo@manuos.test` … `customer3.demo@manuos.test` | CUSTOMER |
+
+Each account only sees what its role permits, so signing in as different users is the fastest way to see the permission model in action.
+
+### Suggested walkthrough
+
+1. **Command Center** — factory snapshot, order progress, and exception overview for the demo plant.
+2. **Order Hub** — open a demo customer order and follow its specification, commitments, and engineering handoff.
+3. **Engineering** — review a BOM and the versioned routing workflow (operation, inspection, and approval steps).
+4. **Planning** — inspect the schedule via the Gantt and calendar views, including dependency sequencing.
+5. **Shop Floor** — sign in as `operator1.demo@manuos.test` to open a task, start/pause work, and record output.
+6. **Quality** — sign in as `qc.demo@manuos.test` to review inspections, dispositions, rework/scrap, and non-conformance reports.
+7. **Inventory** — check on-hand, reserved, and available balances by item, lot, and location; the double-entry ledger reconciles.
+8. **Delivery & Traceability** — inspect shipments and serialized product passports.
+
+### Notes for reviewers
+
+- The hosted demo restores its SQLite database from Cloud Storage on cold start and snapshots it back periodically, so the data you create persists across restarts. Treat it as a **shared** environment and avoid entering real customer or personal data.
+- The service scales to zero when idle; the **first request may take a few seconds** to cold-start. Subsequent requests are fast.
+- `/api/health` returns a JSON readiness probe that also confirms the database is live and enforcing foreign keys.
+
 ## Technology Stack
 
 - **Application:** Next.js 15 App Router, React 19, TypeScript in strict mode.
