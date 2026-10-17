@@ -41,7 +41,8 @@ export function CreateMachineModal({ isOpen, onClose }: { isOpen: boolean; onClo
     machineClass: '',
     departmentId: '',
     calendarId: '',
-    hourlyRateCents: 8500,
+    hourlyRateCents: '',
+    recoveryPriority: '100',
   });
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -57,7 +58,8 @@ export function CreateMachineModal({ isOpen, onClose }: { isOpen: boolean; onClo
         machineClass: formData.machineClass,
         departmentId: formData.departmentId || (departments[0]?.id ?? ''),
         calendarId: formData.calendarId || (calendars[0]?.id ?? ''),
-        hourlyRateCents: Number(formData.hourlyRateCents) || 0,
+        hourlyRateCents: formData.hourlyRateCents.trim() ? Number(formData.hourlyRateCents) : null,
+        recoveryPriority: Number(formData.recoveryPriority),
       });
       onClose();
       setFormData({
@@ -66,7 +68,8 @@ export function CreateMachineModal({ isOpen, onClose }: { isOpen: boolean; onClo
         machineClass: '',
         departmentId: '',
         calendarId: '',
-        hourlyRateCents: 8500,
+        hourlyRateCents: '',
+        recoveryPriority: '100',
       });
     } catch (err: any) {
       setError(err);
@@ -107,16 +110,22 @@ export function CreateMachineModal({ isOpen, onClose }: { isOpen: boolean; onClo
             <Select required value={formData.machineClass} onChange={e=>setFormData({...formData,machineClass:e.target.value})}><option value="">Select an existing machine class…</option>{classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Select></label>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Hourly Cost ($/hr)
+            <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Machine Cost (minor units / hour)
             <Input
               type="number"
-              step="0.01"
-              disabled
-              value=""
-              placeholder="Cost rates are not supported yet"
-              onChange={(e) => setFormData({ ...formData, hourlyRateCents: Math.round(Number(e.target.value) * 100) })}
+              min="0"
+              step="1"
+              value={formData.hourlyRateCents}
+              placeholder="Leave blank if unknown"
+              onChange={(e) => setFormData({ ...formData, hourlyRateCents: e.target.value })}
               className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-primary/20 focus:outline-none"
             /></label>
+            <p className="field-help">Stored as an integer in the workspace currency’s minor units. Unknown rates remain unavailable in cost comparisons.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Recovery priority (lower first)
+            <Input type="number" min="0" max="10000" step="1" value={formData.recoveryPriority} onChange={(e) => setFormData({ ...formData, recoveryPriority: e.target.value })} /></label>
+            <p className="field-help">Used only to break ties between equally available capable machines. Availability always takes precedence.</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">

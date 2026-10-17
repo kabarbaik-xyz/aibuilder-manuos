@@ -12,7 +12,7 @@ import { ordersApi, type OrderDto } from '@/features/orders/api';
 import { proposeRecovery } from '@/features/recovery/api';
 import type { RecoveryProposalDTO, ScheduleRecoveryReviewResult } from '@/server/modules/intelligence/recovery-contracts';
 
-type RecoveryItem = { id: string; orderId: string; orderNumber: string; orderStatus: string; status: string; createdAt: string; proposal: RecoveryProposalDTO | null };
+type RecoveryItem = { id: string; orderId: string; orderNumber: string; orderStatus: string; status: string; createdAt: string; approverName: string | null; approverJobTitle: string | null; isCurrentApprover: boolean; proposal: RecoveryProposalDTO | null };
 type RecoveryPage = { items: RecoveryItem[]; page: number; pageSize: number; total: number; pageCount: number };
 type ActiveInstance = NonNullable<OrderDto['instances']>[number];
 
@@ -121,6 +121,7 @@ export function RecoveryInbox() {
           <Badge variant={item.status === 'PROPOSED' ? 'warning' : 'default'}>{item.status}</Badge>
         </div>
         {item.proposal ? <p className="small muted mt-3">{item.proposal.mode === 'SCHEDULE_REVIEW' ? `Schedule review · projected job completion ${item.proposal.scheduleReview?.projectedEndAt ?? 'unavailable'}` : `${item.proposal.options.length} historical simulated options · delayed-date estimate ${item.proposal.projectedDelayedDate ?? 'unavailable'}`}</p> : <p className="small text-warning mt-3">Saved proposal details need review before they can be displayed.</p>}
+        <p className="small muted mt-2">Supervisor: {item.approverName ? `${item.approverName}${item.approverJobTitle ? ` · ${item.approverJobTitle}` : ''}` : 'Not assigned'}{item.isCurrentApprover ? ' · yours to review' : ''}</p>
       </article>)}
     </div>}
     {data && data.pageCount > 1 && <div className="flex items-center justify-between"><span className="small muted">Page {data.page} of {data.pageCount} · {data.total} proposals</span><div className="flex gap-2"><Button disabled={page <= 1 || loading} onClick={() => setPage(value => value - 1)}>Previous</Button><Button disabled={page >= data.pageCount || loading} onClick={() => setPage(value => value + 1)}>Next</Button></div></div>}

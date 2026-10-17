@@ -29,6 +29,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState, LoadingState } from '@/components/ui/resource-state';
 import { ButtonLink } from '@/components/ui/button-link';
 import { toPublishedScheduleRange } from '../schedule-date-range';
+import { OvertimeControls } from './OvertimeControls';
 
 const slotFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const formatSlot = (value: string) => slotFormatter.format(new Date(value));
@@ -103,10 +104,6 @@ export function PlanningScheduleView() {
     const diffHours = (new Date(endAt).getTime() - new Date(startAt).getTime()) / (1000 * 60 * 60);
     if (diffHours <= 0) {
       setOtError("End time must be after start time");
-      return;
-    }
-    if (diffHours > 8) {
-      setOtError(`Overtime request exceeds statutory daily maximum of 8 hours (requested: ${diffHours.toFixed(1)}h)`);
       return;
     }
     try {
@@ -203,6 +200,7 @@ export function PlanningScheduleView() {
           </PermissionGate>
         </div>
       } />
+      <OvertimeControls />
       {/* Top Metric Cards */}
       {publishedSchedules && publishedSchedules.length > 0 && (
         <div className="p-3 bg-surface border border-line rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs">
@@ -583,7 +581,7 @@ export function PlanningScheduleView() {
         >
           <form onSubmit={handleOtSubmit} className="space-y-4">
             <p className="text-xs text-muted">
-              Overtime intervals expand qualified capacity only after approval. Requests exceeding the statutory daily limit (8 hours per shift) will be rejected.
+              The assigned supervisor must approve an overtime request before it adds qualified capacity. Workspace daily and weekly limits are checked on submission.
             </p>
             <div>
               <label className="block text-xs font-medium text-ink mb-1">Technician</label>

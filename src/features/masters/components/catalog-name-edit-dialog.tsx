@@ -19,6 +19,8 @@ export type CatalogNameRecord = {
   timezone?: string;
   weeklyJson?: string;
   status?: string;
+  hourlyRateCents?: number | null;
+  recoveryPriority?: number;
   scaleMax?: number;
   precision?: number;
 };
@@ -56,9 +58,11 @@ export function CatalogNameEditDialog({
   const [startHour, setStartHour] = useState('08:00');
   const [endHour, setEndHour] = useState('17:00');
   const [machineStatus, setMachineStatus] = useState('AVAILABLE');
+  const [hourlyRateCents, setHourlyRateCents] = useState('');
+  const [recoveryPriority, setRecoveryPriority] = useState('100');
   const [scaleMax, setScaleMax] = useState(5);
   const [precision, setPrecision] = useState(0);
-  const [initial, setInitial] = useState({ name: '', timezone: 'UTC', startHour: '08:00', endHour: '17:00', machineStatus: 'AVAILABLE', scaleMax: 5, precision: 0 });
+  const [initial, setInitial] = useState({ name: '', timezone: 'UTC', startHour: '08:00', endHour: '17:00', machineStatus: 'AVAILABLE', hourlyRateCents: '', recoveryPriority: '100', scaleMax: 5, precision: 0 });
   const [error, setError] = useState<ApiError | null>(null);
   const label = labels[resource];
   useEffect(() => {
@@ -70,6 +74,8 @@ export function CatalogNameEditDialog({
       startHour: '08:00',
       endHour: '17:00',
       machineStatus: status === 'ACTIVE' ? 'AVAILABLE' : status === 'DECOMMISSIONED' ? 'OFFLINE' : status,
+      hourlyRateCents: record?.hourlyRateCents === null || record?.hourlyRateCents === undefined ? '' : String(record.hourlyRateCents),
+      recoveryPriority: String(record?.recoveryPriority ?? 100),
       scaleMax: record?.scaleMax || 5,
       precision: record?.precision || 0,
     };
@@ -89,13 +95,15 @@ export function CatalogNameEditDialog({
     setStartHour(next.startHour);
     setEndHour(next.endHour);
     setMachineStatus(next.machineStatus);
+    setHourlyRateCents(next.hourlyRateCents);
+    setRecoveryPriority(next.recoveryPriority);
     setScaleMax(next.scaleMax);
     setPrecision(next.precision);
   }, [record]);
 
   const save = useMutation({
     mutationFn: () => {
-      const payload: Record<string, string | number | undefined> = {
+      const payload: Record<string, string | number | null | undefined> = {
         expectedVersion: record?.version,
         name: name.trim(),
       };
@@ -107,7 +115,7 @@ export function CatalogNameEditDialog({
           });
         }
       }
-      if (resource === 'machines') payload.status = machineStatus;
+      if (resource === 'machines') { payload.status = machineStatus; payload.hourlyRateCents = hourlyRateCents.trim() ? Number(hourlyRateCents) : null; payload.recoveryPriority = Number(recoveryPriority); }
       if (resource === 'skills') payload.scaleMax = scaleMax;
       if (resource === 'uoms') payload.precision = precision;
       return apiRequest(endpointFor(resource, record!.id), { method: 'PATCH', body: JSON.stringify(payload) });
@@ -128,7 +136,7 @@ export function CatalogNameEditDialog({
       type="modal"
       size="md"
       pending={save.isPending}
-      dirty={JSON.stringify({ name, timezone, startHour, endHour, machineStatus, scaleMax, precision }) !== JSON.stringify(initial)}
+      dirty={JSON.stringify({ name, timezone, startHour, endHour, machineStatus, hourlyRateCents, recoveryPriority, scaleMax, precision }) !== JSON.stringify(initial)}
       footer={<>
         <Button onClick={onClose} disabled={save.isPending}>Cancel</Button>
         <Button type="submit" form={id} variant="primary" disabled={save.isPending || !name.trim()}>
@@ -160,6 +168,12 @@ export function CatalogNameEditDialog({
             <option value="MAINTENANCE">Maintenance</option>
             <option value="OFFLINE">Offline</option>
           </Select>
+        </FormField>}
+        {resource === 'machines' && <FormField id={`${id}-hourly-rate`} label="Machine cost (minor units / hour)" help="Leave blank if the rate is unknown; unknown costs stay unavailable in comparisons.">
+          <Input type="number" min="0" step="1" value={hourlyRateCents} onChange={(event) => setHourlyRateCents(event.target.value)} disabled={save.isPending} />
+        </FormField>}
+        {resource === 'machines' && <FormField id={`${id}-recovery-priority`} label="Recovery priority (lower first)" help="Only breaks ties between equally available capable machines. Availability takes precedence.">
+          <Input type="number" min="0" max="10000" step="1" value={recoveryPriority} onChange={(event) => setRecoveryPriority(event.target.value)} disabled={save.isPending} />
         </FormField>}
         {resource === 'skills' && <FormField id={`${id}-scale`} label="Proficiency scale maximum" required>
           <Input type="number" min={1} max={10} value={scaleMax} onChange={(event) => setScaleMax(Number(event.target.value))} disabled={save.isPending} />

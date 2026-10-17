@@ -156,7 +156,8 @@ export interface Machine {
   machineClass: string;
   departmentId: string;
   calendarId: string;
-  hourlyRateCents: number;
+  hourlyRateCents: number | null;
+  recoveryPriority: number;
   status: 'ACTIVE' | 'MAINTENANCE' | 'DECOMMISSIONED';
   version: number;
   createdAt: string;
@@ -405,7 +406,9 @@ export const mastersApi = {
     machineClass: string;
     departmentId: string;
     calendarId: string;
-    hourlyRateCents?: number;  }) => masterRequest<{ data: Machine }>('/api/resources/machines', { method: 'POST', body: JSON.stringify(data) }),
+    hourlyRateCents?: number | null;
+    recoveryPriority?: number;
+  }) => masterRequest<{ data: Machine }>('/api/resources/machines', { method: 'POST', body: JSON.stringify(data) }),
 
   getTechnicians: () => masterRequest<{ data: Technician[] }>('/api/resources/technicians'),
   createTechnician: (data: {
