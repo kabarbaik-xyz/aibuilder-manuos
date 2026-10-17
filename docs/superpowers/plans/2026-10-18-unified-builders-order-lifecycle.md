@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js15 App Router, React19, strict TypeScript, existing typed icon facade/shared UI controls, Tailwind4 semantic light tokens, Prisma/SQLite, executeCommand, bigint atoms, existing scheduling and ledger engines.
 
-**Status (2026-10-18):** Implementation in progress. Builder/form and lifecycle foundations are present in the worktree, but Gate A, Gate B and integrated acceptance are not complete. The verified focused pass currently covers 10 spec files / 36 tests, `npm run typecheck`, and Prisma schema validation. Queue-stage claim is now an audited, permission/department/facility-scoped CAS command; form finalization has a competing-write and idempotent-replay spec. Do not treat lifecycle rollout as ready until the remaining unchecked items are verified. The user explicitly waived E2E for this work; keep focused domain/spec tests and report the resulting integration-proof gap.
+**Status (2026-10-18):** Implementation remains in progress; Gate A, Gate B and integrated acceptance are not complete. Latest focused verification covers 11 spec files / 51 tests, `npm run typecheck`, OpenAPI YAML parsing and earlier Prisma schema validation. Recent work also adds lifecycle evidence-review completion, selected-workflow intake preview, actual Planning bookings in lifecycle queues, authorized lifecycle context for CoreAI, handoff history, and activation-relative stage deadlines. The user explicitly waived E2E; browser-only UI behavior and the integrated persona journey remain unverified. Do not treat lifecycle rollout as ready until the remaining unchecked items are verified.
 
 ## Global constraints
 
