@@ -101,7 +101,7 @@ paths:
                         type: array
                         items:
                           type: object
-                          required: [itemId, itemCode, itemName, quantityUom, requiredAtoms, issuedAtoms, reservedAtoms, availableRawAtoms, state, confirmedSupply]
+                          required: [itemId, itemCode, itemName, quantityUom, requiredAtoms, issuedAtoms, reservedAtoms, availableRawAtoms, state, allocatedSupply, confirmedSupply]
                           properties:
                             itemId: { type: string, format: uuid }
                             itemCode: { type: string }
@@ -112,7 +112,23 @@ paths:
                             reservedAtoms: { type: string, pattern: '^\d+$' }
                             availableRawAtoms: { type: string, pattern: '^\d+$', description: Workspace-wide unreserved RAW balance snapshot; not allocated to this job and not used to establish feasibility. }
                             state: { type: string, enum: [ISSUED, RESERVED, UNALLOCATED] }
+                            allocatedSupply:
+                              type: array
+                              description: PO line commitments linked to this job's exact material demands; inbound ETA is not ready stock.
+                              items:
+                                type: object
+                                required: [supplyOrderLineId, supplyOrderId, supplyOrderNumber, supplierName, expectedDate, allocatedOutstandingAtoms, receivedAtoms, activelyReservedAtoms]
+                                properties:
+                                  supplyOrderLineId: { type: string, format: uuid }
+                                  supplyOrderId: { type: string, format: uuid }
+                                  supplyOrderNumber: { type: string }
+                                  supplierName: { type: string }
+                                  expectedDate: { type: string, format: date-time }
+                                  allocatedOutstandingAtoms: { type: string, pattern: '^\\d+$', description: Allocated inbound quantity not yet received. }
+                                  receivedAtoms: { type: string, pattern: '^\\d+$' }
+                                  activelyReservedAtoms: { type: string, pattern: '^\\d+$', description: Receipt quantity currently backed by an active stock reservation. }
                             confirmedSupply:
+                              description: Approved PO quantity not allocated to this job.
                               type: array
                               items:
                                 type: object
@@ -316,7 +332,7 @@ paths:
   /api/intelligence/recovery/{id}/apply:
     post:
       summary: Apply a reviewed finite-capacity recovery schedule
-      description: In one audited idempotent transaction, rechecks the saved order, active job, workflow and engineering revision, task versions/status, dependencies, issued or fully reserved material, qualifications and published resource availability. It creates task assignments and confirmed resource bookings, appends workflow events, and resolves the proposal. Any stale or infeasible task aborts the whole transaction. Historical simulation proposals and old snapshots without resource IDs cannot be applied.
+      description: In one audited idempotent transaction, rechecks the saved order, facility, active job, workflow and engineering revision, task versions/status, dependencies, issued or fully reserved material, qualifications and published resource availability. It claims the open proposal with a conditional PROPOSED-to-APPLYING update before writing assignments, confirmed bookings and workflow events, then resolves it. Any stale or infeasible task aborts the whole transaction, including the claim. Historical simulation proposals and old snapshots without resource IDs cannot be applied.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - $ref: '#/components/parameters/AccessIdempotency'
@@ -327,11 +343,10 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '404': { $ref: '#/components/responses/NotFound' }
   /api/intelligence/memory:
     get:
       summary: Read measured task duration and finalized QC evidence for an authorized cohort
-      description: Missing measured or planned duration remains null and is excluded from duration statistics. QC quantities serialize as integer atom strings. Cohorts can be bounded by item, department, process, workflow version, facility, and inclusive completion dates. Statistics are calculated across the selected completed-task cohort before evidence-run pagination. Three measured runs is a provisional display threshold, not a validated buffer recommendation.
+      description: Missing measured or planned duration remains null and is excluded from duration statistics. QC quantities serialize as integer atom strings. Cohorts can be bounded by item, department, process, workflow version, facility, and inclusive completion dates. Statistics are calculated across the selected completed-task cohort before evidence-run pagination. To bound work and response memory, cohorts are limited to 5,000 completed tasks and 25,000 combined work-session/output/inspection records; larger cohorts return 400 and require narrower filters. Three measured runs is a provisional display threshold, not a validated buffer recommendation.
       parameters:
         - { name: itemId, in: query, schema: { type: string, maxLength: 100 } }
         - { name: departmentId, in: query, schema: { type: string, maxLength: 100 } }
@@ -344,7 +359,7 @@ paths:
         - { name: pageSize, in: query, schema: { type: integer, enum: [10, 25, 50], default: 10 } }
       responses:
         '200': { description: Measured cohort summary and paginated evidence runs; unavailable values are nullable }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400': { description: Invalid filters or cohort/evidence limits exceeded; add or tighten filters }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /api/lists/{resource}:
@@ -497,7 +512,7 @@ paths:
                             machineId: { type: string, format: uuid, nullable: true }
                             machineName: { type: string, nullable: true }
                             reasons: { type: array, items: { type: string } }
-        '400': { description: Invalid scope or multiple active jobs require explicit selection }
+        '409': { description: The proposal is stale, its facility scope changed, or another application already resolved it }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1194,6 +1209,36 @@ paths:
         '200': { description: 'Envelope containing data.customers and data.technicians with id, code and name' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/resources/skills:
+    get:
+      summary: List current-workspace skill definitions
+      description: Used to select a qualification for technician assessment. Requires an authenticated principal.
+      responses:
+        '200': { description: 'Envelope containing data array of workspace skill definitions.' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a workspace skill definition
+      description: Requires resource.manage. Accepted scaleMax input is 1 to 10; the persisted value is capped at 4 to match technician assessment levels.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string, maxLength: 50 }
+                name: { type: string, maxLength: 100 }
+                scaleMax: { type: integer, minimum: 1, maximum: 10, default: 5 }
+      responses:
+        '201': { description: Created skill definition }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Skill code already exists in the workspace }
+
   /api/execution/tasks/{id}/start:
     post:
       summary: Start execution of an assigned task
@@ -1522,10 +1567,37 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/quality/inspections:
+    post:
+      summary: Create a production-output or incoming-material QC inspection
+      description: Incoming-material inspections must identify one receipt line held in QUARANTINE; the server derives the receipt and full line quantity. One inspection is allowed per receipt line.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sourceType: { type: string, enum: [PRODUCTION_OUTPUT, GOODS_RECEIPT], default: PRODUCTION_OUTPUT }
+                productionOutputId: { type: string, format: uuid }
+                supplyReceiptLineId: { type: string, format: uuid, description: Required for GOODS_RECEIPT; must be held in QUARANTINE. }
+                supplyReceiptId: { type: string, format: uuid, description: Optional consistency check; derived from the receipt line. }
+                qcChecklistId: { type: string, format: uuid }
+                inspectedAtoms: { type: string, pattern: '^[0-9]+$', description: For incoming material this must equal the entire receipt-line quantity. }
+                notes: { type: string, maxLength: 1000 }
+      responses:
+        '201': { description: Draft inspection linked to the authorized source record }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/quality/inspections/{id}/finalize:
     post:
       summary: Finalize a quality inspection
-      description: Enforces conservation of inspected atoms, rechecks the pinned checklist and required document evidence, validates that evidence documents belong to the same workspace, and validates active FG/SCRAP destination kinds inside the committing transaction before posting disposition movements.
+      description: Enforces conservation of inspected atoms, rechecks the pinned checklist and required document evidence, validates workspace evidence and destinations transactionally. Production output may be dispositioned to FG/SCRAP. Incoming receipt lines held in QUARANTINE may release passed atoms to RAW (with linked demand reservations) or scrap atoms; material rework remains held and unsupported until an incoming reinspection flow exists.
       parameters:
         - name: id
           in: path
@@ -1544,6 +1616,7 @@ paths:
                 reworkAtoms: { type: string, pattern: '^[0-9]+$', default: '0' }
                 scrappedAtoms: { type: string, pattern: '^[0-9]+$', default: '0' }
                 destinationFgLocationId: { type: string, format: uuid }
+                destinationRawLocationId: { type: string, format: uuid, description: Active RAW location for passed incoming receipt material. }
                 destinationScrapLocationId: { type: string, format: uuid }
                 results:
                   type: array
@@ -2257,8 +2330,8 @@ paths:
 
   /api/engineering/intake/extractions:
     post:
-      summary: Extract and persist a text RFQ for engineering review
-      description: Requires order.create or engineering.write. If the provider is unavailable or its result fails the bounded schema, no source text or draft is persisted. A successful response stores the original text with a SHA-256 hash, model/prompt version and original extraction.
+      summary: Extract and persist an RFQ source for engineering review
+      description: Requires order.create or engineering.write. Accepts bounded pasted text or an authorized stored document. Stored sources are limited to UTF-8 text/plain and text/csv; PDF/image OCR is not connected. Provider quotes are retained only when the exact quote appears in the source and contains the extracted field value; a reviewer must still confirm meaning and context. If the provider is unavailable or its result fails the bounded schema, no review or order draft is persisted. A successful response stores source SHA-256, document identity when present, model/prompt version, original extraction and source-matched quotes.
       parameters:
         - $ref: '#/components/parameters/AccessIdempotency'
       requestBody:
@@ -2266,17 +2339,24 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [text]
-              properties:
-                text: { type: string, minLength: 1, maxLength: 20000 }
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [text]
+                  properties:
+                    text: { type: string, minLength: 1, maxLength: 20000 }
+                - type: object
+                  additionalProperties: false
+                  required: [documentId]
+                  properties:
+                    documentId: { type: string, format: uuid, description: Authorized stored text/plain or text/csv document ID }
       responses:
         '201': { description: Persisted review-needed extraction and workspace master match IDs }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '503': { description: Provider unavailable or extraction schema invalid; no draft persisted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { description: Provider unavailable or extraction schema invalid; no review or order draft persisted }
   /api/engineering/intake/extractions/{id}:
     get:
       summary: Read a workspace-scoped RFQ source and its review state
@@ -2503,6 +2583,66 @@ paths:
         '201': { description: Created shift template }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/resources/technicians/{id}/profile:
+    get:
+      summary: Read workforce profile, qualifications, calendar, bounded roster, confirmed bookings and open assigned tasks
+      description: Requires access.manage, resource.manage or planning.read; enforces workspace and technician facility grants. Work records also respect order facility scope. Up to 100 records per section with truncated flag. Dates bound roster/bookings, while open assigned tasks are separately labeled.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: startAt, in: query, schema: { type: string, format: date-time } }
+        - { name: endAt, in: query, schema: { type: string, format: date-time }, description: 'Later than startAt, at most 93 days apart. Defaults to 14 days.' }
+      responses:
+        '200': { description: 'data contains technician, membership account summary, range, roster, bookings, tasks and truncated.' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Technician not found in workspace }
+  /api/roster/intervals/{id}:
+    delete:
+      summary: Cancel technician availability without deleting history
+      description: Requires resource.manage or planning.write and granted facility. Refuses cancellation of working availability overlapping confirmed bookings. Transactional, versioned and idempotent.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: Cancelled roster interval }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Stale version }
+  /api/resources/certifications:
+    get:
+      summary: List active certification definitions for authorized workforce managers
+      responses:
+        '200': { description: Certification definitions in data }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a certification definition with resource.manage
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string, maxLength: 50 }
+                name: { type: string, maxLength: 100 }
+                issuer: { type: string, nullable: true, maxLength: 100 }
+      responses:
+        '201': { description: 'Created definition; edit/archive use existing resources/catalog/certifications/{id} commands' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/roster/intervals:
     get:
@@ -2854,6 +2994,94 @@ paths:
         '400': { $ref: "#/components/responses/BadRequest" }
         '404': { $ref: "#/components/responses/NotFound" }
 
+  /api/supply-orders/{id}/allocations:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: List matching open material demands and current allocations for a supply order
+      description: Workspace and facility scoped. Available quantity excludes independent stock reservations and allocations committed to other supply orders.
+      responses:
+        '200': { description: Allocation context including PO lines and matching demand candidates }
+        '403': { description: Principal lacks supply or planning access }
+    put:
+      summary: Set explicit supply-order-line to material-demand allocations
+      description: Transactional and idempotent. Each pair is unique, item IDs must match, PO quantity and unreserved demand limits are enforced, and received/reserved allocations cannot be reduced.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allocations]
+              additionalProperties: false
+              properties:
+                allocations:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [supplyOrderLineId, demandId, allocatedAtoms]
+                    additionalProperties: false
+                    properties:
+                      supplyOrderLineId: { type: string, format: uuid }
+                      demandId: { type: string, format: uuid }
+                      allocatedAtoms: { type: string, pattern: '^\d+$', description: Positive integer quantity in storage atoms. }
+      responses:
+        '200': { description: Persisted allocation rows with received and reserved counters }
+        '400': { description: Allocation violates demand, item, or PO quantity constraints }
+        '409': { description: Supply-order version changed during allocation }
+        '403': { description: Principal lacks supply or planning access }
+  /api/inventory/receipts:
+    post:
+      summary: Receive an approved supplier order and link received quantity to allocated demands
+      description: Posts a ledger movement and receipt in one command. For each allocated demand split, a receipt into RAW storage also creates an active stock reservation atomically; QUARANTINE receipts remain unreserved and are not production-ready.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [supplyOrderId, lines]
+              additionalProperties: false
+              properties:
+                supplyOrderId: { type: string, format: uuid }
+                receiptNumber: { type: string }
+                receivedDate: { type: string, format: date-time }
+                notes: { type: string }
+                lines:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [supplyOrderLineId, locationId, receivedAtoms]
+                    additionalProperties: false
+                    properties:
+                      supplyOrderLineId: { type: string, format: uuid }
+                      locationId: { type: string, format: uuid }
+                      receivedAtoms: { type: string, pattern: '^\d+$' }
+                      lotNumber: { type: string }
+                      supplierLotNumber: { type: string }
+                      expirationDate: { type: string, format: date-time }
+                      notes: { type: string }
+                      demandAllocations:
+                        type: array
+                        maxItems: 200
+                        items:
+                          type: object
+                          required: [demandId, receivedAtoms]
+                          additionalProperties: false
+                          properties:
+                            demandId: { type: string, format: uuid }
+                            receivedAtoms: { type: string, pattern: '^\d+$', description: Positive integer quantity assigned from this receipt line to the pre-existing demand allocation. }
+      responses:
+        '200': { description: Posted receipt including demand links and active reservation IDs when received into RAW }
+        '400': { description: Over-receipt, invalid demand split, or unavailable reservation balance }
+        '403': { description: Principal lacks inventory receive permission }
+
 components:
   parameters:
     AccessIdempotency:
@@ -2917,7 +3145,19 @@ components:
           maxItems: 200
           items: { type: string }
         customerId: { type: string, nullable: true, description: 'Required for CUSTOMER; only CUSTOMER role may be assigned to a customer-scoped membership.' }
-        technicianId: { type: string, nullable: true, description: 'Required for TECHNICIAN; must not already belong to another membership. Mutually exclusive with customer scope.' }
+        technicianId: { type: string, nullable: true, description: 'Required for TECHNICIAN unless newTechnician is supplied; must be active, within granted facilities and not already linked. Mutually exclusive with customer scope and newTechnician.' }
+        departmentId: { type: string, nullable: true, description: 'Organizational department in the same workspace. Does not grant or imply department data isolation.' }
+        facilityId: { type: string, nullable: true, description: 'Primary facility, restricted to the administering principal granted active facilities. Omit to retain current/default. Additional existing grants remain separate.' }
+        landingPage: { type: string, nullable: true, description: 'Preferred workspace menu path; must be visible for combined selected active roles. Null uses persona default. Rechecked at login against current grants.' }
+        newTechnician:
+          type: object
+          required: [code]
+          additionalProperties: false
+          description: 'Atomically creates and links a technician using the account name, organizational department and selected facility. Requires TECHNICIAN role.'
+          properties:
+            code: { type: string, minLength: 1, maxLength: 50 }
+            calendarId: { type: string, nullable: true }
+
     CreateAccessUser:
       allOf:
         - { $ref: '#/components/schemas/AccessScope' }

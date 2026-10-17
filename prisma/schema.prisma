@@ -145,6 +145,8 @@ model Workspace {
   drawingRevisions  DrawingRevision[]
   manufacturingOrders ManufacturingOrder[]
   materialDemands   MaterialDemand[]
+  materialSupplyAllocations MaterialSupplyAllocation[]
+  materialSupplyReceiptAllocations MaterialSupplyReceiptAllocation[]
   lots              Lot[]
   serials           Serial[]
   stockBalances     StockBalance[]
@@ -195,6 +197,9 @@ model Membership {
   status       String           @default("ACTIVE") // ACTIVE | DISABLED
   customerId   String?          @map("customer_id")
   technicianId String?          @map("technician_id")
+  departmentId String? @map("department_id")
+  department Department? @relation(fields: [workspaceId, departmentId], references: [workspaceId, id])
+  landingPage String? @map("landing_page")
   notificationPreferencesJson String @default("{}") @map("notification_preferences_json")
   version      Int              @default(1)
   createdAt    DateTime         @default(now()) @map("created_at")
@@ -528,6 +533,7 @@ model Department {
   workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   machines            Machine[]
   technicians         Technician[]
+  memberships         Membership[]
   manufacturingOrders ManufacturingOrder[]
 
   @@unique([workspaceId, code])
@@ -1224,6 +1230,8 @@ model MaterialDemand {
   bomLine       BomLine?  @relation(fields: [workspaceId, bomLineId], references: [workspaceId, id])
   item          Item      @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
   reservations  StockReservation[]
+  supplyAllocations MaterialSupplyAllocation[]
+  supplyReceiptAllocations MaterialSupplyReceiptAllocation[]
 
   @@unique([workspaceId, id])
   @@map("material_demands")
@@ -1352,6 +1360,7 @@ model StockReservation {
   item          Item            @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
   location      Location        @relation(fields: [workspaceId, locationId], references: [workspaceId, id], onDelete: Cascade)
   lot           Lot?            @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+  supplyReceiptDemandAllocation MaterialSupplyReceiptAllocation?
 
   @@unique([workspaceId, id])
   @@map("stock_reservations")
@@ -1434,9 +1443,33 @@ model SupplyOrderLine {
   supplyOrder    SupplyOrder         @relation(fields: [workspaceId, supplyOrderId], references: [workspaceId, id], onDelete: Cascade)
   item           Item                @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
   receiptLines   SupplyReceiptLine[]
+  materialAllocations MaterialSupplyAllocation[]
 
   @@unique([workspaceId, id])
   @@map("supply_order_lines")
+}
+
+model MaterialSupplyAllocation {
+  id                String          @id @default(uuid())
+  workspaceId       String          @map("workspace_id")
+  demandId          String          @map("demand_id")
+  supplyOrderLineId String          @map("supply_order_line_id")
+  allocatedAtoms    BigInt          @map("allocated_atoms")
+  receivedAtoms     BigInt          @default(0) @map("received_atoms")
+  reservedAtoms     BigInt          @default(0) @map("reserved_atoms")
+  version           Int             @default(1)
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  demand            MaterialDemand  @relation(fields: [workspaceId, demandId], references: [workspaceId, id], onDelete: Cascade)
+  supplyOrderLine   SupplyOrderLine @relation(fields: [workspaceId, supplyOrderLineId], references: [workspaceId, id], onDelete: Cascade)
+  receiptAllocations MaterialSupplyReceiptAllocation[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, demandId, supplyOrderLineId])
+  @@index([workspaceId, supplyOrderLineId])
+  @@map("material_supply_allocations")
 }
 
 model SupplyReceipt {
@@ -1480,9 +1513,34 @@ model SupplyReceiptLine {
   item              Item            @relation(fields: [workspaceId, itemId], references: [workspaceId, id])
   location          Location        @relation(fields: [workspaceId, locationId], references: [workspaceId, id])
   lot               Lot?            @relation(fields: [workspaceId, lotId], references: [workspaceId, id])
+  demandAllocations MaterialSupplyReceiptAllocation[]
+  inspections       Inspection[]
 
   @@unique([workspaceId, id])
   @@map("supply_receipt_lines")
+}
+
+model MaterialSupplyReceiptAllocation {
+  id                         String                   @id @default(uuid())
+  workspaceId                String                   @map("workspace_id")
+  receiptLineId              String                   @map("receipt_line_id")
+  supplyAllocationId         String                   @map("supply_allocation_id")
+  demandId                   String                   @map("demand_id")
+  receivedAtoms              BigInt                   @map("received_atoms")
+  reservedAtoms              BigInt                   @default(0) @map("reserved_atoms")
+  stockReservationId         String?                  @unique @map("stock_reservation_id")
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+
+  workspace                  Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  receiptLine                SupplyReceiptLine        @relation(fields: [workspaceId, receiptLineId], references: [workspaceId, id], onDelete: Cascade)
+  supplyAllocation           MaterialSupplyAllocation @relation(fields: [workspaceId, supplyAllocationId], references: [workspaceId, id], onDelete: Cascade)
+  demand                     MaterialDemand           @relation(fields: [workspaceId, demandId], references: [workspaceId, id], onDelete: Cascade)
+  stockReservation           StockReservation?        @relation(fields: [stockReservationId], references: [id])
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, receiptLineId, demandId])
+  @@index([workspaceId, demandId])
+  @@map("material_supply_receipt_allocations")
 }
 
 // -------------------------------------------------------------
@@ -1633,6 +1691,7 @@ model Inspection {
   sourceType         String             @map("source_type") // PRODUCTION_OUTPUT | GOODS_RECEIPT
   productionOutputId String?            @map("production_output_id")
   supplyReceiptId    String?            @map("supply_receipt_id")
+  supplyReceiptLineId String?           @map("supply_receipt_line_id")
   qcChecklistId      String?            @map("qc_checklist_id")
   checklistRevision  Int                @default(1) @map("checklist_revision")
   inspectedAtoms     BigInt             @map("inspected_atoms")
@@ -1650,6 +1709,7 @@ model Inspection {
 
   workspace          Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   productionOutput   ProductionOutput?  @relation(fields: [workspaceId, productionOutputId], references: [workspaceId, id], onDelete: Cascade)
+  supplyReceiptLine  SupplyReceiptLine? @relation(fields: [supplyReceiptLineId], references: [id], onDelete: Cascade)
   qcChecklist        QcChecklist?       @relation(fields: [workspaceId, qcChecklistId], references: [workspaceId, id])
   inspectorUser      User               @relation(fields: [inspectorUserId], references: [id])
   reinspectionOf     Inspection?        @relation("Reinspections", fields: [workspaceId, reinspectionOfId], references: [workspaceId, id])
@@ -1659,6 +1719,7 @@ model Inspection {
 
   @@unique([workspaceId, id])
   @@index([workspaceId, productionOutputId])
+  @@unique([workspaceId, supplyReceiptLineId])
   @@map("inspections")
 }
 
@@ -2280,6 +2341,7 @@ model RosterInterval {
   @@index([workspaceId, machineId, startAt, endAt])
   @@map("roster_intervals")
 }
+
 
 model TaskIssue {
   id                    String       @id @default(uuid())
