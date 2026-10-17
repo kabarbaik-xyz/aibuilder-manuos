@@ -1,25 +1,5 @@
-import React from 'react';
 import { TransferStockForm } from '@/features/inventory/components/TransferStockForm';
 import { PageHeader } from '@/components/ui/page-header';
 import { ButtonLink } from '@/components/ui/button-link';
-import { ArrowLeft } from 'lucide-react';
-
-export default function NewTransferPage() {
-  return (
-    <div className="page-stack">
-      <PageHeader
-        title="Transfer Stock Between Locations"
-        description="Internal warehouse relocation preserving global quantity conservation."
-        actions={
-          <ButtonLink href="/inventory">
-            <span className="inline-flex items-center gap-1.5">
-              <ArrowLeft className="w-3.5 h-3.5" />
-              Back to Inventory
-            </span>
-          </ButtonLink>
-        }
-      />
-      <TransferStockForm />
-    </div>
-  );
-}
+import '@/features/inventory/components/inventory-forms.css';
+export default function Page() { return <div className="page-stack inventory-form-page"><PageHeader title="Transfer stock" description="Move stock between storage or production locations." actions={<ButtonLink href="/inventory">Back to inventory</ButtonLink>}/><TransferStockForm/></div>; }

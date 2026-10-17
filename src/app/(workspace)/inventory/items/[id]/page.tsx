@@ -6,6 +6,9 @@ import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useItem, useUpdateItem, useAddItemConversion, useUoms } from '@/features/masters/hooks';
 import { LoadingState, ErrorState } from '@/components/ui/resource-state';
+import { Dialog } from '@/components/ui/dialog';
+import { Panel } from '@/components/ui/panel';
+import '@/features/inventory/components/inventory-forms.css';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FormErrorSummary, FieldError } from '@/components/ui/form-errors';
@@ -33,6 +36,7 @@ export default function ItemDetailPage() {
   const [updateError, setUpdateError] = useState<ApiError | null>(null);
 
   // Conversion form state
+  const [conversionOpen, setConversionOpen] = useState(false);
   const [conversionUomId, setConversionUomId] = useState('');
   const [conversionFactor, setConversionFactor] = useState('');
   const [conversionError, setConversionError] = useState<ApiError | null>(null);
@@ -72,22 +76,24 @@ export default function ItemDetailPage() {
     e.preventDefault();
     setConversionError(null);
     try {
-      const targetUom = uoms.find((u) => u.id === (conversionUomId || uoms[0]?.id));
+      const targetUom = uoms.find((u) => u.id === conversionUomId);
+      if (!targetUom || targetUom.id === item.baseUomId) throw new Error('Choose an alternative unit.');
       const targetUomPrecision = targetUom?.precision ?? 0;
       const factorAtoms = parseQuantity(conversionFactor, targetUomPrecision).toString();
 
       await addConversion.mutateAsync({
-        toUomId: conversionUomId || (uoms[0]?.id ?? ''),
+        toUomId: conversionUomId,
         factorAtoms,
       });
       setConversionFactor('');
+      setConversionOpen(false);
     } catch (err: any) {
       setConversionError(err);
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="page-stack inventory-item-detail">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="small" icon="arrow-left" onClick={() => router.push('/inventory/items')}>
           Back to Items
@@ -96,14 +102,14 @@ export default function ItemDetailPage() {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-line pb-5">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="item-title">
             <h1 className="text-2xl font-bold text-ink">{item.name}</h1>
             <Badge variant={item.type === 'RAW_MATERIAL' ? 'blue' : item.type === 'FINISHED_GOOD' ? 'success' : 'default'}>
               {item.type.replace('_', ' ')}
             </Badge>
             <Badge variant={item.status === 'ACTIVE' ? 'success' : 'default'}>{item.status}</Badge>
           </div>
-          <p className="font-mono text-sm text-muted mt-1">Code: {item.code} · Rev: v{item.version}</p>
+          <p className="text-sm text-muted mt-1">Code: {item.code} · Rev: v{item.version}</p>
         </div>
         <div className="flex gap-2">
           {!isEditing ? (
@@ -115,7 +121,7 @@ export default function ItemDetailPage() {
       </div>
 
       {isEditing ? (
-        <form onSubmit={handleSave} className="max-w-xl space-y-4 rounded-lg border border-line bg-surface p-5">
+        <Dialog isOpen onClose={()=>setIsEditing(false)} title="Edit item" size="md" pending={updateItem.isPending}><form onSubmit={handleSave} className="page-stack">
           <FormErrorSummary error={updateError} />
           <div>
             <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Item Name
@@ -165,14 +171,14 @@ export default function ItemDetailPage() {
               {updateItem.isPending ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
-        </form>
+        </form></Dialog>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="rounded-lg border border-line bg-surface p-5 space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-ink">Inventory Properties</h2>
-            <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="item-panels">
+          <Panel className="item-section">
+            <h2>Inventory properties</h2>
+            <div className="item-property-grid">
               <span className="text-muted">Base Unit of Measure</span>
-              <span className="font-mono text-ink">{item.baseUom?.code} ({item.baseUom?.name})</span>
+              <span className="text-ink">{item.baseUom?.code} ({item.baseUom?.name})</span>
               <span className="text-muted">Base Precision</span>
               <span className="text-ink">{item.baseUom?.precision} decimal places</span>
               <span className="text-muted">Lot Tracking</span>
@@ -182,10 +188,10 @@ export default function ItemDetailPage() {
               <span className="text-muted">Shelf Life</span>
               <span className="text-ink">{item.shelfLifeDays != null ? `${item.shelfLifeDays} days` : 'Not configured'}</span>
             </div>
-          </div>
+          </Panel>
 
-          <div className="rounded-lg border border-line bg-surface p-5 space-y-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-ink">UOM Conversions</h2>
+          <Panel className="item-section">
+            <div><h2>Unit conversions</h2><p className="small muted">Alternative units used when receiving or handling this material.</p></div>
             {item.conversions && item.conversions.length > 0 ? (
               <div className="space-y-2">
                 {item.conversions.map((conv) => (
@@ -196,27 +202,28 @@ export default function ItemDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted italic">No alternative units configured</p>
+              <p className="text-sm text-muted">No alternative units configured</p>
             )}
 
-            <form onSubmit={handleAddConversion} className="pt-3 border-t border-line space-y-3">
-              <div className="text-xs font-semibold text-ink">Add Conversion Factor</div>
+            <Button onClick={()=>setConversionOpen(true)}>Add conversion</Button><Dialog isOpen={conversionOpen} onClose={()=>setConversionOpen(false)} title="Add unit conversion" size="md" pending={addConversion.isPending}><form onSubmit={handleAddConversion} className="page-stack">
+              <p className="small muted">Specify how many {item.baseUom?.code} one alternative unit represents.</p>
               <FormErrorSummary error={conversionError} />
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs text-muted uppercase tracking-wider mb-1">Input UOM
+                  <label className="block text-xs text-muted uppercase tracking-wider mb-1">Alternative unit
                   <Select
-                    value={conversionUomId || (uoms[0]?.id ?? '')}
+                    value={conversionUomId}
                     onChange={(e) => setConversionUomId(e.target.value)}
                     className="w-full rounded-md border border-line bg-surface px-2 py-1.5 text-xs text-ink focus:border-primary/20 focus:outline-none"
                   >
+                    <option value="">Choose an alternative unit</option>
                     {uoms.filter((u) => u.id !== item.baseUomId).map((u) => (
                       <option key={u.id} value={u.id}>{u.code} ({u.name})</option>
                     ))}
                   </Select></label>
                 </div>
                 <div>
-                  <label className="block text-xs text-muted uppercase tracking-wider mb-1">Base UOM Units
+                  <label className="block text-xs text-muted uppercase tracking-wider mb-1">Quantity in base unit
                   <Input
                     type="text"
                     required
@@ -228,11 +235,11 @@ export default function ItemDetailPage() {
                   <FieldError error={conversionError} field="factorAtoms" />
                 </div>
               </div>
-              <Button type="submit" variant="default" size="small" disabled={addConversion.isPending}>
+              <Button type="submit" variant="default" size="small" disabled={addConversion.isPending || !conversionUomId || !conversionFactor}>
                 {addConversion.isPending ? 'Adding...' : 'Add Conversion'}
               </Button>
-            </form>
-          </div>
+            </form></Dialog>
+          </Panel>
         </div>
       )}
     </div>

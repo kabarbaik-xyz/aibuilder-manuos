@@ -3153,6 +3153,19 @@ paths:
         '409': { description: Already decided, stale version or snapshot }
 
 
+  /api/inventory/movement-options:
+    get:
+      summary: Named material requirements and source stock for movement forms
+      description: Requires inventory.read plus inventory.issue for issue/return or inventory.transfer for transfer. Requirements are scoped to granted order facilities and the current workspace. Stock lots are scoped to workspace, item and source location. Quantities are formatted strings with raw atoms serialized as strings; truncated is explicit at500 requirements or200 buckets.
+      parameters:
+        - { in: query, name: mode, required: true, schema: { type: string, enum: [issue, return, transfer] } }
+        - { in: query, name: itemId, schema: { type: string, format: uuid } }
+        - { in: query, name: locationId, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Data containing named demands and positive source stock buckets }
+        '401': { description: Authentication required }
+        '403': { description: Required inventory permission missing }
+
 components:
   parameters:
     AccessIdempotency:
