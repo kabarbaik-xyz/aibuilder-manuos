@@ -83,8 +83,34 @@ export class FormSubmissionService {
       throw new NotFoundError(`Form instance '${instance.id}' not found`);
     }
 
+    // Re-read membership in the same transaction as a write. A session may
+    // have been authenticated before the membership was disabled or moved.
+    const membership = await db.membership.findFirst({
+      where: {
+        id: principal.membershipId,
+        workspaceId: principal.workspaceId,
+        userId: principal.userId,
+        status: 'ACTIVE',
+      },
+      include: {
+        facilityGrants: { select: { facilityId: true } },
+        roles: {
+          where: { role: { isActive: true } },
+          include: { role: { select: { code: true, permissions: { select: { permissionCode: true } } } } },
+        },
+      },
+    });
+    if (!membership) throw new ForbiddenError('An active workspace membership is required to access this form.');
+    const roleCodes = membership.roles.map((grant) => grant.role.code);
+    const permissions = new Set(membership.roles.flatMap((grant) => grant.role.permissions.map((permission) => permission.permissionCode)));
+    const grantedFacilities = new Set([
+      ...(membership.facilityId ? [membership.facilityId] : []),
+      ...membership.facilityGrants.map((grant) => grant.facilityId),
+    ]);
+    const isOwner = roleCodes.includes('OWNER');
+
     // 2. Deny customer users from internal form submissions
-    if (principal.roles.includes('CUSTOMER') && !principal.roles.includes('OWNER')) {
+    if (roleCodes.includes('CUSTOMER') && !isOwner) {
       throw new ForbiddenError('Customer users are not permitted to submit internal forms');
     }
 
@@ -98,15 +124,13 @@ export class FormSubmissionService {
         throw new NotFoundError(`Form instance '${instance.id}' not found`);
       }
 
-      const hasWorkspaceOversight = principal.roles.includes('OWNER') ||
-        principal.roles.includes('ACCESS_ADMIN') || principal.permissions.has('task.assign');
-      const canReadAssignedTask = principal.permissions.has('task.execute_assigned') ||
-        principal.permissions.has('task.read_assigned') || principal.permissions.has('execution.read');
-      const isAssignedTechnician = !!principal.technicianId && task.assignedTechnicianId === principal.technicianId;
+      const hasWorkspaceOversight = isOwner || roleCodes.includes('ACCESS_ADMIN') || permissions.has('task.assign');
+      const canReadAssignedTask = permissions.has('task.execute_assigned') ||
+        permissions.has('task.read_assigned') || permissions.has('execution.read');
+      const isAssignedTechnician = !!membership.technicianId && task.assignedTechnicianId === membership.technicianId;
       const facilityId = task.instance.order.facilityId;
-      const grantedFacilities = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
-      const facilityInScope = principal.roles.includes('OWNER') ||
-        (facilityId ? grantedFacilities.includes(facilityId) : hasWorkspaceOversight);
+      const facilityInScope = isOwner ||
+        (facilityId ? grantedFacilities.has(facilityId) : hasWorkspaceOversight);
 
       if (!facilityInScope || (!hasWorkspaceOversight && (!canReadAssignedTask || !isAssignedTechnician))) {
         throw new ForbiddenError('Permission denied for task evidence form instance');
@@ -117,10 +141,9 @@ export class FormSubmissionService {
         select: { facilityId: true },
       });
       if (!order) throw new NotFoundError(`Form instance '${instance.id}' not found`);
-      const canReadOrder = principal.permissions.has('order.read') || principal.roles.includes('OWNER');
-      const grantedFacilities = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
-      const facilityInScope = principal.roles.includes('OWNER') ||
-        (order.facilityId ? grantedFacilities.includes(order.facilityId) : false);
+      const canReadOrder = permissions.has('order.read') || isOwner;
+      const facilityInScope = isOwner ||
+        (order.facilityId ? grantedFacilities.has(order.facilityId) : false);
       if (!canReadOrder || !facilityInScope) {
         throw new ForbiddenError('Permission denied for order specification form instance');
       }
@@ -141,12 +164,11 @@ export class FormSubmissionService {
         },
       });
       if (!inspection) throw new NotFoundError(`Form instance '${instance.id}' not found`);
-      const canInspect = principal.permissions.has('quality.inspect') || principal.roles.includes('OWNER');
+      const canInspect = permissions.has('quality.inspect') || isOwner;
       const facilityId = inspection.productionOutput?.task.instance.order.facilityId ?? null;
-      const grantedFacilities = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
-      const facilityInScope = principal.roles.includes('OWNER') ||
-        (facilityId === null || grantedFacilities.includes(facilityId));
-      if (!canInspect || !facilityInScope || (inspection.inspectorUserId !== principal.userId && !principal.roles.includes('OWNER'))) {
+      const facilityInScope = isOwner ||
+        (facilityId === null || grantedFacilities.has(facilityId));
+      if (!canInspect || !facilityInScope || (inspection.inspectorUserId !== principal.userId && !isOwner)) {
         throw new ForbiddenError('Permission denied for quality inspection form instance');
       }
     } else {

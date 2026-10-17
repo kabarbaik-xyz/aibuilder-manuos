@@ -114,5 +114,30 @@ describe('form subject access', () => {
       ...replayInput,
       answers: { notes: 'different payload' },
     }, replayKey)).rejects.toThrow(/different request payload/i);
+
+    const otherFacility = await fixture.db.facility.create({
+      data: {
+        workspaceId: fixture.alpha.workspaceId,
+        code: `FAC-OUTSIDE-${randomUUID().slice(0, 8)}`,
+        name: 'Outside facility',
+      },
+    });
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: fixture.alpha.users.operator.membershipId } },
+      data: { facilityId: otherFacility.id },
+    });
+    await expect(submissions.getInstance(fixture.alpha.users.operator.principal, instance.instanceId))
+      .rejects.toThrow(/permission denied/i);
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: fixture.alpha.users.operator.membershipId } },
+      data: { facilityId: fixture.alpha.users.operator.principal.facilityId },
+    });
+
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: fixture.alpha.users.operator.membershipId } },
+      data: { status: 'DISABLED' },
+    });
+    await expect(submissions.getInstance(fixture.alpha.users.operator.principal, instance.instanceId))
+      .rejects.toThrow(/active workspace membership|permission denied/i);
   });
 });
