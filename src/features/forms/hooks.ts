@@ -9,6 +9,7 @@ import {
   performVersionAction,
   forkFormVersion,
   fetchFormInstance,
+  fetchFormInstancesForSubject,
   saveFormDraft,
   finalizeFormSubmission,
   createFormCorrection,
@@ -83,6 +84,14 @@ export function useFormInstance(instanceId: string) {
     queryKey: ['forms', 'instances', instanceId],
     queryFn: () => fetchFormInstance(instanceId),
     enabled: Boolean(instanceId),
+  });
+}
+
+export function useFormInstancesForSubject(subjectType: 'ORDER' | 'TASK' | 'INSPECTION', subjectId: string) {
+  return useQuery({
+    queryKey: ['forms', 'subjects', subjectType, subjectId],
+    queryFn: () => fetchFormInstancesForSubject(subjectType, subjectId),
+    enabled: Boolean(subjectId),
   });
 }
 

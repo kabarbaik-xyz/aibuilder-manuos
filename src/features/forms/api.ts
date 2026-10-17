@@ -98,6 +98,13 @@ export async function fetchFormInstance(instanceId: string): Promise<{
   return res.json();
 }
 
+export async function fetchFormInstancesForSubject(subjectType: 'ORDER' | 'TASK' | 'INSPECTION', subjectId: string) {
+  const params = new URLSearchParams({ subjectType, subjectId });
+  const res = await fetch(`/api/form-instances?${params}`);
+  if (!res.ok) throw new Error('Failed to fetch task form evidence');
+  return res.json() as Promise<{ data: Array<{ instance: any; definition: FormDefinition; latestSubmission: any }> }>;
+}
+
 export async function saveFormDraft(
   instanceId: string,
   expectedVersion: number,

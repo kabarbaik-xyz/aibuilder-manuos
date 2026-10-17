@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requirePrincipal } from '@/server/auth/auth';
 import { formatErrorResponse } from '@/server/http/errors';
-import { jsonResponse } from '@/server/http/route-handler';
+import { jsonResponse, parseIdempotencyKey } from '@/server/http/route-handler';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
 import { db } from '@/server/db/client';
 
@@ -19,7 +19,7 @@ export async function PUT(
       instanceId,
       expectedVersion: body.expectedVersion,
       answers: body.answers,
-    });
+    }, parseIdempotencyKey(request));
     return jsonResponse({ data: result });
   } catch (error) {
     return formatErrorResponse(error);

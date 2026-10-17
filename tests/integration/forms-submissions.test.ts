@@ -53,6 +53,13 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
           precision: 1,
           required: true,
         },
+        {
+          key: 'machine_reference',
+          label: 'Inspection machine',
+          kind: 'reference',
+          required: false,
+          referenceType: 'machine',
+        },
       ],
     };
 
@@ -73,6 +80,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
   });
 
   it('allows saving incomplete DRAFT answers but rejects invalid supplied types or unknown keys', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-001', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,
@@ -108,6 +116,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
   });
 
   it('denies customer users from internal form submission', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-002', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,
@@ -127,6 +136,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
   });
 
   it('blocks finalization when required visible fields are missing, and succeeds when complete', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-003', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,
@@ -167,7 +177,68 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
     expect(reloaded.latestSubmission?.answers.paint_code).toBeUndefined();
   });
 
+  it('rejects references that are not active records in the current workspace', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-invalid-reference', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-invalid-reference',
+    }));
+
+    await expect(submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: {
+        finish: 'raw',
+        dry_film_microns: '30.0',
+        machine_reference: 'missing-machine',
+      },
+    })).rejects.toThrow(/Reference for 'Inspection machine' is unavailable/i);
+    expect(await fixture.db.formInstance.findUniqueOrThrow({ where: { id: instance.instanceId } }))
+      .toMatchObject({ status: 'PENDING', version: 1 });
+  });
+
+  it('serializes competing finalizations and replays an idempotent result once', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-finalize-race', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-finalize-race',
+    }));
+    const answers = { finish: 'raw', dry_film_microns: '45.5' };
+
+    const competing = await Promise.allSettled([
+      submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+        instanceId: instance.instanceId, expectedVersion: 1, answers,
+      }, 'qc-finalize-race-a'),
+      submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+        instanceId: instance.instanceId, expectedVersion: 1, answers,
+      }, 'qc-finalize-race-b'),
+    ]);
+    expect(competing.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(competing.filter((result) => result.status === 'rejected')).toHaveLength(1);
+
+    const winnerKey = competing[0].status === 'fulfilled' ? 'qc-finalize-race-a' : 'qc-finalize-race-b';
+    const winner = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId, expectedVersion: 1, answers,
+    }, winnerKey);
+    const submissionsBeforeReplay = await fixture.db.formSubmission.count({ where: { instanceId: instance.instanceId } });
+    const replay = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId, expectedVersion: 1, answers,
+    }, winnerKey);
+    expect(replay).toEqual(winner);
+    expect(await fixture.db.formSubmission.count({ where: { instanceId: instance.instanceId } })).toBe(submissionsBeforeReplay);
+    await expect(submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: { finish: 'painted', paint_code: 'RAL-9001', dry_film_microns: '45.5' },
+    }, winnerKey)).rejects.toThrow(/different request payload/i);
+  });
+
   it('creates an authorized correction with mandatory reason, preserving supersedes link', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-004', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,

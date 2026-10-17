@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { FormService } from '../../src/server/modules/forms/service';
 import { FormSubmissionService } from '../../src/server/modules/forms/submissions';
@@ -53,8 +54,56 @@ describe('DF05: Form Gates & Domain Lifecycle Integration', () => {
   });
 
   afterAll(async () => {
-    await fixture.close();
+    if (fixture) await fixture.close();
   });
+
+  async function createAssignedTaskSubject() {
+    const order = await fixture.db.order.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      orderNumber: `ORD-FORM-GATE-${randomUUID().slice(0, 8)}`,
+      customerId: fixture.alpha.masters.customerId,
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId,
+      orderedAtoms: 1_000_000n,
+      requestedDate: new Date('2026-11-01T00:00:00.000Z'),
+      facilityId: fixture.alpha.users.owner.principal.facilityId,
+      status: 'RELEASED',
+    } });
+    const workflowTemplate = await fixture.db.workflowTemplate.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      code: `WF-FORM-GATE-${randomUUID().slice(0, 8)}`,
+      name: 'Form gate test workflow',
+    } });
+    const workflowVersion = await fixture.db.workflowVersion.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      templateId: workflowTemplate.id,
+      versionNumber: 1,
+      status: 'PUBLISHED',
+      definitionJson: '{}',
+    } });
+    const revision = await fixture.db.engineeringRevision.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      orderId: order.id,
+      revisionNumber: 1,
+      status: 'APPROVED',
+      specsJson: '{}',
+      workflowVersionId: workflowVersion.id,
+    } });
+    const workflowInstance = await fixture.db.workflowInstance.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      orderId: order.id,
+      workflowVersionId: workflowVersion.id,
+      engineeringRevisionId: revision.id,
+    } });
+    return fixture.db.task.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      instanceId: workflowInstance.id,
+      nodeKey: 'OP-10',
+      status: 'ASSIGNED',
+      assignedTechnicianId: fixture.alpha.masters.technicianId,
+    } });
+  }
 
   it('allows subject transition when no required form bindings exist', async () => {
     const dummySubjectId = '00000000-0000-0000-0000-000000000001';
@@ -95,7 +144,8 @@ describe('DF05: Form Gates & Domain Lifecycle Integration', () => {
   });
 
   it('allows domain gate once the form instance is finalized (SUBMITTED)', async () => {
-    const subjectId = '00000000-0000-0000-0000-000000000003';
+    const task = await createAssignedTaskSubject();
+    const subjectId = task.id;
 
     // 1. Create form instance
     const { instanceId } = await fixture.db.$transaction(async (tx) => {
@@ -167,7 +217,8 @@ describe('DF05: Form Gates & Domain Lifecycle Integration', () => {
     expect(pub.versionId).toBe(tpl.versionId);
 
     // 5. Instantiate task pinned to published version
-    const taskId = '00000000-0000-0000-0000-000000000099';
+    const task = await createAssignedTaskSubject();
+    const taskId = task.id;
     const { instanceId } = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,

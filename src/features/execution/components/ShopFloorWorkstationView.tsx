@@ -33,6 +33,7 @@ import Link from 'next/link';
 import { formatQuantity, parseQuantity } from '@/domain/quantity';
 import { mastersApi, Location } from '@/features/masters/api';
 import { useOnlineStatus } from '../use-online-status';
+import { SubjectFormEvidence } from '@/features/forms/components/subject-form-evidence';
 
 export interface ShopFloorWorkstationViewProps {
   taskId: string;
@@ -564,6 +565,8 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           <strong>Tindakan terhambat:</strong> {actionError}
         </div>
       )}
+
+      <SubjectFormEvidence subjectType="TASK" subjectId={task.id} />
 
       {(task.status === 'READY' || task.status === 'ASSIGNED') && (
         <section aria-labelledby="task-start-readiness-title" className={`p-4 border border-line rounded-xl ${startBlockReasons.length ? 'bg-warning-soft' : 'bg-success-soft'}`}>

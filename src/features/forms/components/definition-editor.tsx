@@ -17,6 +17,7 @@ import { Icon } from '@/components/icons';
 import { GenerationPanel } from '@/features/builder-proposals/components/generation-panel';
 import { ProposalReview } from '@/features/builder-proposals/components/proposal-review';
 import { BuilderProposalDto } from '@/server/modules/builder-proposals/contracts';
+import { WorkflowFormBindingPanel } from './workflow-form-binding-panel';
 
 export interface FormDefinitionEditorProps {
   template: FormTemplateDTO;
@@ -177,6 +178,7 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
         </div>
         }
       />
+      {version.status === 'PUBLISHED' && template.purpose === 'TASK_EVIDENCE' && <WorkflowFormBindingPanel formVersionId={version.id} />}
       <FormErrorSummary error={updateDraftMutation.error || actionMutation.error || forkMutation.error} />
 
       {/* Validation Issue Banner */}

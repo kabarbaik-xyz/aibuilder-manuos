@@ -18,6 +18,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { formatQuantity, parseQuantity } from "@/domain/quantity";
 import { uploadInspectionEvidence } from "../api";
 import { PassportPublicationActions } from '@/features/passport/passport-publication-actions';
+import { SubjectFormEvidence } from '@/features/forms/components/subject-form-evidence';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -237,6 +238,13 @@ export function InspectionDetailView({
         </div>
         <Badge variant="warning">Pilot gated</Badge>
       </Panel>
+
+      <SubjectFormEvidence
+        subjectType="INSPECTION"
+        subjectId={inspection.id}
+        title="QC evidence forms"
+        description="Complete the forms required by this inspection's pinned checklist before finalizing its disposition."
+      />
 
       {inspection.serialNumber && inspection.status === 'FINALIZED' && inspection.passedAtoms > 0n && inspection.productionOutput?.item && <PassportPublicationActions
         serialNumber={inspection.serialNumber} itemId={inspection.productionOutput.item.id}

@@ -14,6 +14,7 @@ import {
 } from './contracts';
 import { validateDefinition } from '@/domain/forms/schema';
 import { FormDefinition } from '@/domain/forms/types';
+import { executeCommand } from '@/server/db/transaction';
 import {
   NotFoundError,
   ConflictError,
@@ -384,36 +385,99 @@ export class FormService {
 
   async bindFormVersion(
     principal: Principal,
-    input: BindFormVersionInput
-  ): Promise<{ bindingId: string }> {
+    input: BindFormVersionInput,
+    idempotencyKey: string = crypto.randomUUID()
+  ) {
     FormPolicy.requireBind(principal);
+    const committed = await executeCommand({
+      principal,
+      commandType: 'forms.binding.create',
+      idempotencyKey,
+      payload: input,
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const version = await tx.formVersion.findFirst({
+          where: { id: input.formVersionId, workspaceId: principal.workspaceId },
+          include: { template: { select: { purpose: true } } },
+        });
+        if (!version) throw new NotFoundError(`Form version '${input.formVersionId}' not found`);
+        if (version.status !== 'PUBLISHED') {
+          throw new BadRequestError(`Cannot bind form version in status '${version.status}'. Must be PUBLISHED.`);
+        }
 
-    const version = await this.prisma.formVersion.findFirst({
-      where: { id: input.formVersionId, workspaceId: principal.workspaceId },
-    });
+        const targets = {
+          orderType: Boolean(input.orderTypeId),
+          workflowNode: Boolean(input.workflowNodeKey || input.workflowVersionId),
+          checklist: Boolean(input.qcChecklistId),
+        };
+        const validTarget = input.context === 'ORDER_TYPE'
+          ? targets.orderType && !targets.workflowNode && !targets.checklist && Boolean(input.orderTypeId)
+          : input.context === 'WORKFLOW_NODE'
+            ? !targets.orderType && targets.workflowNode && Boolean(input.workflowNodeKey && input.workflowVersionId) && !targets.checklist
+            : input.context === 'QC_CHECKLIST'
+              ? !targets.orderType && !targets.workflowNode && targets.checklist
+              : false;
+        if (!validTarget) throw new BadRequestError('Provide exactly the target fields required by the selected form binding context.');
 
-    if (!version) {
-      throw new NotFoundError(`Form version '${input.formVersionId}' not found`);
-    }
+        const expectedPurpose = input.context === 'ORDER_TYPE' ? 'ORDER_SPEC'
+          : input.context === 'QC_CHECKLIST' ? 'QC_EVIDENCE' : 'TASK_EVIDENCE';
+        if (version.template.purpose !== expectedPurpose) {
+          throw new BadRequestError(`${input.context} bindings require a ${expectedPurpose} form.`);
+        }
 
-    if (version.status !== 'PUBLISHED') {
-      throw new BadRequestError(`Cannot bind form version in status '${version.status}'. Must be PUBLISHED.`);
-    }
+        if (input.context === 'ORDER_TYPE') {
+          const target = await tx.orderType.findFirst({ where: { id: input.orderTypeId, workspaceId: principal.workspaceId } });
+          if (!target) throw new NotFoundError(`Order type '${input.orderTypeId}' not found`);
+        } else if (input.context === 'WORKFLOW_NODE') {
+          const workflow = await tx.workflowVersion.findFirst({
+            where: { id: input.workflowVersionId, workspaceId: principal.workspaceId },
+            include: { nodes: { select: { key: true } } },
+          });
+          if (!workflow) throw new NotFoundError('Workflow version not found');
+          // Bindings are part of the workflow version's executable definition.
+          // Allow authoring only while the version is a draft; publishing then
+          // freezes the binding set for every order released from that version.
+          if (workflow.status !== 'DRAFT') {
+            throw new BadRequestError('Forms can only be bound to a draft workflow. Fork the workflow to change forms after publication.');
+          }
+          if (!workflow.nodes.some((node: { key: string }) => node.key === input.workflowNodeKey)) {
+            throw new BadRequestError(`Workflow node '${input.workflowNodeKey}' does not exist in the selected version.`);
+          }
+        } else {
+          const target = await tx.qcChecklist.findFirst({ where: { id: input.qcChecklistId, workspaceId: principal.workspaceId } });
+          if (!target) throw new NotFoundError(`QC checklist '${input.qcChecklistId}' not found`);
+        }
 
-    const binding = await this.prisma.formBinding.create({
-      data: {
-        workspace: { connect: { id: principal.workspaceId } },
-        formVersion: { connect: { id: input.formVersionId } },
-        context: input.context,
-        orderTypeId: input.orderTypeId,
-        workflowNodeKey: input.workflowNodeKey,
-        workflowVersionId: input.workflowVersionId,
-        qcChecklistId: input.qcChecklistId,
-        required: input.required ?? true,
+        const duplicate = await tx.formBinding.findFirst({
+          where: {
+            workspaceId: principal.workspaceId,
+            formVersionId: input.formVersionId,
+            context: input.context,
+            orderTypeId: input.orderTypeId ?? null,
+            workflowVersionId: input.workflowVersionId ?? null,
+            workflowNodeKey: input.workflowNodeKey ?? null,
+            qcChecklistId: input.qcChecklistId ?? null,
+          },
+        });
+        if (duplicate) throw new ConflictError('This form version is already bound to the selected workflow stage.');
+
+        const binding = await tx.formBinding.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            formVersionId: input.formVersionId,
+            context: input.context,
+            orderTypeId: input.orderTypeId ?? null,
+            workflowNodeKey: input.workflowNodeKey ?? null,
+            workflowVersionId: input.workflowVersionId ?? null,
+            qcChecklistId: input.qcChecklistId ?? null,
+            required: input.required ?? true,
+          },
+        });
+        const data = { bindingId: binding.id };
+        return { data, aggregateType: 'FormBinding', aggregateId: binding.id, resourceVersion: 1, auditDetails: { ...input } };
       },
     });
-
-    return { bindingId: binding.id };
+    return committed.data;
   }
 
   async createFormInstance(

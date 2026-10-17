@@ -1,6 +1,31 @@
 import { FormDefinition, Answers, FormValidation, FormIssue } from './types';
 import { evaluateVisibility } from './conditions';
 
+function compareDecimalStrings(left: string, right: string): number {
+  const parse = (value: string) => {
+    const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+    if (!match) throw new Error('Decimal comparison requires validated decimal strings.');
+    const negative = match[1] === '-';
+    const integer = match[2].replace(/^0+(?=\d)/, '');
+    const fraction = (match[3] ?? '').replace(/0+$/, '');
+    return { negative: negative && (integer !== '0' || fraction.length > 0), integer, fraction };
+  };
+
+  const a = parse(left);
+  const b = parse(right);
+  if (a.negative !== b.negative) return a.negative ? -1 : 1;
+
+  const integerCompare = a.integer.length === b.integer.length
+    ? a.integer === b.integer ? 0 : a.integer < b.integer ? -1 : 1
+    : Math.sign(a.integer.length - b.integer.length);
+  const fractionLength = Math.max(a.fraction.length, b.fraction.length);
+  const fractionA = a.fraction.padEnd(fractionLength, '0');
+  const fractionB = b.fraction.padEnd(fractionLength, '0');
+  const fractionCompare = fractionA === fractionB ? 0 : fractionA < fractionB ? -1 : 1;
+  const magnitudeCompare = integerCompare || fractionCompare;
+  return a.negative ? -magnitudeCompare : magnitudeCompare;
+}
+
 export function validateAnswers(
   definition: FormDefinition,
   rawAnswers: unknown,
@@ -99,11 +124,10 @@ export function validateAnswers(
             });
           }
 
-          const num = Number(strVal);
-          if (field.min !== undefined && num < Number(field.min)) {
+          if (field.min !== undefined && compareDecimalStrings(strVal, field.min) < 0) {
             issues.push({ fieldKey: field.key, code: 'MIN_VALUE', message: `${field.label} must be at least ${field.min}` });
           }
-          if (field.max !== undefined && num > Number(field.max)) {
+          if (field.max !== undefined && compareDecimalStrings(strVal, field.max) > 0) {
             issues.push({ fieldKey: field.key, code: 'MAX_VALUE', message: `${field.label} cannot exceed ${field.max}` });
           }
 
