@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formCorrectionRequestSchema,
+  formDraftVersionRequestSchema,
   formDraftRequestSchema,
   formFinalizationRequestSchema,
   formVersionActionRequestSchema,
@@ -26,5 +27,17 @@ describe('form submission request contracts', () => {
     expect(formVersionActionRequestSchema.safeParse({ action: 'publish', expectedVersion: 2 }).success).toBe(true);
     expect(formVersionActionRequestSchema.safeParse({ action: 'delete', expectedVersion: 2 }).success).toBe(false);
     expect(formVersionActionRequestSchema.safeParse({ action: 'publish', expectedVersion: 2, actorId: 'forged' }).success).toBe(false);
+  });
+
+  it('rejects actor fields when editing a draft form version', () => {
+    expect(formDraftVersionRequestSchema.safeParse({
+      expectedVersion: 1,
+      definition: { schemaVersion: 1, purpose: 'ORDER_SPEC', fields: [{ key: 'spec', label: 'Spec', kind: 'text' }] },
+    }).success).toBe(true);
+    expect(formDraftVersionRequestSchema.safeParse({
+      expectedVersion: 1,
+      definition: { schemaVersion: 1, purpose: 'ORDER_SPEC', fields: [{ key: 'spec', label: 'Spec', kind: 'text' }] },
+      actorId: 'forged',
+    }).success).toBe(false);
   });
 });

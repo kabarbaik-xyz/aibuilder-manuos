@@ -20,7 +20,7 @@ export async function POST(
     const expectedVersion = body.expectedVersion;
 
     if (action === 'submit_review') {
-      const res = await service.submitReview(principal, templateId, versionId, { expectedVersion });
+      const res = await service.submitReview(principal, templateId, versionId, { expectedVersion }, parseIdempotencyKey(request));
       return jsonResponse({ data: res });
     }
 
@@ -30,7 +30,7 @@ export async function POST(
     }
 
     if (action === 'retire') {
-      const res = await service.retireFormVersion(principal, { templateId, versionId, expectedVersion });
+      const res = await service.retireFormVersion(principal, { templateId, versionId, expectedVersion }, parseIdempotencyKey(request));
       return jsonResponse({ data: res });
     }
 

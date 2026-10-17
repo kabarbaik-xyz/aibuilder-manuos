@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { formDefinitionSchema } from '@/domain/forms/schema';
 
 const answersSchema = z.record(z.unknown());
 
@@ -21,6 +22,11 @@ export const formCorrectionRequestSchema = z.object({
 export const formVersionActionRequestSchema = z.object({
   action: z.enum(['submit_review', 'publish', 'retire']),
   expectedVersion: z.number().int().positive(),
+}).strict();
+
+export const formDraftVersionRequestSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  definition: formDefinitionSchema,
 }).strict();
 
 export type FormDraftRequest = z.infer<typeof formDraftRequestSchema>;
