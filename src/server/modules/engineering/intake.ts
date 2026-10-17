@@ -110,7 +110,7 @@ export class EngineeringIntakeService {
       orderId: null,
       sourceHash,
       promptVersion: PromptVersion,
-      model: process.env.GEMINI_FLASH_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest',
       reviewState: 'NEEDS_REVIEW',
       originalExtraction: extraction,
       extraction,

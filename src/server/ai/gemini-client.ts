@@ -38,7 +38,10 @@ export async function callGeminiStructured<T>(
     };
   }
 
-  const modelName = options.model || process.env.GEMINI_FLASH_MODEL || 'gemini-2.5-flash';
+  // Cheapest capable Gemini tier. A *-lite model is non-thinking, so the JSON
+  // output is not truncated by thinking tokens inside maxOutputTokens, and it
+  // has the highest free-tier quota headroom.
+  const modelName = options.model || process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest';
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);

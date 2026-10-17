@@ -56,7 +56,7 @@ export class ProductionBrainService {
       throw new NotFoundError('Selected assistant context is not available in the current workspace scope.');
     }
 
-    const model = process.env.GEMINI_FLASH_MODEL || 'gemini-2.5-flash';
+    const model = process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest';
     const promptVersion = 'brain-qa-v5';
     const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
