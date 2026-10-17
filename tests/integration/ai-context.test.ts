@@ -60,6 +60,44 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     }
   });
 
+  it('grounds AI context in active lifecycle ownership while hiding it from customer users', async () => {
+    const { alpha } = fixture;
+    const owner = alpha.users.owner;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: alpha.masters.departmentId },
+    });
+    const workflows = new WorkflowService(fixture.db);
+    const orders = new OrderService(fixture.db);
+    const template = await workflows.createTemplate(owner.principal, {
+      orderTypeId: alpha.masters.orderTypeId, code: 'WF-AI-LIFECYCLE-CONTEXT',
+      name: 'Customer order workflow', kind: 'ORDER_LIFECYCLE',
+    }, 'ai-lifecycle-template');
+    await workflows.saveVersionDraft(owner.principal, template.data.initialVersionId!, {
+      definition: { schemaVersion: 1, name: 'Customer order workflow', stages: [{
+        key: 'SALES-REVIEW', name: 'Review customer request', action: 'REVIEW_EVIDENCE',
+        departmentId: alpha.masters.departmentId,
+        assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: alpha.masters.departmentId },
+        schedule: { kind: 'DEADLINE', dueAfterMinutes: 240 }, predecessors: [], forms: [],
+      }] },
+    }, 'ai-lifecycle-version');
+    await workflows.publishVersion(owner.principal, template.data.initialVersionId!, 'ai-lifecycle-publish');
+    const order = await orders.createOrderDraft(owner.principal, {
+      customerId: alpha.masters.customerId, orderTypeId: alpha.masters.orderTypeId,
+      itemId: alpha.masters.fgItemId, orderedQuantity: '2', requestedDate: '2026-12-22T00:00:00.000Z',
+      lifecycleWorkflowVersionId: template.data.initialVersionId,
+    }, 'ai-lifecycle-order');
+
+    const plannerContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { orderId: order.data.id });
+    expect(plannerContext.lifecycleStages).toContainEqual(expect.objectContaining({
+      orderNumber: order.data.orderNumber, workflowName: 'Customer order workflow',
+      name: 'Review customer request', department: expect.any(String), assignedTo: expect.any(String),
+      state: 'READY', scheduleKind: 'DEADLINE',
+    }));
+    const customerContext = await buildAuthorizedContext(alpha.users.customerUser.principal, fixture.db, { orderId: order.data.id });
+    expect(customerContext.lifecycleStages).toEqual([]);
+  });
+
   it('limits assistant evidence to a server-resolved order context', async () => {
     const { alpha } = fixture;
     const orderService = new OrderService(fixture.db);

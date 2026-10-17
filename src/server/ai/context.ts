@@ -56,6 +56,20 @@ export interface AuthorizedContextDisruption {
   affectedOrderNumbers: string[];
 }
 
+export interface AuthorizedContextLifecycleStage {
+  orderId: string;
+  orderNumber: string;
+  workflowName: string;
+  workflowVersion: number;
+  name: string;
+  action: string;
+  state: string;
+  department: string;
+  assignedTo: string | null;
+  dueAt: string | null;
+  scheduleKind: string;
+}
+
 export interface AuthorizedContext {
   workspaceId: string;
   workspaceRevision: number;
@@ -63,6 +77,7 @@ export interface AuthorizedContext {
   tasks: AuthorizedContextTask[];
   inventory: AuthorizedContextInventory[];
   resources: AuthorizedContextResource[];
+  lifecycleStages: AuthorizedContextLifecycleStage[];
   disruptions: AuthorizedContextDisruption[];
   evidenceIndex: string[]; // Serialized valid IDs, order numbers, part numbers, machine codes
   contextHash: string;
@@ -177,6 +192,36 @@ export async function buildAuthorizedContext(
     orderNumber: task.instance.order.orderNumber,
   }));
 
+  // Lifecycle ownership is internal operational data; never expose it in customer context.
+  const dbLifecycleStages = !effectiveCustomerId && canReadOrders && orders.length > 0
+    ? await prisma.orderLifecycleStage.findMany({
+        where: { workspaceId, instance: { orderId: { in: orders.map(order => order.id) }, status: 'ACTIVE' } },
+        include: {
+          department: { select: { name: true } },
+          assignedMembership: { select: { user: { select: { name: true } } } },
+          instance: { include: {
+            order: { select: { id: true, orderNumber: true } },
+            workflowVersion: { select: { versionNumber: true, template: { select: { name: true } } } },
+          } },
+        },
+        orderBy: [{ dueAt: 'asc' }, { createdAt: 'asc' }],
+        take: 60,
+      })
+    : [];
+  const lifecycleStages: AuthorizedContextLifecycleStage[] = dbLifecycleStages.map(stage => ({
+    orderId: stage.instance.order.id,
+    orderNumber: stage.instance.order.orderNumber,
+    workflowName: stage.instance.workflowVersion.template.name,
+    workflowVersion: stage.instance.workflowVersion.versionNumber,
+    name: stage.name,
+    action: stage.action,
+    state: stage.state,
+    department: stage.department.name,
+    assignedTo: stage.assignedMembership?.user.name ?? null,
+    dueAt: stage.dueAt?.toISOString() ?? null,
+    scheduleKind: JSON.parse(stage.scheduleJson).kind,
+  }));
+
   // 3. Fetch inventory balances
   const balances = !effectiveCustomerId && principal.permissions.has('inventory.read') ? await prisma.stockBalance.findMany({
     where: {
@@ -287,6 +332,7 @@ export async function buildAuthorizedContext(
     tasks,
     inventory,
     resources,
+    lifecycleStages,
     evidenceIndex: [...evidenceSet].sort(),
   };
 
@@ -301,6 +347,7 @@ export async function buildAuthorizedContext(
     tasks,
     inventory,
     resources,
+    lifecycleStages,
     disruptions,
     evidenceIndex: Array.from(evidenceSet),
     contextHash,
