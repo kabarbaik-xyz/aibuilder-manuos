@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 import { requirePrincipal } from '@/server/auth/auth';
 import { formatErrorResponse } from '@/server/http/errors';
-import { jsonResponse, parseIdempotencyKey } from '@/server/http/route-handler';
+import { jsonResponse, parseIdempotencyKey, parseJsonBody } from '@/server/http/route-handler';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
+import { formCorrectionRequestSchema } from '@/server/modules/forms/contracts-schema';
 import { db } from '@/server/db/client';
 
 const service = new FormSubmissionService(db);
@@ -14,7 +15,7 @@ export async function POST(
   try {
     const { id: instanceId } = await params;
     const principal = await requirePrincipal(request);
-    const body = await request.json();
+    const body = await parseJsonBody(request, formCorrectionRequestSchema);
     const result = await service.createCorrection(principal, {
       instanceId,
       expectedVersion: body.expectedVersion,

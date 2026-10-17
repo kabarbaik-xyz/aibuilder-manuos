@@ -2052,6 +2052,74 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /api/form-instances/{id}:
+    get:
+      summary: Read one form instance and its latest submission
+      description: Requires current active workspace membership and subject-specific permission, assignment and facility scope. Caller identity is derived from the authenticated session.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Authorized form instance with its pinned definition and latest submission }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/form-instances/{id}/draft:
+    put:
+      summary: Save a version-checked form draft
+      description: Requires current active membership and subject access. Actor and subject are derived server-side; unknown request properties are rejected. Replays with the same Idempotency-Key and payload return the original command result.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormSubmissionDraft' }
+      responses:
+        '200': { description: Draft saved; response contains instanceId, submissionId and incremented version }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/form-instances/{id}/finalize:
+    post:
+      summary: Finalize a version-checked form submission
+      description: Requires current active membership and subject access. Actor and subject are derived server-side; unknown request properties are rejected. Finalized answers are immutable; use the correction endpoint for append-only corrections.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormSubmissionDraft' }
+      responses:
+        '200': { description: Submission finalized; response contains instanceId, submissionId and incremented version }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/form-instances/{id}/corrections:
+    post:
+      summary: Append a version-checked correction to a finalized submission
+      description: Requires current active membership, form-correction permission and subject access. Actor and subject are derived server-side; the required reason and prior finalized submission are preserved in the correction chain.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormSubmissionCorrection' }
+      responses:
+        '201': { description: Correction appended; response contains instanceId, submissionId and incremented version }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/forms/bindings:
     post:
       summary: Bind a published form version to an order type, draft workflow node or QC checklist
@@ -3393,6 +3461,21 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    FormSubmissionDraft:
+      type: object
+      required: [expectedVersion, answers]
+      additionalProperties: false
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        answers: { type: object, additionalProperties: true }
+    FormSubmissionCorrection:
+      type: object
+      required: [expectedVersion, reason, answers]
+      additionalProperties: false
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        answers: { type: object, additionalProperties: true }
     NotificationPreferences:
       type: object
       additionalProperties: false

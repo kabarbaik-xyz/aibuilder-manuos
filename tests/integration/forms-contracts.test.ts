@@ -1,0 +1,23 @@
+import { describe, expect, it } from 'vitest';
+import {
+  formCorrectionRequestSchema,
+  formDraftRequestSchema,
+  formFinalizationRequestSchema,
+} from '@/server/modules/forms/contracts-schema';
+
+describe('form submission request contracts', () => {
+  it('requires a positive expected version and answer object for a draft', () => {
+    expect(formDraftRequestSchema.safeParse({ expectedVersion: 1, answers: { notes: 'ok' } }).success).toBe(true);
+    expect(formDraftRequestSchema.safeParse({ expectedVersion: 0, answers: {} }).success).toBe(false);
+  });
+
+  it('rejects caller-supplied actor or subject fields for every submission action', () => {
+    expect(formDraftRequestSchema.safeParse({ expectedVersion: 1, answers: {}, actorId: 'forged' }).success).toBe(false);
+    expect(formFinalizationRequestSchema.safeParse({ expectedVersion: 1, answers: {}, subjectId: 'forged' }).success).toBe(false);
+    expect(formCorrectionRequestSchema.safeParse({ expectedVersion: 2, answers: {}, reason: 'fix', actorId: 'forged' }).success).toBe(false);
+  });
+
+  it('requires a non-empty correction reason', () => {
+    expect(formCorrectionRequestSchema.safeParse({ expectedVersion: 2, answers: {}, reason: '  ' }).success).toBe(false);
+  });
+});
