@@ -29,12 +29,15 @@ describe('I06: Factory Memory from Measured Execution & QC Evidence', () => {
   it('reports insufficient history when fewer than 3 completed runs exist', async () => {
     const { alpha } = fixture;
 
-    const memory = await memoryService.queryFactoryMemory(alpha.users.planner.principal);
+    const memory = await memoryService.queryFactoryMemory(alpha.users.planner.principal, {
+      itemId: alpha.masters.fgItemId,
+      nodeKey: 'OP-10',
+    });
 
     expect(memory).toBeDefined();
     expect(memory.hasSufficientHistory).toBe(false);
     expect(memory.sampleCount).toBe(0);
-    expect(memory.meanOverrunPct).toBe(0);
+    expect(memory.meanOverrunPct).toBeNull();
     expect(memory.recommendation.title).toContain('Insufficient');
   });
 
@@ -174,7 +177,8 @@ describe('I06: Factory Memory from Measured Execution & QC Evidence', () => {
     await createCompletedRun('ORD-MEM-2', 120, 9, 1, 'run-2');
 
     // With 2 runs, still insufficient
-    const memAfter2 = await memoryService.queryFactoryMemory(alpha.users.planner.principal);
+    const cohort = { itemId: alpha.masters.fgItemId, nodeKey: 'OP-10' };
+    const memAfter2 = await memoryService.queryFactoryMemory(alpha.users.planner.principal, cohort);
     expect(memAfter2.hasSufficientHistory).toBe(false);
     expect(memAfter2.sampleCount).toBe(2);
 
@@ -184,12 +188,42 @@ describe('I06: Factory Memory from Measured Execution & QC Evidence', () => {
     // With 3 runs: mean overrun = (10 + 20 + 30) / 3 = 20.0%
     // Total inspected = (8+2) + (9+1) + (10+0) = 30 units
     // Total rework = 2 + 1 + 0 = 3 units -> 10.0%
-    const memAfter3 = await memoryService.queryFactoryMemory(alpha.users.planner.principal);
+    const memAfter3 = await memoryService.queryFactoryMemory(alpha.users.planner.principal, cohort);
     expect(memAfter3.hasSufficientHistory).toBe(true);
     expect(memAfter3.sampleCount).toBe(3);
     expect(memAfter3.meanOverrunPct).toBe(20.0);
     expect(memAfter3.meanReworkPct).toBe(10.0);
-    expect(memAfter3.recommendation.suggestedBufferPct).toBe(20);
-    expect(memAfter3.recommendation.title).toContain('+20%');
+    expect(memAfter3.recommendation.suggestedBufferPct).toBeNull();
+    expect(memAfter3.recommendation.title).toContain('20%');
+
+    const firstPage = await memoryService.queryFactoryMemory(alpha.users.planner.principal, { ...cohort, page: 1, pageSize: 10 });
+    expect(firstPage.pagination).toMatchObject({ page: 1, pageSize: 10, total: 3, totalPages: 1 });
+    expect(firstPage.sampleCount).toBe(3);
+    expect(firstPage.runs).toHaveLength(3);
+    expect(firstPage.runs[0].itemId).toBe(alpha.masters.fgItemId);
+    expect(firstPage.runs[0].passedAtoms).toBeDefined();
+
+    const versionScoped = await memoryService.queryFactoryMemory(alpha.users.planner.principal, {
+      ...cohort,
+      workflowVersionId: pub.data.id,
+    } as never);
+    expect(versionScoped.runs).toHaveLength(3);
+    expect(versionScoped.runs.every(run => run.workflowVersionId === pub.data.id)).toBe(true);
+    const otherVersion = await memoryService.queryFactoryMemory(alpha.users.planner.principal, {
+      ...cohort,
+      workflowVersionId: 'unrelated-version',
+    } as never);
+    expect(otherVersion.completedRunCount).toBe(0);
+    const outsideCompletionWindow = await memoryService.queryFactoryMemory(alpha.users.planner.principal, {
+      ...cohort,
+      completedFrom: '2000-01-01',
+      completedTo: '2000-12-31',
+    });
+    expect(outsideCompletionWindow.completedRunCount).toBe(0);
+    await expect(memoryService.queryFactoryMemory(alpha.users.planner.principal, {
+      ...cohort,
+      completedFrom: '2026-12-31',
+      completedTo: '2026-01-01',
+    })).rejects.toThrow(/on or before/i);
   });
 });

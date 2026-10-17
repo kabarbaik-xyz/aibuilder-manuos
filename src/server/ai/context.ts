@@ -7,12 +7,14 @@ import { canonicalJson } from '@/server/db/transaction';
 export interface AuthorizedContextScope {
   orderId?: string;
   itemId?: string;
+  taskId?: string;
 }
 
 export interface AuthorizedContextOrder {
   id: string;
   orderNumber: string;
   customerName: string;
+  itemId: string;
   itemCode: string;
   itemName: string;
   orderedQty: string;
@@ -36,6 +38,16 @@ export interface AuthorizedContextResource {
   status: string;
 }
 
+export interface AuthorizedContextTask {
+  id: string;
+  nodeKey: string;
+  status: string;
+  plannedMinutes: number | null;
+  actualMinutes: number | null;
+  orderId: string;
+  orderNumber: string;
+}
+
 export interface AuthorizedContextDisruption {
   materialId?: string;
   materialName?: string;
@@ -48,11 +60,48 @@ export interface AuthorizedContext {
   workspaceId: string;
   workspaceRevision: number;
   orders: AuthorizedContextOrder[];
+  tasks: AuthorizedContextTask[];
   inventory: AuthorizedContextInventory[];
   resources: AuthorizedContextResource[];
   disruptions: AuthorizedContextDisruption[];
   evidenceIndex: string[]; // Serialized valid IDs, order numbers, part numbers, machine codes
   contextHash: string;
+}
+
+export interface AuthorizedEvidenceReference {
+  recordType: 'ORDER' | 'ITEM' | 'TASK';
+  recordId: string;
+  label: string;
+  href: string;
+  reference: string;
+}
+
+export function resolveAuthorizedEvidenceReferences(
+  context: AuthorizedContext,
+  references: string[],
+): AuthorizedEvidenceReference[] {
+  const resolved: AuthorizedEvidenceReference[] = [];
+  for (const reference of references) {
+    const normalized = reference.trim().replace(/^#/, '').toLocaleLowerCase();
+    if (!normalized) continue;
+    const task = context.tasks.find(record => record.id.toLocaleLowerCase() === normalized);
+    if (task) {
+      resolved.push({ recordType: 'TASK', recordId: task.id, label: `${task.orderNumber} · ${task.nodeKey}`, href: `/planning/tasks/${encodeURIComponent(task.id)}`, reference });
+      continue;
+    }
+    const order = context.orders.find(record => [record.id, record.orderNumber].some(value => value.toLocaleLowerCase() === normalized));
+    if (order) {
+      resolved.push({ recordType: 'ORDER', recordId: order.id, label: order.orderNumber, href: `/orders/${encodeURIComponent(order.id)}`, reference });
+      continue;
+    }
+    const inventoryItem = context.inventory.find(record => [record.itemId, record.itemCode].some(value => value.toLocaleLowerCase() === normalized));
+    const orderItem = context.orders.find(record => [record.itemId, record.itemCode].some(value => value.toLocaleLowerCase() === normalized));
+    const item = inventoryItem
+      ? { id: inventoryItem.itemId, code: inventoryItem.itemCode, name: inventoryItem.itemName }
+      : orderItem ? { id: orderItem.itemId, code: orderItem.itemCode, name: orderItem.itemName } : null;
+    if (item) resolved.push({ recordType: 'ITEM', recordId: item.id, label: `${item.code} · ${item.name}`, href: inventoryItem ? `/inventory/items/${encodeURIComponent(item.id)}` : `/orders/${encodeURIComponent(orderItem!.id)}`, reference });
+  }
+  return resolved;
 }
 
 /**
@@ -81,6 +130,8 @@ export async function buildAuthorizedContext(
       workspaceId,
       ...(effectiveCustomerId ? { customerId: effectiveCustomerId } : {}),
       ...(scope?.orderId ? { id: scope.orderId } : {}),
+      ...(scope?.itemId ? { itemId: scope.itemId } : {}),
+      ...(scope?.taskId ? { instances: { some: { tasks: { some: { id: scope.taskId } } } } } : {}),
       status: { notIn: ['CANCELLED'] },
     },
     include: {
@@ -95,11 +146,35 @@ export async function buildAuthorizedContext(
     id: o.id,
     orderNumber: o.orderNumber,
     customerName: o.customer.name,
+    itemId: o.item.id,
     itemCode: o.item.code,
     itemName: o.item.name,
     orderedQty: formatQuantity(o.orderedAtoms),
     status: o.status,
     promisedDate: o.promisedDate ? o.promisedDate.toISOString().slice(0, 10) : null,
+  }));
+
+  const canReadAllTasks = principal.permissions.has('planning.read');
+  const canReadAssignedTasks = principal.permissions.has('task.assign') && Boolean(principal.technicianId);
+  const dbTasks = canReadAllTasks || canReadAssignedTasks ? await prisma.task.findMany({
+    where: {
+      workspaceId,
+      ...(scope?.taskId ? { id: scope.taskId } : {}),
+      ...(canReadAllTasks ? {} : { assignedTechnicianId: principal.technicianId! }),
+      status: { not: 'CANCELLED' },
+    },
+    include: { instance: { include: { order: true } } },
+    take: scope?.taskId ? 1 : 10,
+    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+  }) : [];
+  const tasks: AuthorizedContextTask[] = dbTasks.map(task => ({
+    id: task.id,
+    nodeKey: task.nodeKey,
+    status: task.status,
+    plannedMinutes: task.plannedDurationMinutes > 0 ? task.plannedDurationMinutes : null,
+    actualMinutes: task.actualDurationMinutes > 0 ? task.actualDurationMinutes : null,
+    orderId: task.instance.order.id,
+    orderNumber: task.instance.order.orderNumber,
   }));
 
   // 3. Fetch inventory balances
@@ -144,7 +219,7 @@ export async function buildAuthorizedContext(
   }) : [];
 
   const technicians = canReadResources ? await prisma.technician.findMany({
-    where: { workspaceId, archivedAt: null },
+    where: { workspaceId, archivedAt: null, ...(scope?.itemId ? { id: scope.itemId } : {}) },
     take: 10,
   }) : [];
 
@@ -185,6 +260,10 @@ export async function buildAuthorizedContext(
     evidenceSet.add(o.itemCode);
     evidenceSet.add(o.customerName);
   }
+  for (const task of tasks) {
+    evidenceSet.add(task.id);
+    evidenceSet.add(task.orderNumber);
+  }
   for (const inv of inventory) {
     evidenceSet.add(inv.itemId);
     evidenceSet.add(inv.itemCode);
@@ -205,6 +284,7 @@ export async function buildAuthorizedContext(
     permissions: [...principal.permissions].sort(),
     scope,
     orders,
+    tasks,
     inventory,
     resources,
     evidenceIndex: [...evidenceSet].sort(),
@@ -218,6 +298,7 @@ export async function buildAuthorizedContext(
     workspaceId,
     workspaceRevision,
     orders,
+    tasks,
     inventory,
     resources,
     disruptions,

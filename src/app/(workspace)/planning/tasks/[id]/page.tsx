@@ -2,16 +2,37 @@ import React from 'react';
 import Link from 'next/link';
 import { requirePrincipal } from '@/server/auth/auth';
 import { headers } from 'next/headers';
-import { planningService } from '@/server/modules/planning/service';
 import { executionService } from '@/server/modules/execution/service';
 import { Badge } from '@/components/ui/badge';
+import { ButtonLink } from '@/components/ui/button-link';
+import { Icon } from '@/components/icons';
+import { formatQuantity } from '@/domain/quantity';
 import { notFound } from 'next/navigation';
 import { NotFoundError } from '@/domain/errors';
 
 export const metadata = {
-  title: 'Task Planning & Resource Assignment | ManuOS',
-  description: 'Detailed resource assignment and qualification audit for routing tasks.',
+  title: 'Detail Operasi & Penugasan | ManuOS',
+  description: 'Rincian penugasan sumber daya, prasyarat, dan kesiapan material operasi.',
 };
+
+const statusLabelMap: Record<string, string> = {
+  PENDING: 'Menunggu',
+  READY: 'Siap',
+  ASSIGNED: 'Ditugaskan',
+  RUNNING: 'Sedang berjalan',
+  PAUSED: 'Dijeda',
+  WAITING_QC: 'Menunggu QC',
+  COMPLETED: 'Selesai',
+  CANCELLED: 'Dibatalkan',
+};
+
+function getStatusVariant(status: string): 'default' | 'blue' | 'success' | 'warning' | 'danger' {
+  if (status === 'COMPLETED') return 'success';
+  if (status === 'RUNNING' || status === 'ASSIGNED') return 'blue';
+  if (status === 'PAUSED' || status === 'WAITING_QC') return 'warning';
+  if (status === 'CANCELLED') return 'danger';
+  return 'default';
+}
 
 export default async function PlanningTaskDetailPage({
   params,
@@ -21,7 +42,7 @@ export default async function PlanningTaskDetailPage({
   const { id } = await params;
   const h = await headers();
   const principal = await requirePrincipal(h);
-  let task: any;
+  let task: Awaited<ReturnType<typeof executionService.getTaskExecutionDetail>>;
   try {
     task = await executionService.getTaskExecutionDetail(principal, id);
   } catch (error) {
@@ -29,73 +50,318 @@ export default async function PlanningTaskDetailPage({
     throw error;
   }
 
+  const canAskAi =
+    principal.permissions?.has?.('planning.read') ||
+    (principal.permissions?.has?.('task.assign') && Boolean(principal.technicianId));
+  const demands = task.materialReadiness?.demands ?? [];
+  const targetQty = formatQuantity(BigInt(task.order.targetAtoms || '0'));
+  const recordedQty = formatQuantity(BigInt(task.stageQuantitySummary?.cumulativeRecordedAtoms || '0'));
+  const remainingQty = formatQuantity(BigInt(task.stageQuantitySummary?.remainingRecordableAtoms || '0'));
+
   return (
     <div className="page-stack">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex justify-between items-center bg-surface border border-line p-5 rounded-xl">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-mono text-xs px-2 py-0.5 bg-surface text-ink rounded font-bold">
-                {task.nodeKey}
-              </span>
-              <Badge variant="default">{task.status}</Badge>
-            </div>
-            <h1 className="text-xl font-bold text-ink">{task.nodeName}</h1>
-            <p className="text-xs text-muted">
-              Order {task.order.orderNumber} ({task.order.customerName}) · Item: {task.order.itemCode}
-            </p>
-          </div>
-          <Link
-            href={`/shop-floor/tasks/${task.id}`}
-            className="px-4 py-2 bg-primary hover:bg-primary-soft text-white text-xs font-semibold rounded-lg transition"
-          >
-            Open Workstation Telemetry →
+      <header className="od-header">
+        <div className="od-identity">
+          <Link href="/planning" className="od-back">
+            <Icon name="arrow-left" />
+            <span>Jadwal produksi</span>
           </Link>
+          <div className="od-title-row">
+            <span className="my-work-node">{task.nodeKey}</span>
+            <h1>{task.nodeName}</h1>
+            <Badge variant={getStatusVariant(task.status)}>
+              {statusLabelMap[task.status] || task.status}
+            </Badge>
+            <Badge variant={task.canStart ? 'success' : task.readinessReasons.length > 0 ? 'warning' : 'default'}>
+              {task.canStart ? 'Siap mulai' : task.readinessReasons.length > 0 ? `${task.readinessReasons.length} prasyarat tertahan` : statusLabelMap[task.status] || task.status}
+            </Badge>
+          </div>
+          <p className="od-subtitle">
+            Order <Link href={`/orders/${task.order.id}`} className="font-semibold text-primary hover:underline">{task.order.orderNumber}</Link> ({task.order.customerName}) · Item: <strong>{task.order.itemCode}</strong> — {task.order.itemName}
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-surface border border-line p-5 rounded-xl space-y-3">
-            <h2 className="text-sm font-semibold text-ink">Assigned Resources</h2>
-            <div className="p-3 bg-surface border border-line rounded-lg text-xs space-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted">Technician:</span>
-                <span className="text-ink font-medium">
-                  {task.assignedTechnician ? task.assignedTechnician.name : 'Unassigned'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Machine / Station:</span>
-                <span className="text-ink font-medium">
-                  {task.assignedMachine ? task.assignedMachine.name : 'Unassigned'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted">Planned Duration:</span>
-                <span className="text-ink font-mono font-medium">
-                  {task.plannedDurationMinutes} minutes
-                </span>
+        <div className="od-actions">
+          <ButtonLink href={`/orders/${task.order.id}`}>
+            <Icon name="order" />
+            <span>Detail order</span>
+          </ButtonLink>
+          {canAskAi && (
+            <ButtonLink href={`/ai/assistant?taskId=${encodeURIComponent(task.id)}`}>
+              <Icon name="spark" />
+              <span>Tanya AI</span>
+            </ButtonLink>
+          )}
+          <ButtonLink href={`/shop-floor/tasks/${task.id}`} variant="primary">
+            <Icon name="work" />
+            <span>Buka workstation</span>
+          </ButtonLink>
+        </div>
+      </header>
+
+      {task.readinessReasons.length > 0 && (
+        <div className="od-banner warning" role="status">
+          <span className="od-banner-icon" aria-hidden="true">
+            <Icon name="alert" />
+          </span>
+          <div className="od-banner-copy">
+            <strong>Operasi memiliki prasyarat yang perlu diselesaikan</strong>
+            <p>{task.readinessReasons.map((r) => r.message).join(' · ')}</p>
+          </div>
+          <div className="od-banner-tags">
+            {task.readinessReasons.map((r) => (
+              <span key={r.code} className="od-tag">
+                {r.code === 'MISSING_ASSIGNMENT'
+                  ? 'Perlu teknisi'
+                  : r.code === 'MATERIAL_SHORTAGE'
+                    ? 'Material kurang'
+                    : r.code === 'PREDECESSOR_INCOMPLETE'
+                      ? 'Pendahulu aktif'
+                      : r.code}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <section className="od-facts" aria-label="Ringkasan operasi">
+        <div className="od-fact">
+          <span>Teknisi ditugaskan</span>
+          <strong>{task.assignedTechnician ? task.assignedTechnician.name : 'Belum ditugaskan'}</strong>
+          <small>{task.assignedTechnician ? `Kode ${task.assignedTechnician.code}` : 'Tetapkan melalui jadwal produksi'}</small>
+        </div>
+        <div className="od-fact">
+          <span>Mesin / stasiun kerja</span>
+          <strong>{task.assignedMachine ? task.assignedMachine.name : 'Belum ditugaskan'}</strong>
+          <small>{task.assignedMachine ? `Kode ${task.assignedMachine.code}` : 'Stasiun kerja belum dipilih'}</small>
+        </div>
+        <div className="od-fact">
+          <span>Durasi operasi</span>
+          <strong>{task.currentElapsedMinutes} / {task.plannedDurationMinutes} mnt</strong>
+          <small>Percobaan ke-{task.attemptNumber} · Rencana {task.plannedDurationMinutes} menit</small>
+        </div>
+        <div className="od-fact">
+          <span>Capaian kuantitas tahap</span>
+          <strong>{recordedQty} / {targetQty} unit</strong>
+          <small>Sisa {remainingQty} unit dapat dicatat</small>
+        </div>
+      </section>
+
+      <div className="od-grid">
+        <section className="od-card">
+          <header className="od-card-head">
+            <div>
+              <h3>Sumber daya & instruksi kerja</h3>
+              <p>Alokasi operator, mesin, dan acuan revisi engineering</p>
+            </div>
+            <Badge variant={task.assignedTechnician && task.assignedMachine ? 'success' : 'warning'}>
+              {task.assignedTechnician && task.assignedMachine ? 'Lengkap' : 'Perlu alokasi'}
+            </Badge>
+          </header>
+          <dl className="od-kv">
+            <div>
+              <dt>Teknisi</dt>
+              <dd>{task.assignedTechnician ? `${task.assignedTechnician.name} (${task.assignedTechnician.code})` : 'Belum ditugaskan'}</dd>
+            </div>
+            <div>
+              <dt>Mesin / Stasiun</dt>
+              <dd>{task.assignedMachine ? `${task.assignedMachine.name} (${task.assignedMachine.code})` : 'Belum ditugaskan'}</dd>
+            </div>
+            <div>
+              <dt>Durasi rencana</dt>
+              <dd>{task.plannedDurationMinutes} menit</dd>
+            </div>
+            <div>
+              <dt>Durasi berjalan</dt>
+              <dd>{task.currentElapsedMinutes} menit</dd>
+            </div>
+            <div>
+              <dt>Revisi engineering</dt>
+              <dd>
+                {task.workInstruction
+                  ? `Rev #${task.workInstruction.engineeringRevisionNumber} · Workflow v${task.workInstruction.workflowVersionNumber}`
+                  : `Instruksi v${task.instructionRevision}`}
+              </dd>
+            </div>
+            <div>
+              <dt>Gambar teknik</dt>
+              <dd>
+                {task.workInstruction?.drawingNumber
+                  ? `${task.workInstruction.drawingNumber}${task.workInstruction.revisionCode ? ` (${task.workInstruction.revisionCode})` : ''}`
+                  : 'Tidak ada lampiran gambar'}
+              </dd>
+            </div>
+          </dl>
+          <div className="od-card-foot">
+            <span>Penjadwalan sumber daya</span>
+            <Link href="/planning" className="font-semibold text-primary hover:underline">
+              Kelola di jadwal produksi →
+            </Link>
+          </div>
+        </section>
+
+        <section className="od-card">
+          <header className="od-card-head">
+            <div>
+              <h3>Status prasyarat & urutan</h3>
+              <p>Ketergantungan operasi pendahulu pada alur kerja produksi</p>
+            </div>
+            <Badge variant={task.predecessors.every((p) => p.isCompleted) ? 'success' : 'warning'}>
+              {task.predecessors.length === 0
+                ? 'Tanpa pendahulu'
+                : `${task.predecessors.filter((p) => p.isCompleted).length}/${task.predecessors.length} selesai`}
+            </Badge>
+          </header>
+
+          {task.predecessors.length === 0 ? (
+            <div className="od-callout is-success">
+              <Icon name="check" />
+              <div>
+                <strong>Tidak ada operasi pendahulu yang disyaratkan</strong>
+                <p>Operasi {task.nodeKey} berada di tahap awal dan siap dieksekusi sesuai jadwal.</p>
               </div>
             </div>
-          </div>
+          ) : (
+            <dl className="od-kv">
+              {task.predecessors.map((p) => (
+                <div key={p.taskId}>
+                  <dt>
+                    <Link href={`/planning/tasks/${p.taskId}`} className="font-semibold text-primary hover:underline">
+                      Operasi {p.nodeKey}
+                    </Link>
+                  </dt>
+                  <dd>
+                    <Badge variant={p.isCompleted ? 'success' : 'warning'}>
+                      {statusLabelMap[p.status] || p.status}
+                    </Badge>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
 
-          <div className="bg-surface border border-line p-5 rounded-xl space-y-3">
-            <h2 className="text-sm font-semibold text-ink">Predecessor Status</h2>
-            {task.predecessors.length === 0 ? (
-              <p className="text-xs text-success">No predecessors required. Ready for execution.</p>
-            ) : (
-              <div className="space-y-2 text-xs">
-                {task.predecessors.map((p: any) => (
-                  <div key={p.taskId} className="flex justify-between p-2.5 bg-surface rounded border border-line">
-                    <span className="font-mono text-ink">{p.nodeKey}</span>
-                    <span className={p.isCompleted ? 'text-success font-medium' : 'text-warning'}>
-                      {p.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+          <dl className="od-kv">
+            <div>
+              <dt>Status kesiapan mulai</dt>
+              <dd>{task.canStart ? 'Memenuhi seluruh syarat mulai' : 'Menunggu pemenuhan prasyarat'}</dd>
+            </div>
+            <div>
+              <dt>Prasyarat tertahan</dt>
+              <dd>{task.readinessReasons.length === 0 ? 'Tidak ada' : `${task.readinessReasons.length} item`}</dd>
+            </div>
+          </dl>
+
+          <div className="od-card-foot">
+            <span>Alur kerja order</span>
+            <Link href={`/orders/${task.order.id}`} className="font-semibold text-primary hover:underline">
+              Lihat routing order →
+            </Link>
           </div>
-        </div>
+        </section>
+
+        <section className="od-card">
+          <header className="od-card-head">
+            <div>
+              <h3>Kesiapan material operasi</h3>
+              <p>Kebutuhan komponen BOM dan alokasi WIP pada operasi ini</p>
+            </div>
+            <Badge
+              variant={
+                demands.length === 0 || demands.every((d) => BigInt(d.issuedAtoms) >= BigInt(d.requiredAtoms))
+                  ? 'success'
+                  : 'warning'
+              }
+            >
+              {demands.length === 0
+                ? 'Tanpa komposisi'
+                : demands.every((d) => BigInt(d.issuedAtoms) >= BigInt(d.requiredAtoms))
+                  ? 'Tercukupi'
+                  : 'Perlu pengeluaran WIP'}
+            </Badge>
+          </header>
+
+          {demands.length === 0 ? (
+            <div className="od-callout">
+              <Icon name="info" />
+              <div>
+                <strong>Tidak ada kebutuhan material BOM langsung</strong>
+                <p>Operasi {task.nodeKey} tidak memerlukan komponen tambahan di luar WIP sebelumnya.</p>
+              </div>
+            </div>
+          ) : (
+            <dl className="od-kv">
+              {demands.map((demand) => {
+                const reqQty = formatQuantity(BigInt(demand.requiredAtoms));
+                const issuedQty = formatQuantity(BigInt(demand.issuedAtoms));
+                const reservedQty = formatQuantity(BigInt(demand.reservedAtoms));
+                return (
+                  <div key={demand.demandId}>
+                    <dt>
+                      <strong className="text-ink">{demand.itemCode}</strong>
+                      <span className="block text-xs text-muted">{demand.itemName}</span>
+                    </dt>
+                    <dd>
+                      <span>WIP {issuedQty} / {reqQty} unit</span>
+                      <span className="block text-xs text-muted font-normal">Reservasi: {reservedQty} unit</span>
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          )}
+
+          <div className="od-card-foot">
+            <span>Pengeluaran material</span>
+            <Link href="/inventory/issues/new" className="font-semibold text-primary hover:underline">
+              Keluarkan material ke WIP →
+            </Link>
+          </div>
+        </section>
+
+        <section className="od-card">
+          <header className="od-card-head">
+            <div>
+              <h3>Riwayat sesi kerja</h3>
+              <p>Catatan waktu aktual operator di lantai produksi</p>
+            </div>
+            <Badge variant={task.activeSession ? 'blue' : 'default'}>
+              {task.activeSession ? 'Sesi aktif' : `${task.sessions.length} sesi`}
+            </Badge>
+          </header>
+
+          {task.sessions.length === 0 ? (
+            <div className="od-callout">
+              <Icon name="clock" />
+              <div>
+                <strong>Belum ada sesi eksekusi tercatat</strong>
+                <p>Operasi ini belum dimulai oleh operator. Buka workstation untuk memulai dan mencatat hasil kerja.</p>
+              </div>
+            </div>
+          ) : (
+            <dl className="od-kv">
+              {task.sessions.slice(0, 5).map((session) => (
+                <div key={session.id}>
+                  <dt>
+                    <strong className="text-ink">{session.technicianName || 'Operator'}</strong>
+                    <span className="block text-xs text-muted">
+                      {session.sessionType === 'RUNNING' ? 'Sesi kerja aktif' : 'Sesi jeda'}
+                    </span>
+                  </dt>
+                  <dd>
+                    {session.durationMinutes != null ? `${session.durationMinutes} mnt` : 'Sedang berjalan'}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          <div className="od-card-foot">
+            <span>Eksekusi lantai produksi</span>
+            <Link href={`/shop-floor/tasks/${task.id}`} className="font-semibold text-primary hover:underline">
+              Buka workstation operasi →
+            </Link>
+          </div>
+        </section>
       </div>
     </div>
   );

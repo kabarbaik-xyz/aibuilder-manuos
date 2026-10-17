@@ -132,6 +132,7 @@ export interface Calendar {
   timezone: string;
   weeklyJson: string;
   shiftJson: string;
+  exceptions?: Array<{ id: string; date: string; workingIntervalsJson: string; reason: string | null }>;
   version: number;
   createdAt: string;
   updatedAt: string;

@@ -26,40 +26,16 @@ describe('I02: Promise Feasibility Engine (Capacity & Material Readiness)', () =
     await fixture.close();
   });
 
-  it('evaluates feasibility with material shortage and rejects overtime as infeasible', async () => {
+  it('requires an explicitly selected released job before feasibility can be evaluated', async () => {
     const { alpha } = fixture;
-
-    // Zero stock initially
-    const result = await promiseService.evaluatePromise(alpha.users.planner.principal, {
+    await expect(promiseService.evaluatePromise(alpha.users.planner.principal, {
       itemId: fgItemId,
       quantity: 50,
       requestedDate: '2026-11-25',
-    });
-
-    expect(result).toBeDefined();
-    expect(result.evaluationId).toBeDefined();
-    expect(result.inputHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(result.materialReadiness.isFullyAvailable).toBe(false);
-
-    // Overtime option must explicitly be marked infeasible due to missing physical material
-    const overtimeOption = result.alternatives.find((a) => a.type === 'OVERTIME');
-    expect(overtimeOption).toBeDefined();
-    expect(overtimeOption!.isFeasible).toBe(false);
-    expect(overtimeOption!.infeasibleReason).toContain('Missing raw materials');
-
-    // Partial delivery option remains feasible
-    const partialOption = result.alternatives.find((a) => a.type === 'PARTIAL_DELIVERY');
-    expect(partialOption).toBeDefined();
-    expect(partialOption!.isFeasible).toBe(true);
-
-    // Assert NO database mutation occurred (evaluation is strictly pure / side-effect free)
-    const reservationsCount = await fixture.db.stockReservation.count({
-      where: { workspaceId: alpha.workspaceId },
-    });
-    expect(reservationsCount).toBe(0);
+    })).rejects.toThrow();
   });
 
-  it('evaluates feasibility when material is available and marks overtime feasible', async () => {
+  it('rejects the legacy item-only request because it cannot identify routing or job scope', async () => {
     const { alpha } = fixture;
 
     // Post opening balance of 100 units raw material
@@ -75,18 +51,18 @@ describe('I02: Promise Feasibility Engine (Capacity & Material Readiness)', () =
       'key-open-promise-raw'
     );
 
-    const result = await promiseService.evaluatePromise(alpha.users.planner.principal, {
+    await expect(promiseService.evaluatePromise(alpha.users.planner.principal, {
       itemId: fgItemId,
       quantity: 20,
       requestedDate: '2026-12-10',
-    });
+    })).rejects.toThrow();
+  });
 
-    expect(result.materialReadiness.isFullyAvailable).toBe(true);
-    expect(result.confidence).toBe('HIGH');
-
-    // With material available, overtime option becomes feasible
-    const overtimeOption = result.alternatives.find((a) => a.type === 'OVERTIME');
-    expect(overtimeOption).toBeDefined();
-    expect(overtimeOption!.isFeasible).toBe(true);
+  it('rejects impossible calendar dates before loading schedule evidence', async () => {
+    await expect(promiseService.evaluatePromise(fixture.alpha.users.planner.principal, {
+      orderId: 'cd004730-82e0-4d0e-8f88-0f7ce40ec30c',
+      instanceId: '2f20f305-2e1e-4cd8-a36d-f5d89d52ca72',
+      requestedDate: '2026-02-30',
+    })).rejects.toThrow('valid calendar date');
   });
 });

@@ -9,6 +9,13 @@ export const ProposeRecoverySchema = z.object({
 
 export type ProposeRecoveryInput = z.infer<typeof ProposeRecoverySchema>;
 
+export const ScheduleRecoveryReviewSchema = z.object({
+  orderId: z.string().uuid(),
+  instanceId: z.string().uuid(),
+}).strict();
+
+export type ScheduleRecoveryReviewInput = z.infer<typeof ScheduleRecoveryReviewSchema>;
+
 export const ApproveRecoverySchema = z.object({
   orderId: z.string().uuid(),
   proposalId: z.string().uuid(),
@@ -45,10 +52,39 @@ export interface RecoveryProposalDTO {
   id: string;
   orderId: string;
   orderNumber: string;
-  totalQty: number;
-  readyQcPassedQty: number;
-  originalPromisedDate: string | null;
-  projectedDelayedDate: string;
+  mode?: 'LEGACY_SIMULATION' | 'SCHEDULE_REVIEW';
+  state?: 'SAVED';
+  totalQty?: number;
+  readyQcPassedQty?: number;
+  originalPromisedDate?: string | null;
+  projectedDelayedDate?: string;
   options: RecoveryOptionDTO[];
   createdAt: string;
+  scheduleReview?: {
+    instanceId: string;
+    workflowVersionId: string;
+    engineeringRevisionId: string;
+    facilityId: string | null;
+    facilityTimezone: string | null;
+    horizonStart: string;
+    horizonEnd: string;
+    evaluatedAt: string;
+    projectedEndAt: string;
+    taskVersions: Array<{ taskId: string; version: number }>;
+    tasks: Array<{
+      taskId: string;
+      version: number;
+      nodeKey: string;
+      startAt: string | null;
+      endAt: string | null;
+      technicianName: string | null;
+      machineName: string | null;
+      predecessorTaskIds: string[];
+    }>;
+    assumptions: string[];
+  };
 }
+
+export type ScheduleRecoveryReviewResult =
+  | { state: 'NOT_CONNECTED'; scheduleState: string; missingInputs: string[] }
+  | RecoveryProposalDTO;

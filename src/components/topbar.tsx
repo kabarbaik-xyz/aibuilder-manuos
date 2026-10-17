@@ -63,12 +63,12 @@ export function Topbar({ customBreadcrumb, activeTitle }: TopbarProps = {}) {
         </span>
         <Button
           className="topbar-assistant"
-          aria-label="Ask ManuOS"
+          aria-label="Ask AI"
           variant="soft"
           icon="spark"
           onClick={() => openModal('brain')}
         >
-          <span>Ask ManuOS</span>
+          <span>Ask AI</span>
         </Button>
         <AccountMenu />
       </div>

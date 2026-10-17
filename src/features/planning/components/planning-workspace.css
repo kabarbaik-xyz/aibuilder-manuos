@@ -1,0 +1,108 @@
+.planning-workspace { min-width: 0; }
+.planning-workspace .page-header-actions > div { flex-wrap: wrap; }
+.ps-estimate-banner { display: flex; align-items: flex-start; gap: 16px; padding: 20px 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.ps-estimate-symbol { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 10px; background: var(--primary-soft); color: var(--primary); }
+.ps-estimate-symbol > .icon { width: 20px; height: 20px; }
+.ps-estimate-copy { min-width: 0; flex: 1; }
+.ps-estimate-copy > div { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.ps-estimate-copy strong { font-size: 14px; font-weight: 600; color: var(--ink); }
+.planning-workspace .ps-estimate-copy p { margin-top: 6px; font-size: 13px; line-height: 1.7; color: var(--muted); }
+.ps-estimate-copy details { margin-top: 8px; }
+.ps-estimate-copy summary { cursor: pointer; width: fit-content; font-size: 12px; font-weight: 600; color: var(--primary); }
+.ps-estimate-copy details p { max-width: 85ch; }
+.planning-workspace .planning-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); overflow: hidden; gap: 0; }
+.planning-workspace .planning-metric { padding: 20px 22px; border: 0; border-right: 1px solid var(--line); min-width: 0; }
+.planning-workspace .planning-metric:last-child { border-right: 0; }
+.planning-workspace .planning-metric > span { font-size: 12px; text-transform: none; letter-spacing: normal; font-weight: 600; }
+.planning-workspace .planning-metric > div { margin-top: 10px; font-size: 20px; line-height: 1.4; }
+.planning-workspace .planning-metric > p { margin-top: 6px; font-size: 12px; line-height: 1.6; }
+.ps-view-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.ps-view-toolbar > :first-child { flex: 1; min-width: 220px; max-width: 510px; }
+.ps-view-toolbar .ui-tabs-toolbar { flex: 0 0 auto; }
+.ps-schedule-panel { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.ps-schedule-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.planning-workspace .ps-schedule-heading h2 { font-size: 16px; font-weight: 700; color: var(--ink); }
+.planning-workspace .ps-schedule-heading p { margin-top: 5px; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.ps-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); }
+.ps-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.ps-legend i, .ps-event-marker { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.ps-legend .is-flexible, .ps-event-marker.is-flexible { background: var(--primary); }
+.ps-legend .is-critical, .ps-event-marker.is-critical { background: var(--warning); }
+.ps-legend .has-wait, .ps-event-marker.has-wait { background: var(--danger); }
+.ps-gantt-context { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 14px 22px; font-size: 12px; color: var(--muted); background: var(--surface-muted); border-bottom: 1px solid var(--line); }
+.ps-gantt-context > span:first-child { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-weight: 600; }
+.ps-gantt-context .icon { width: 14px; height: 14px; }
+.ps-gantt-scroll { max-height: 640px; overflow: auto; position: relative; }
+.ps-gantt-header, .ps-gantt-row { display: grid; grid-template-columns: 250px minmax(0, 1fr) 52px; }
+.ps-gantt-header { position: sticky; top: 0; z-index: 5; min-height: 48px; background: var(--surface-muted); border-bottom: 1px solid var(--line); }
+.ps-gantt-label { position: sticky; left: 0; z-index: 2; padding: 14px 20px; border-right: 1px solid var(--line); background: var(--surface); min-width: 0; }
+.ps-gantt-header .ps-gantt-label { font-size: 12px; font-weight: 600; background: var(--surface-muted); color: var(--muted); }
+.ps-gantt-axis { position: relative; min-width: 0; margin-right: 6px; }
+.ps-gantt-axis > span { position: absolute; top: 15px; padding-left: 8px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ps-gantt-row { border-bottom: 1px solid var(--line); min-height: 70px; }
+.ps-gantt-row:last-child { border-bottom: 0; }
+.ps-gantt-row:hover, .ps-gantt-row:hover .ps-gantt-label, .ps-gantt-row:hover .ps-gantt-action { background: #fafbfe; }
+.ps-gantt-label > a { display: block; font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ps-gantt-label > a:hover { color: var(--primary); }
+.ps-gantt-label > span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+.ps-gantt-label > span > span { color: #7d899c; }
+.ps-gantt-track { position: relative; min-width: 0; margin-right: 6px; }
+.ps-gantt-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.planning-workspace .ps-gantt-bar { display: flex; align-items: center; position: absolute; top: 20px; min-width: 5px; height: 29px; padding: 0 8px; border: 1px solid #b8caf5; border-radius: 5px; color: var(--primary); background: var(--primary-soft); font-size: 12px; font-weight: 600; text-decoration: none; overflow: hidden; }
+.ps-gantt-bar > span { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.planning-workspace .ps-gantt-bar.is-critical { color: var(--warning); background: var(--warning-soft); border-color: #e7c799; }
+.planning-workspace .ps-gantt-bar.has-wait { color: var(--danger); background: var(--danger-soft); border-color: #e4b6ba; }
+.ps-gantt-bar:hover { filter: brightness(0.97); }
+.ps-gantt-action, .ps-gantt-action-head { display: flex; align-items: center; justify-content: center; position: sticky; right: 0; background: var(--surface); border-left: 1px solid var(--line); z-index: 2; }
+.ps-gantt-action-head { color: var(--muted); background: var(--surface-muted); }
+.ps-gantt-action-head > .icon { width: 15px; height: 15px; }
+.ps-interval-unavailable { display: inline-block; padding: 24px 12px; font-size: 12px; color: var(--muted); }
+.ps-calendar-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+.planning-workspace .ps-calendar-toolbar h3 { font-size: 16px; font-weight: 600; color: var(--ink); }
+.ps-calendar-toolbar > div { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ps-calendar-scroll { overflow-x: auto; }
+.ps-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 840px; }
+.ps-calendar-weekday { padding: 11px 12px; text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface-muted); border-bottom: 1px solid var(--line); }
+.ps-calendar-day { min-height: 124px; padding: 8px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
+.ps-calendar-day:nth-child(7n) { border-right: 0; }
+.ps-calendar-day.is-outside { background: var(--surface-muted); }
+.ps-calendar-day.is-selected { background: #f4f7ff; box-shadow: inset 0 0 0 1px #b3c6f6; }
+.ps-calendar-date { display: grid; place-items: center; min-width: 28px; min-height: 28px; padding: 3px; background: transparent; border: 0; border-radius: 6px; color: var(--ink); font-size: 12px; font-weight: 600; }
+.ps-calendar-date:hover { background: var(--primary-soft); color: var(--primary); }
+.ps-calendar-date.is-today { background: var(--primary); color: white; }
+.ps-calendar-day.is-outside .ps-calendar-date { color: #7e8b9e; }
+.ps-calendar-events { display: flex; flex-direction: column; gap: 4px; margin-top: 5px; }
+.planning-workspace .ps-calendar-event { display: flex; align-items: center; gap: 5px; min-width: 0; padding: 5px 6px; background: var(--primary-soft); color: var(--primary); border-radius: 4px; font-size: 12px; text-decoration: none; }
+.ps-calendar-event > span { font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+.ps-calendar-event strong { min-width: 0; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; font-weight: 600; }
+.planning-workspace .ps-calendar-event.is-critical { background: var(--warning-soft); color: var(--warning); }
+.planning-workspace .ps-calendar-event.has-wait { background: var(--danger-soft); color: var(--danger); }
+.ps-more-events { border: 0; background: transparent; font-size: 12px; font-weight: 600; color: var(--primary); text-align: left; padding: 4px 6px; }
+.ps-agenda { padding: 20px 22px; }
+.ps-agenda-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; }
+.planning-workspace .ps-agenda-heading h3 { font-size: 14px; color: var(--ink); font-weight: 600; }
+.ps-agenda-heading > span { font-size: 12px; color: var(--muted); }
+.ps-agenda-row { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); }
+.ps-agenda-time { display: block; flex-shrink: 0; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.ps-agenda-time > small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.ps-agenda-row > a { flex: 1; min-width: 0; text-decoration: none; }
+.ps-agenda-row > a > strong { display: block; font-size: 13px; font-weight: 600; color: var(--primary); }
+.ps-agenda-row > a > span { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); }
+.planning-workspace .ps-agenda-empty, .ps-visual-empty { font-size: 13px; color: var(--muted); line-height: 1.8; }
+.ps-visual-empty { padding: 42px 24px; text-align: center; }
+.planning-workspace .ps-schedule-panel table { min-width: 1000px; font-size: 13px; }
+@media (max-width: 1050px) { .ps-estimate-banner { flex-wrap: wrap; } .ps-estimate-copy { flex-basis: calc(100% - 60px); } .ps-estimate-banner > :last-child { margin-left: 56px; } }
+@media (max-width: 700px) {
+  .planning-workspace .planning-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .planning-workspace .planning-metric { padding: 18px; border-bottom: 1px solid var(--line); }
+  .planning-workspace .planning-metric:nth-child(2) { border-right: 0; }
+  .planning-workspace .planning-metric:nth-child(n+3) { border-bottom: 0; }
+  .planning-workspace .planning-metric > div { font-size: 18px; }
+  .ps-estimate-banner, .ps-schedule-heading { padding: 18px; }
+  .ps-view-toolbar { align-items: stretch; }
+  .ps-view-toolbar > :first-child { max-width: none; flex-basis: 100%; }
+  .ps-agenda-row { flex-wrap: wrap; gap: 10px; }
+  .ps-agenda-time { flex-basis: calc(100% - 24px); }
+  .ps-agenda-row > a { margin-left: 17px; }
+  .ps-calendar-toolbar, .ps-agenda { padding: 16px 18px; }
+}

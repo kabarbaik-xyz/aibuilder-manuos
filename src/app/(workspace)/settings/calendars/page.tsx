@@ -7,7 +7,14 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import React, { useState } from 'react';
-import { useAddCalendarException } from '@/features/masters/hooks';
+import { Icon } from '@/components/icons';
+import { Tabs } from '@/components/ui/tabs';
+import { Select } from '@/components/ui/select';
+import { Pagination } from '@/components/ui/pagination';
+import { LoadingState } from '@/components/ui/resource-state';
+import { WorkingCalendarView } from '@/features/masters/components/working-calendar-view';
+import { operatingDay } from '@/features/masters/calendar-presentation';
+import { useCalendars, useAddCalendarException } from '@/features/masters/hooks';
 import { Calendar } from '@/features/masters/api';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -20,6 +27,11 @@ import { ArchiveMasterDialog, MasterRowActions } from '@/features/masters/compon
 import { CatalogNameEditDialog } from '@/features/masters/components/catalog-name-edit-dialog';
 
 export default function CalendarsPage() {
+  const [view, setView] = useState<'calendar' | 'list'>('calendar');
+  const [calendarId, setCalendarId] = useState('');
+  const [exceptionValidation, setExceptionValidation] = useState('');
+  const [exceptionShifts, setExceptionShifts] = useState([{ start: '08:00', end: '17:00' }]);
+  const detailQuery = useCalendars();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [exceptionCalendar, setExceptionCalendar] = useState<Calendar | null>(null);
   const [exceptionDate, setExceptionDate] = useState('');
@@ -34,21 +46,33 @@ export default function CalendarsPage() {
   const addException = useAddCalendarException(exceptionCalendar?.id ?? '');
 
   const calendars = data?.data || [];
+  const activeCalendar = calendars.find(calendar => calendar.id === calendarId) || calendars[0];
+  const calendarDetail = detailQuery.data?.data.find(calendar => calendar.id === activeCalendar?.id);
+  const openException = (calendar: Calendar, date = '') => {
+    setExceptionError(null); setExceptionValidation(''); setExceptionDate(date); setExceptionCalendar(calendar);
+    const state = date ? operatingDay(calendar, new Date(`${date}T12:00:00`)) : null;
+    setIsWorkingDay(Boolean(state?.intervals?.length)); setExceptionReason(state?.reason || '');
+    setExceptionShifts(state?.intervals?.length ? state.intervals : [{ start: '08:00', end: '17:00' }]);
+  };
 
   const handleExceptionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!exceptionCalendar) return;
-    setExceptionError(null);
+    setExceptionError(null); setExceptionValidation('');
+    if (isWorkingDay && exceptionShifts.some(shift => !shift.start || !shift.end || shift.end <= shift.start)) { setExceptionValidation('Shift end must be after shift start.'); return; }
+    const orderedShifts = [...exceptionShifts].sort((left, right) => left.start.localeCompare(right.start));
+    if (isWorkingDay && orderedShifts.some((shift, index) => index > 0 && orderedShifts[index - 1].end > shift.start)) { setExceptionValidation('Working intervals must not overlap.'); return; }
     try {
       await addException.mutateAsync({
         date: exceptionDate,
         isWorkingDay,
         reason: exceptionReason || undefined,
-        intervalsJson: isWorkingDay ? JSON.stringify([{ start: '08:00', end: '17:00' }]) : undefined,
+        intervalsJson: isWorkingDay ? JSON.stringify(orderedShifts) : undefined,
       });
       setExceptionCalendar(null);
       setExceptionDate('');
       setExceptionReason('');
+      refetch();
     } catch (err: any) {
       setExceptionError(err);
     }
@@ -58,7 +82,7 @@ export default function CalendarsPage() {
     {
       key: 'code',
       header: 'Calendar Code',
-      render: (c) => <span className="font-mono font-semibold text-primary">{c.code}</span>,
+      render: (c) => <button type="button" className="wc-code-link" onClick={() => { setCalendarId(c.id); setView('calendar'); }}>{c.code}<Icon name="arrow" /></button>,
     },
     {
       key: 'name',
@@ -74,7 +98,7 @@ export default function CalendarsPage() {
       key: 'actions',
       header: 'Exceptions',
       render: (c) => (
-        <PermissionGate permission="resource.manage"><Button variant="default" size="small" onClick={(e) => { e.stopPropagation(); setExceptionCalendar(c); }}>
+        <PermissionGate permission="resource.manage"><Button variant="default" size="small" onClick={(e) => { e.stopPropagation(); openException(detailQuery.data?.data.find(calendar => calendar.id === c.id) || c); }}>
           Add Exception
         </Button></PermissionGate>
       ),
@@ -91,16 +115,20 @@ export default function CalendarsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="page-stack working-calendar">
       <PageHeader title="Working Calendars" description="Configure standard operating hours, weekly shifts and holiday exceptions" actions={<><PermissionGate permission="resource.manage"><Button variant="primary" icon="plus" onClick={() => setIsCreateOpen(true)}>
           New Calendar
         </Button></PermissionGate></>} />
 
-      <ListSearch value={search} onChange={setSearch} placeholder="Search calendar code or name…" label="Search calendars" />
+      <div className="ov-toolbar"><ListSearch value={search} onChange={setSearch} placeholder="Search calendar code or name…" label="Search calendars" /><Tabs variant="segmented" activeId={view} onChange={setView} ariaLabel="Working calendars view" items={[{ id: 'calendar', label: 'Calendar', icon: 'calendar' }, { id: 'list', label: 'List', icon: 'order' }]} /></div>
 
       {error ? (
         <ErrorState message={(error as any)?.message || 'Failed to load calendars'} onRetry={() => refetch()} />
-      ) : (
+      ) : view === 'calendar' ? isLoading ? <LoadingState message="Loading operating calendars…" /> : calendars.length === 0 ? <div className="ov-empty"><Icon name="calendar" /><h2>No matching calendars</h2><p>Create a working calendar or adjust the search to see its shifts and exceptions.</p></div> : <>
+
+        {detailQuery.isPending ? <LoadingState message="Loading shifts and exceptions…" /> : detailQuery.error ? <ErrorState message={detailQuery.error.message} onRetry={() => detailQuery.refetch()} /> : calendarDetail ? <WorkingCalendarView calendar={calendarDetail} calendars={calendars} onCalendarChange={setCalendarId} onException={date => openException(calendarDetail, date)} /> : <ErrorState message="Calendar details are unavailable. Refresh to try again." onRetry={() => detailQuery.refetch()} />}
+        <Pagination {...pagination} />
+      </> : (
         <DataTable
           pagination={pagination}
           columns={columns}
@@ -111,7 +139,7 @@ export default function CalendarsPage() {
         />
       )}
 
-      <CreateCalendarModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
+      <CreateCalendarModal isOpen={isCreateOpen} onClose={() => { setIsCreateOpen(false); refetch(); }} />
       <CatalogNameEditDialog resource="calendars" record={selectedCalendar} onClose={() => setSelectedCalendar(null)} />
       <ArchiveMasterDialog
         isOpen={!!calendarToArchive}
@@ -126,10 +154,12 @@ export default function CalendarsPage() {
         isOpen={!!exceptionCalendar}
         onClose={() => setExceptionCalendar(null)}
         title={`Calendar Exception: ${exceptionCalendar?.code}`}
-        subtitle="Schedule a holiday, shutdown or overtime day"
+        subtitle="Override the regular pattern for a holiday, shutdown, or extra working day."
+        type="modal" pending={addException.isPending}
       >
         <form onSubmit={handleExceptionSubmit} className="space-y-4">
           <FormErrorSummary error={exceptionError} />
+          {exceptionValidation && <p className="ov-error" role="alert">{exceptionValidation}</p>}
           <div>
             <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Date (YYYY-MM-DD) *
             <DatePicker value={exceptionDate} onChange={setExceptionDate} required /></label>
@@ -145,6 +175,8 @@ export default function CalendarsPage() {
               Is Working Day (e.g. Overtime Saturday)
             </label>
           </div>
+          <p className="text-xs text-muted">Saving replaces the working intervals for this date. Other dates keep their existing pattern.</p>
+          {isWorkingDay && <div className="wc-exception-shifts">{exceptionShifts.map((shift, index) => <div className="wc-exception-shift" key={index}><label>Start time<Input type="time" required value={shift.start} onChange={event => setExceptionShifts(previous => previous.map((item, i) => i === index ? { ...item, start: event.target.value } : item))} /></label><label>End time<Input type="time" required value={shift.end} onChange={event => setExceptionShifts(previous => previous.map((item, i) => i === index ? { ...item, end: event.target.value } : item))} /></label><button className="icon-btn" type="button" aria-label={`Remove interval ${index + 1}`} disabled={exceptionShifts.length === 1} onClick={() => setExceptionShifts(previous => previous.filter((_, i) => i !== index))}><Icon name="close" /></button></div>)}<Button type="button" size="small" icon="plus" onClick={() => setExceptionShifts(previous => [...previous, { start: '08:00', end: '17:00' }])}>Add interval</Button></div>}
           <div>
             <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1">Reason / Description
             <Input

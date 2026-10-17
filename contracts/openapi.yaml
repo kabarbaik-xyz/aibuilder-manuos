@@ -7,6 +7,288 @@ servers:
   - url: http://localhost:3000
     description: Local development server
 paths:
+  /api/intelligence/capabilities:
+    get:
+      summary: List AI capabilities visible to the authenticated workspace principal
+      description: Uses the current session principal and returns only capability descriptors for which the principal has at least one listed permission. Provider readiness is reported without exposing provider credentials.
+      responses:
+        '200':
+          description: Workspace capability registry
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [workspaceId, evaluatedAt, capabilities]
+                    properties:
+                      workspaceId: { type: string }
+                      evaluatedAt: { type: string, format: date-time }
+                      capabilities:
+                        type: array
+                        items:
+                          type: object
+                          required: [id, code, title, summary, category, href, contextualEntryLabel, state, availablePage, engineConfigured, statusLabel, unavailableReason, prerequisite]
+                          properties:
+                            id: { type: string, enum: [AII-01, AII-02, AII-03, AII-04, AII-05, AII-06, AII-07, SCH-07, SCH-08, SCH-09, CST-03, BLD-01] }
+                            code: { type: string }
+                            title: { type: string }
+                            summary: { type: string }
+                            category: { type: string, enum: [ASSISTANT, ENGINEERING, PLANNING, RECOVERY, COSTING, QUALITY] }
+                            href: { type: string, nullable: true }
+                            contextualEntryLabel: { type: string }
+                            state: { type: string, enum: [AVAILABLE, DETERMINISTIC_READY, NOT_CONNECTED, UNCONFIGURED_PROVIDER, PILOT_GATED] }
+                            availablePage: { type: boolean }
+                            engineConfigured: { type: boolean }
+                            statusLabel: { type: string }
+                            unavailableReason: { type: string, nullable: true }
+                            prerequisite: { type: string, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/intelligence/promise:
+    post:
+      summary: Evaluate a requested delivery date against a selected released job
+      description: Runs the same deterministic finite-capacity dry-run as Planning for the selected order and active workflow instance. A candidate date is returned only when every open task is scheduled and facility timezone is available. It never commits a customer promise or mutates bookings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId, instanceId, requestedDate]
+              properties:
+                orderId: { type: string, format: uuid }
+                instanceId: { type: string, format: uuid }
+                requestedDate:
+                  oneOf:
+                    - { type: string, format: date }
+                    - { type: string, format: date-time }
+              additionalProperties: false
+      responses:
+        '200':
+          description: Date comparison based on complete schedule evidence, or explicit NOT_CONNECTED with missing inputs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [state, evaluationId, inputHash, evaluatedAt, orderId, instanceId, requestedDate, feasibleDate, projectedEndAt, isFeasibleOnRequestedDate, deltaDays, scheduleState, bottleneckReason, missingInputs, assumptions, evidence]
+                    properties:
+                      state: { type: string, enum: [EVALUATED, NOT_CONNECTED] }
+                      evaluationId: { type: string, format: uuid }
+                      inputHash: { type: string }
+                      evaluatedAt: { type: string, format: date-time }
+                      orderId: { type: string, format: uuid }
+                      instanceId: { type: string, format: uuid }
+                      requestedDate: { type: string, format: date }
+                      feasibleDate: { type: string, format: date, nullable: true }
+                      projectedEndAt: { type: string, format: date-time, nullable: true }
+                      isFeasibleOnRequestedDate: { type: boolean, nullable: true }
+                      deltaDays: { type: integer, nullable: true }
+                      scheduleState: { type: string, enum: [COMPLETE, PARTIAL, NO_FEASIBLE_TASKS, NO_OPEN_TASKS], nullable: true }
+                      bottleneckReason: { type: string }
+                      missingInputs: { type: array, items: { type: string } }
+                      assumptions: { type: array, items: { type: string } }
+                      evidence:
+                        type: object
+                        nullable: true
+                        required: [facilityId, facilityTimezone, workflowVersionId, engineeringRevisionId, taskVersions]
+                        properties:
+                          facilityId: { type: string, format: uuid, nullable: true }
+                          facilityTimezone: { type: string, nullable: true }
+                          workflowVersionId: { type: string, format: uuid }
+                          engineeringRevisionId: { type: string, format: uuid }
+                          taskVersions:
+                            type: array
+                            items:
+                              type: object
+                              required: [taskId, version]
+                              properties:
+                                taskId: { type: string, format: uuid }
+                                version: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/dashboard:
+    get:
+      summary: Read the authenticated workspace dashboard overview
+      description: Returns workspace-scoped metrics, up to 50 most recently created orders, and derived dashboard exceptions. Order exceptions are limited to those orders; material shortage exceptions are derived from all open material demands. This is not a paginated risk inbox.
+      responses:
+        '200':
+          description: Dashboard overview envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [workspaceId, metrics, orders, exceptions, updatedAt]
+                    properties:
+                      workspaceId: { type: string }
+                      metrics: { type: object }
+                      orders: { type: array, items: { type: object } }
+                      exceptions:
+                        type: array
+                        items:
+                          type: object
+                          required: [id, type, title, description, severity, referenceId, actionScreen]
+                          properties:
+                            id: { type: string }
+                            type: { type: string, enum: [MATERIAL_SHORTAGE, PENDING_APPROVAL, QC_REWORK, AT_RISK_ETA] }
+                            title: { type: string }
+                            description: { type: string }
+                            severity: { type: string, enum: [CRITICAL, WARNING, INFO] }
+                            referenceId: { type: string }
+                            actionScreen: { type: string }
+                      updatedAt: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/intelligence/risks:
+    get:
+      summary: Search and paginate derived workspace dashboard exceptions
+      description: Applies authenticated workspace/customer scope. Customer principals see only their order-derived risks; internal material-shortage risks are excluded. Order-derived coverage is limited to the 50 most recently created orders; material shortages use the open-demand set. Pagination is over the currently derived exception set and does not imply full order coverage.
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: type, in: query, schema: { type: string, enum: [MATERIAL_SHORTAGE, PENDING_APPROVAL, QC_REWORK, AT_RISK_ETA] } }
+        - { name: severity, in: query, schema: { type: string, enum: [CRITICAL, WARNING, INFO] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, enum: [10, 25, 50], default: 10 } }
+      responses:
+        '200':
+          description: Derived exception page and explicit source coverage
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [items, pagination, coverage, updatedAt]
+                    properties:
+                      items: { type: array, items: { type: object } }
+                      pagination:
+                        type: object
+                        required: [page, pageSize, total, totalPages]
+                        properties:
+                          page: { type: integer }
+                          pageSize: { type: integer }
+                          total: { type: integer }
+                          totalPages: { type: integer }
+                      coverage:
+                        type: object
+                        required: [complete, orderDerivedLimit, note]
+                        properties:
+                          complete: { type: boolean, enum: [false] }
+                          orderDerivedLimit: { type: integer, enum: [50] }
+                          note: { type: string }
+                      updatedAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/risks/{id}:
+    get:
+      summary: Resolve a derived dashboard exception, cause, affected records, evidence, and permitted actions
+      description: Customer principals cannot resolve internal material-shortage risks. Detail evidence is freshly resolved inside the current workspace scope; missing evidence is returned explicitly, and the derived exception has no acknowledge or resolve mutation.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Current derived exception with cause, observed time, related order/task/material demand, evidence values, missing data, permitted action links, and coverage note }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/intelligence/recovery:
+    get:
+      summary: List saved recovery proposals for the authenticated workspace
+      description: Requires planning.read or order.read. Returns a bounded page of persisted simulations; applying a proposal remains a separate gated operation.
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: status, in: query, schema: { type: string, enum: [PROPOSED, REJECTED, APPROVED, SUPERSEDED] } }
+        - { name: search, in: query, schema: { type: string, maxLength: 120 } }
+      responses:
+        '200': { description: Paginated saved proposal summaries with source order and parsed simulation data }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/recovery/propose:
+    post:
+      summary: Save a finite-capacity schedule review for disruption recovery
+      description: Runs the same schedule proposal service used by Planning. Only COMPLETE proposals are saved, through an idempotent audited command that rechecks order and task versions. Partial results return NOT_CONNECTED without persistence. Apply remains disabled pending transactional revalidation and real schedule or shipment effects.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [orderId, instanceId]
+              properties:
+                orderId: { type: string, format: uuid }
+                instanceId: { type: string, format: uuid }
+      responses:
+        '200': { description: Persisted schedule review with evidence, or NOT_CONNECTED with unscheduled reasons and no persistence }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Order or task version changed while saving; re-evaluate before retrying }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/recovery/{id}:
+    get:
+      summary: Read a saved recovery proposal and its authorized source order
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Proposal lifecycle state, source order, and simulation snapshot }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/intelligence/recovery/{id}/reject:
+    post:
+      summary: Record an audited rejection of a saved recovery proposal
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [note]
+              properties:
+                note: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200': { description: Audited rejection command result }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/intelligence/memory:
+    get:
+      summary: Read measured task duration and finalized QC evidence for an authorized cohort
+      description: Missing measured or planned duration remains null and is excluded from duration statistics. QC quantities serialize as integer atom strings. Cohorts can be bounded by item, department, process, workflow version, facility, and inclusive completion dates. Statistics are calculated across the selected completed-task cohort before evidence-run pagination. Three measured runs is a provisional display threshold, not a validated buffer recommendation.
+      parameters:
+        - { name: itemId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: departmentId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: nodeKey, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: workflowVersionId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: facilityId, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: completedFrom, in: query, description: Inclusive completion date in YYYY-MM-DD format, schema: { type: string, format: date } }
+        - { name: completedTo, in: query, description: Inclusive completion date in YYYY-MM-DD format, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, enum: [10, 25, 50], default: 10 } }
+      responses:
+        '200': { description: Measured cohort summary and paginated evidence runs; unavailable values are nullable }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/lists/{resource}:
     get:
       summary: Read an authorized database page for a workspace list
@@ -91,6 +373,97 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { description: 'Task or assigned resource is not in the current workspace' }
         '409': { description: 'Stale task version, conflicting booking or inconsistent legacy booking windows' }
+
+  /api/planning/schedule-proposals:
+    post:
+      summary: Generate a dry-run finite-capacity schedule proposal
+      description: Selects one active workflow instance and derives facility, requirements, BOM material readiness, roster availability, breaks, leave, downtimes and confirmed-booking gaps from server-side evidence. It never accepts a caller calendar and never writes bookings. Tasks requiring unknown requirements, material, qualification, duration or a contiguous resource window are returned UNSCHEDULED with reasons. Machine capacity is conservatively treated as exclusive and tasks are not split across shifts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [orderId, startHorizon]
+              properties:
+                orderId: { type: string, format: uuid }
+                instanceId: { type: string, format: uuid, description: Required when the order has multiple active jobs }
+                startHorizon: { type: string, format: date-time }
+                horizonDays: { type: integer, minimum: 1, maximum: 30, default: 14 }
+      responses:
+        '200':
+          description: Dry-run task assignments and explicit unscheduled reasons, with evidence scope and assumptions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [state, tasks, makespanMinutes, assumptions, scope, evaluatedAt]
+                    properties:
+                      state: { type: string, enum: [COMPLETE, PARTIAL, NO_FEASIBLE_TASKS, NO_OPEN_TASKS] }
+                      makespanMinutes: { type: integer, minimum: 0 }
+                      projectedEndAt: { type: string, format: date-time, nullable: true }
+                      evaluatedAt: { type: string, format: date-time }
+                      assumptions: { type: array, items: { type: string } }
+                      scope:
+                        type: object
+                        required: [orderId, orderNumber, instanceId, workflowVersionId, engineeringRevisionId, facilityId, horizonStart, horizonEnd]
+                        properties:
+                          orderId: { type: string, format: uuid }
+                          orderNumber: { type: string }
+                          instanceId: { type: string, format: uuid }
+                          workflowVersionId: { type: string, format: uuid }
+                          engineeringRevisionId: { type: string, format: uuid }
+                          facilityId: { type: string, format: uuid, nullable: true }
+                          horizonStart: { type: string, format: date-time }
+                          horizonEnd: { type: string, format: date-time }
+                      tasks:
+                        type: array
+                        items:
+                          type: object
+                          required: [taskId, version, nodeKey, predecessorTaskIds, status, startAt, endAt, technicianId, machineId, reasons]
+                          properties:
+                            taskId: { type: string, format: uuid }
+                            version: { type: integer }
+                            nodeKey: { type: string }
+                            predecessorTaskIds: { type: array, items: { type: string, format: uuid } }
+                            status: { type: string, enum: [SCHEDULED, UNSCHEDULED] }
+                            startAt: { type: string, format: date-time, nullable: true }
+                            endAt: { type: string, format: date-time, nullable: true }
+                            technicianId: { type: string, format: uuid, nullable: true }
+                            technicianName: { type: string, nullable: true }
+                            machineId: { type: string, format: uuid, nullable: true }
+                            machineName: { type: string, nullable: true }
+                            reasons: { type: array, items: { type: string } }
+        '400': { description: Invalid scope or multiple active jobs require explicit selection }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/planning/technician-recommendations:
+    post:
+      summary: Rank active, qualified technicians for a released task and time window
+      description: Task skill and certification requirements are loaded from its released workflow version. Caller-supplied requirements are not accepted. Results are advisory; the assignment command revalidates permission, qualification, roster availability, existing bookings and task version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskId, slotStart, slotEnd]
+              properties:
+                taskId: { type: string, minLength: 1, maxLength: 100 }
+                slotStart: { type: string, format: date-time }
+                slotEnd: { type: string, format: date-time }
+      responses:
+        '200': { description: Ranked candidates with eligibility violations and workload rationale }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/planning/assignments/{id}/reschedule:
     post:
@@ -237,7 +610,8 @@ paths:
 
   /api/ai/recovery-options:
     post:
-      summary: Generate and narrate recovery candidates
+      summary: Recovery candidate narrative status
+      description: Returns 503 NOT_CONNECTED. Caller-supplied feasibility claims are not sent to the language model; narration requires a validated server-side recovery evaluation.
       requestBody:
         required: true
         content:
@@ -253,24 +627,7 @@ paths:
                 capacity:
                   type: object
       responses:
-        '200':
-          description: Recovery options narrative
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  aiResult:
-                    type: object
-                    nullable: true
-                    properties:
-                      options:
-                        type: array
-                        items:
-                          type: object
-                  reason:
-                    type: string
-                    nullable: true
+        '503': { description: NOT_CONNECTED; no candidate options or feasibility claims are returned }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -404,27 +761,36 @@ paths:
   /api/ai/brain-qa:
     post:
       summary: Read-only factory operational brain Q&A
+      description: Accepts an optional server-resolved ORDER, ITEM or TASK context. Task records are visible only to planning-authorized users or the technician assigned to that task. Context is authorization-checked and limits the grounded workspace snapshot; record IDs alone never grant access. Verified evidence references are converted to typed internal record links by the server; model-provided URLs are never used as navigation.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [question, snapshot]
+              required: [question]
               properties:
                 question:
                   type: string
-                snapshot:
+                  minLength: 1
+                  maxLength: 2000
+                context:
                   type: object
+                  additionalProperties: false
+                  required: [type, id]
+                  properties:
+                    type: { type: string, enum: [ORDER, ITEM, TASK] }
+                    id: { type: string, minLength: 1, maxLength: 100 }
       responses:
         '200':
-          description: Grounded response with evidence links
+          description: Envelope containing a grounded data response and SUCCESS/FALLBACK explanation
           content:
             application/json:
               schema:
                 type: object
+                required: [data, explanation]
                 properties:
-                  aiResult:
+                  data:
                     type: object
                     nullable: true
                     properties:
@@ -434,11 +800,28 @@ paths:
                         type: array
                         items:
                           type: string
+                      evidence:
+                        type: array
+                        items:
+                          type: object
+                          required: [recordType, recordId, label, href, reference]
+                          properties:
+                            recordType: { type: string, enum: [ORDER, ITEM, TASK] }
+                            recordId: { type: string }
+                            label: { type: string }
+                            href: { type: string }
+                            reference: { type: string }
                       linkToScreen:
                         type: string
-                  reason:
-                    type: string
-                    nullable: true
+                  explanation:
+                    type: object
+                    description: Explanation with status SUCCESS or FALLBACK, contextHash, verified evidenceRefs for SUCCESS, and reason/fallbackData for FALLBACK.
+                    properties:
+                      status: { type: string, enum: [SUCCESS, FALLBACK] }
+                      contextHash: { type: string }
+                      evidenceRefs: { type: array, items: { type: string } }
+                      reason: { type: string, enum: [UNAVAILABLE, SCHEMA_ERROR, UNGROUNDED_CLAIM, TIMEOUT] }
+                      message: { type: string }
 
   /api/ai/extract-rfq:
     post:
@@ -574,40 +957,10 @@ paths:
 
   /api/ai/promise-explain:
     post:
-      summary: Explain feasible delivery date drivers and alternatives
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [request, feasibilityResult]
-              properties:
-                request:
-                  type: object
-                feasibilityResult:
-                  type: object
+      summary: Disabled legacy promise explanation route
+      description: Returns 503 NOT_CONNECTED. Caller-supplied feasibility data is not passed to the language model; explanations require a validated server-side Promise evaluation first.
       responses:
-        '200':
-          description: Feasible promise narrative
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  aiResult:
-                    type: object
-                    nullable: true
-                    properties:
-                      summary:
-                        type: string
-                      bottleneckExplanation:
-                        type: string
-                      alternativesNarrative:
-                        type: string
-                  reason:
-                    type: string
-                    nullable: true
+        '503': { description: Promise evaluation is not connected to validated finite-capacity evidence }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1505,6 +1858,7 @@ paths:
                 orderedQuantity: { oneOf: [{ type: string, pattern: '^\\d+(\\.\\d+)?$' }, { type: number, exclusiveMinimum: 0 }] }
                 requestedDate: { type: string, format: date-time }
                 promisedDate: { type: string, format: date-time, nullable: true }
+                rfqDraftId: { type: string, format: uuid, description: Existing workspace RFQ review; must be reviewed and not already linked to another order. }
                 lines:
                   type: array
                   minItems: 1
@@ -1563,6 +1917,107 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/orders/{id}/costing/explanation:
+    get:
+      summary: Read deterministic, ranked cost variance contributors and evidence links
+      description: Requires cost.read. Variance uses integer minor units. Missing standard or actual coverage is returned explicitly; no revenue or margin is inferred.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Authorized variance explanation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [orderId, currency, totalVarianceCents, coverage, unavailableReason, contributors]
+                    properties:
+                      orderId: { type: string }
+                      currency: { type: string, nullable: true }
+                      totalVarianceCents: { type: string, nullable: true }
+                      coverage: { type: object, required: [standard, actual], properties: { standard: { type: boolean }, actual: { type: boolean } } }
+                      unavailableReason: { type: string, nullable: true }
+                      contributors:
+                        type: array
+                        items:
+                          type: object
+                          required: [category, varianceCents, sourceEntryCount, sourceEntryIds, evidenceHref]
+                          properties:
+                            category: { type: string, enum: [MATERIAL, LABOR, MACHINE, OUTSOURCED, SCRAP] }
+                            varianceCents: { type: string }
+                            sourceEntryCount: { type: integer }
+                            sourceEntryIds: { type: array, items: { type: string } }
+                            evidenceHref: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '400': { description: Mixed currency ledger cannot be compared }
+
+  /api/orders/{id}/costing:
+    get:
+      summary: Read a workspace-scoped job cost summary and source entries
+      description: Requires cost.read. Cost amounts remain integer minor-unit strings. Missing standard/actual categories and variance values are null, not zero. Mixed-currency legacy ledgers are rejected rather than summed.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Authorized category summary with source cost-entry evidence
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [orderId, currency, hasEntries, hasStandard, hasActual, categories]
+                    properties:
+                      orderId: { type: string }
+                      currency: { type: string, nullable: true }
+                      hasEntries: { type: boolean }
+                      hasStandard: { type: boolean }
+                      hasActual: { type: boolean }
+                      totalStandardCents: { type: string, nullable: true }
+                      totalActualCents: { type: string, nullable: true }
+                      totalVarianceCents: { type: string, nullable: true }
+                      isFavorable: { type: boolean, nullable: true }
+                      categories: { type: array, items: { type: object } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '400': { description: Mixed currency ledger cannot be compared }
+    post:
+      summary: Record a standard or actual job cost entry
+      description: Requires cost.manage. amountCents is an integer minor-unit decimal string; taskId, when supplied, must belong to the route order. One order may use only one currency. The write is transactional, audited, and idempotent.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [costCategory, costType, amountCents]
+              properties:
+                taskId: { type: string }
+                costCategory: { type: string, enum: [MATERIAL, LABOR, MACHINE, OUTSOURCED, SCRAP] }
+                costType: { type: string, enum: [STANDARD, ACTUAL] }
+                amountCents: { type: string, pattern: '^\\d+$' }
+                currency: { type: string, pattern: '^[A-Za-z]{3}$' }
+                notes: { type: string, maxLength: 1000 }
+      responses:
+        '201': { description: Committed envelope with data source entry and transaction metadata }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Idempotency key reused with a different payload }
   /api/orders/{id}/confirm:
     post:
       summary: Confirm an order
@@ -1691,6 +2146,62 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/engineering/intake/extractions:
+    post:
+      summary: Extract and persist a text RFQ for engineering review
+      description: Requires order.create or engineering.write. If the provider is unavailable or its result fails the bounded schema, no source text or draft is persisted. A successful response stores the original text with a SHA-256 hash, model/prompt version and original extraction.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 20000 }
+      responses:
+        '201': { description: Persisted review-needed extraction and workspace master match IDs }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { description: Provider unavailable or extraction schema invalid; no draft persisted }
+  /api/engineering/intake/extractions/{id}:
+    get:
+      summary: Read a workspace-scoped RFQ source and its review state
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Source text, extraction, immutable original, master matches and review metadata }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Save reviewer-edited extraction as reviewed
+      description: One-way transition from NEEDS_REVIEW to REVIEWED; stores the reviewer identity/time and preserves the original extraction. It does not create an order or publish engineering data.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [extraction]
+              properties:
+                extraction: { type: object, description: Bounded reviewed extraction fields; quantity remains a positive integer until a user confirms the item UOM on order creation. }
+      responses:
+        '200': { description: Audited review command result }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Already reviewed or stale record }
 
   /api/engineering/drawings:
     get:

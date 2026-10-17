@@ -24,10 +24,10 @@ export function ModalManager() {
 
   if (!activeModal) return null;
   if (!isDemo && activeModal === 'brain') {
-    return <Dialog isOpen onClose={closeModal} title="Ask ManuOS" subtitle="Your production workspace, explained." type="drawer" className="dialog-drawer-chat"><WorkspaceBrainDrawer /></Dialog>;
+    return <Dialog isOpen onClose={closeModal} title="Ask AI" subtitle="Your production workspace, explained." type="drawer" className="dialog-drawer-chat"><WorkspaceBrainDrawer /></Dialog>;
   }
   if (!isDemo) {
-    return <Dialog isOpen onClose={closeModal} title={activeModal === 'search' ? 'Find a page' : 'Ask ManuOS'} type={activeModal === 'search' ? 'search' : 'drawer'}>{activeModal === 'search' ? <SearchDialog/> : <div className="page-stack"><Badge variant="default">Unavailable</Badge><h3>Production intelligence is not connected yet</h3><p className="muted">Workspace answers will appear here when intelligence is connected to your operational records.</p></div>}</Dialog>;
+    return <Dialog isOpen onClose={closeModal} title={activeModal === 'search' ? 'Find a page' : 'Ask AI'} type={activeModal === 'search' ? 'search' : 'drawer'}>{activeModal === 'search' ? <SearchDialog/> : <div className="page-stack"><Badge variant="default">Unavailable</Badge><h3>Production intelligence is not connected yet</h3><p className="muted">Workspace answers will appear here when intelligence is connected to your operational records.</p></div>}</Dialog>;
   }
 
   return (
@@ -73,7 +73,7 @@ export function ModalManager() {
           type="drawer"
           isOpen
           onClose={closeModal}
-          title="Ask ManuOS"
+          title="Ask AI"
           subtitle="A quick answer grounded in the active shop-floor state."
           className="dialog-drawer-chat"
         >

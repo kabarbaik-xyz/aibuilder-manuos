@@ -130,17 +130,23 @@ export const ordersApi = {
 
 export interface OrderCostSummary {
   orderId: string;
-  currency: string;
-  totalStandardCents: string;
-  totalActualCents: string;
-  totalVarianceCents: string;
-  isFavorable: boolean;
+  currency: string | null;
+  hasEntries: boolean;
+  hasStandard: boolean;
+  hasActual: boolean;
+  totalStandardCents: string | null;
+  totalActualCents: string | null;
+  totalVarianceCents: string | null;
+  isFavorable: boolean | null;
   categories: Array<{
     category: "MATERIAL" | "LABOR" | "MACHINE" | "OUTSOURCED" | "SCRAP";
-    standardCents: string;
-    actualCents: string;
-    varianceCents: string;
-    isFavorable: boolean;
+    standardCents: string | null;
+    actualCents: string | null;
+    varianceCents: string | null;
+    hasStandard: boolean;
+    hasActual: boolean;
+    isFavorable: boolean | null;
+    entries: Array<{ id: string; taskId: string | null; costType: 'STANDARD' | 'ACTUAL'; amountCents: string; notes: string | null; createdAt: string }>;
   }>;
 }
 
@@ -149,7 +155,7 @@ export const orderCostingApi = {
     const res = await apiRequest<{ data: OrderCostSummary }>("/api/orders/" + orderId + "/costing");
     return res.data;
   },
-  recordCost: async (orderId: string, input: { costCategory: string; costType: string; amountCents: number | string; notes?: string }) => {
+  recordCost: async (orderId: string, input: { costCategory: string; costType: string; amountCents: string; currency: string; notes?: string }) => {
     return apiRequest("/api/orders/" + orderId + "/costing", {
       method: "POST",
       body: JSON.stringify(input),

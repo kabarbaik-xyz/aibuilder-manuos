@@ -9,10 +9,14 @@ import { EngineeringService } from '@/server/modules/engineering/service';
 import { WorkflowService } from '@/server/modules/workflow/service';
 import { releaseOrder } from '@/server/modules/orders/release';
 import { MastersService } from '@/server/modules/masters/service';
+import { ScheduleProposalService } from '@/server/modules/planning/schedule-proposals';
+import { RecoveryService } from '@/server/modules/intelligence/recovery';
 
 describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () => {
   let fixture: FactoryFixture;
   let planningService: PlanningService;
+  let scheduleProposalService: ScheduleProposalService;
+  let recoveryService: RecoveryService;
   let recommendationService: TechnicianRecommendationService;
   let promiseService: PromiseService;
   let memoryService: FactoryMemoryService;
@@ -31,6 +35,8 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
   beforeAll(async () => {
     fixture = await createFactoryFixture();
     planningService = new PlanningService(fixture.db);
+    scheduleProposalService = new ScheduleProposalService(fixture.db);
+    recoveryService = new RecoveryService(fixture.db);
     recommendationService = new TechnicianRecommendationService(fixture.db);
     promiseService = new PromiseService(fixture.db);
     memoryService = new FactoryMemoryService(fixture.db);
@@ -195,6 +201,50 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(t2Start).toBeGreaterThanOrEqual(t1End);
       expect(schedule.makespanMinutes).toBeGreaterThanOrEqual(180); // 120 + 60
     });
+
+    it('builds a dry-run from published roster and verified qualifications without creating bookings', async () => {
+      const { alpha } = fixture;
+      const owner = alpha.users.owner.principal;
+      const machine = await fixture.db.machine.findUniqueOrThrow({ where: { id: alpha.masters.machineId } });
+      const nodes = await fixture.db.workflowNode.findMany({ where: { versionId: (await fixture.db.workflowInstance.findUniqueOrThrow({ where: { id: testInstanceId } })).workflowVersionId } });
+      await Promise.all(nodes.map((node) => fixture.db.workflowNode.update({
+        where: { id: node.id },
+        data: { requirementsJson: JSON.stringify({ machineClassId: machine.machineClassId, requiredCertIds: ['CERT-AERO-WELD'] }) },
+      })));
+      const shiftStart = new Date('2026-10-19T08:00:00.000Z');
+      const shiftEnd = new Date('2026-10-19T16:00:00.000Z');
+      await fixture.db.rosterInterval.createMany({ data: [
+        { workspaceId: alpha.workspaceId, technicianId: alpha.masters.technicianId, intervalType: 'SHIFT', status: 'PUBLISHED', startAt: shiftStart, endAt: shiftEnd },
+        { workspaceId: alpha.workspaceId, machineId: alpha.masters.machineId, intervalType: 'SHIFT', status: 'PUBLISHED', startAt: shiftStart, endAt: shiftEnd },
+      ] });
+      const before = await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } });
+
+      const proposal = await scheduleProposalService.propose(owner, {
+        orderId: testOrderId,
+        instanceId: testInstanceId,
+        startHorizon: shiftStart.toISOString(),
+        horizonDays: 7,
+      });
+
+      expect(proposal.state).toBe('COMPLETE');
+      expect(proposal.tasks).toHaveLength(2);
+      expect(proposal.tasks.every((task) => task.status === 'SCHEDULED' && task.technicianId === alpha.masters.technicianId && task.machineId === alpha.masters.machineId)).toBe(true);
+      const predecessor = proposal.tasks.find((task) => task.taskId === task1Id)!;
+      const dependent = proposal.tasks.find((task) => task.predecessorTaskIds.includes(task1Id))!;
+      expect(new Date(dependent.startAt!).getTime()).toBeGreaterThanOrEqual(new Date(predecessor.endAt!).getTime());
+      expect(proposal.scope).toMatchObject({ orderId: testOrderId, instanceId: testInstanceId, workflowVersionId: expect.any(String), engineeringRevisionId: expect.any(String) });
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(before);
+    });
+
+    it('rejects a caller-supplied calendar instead of treating it as site availability authority', async () => {
+      const { alpha } = fixture;
+      await expect(scheduleProposalService.propose(alpha.users.owner.principal, {
+        orderId: testOrderId,
+        instanceId: testInstanceId,
+        startHorizon: '2026-10-19T08:00:00.000Z',
+        calendar: { shiftStartHour: 0, shiftHours: 24, workDays: [0, 1, 2, 3, 4, 5, 6] },
+      })).rejects.toThrow();
+    });
   });
 
   describe('2. Transparent Qualification & Workload Technician Recommendations', () => {
@@ -237,25 +287,63 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
   });
 
   describe('3. Grounded Feasible Promise Evaluation', () => {
-    it('evaluates promise feasibility and provides candidate completion dates', async () => {
+    it('evaluates a requested date against the same released-job finite-capacity result', async () => {
       const { alpha } = fixture;
       const owner = alpha.users.owner.principal;
 
       const evaluation = await promiseService.evaluatePromise(owner, {
-        itemId: alpha.masters.fgItemId,
-        quantity: 10,
-        requestedDate: '2026-11-25T17:00:00.000Z',
+        orderId: testOrderId,
+        instanceId: testInstanceId,
+        requestedDate: '2026-10-20',
       });
 
-      expect(evaluation.isFeasibleOnRequestedDate).toBeDefined();
-      expect(evaluation.feasibleDate).toBeDefined();
-      expect(evaluation.confidence).toBeDefined();
-      expect(evaluation.materialReadiness).toBeDefined();
-      expect(evaluation.capacityLoad).toBeDefined();
+      expect(evaluation.state).toBe('EVALUATED');
+      expect(evaluation.scheduleState).toBe('COMPLETE');
+      expect(evaluation.isFeasibleOnRequestedDate).toBe(true);
+      expect(evaluation.feasibleDate).toMatch(/^2026-10-19/);
+      expect(evaluation.evidence).toMatchObject({ workflowVersionId: expect.any(String), engineeringRevisionId: expect.any(String) });
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(0);
     });
   });
 
-  describe('4. Factory Memory Query & Insufficient Evidence Guard', () => {
+  describe('4. Schedule-grounded recovery review proposals', () => {
+    it('persists one idempotent schedule review with captured versions and no bookings', async () => {
+      const { alpha } = fixture;
+      const beforeBookings = await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } });
+      const input = { orderId: testOrderId, instanceId: testInstanceId };
+      const first = await recoveryService.proposeScheduleReview(alpha.users.planner.principal, input, 'phase10-recovery-review');
+      const replay = await recoveryService.proposeScheduleReview(alpha.users.planner.principal, input, 'phase10-recovery-review');
+
+      expect(first.state).toBe('SAVED');
+      if (first.state !== 'SAVED' || replay.state !== 'SAVED') throw new Error('Expected complete schedule review to be saved.');
+      expect(first.scheduleReview?.tasks).toHaveLength(2);
+      expect(first.scheduleReview?.workflowVersionId).toBeTruthy();
+      expect(replay.id).toBe(first.id);
+      expect(await fixture.db.recoveryProposal.count({ where: { workspaceId: alpha.workspaceId, orderId: testOrderId } })).toBe(1);
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeBookings);
+      expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'recovery.schedule-review.create' } })).toBe(1);
+    });
+
+    it('does not save a recovery review when qualifications no longer support a complete schedule', async () => {
+      const { alpha } = fixture;
+      await fixture.db.technicianCertification.updateMany({
+        where: { workspaceId: alpha.workspaceId, certificationId: certId },
+        data: { status: 'REVOKED' },
+      });
+      const before = await fixture.db.recoveryProposal.count({ where: { workspaceId: alpha.workspaceId, orderId: testOrderId } });
+      const result = await recoveryService.proposeScheduleReview(alpha.users.planner.principal, {
+        orderId: testOrderId,
+        instanceId: testInstanceId,
+      }, 'phase10-recovery-incomplete');
+
+      expect(result.state).toBe('NOT_CONNECTED');
+      if (result.state !== 'NOT_CONNECTED') throw new Error('Incomplete schedule should not be persisted.');
+      expect(result.missingInputs.join(' ')).toContain('No active technician');
+      expect(await fixture.db.recoveryProposal.count({ where: { workspaceId: alpha.workspaceId, orderId: testOrderId } })).toBe(before);
+    });
+  });
+
+  describe('5. Factory Memory Query & Insufficient Evidence Guard', () => {
     it('truthfully handles factory memory queries and signals insufficient history when uncalibrated', async () => {
       const { alpha } = fixture;
       const owner = alpha.users.owner.principal;
@@ -267,7 +355,7 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(memory.sampleCount).toBeDefined();
       expect(memory.hasSufficientHistory).toBe(false);
       expect(memory.recommendation).toBeDefined();
-      expect(memory.recommendation.description).toContain('At least 3 completed production runs');
+      expect(memory.recommendation.description).toContain('Workspace-wide averages are not shown');
     });
   });
 });

@@ -1,12 +1,18 @@
 import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
-import { buildAuthorizedContext } from './context';
+import { buildAuthorizedContext, resolveAuthorizedEvidenceReferences, AuthorizedEvidenceReference } from './context';
 import { Explanation, validateGroundedOutput } from './validation';
 import { callGeminiStructured } from './gemini-client';
 import { getCached, setCached } from './cache';
 import { recordProvenance } from './provenance';
 import { z } from 'zod';
+import { NotFoundError } from '@/domain/errors';
+
+export interface BrainQuestionContext {
+  type: 'ORDER' | 'ITEM' | 'TASK';
+  id: string;
+}
 
 export const BrainAnswerSchema = z.object({
   answer: z.string().min(1),
@@ -14,7 +20,7 @@ export const BrainAnswerSchema = z.object({
   linkToScreen: z.string().optional(),
 });
 
-export type BrainAnswerDTO = z.infer<typeof BrainAnswerSchema>;
+export type BrainAnswerDTO = z.infer<typeof BrainAnswerSchema> & { evidence?: AuthorizedEvidenceReference[] };
 
 export class ProductionBrainService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -24,7 +30,8 @@ export class ProductionBrainService {
    */
   async answerProductionQuestion(
     principal: Principal,
-    question: string
+    question: string,
+    scopedRecord?: BrainQuestionContext,
   ): Promise<Explanation<BrainAnswerDTO>> {
     requireAnyPermission(principal, [
       'order.read',
@@ -32,13 +39,25 @@ export class ProductionBrainService {
       'inventory.read',
       'resource.manage',
       'customer_order.read_own',
+      'task.assign',
     ]);
 
     const startTime = Date.now();
-    const context = await buildAuthorizedContext(principal, this.prisma);
+    const context = await buildAuthorizedContext(principal, this.prisma, scopedRecord
+      ? scopedRecord.type === 'ORDER' ? { orderId: scopedRecord.id }
+        : scopedRecord.type === 'ITEM' ? { itemId: scopedRecord.id }
+          : { taskId: scopedRecord.id }
+      : undefined);
+    if (scopedRecord && !(scopedRecord.type === 'ORDER'
+      ? context.orders.some(order => order.id === scopedRecord.id)
+      : scopedRecord.type === 'TASK'
+        ? context.tasks.some(task => task.id === scopedRecord.id)
+        : context.evidenceIndex.includes(scopedRecord.id))) {
+      throw new NotFoundError('Selected assistant context is not available in the current workspace scope.');
+    }
 
     const model = process.env.GEMINI_FLASH_MODEL || 'gemini-2.5-flash';
-    const promptVersion = 'brain-qa-v4';
+    const promptVersion = 'brain-qa-v5';
     const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
     // 1. Check scoped cache
@@ -64,6 +83,9 @@ ${context.inventory.map((i) => `  * ${i.itemCode} (${i.itemName}): On Hand: ${i.
 
 - Active Resources (${inventoryQuestion ? 'omitted: inventory-only question' : context.resources.length}):
 ${(inventoryQuestion ? [] : context.resources).map((r) => `  * ${r.code} (${r.name}, ${r.type}): Status: ${r.status}`).join('\n')}
+
+- Assigned/Plannable Tasks (${context.tasks.length}):
+${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.id}: ${task.orderNumber} / ${task.nodeKey}, status ${task.status}, planned ${task.plannedMinutes ?? 'unavailable'} minutes, actual ${task.actualMinutes ?? 'unavailable'} minutes`).join('\n')}
 
 User Question: "${question}"
 
@@ -103,6 +125,13 @@ Rules:
       fallbackData: fallbackAnswer,
     });
 
+    const validatedRefs = explanation.status === 'SUCCESS'
+      ? explanation.evidenceRefs
+      : explanation.fallbackData?.evidenceRefs ?? [];
+    const typedEvidence = resolveAuthorizedEvidenceReferences(context, validatedRefs);
+    if (explanation.status === 'SUCCESS') explanation.data.evidence = typedEvidence;
+    else if (explanation.fallbackData) explanation.fallbackData.evidence = typedEvidence;
+
     if (explanation.status === 'FALLBACK' && !aiRes.aiResult) {
       explanation.reason = aiRes.reason === 'timeout' ? 'TIMEOUT' : aiRes.reason === 'schema' ? 'SCHEMA_ERROR' : 'UNAVAILABLE';
       explanation.message = explanation.reason === 'TIMEOUT' ? 'AI response exceeded the time limit' : explanation.reason === 'SCHEMA_ERROR' ? 'AI response could not be validated' : 'AI provider is unavailable';
@@ -131,6 +160,15 @@ Rules:
   ): BrainAnswerDTO {
     const q = question.toLowerCase();
     const activeOrders = context.orders.filter((o) => o.status !== 'DELIVERED');
+
+    if (context.tasks.length > 0 && /task|operation|block|tugas|operasi/i.test(q)) {
+      const task = context.tasks[0];
+      return {
+        answer: `Task ${task.nodeKey} for ${task.orderNumber} is ${task.status}. Planned duration is ${task.plannedMinutes ?? 'unavailable'} minutes; measured duration is ${task.actualMinutes ?? 'unavailable'} minutes.`,
+        evidenceRefs: [task.id],
+        linkToScreen: 'orchestrator',
+      };
+    }
 
     if (q.includes('order') || q.includes('active') || q.includes('status')) {
       if (activeOrders.length === 0) {

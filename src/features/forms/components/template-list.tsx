@@ -4,6 +4,11 @@ import { Pagination } from '@/components/ui/pagination';
 import type { FormTemplateDTO } from '@/server/modules/forms/contracts';
 
 import React, { useState } from 'react';
+import { Icon } from '@/components/icons';
+import { Dialog } from '@/components/ui/dialog';
+import { Tabs } from '@/components/ui/tabs';
+import { ListSearch } from '@/components/ui/list-search';
+import { ErrorState } from '@/components/ui/resource-state';
 import Link from 'next/link';
 import { useCreateFormTemplate } from '../hooks';
 import { PageHeader } from '@/components/ui/page-header';
@@ -22,7 +27,7 @@ export function TemplateList() {
   const [filterPurpose, setFilterPurpose] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data: templatesRes, isLoading, error, pagination } = usePaginatedList<FormTemplateDTO>('forms', { search: searchQuery, purpose: filterPurpose });
+  const { data: templatesRes, isLoading, error, refetch, pagination } = usePaginatedList<FormTemplateDTO>('forms', { search: searchQuery, purpose: filterPurpose });
 
   // New form modal state
   const [code, setCode] = useState('');
@@ -55,111 +60,36 @@ export function TemplateList() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="page-stack template-library">
       <PageHeader
         title="Form Templates"
         description="Versioned schema-driven form templates for orders, work evidence, and quality inspections."
         actions={
-          <Button variant="primary" onClick={() => setIsModalOpen(true)}>
-            + Create Template
+          <Button variant="primary" icon="plus" onClick={() => setIsModalOpen(true)}>
+            Create template
           </Button>
         }
       />
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search templates…"
-            className="w-full sm:w-64"
-          />
-          <Select
-            value={filterPurpose}
-            onChange={(e) => setFilterPurpose(e.target.value)}
-            className="w-auto"
-          >
-            <option value="ALL">All Purposes</option>
-            <option value="ORDER_SPEC">Order Specifications</option>
-            <option value="TASK_EVIDENCE">Task Evidence</option>
-            <option value="QC_EVIDENCE">QC Evidence</option>
-          </Select>
-        </div>
-
-        <span className="text-xs text-muted">
-          {pagination.total} templates
-        </span>
+      <div className="ov-toolbar">
+        <Tabs variant="underline" activeId={filterPurpose} onChange={setFilterPurpose} ariaLabel="Template purpose" items={[{ id: 'ALL', label: 'All templates' }, { id: 'ORDER_SPEC', label: 'Order specifications' }, { id: 'TASK_EVIDENCE', label: 'Work evidence' }, { id: 'QC_EVIDENCE', label: 'Quality evidence' }]} />
+        <ListSearch value={searchQuery} onChange={setSearchQuery} placeholder="Search name or template code…" label="Search templates" />
       </div>
-
+      <div className="ov-section-title"><div><h2>Template library</h2><p>Manage definitions and published versions for each evidence workflow.</p></div><span>{pagination.total} matching templates</span></div>
       {/* Templates List */}
-      <Panel>
-        {isLoading ? (
-          <p className="text-sm text-muted p-4 text-center">Loading form templates…</p>
-        ) : error ? (
-          <p className="text-sm text-danger p-4 text-center">Failed to load form templates.</p>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-10 space-y-3">
-            <p className="text-sm text-muted">No form templates found matching your criteria.</p>
-            <Button variant="default" size="small" onClick={() => setIsModalOpen(true)}>
-              Create your first template
-            </Button>
-          </div>
-        ) : (
-          <div className="divide-y divide-line">
-            {filtered.map((tpl) => (
-              <div
-                key={tpl.id}
-                className="flex items-center justify-between p-4 hover:bg-surface-muted transition-colors"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      href={`/settings/forms/${tpl.id}`}
-                      className="font-semibold text-ink hover:text-primary transition-colors"
-                    >
-                      {tpl.name}
-                    </Link>
-                    <span className="font-mono text-xs text-muted">({tpl.code})</span>
-                    <Badge
-                      variant={
-                        tpl.purpose === 'ORDER_SPEC'
-                          ? 'blue'
-                          : tpl.purpose === 'QC_EVIDENCE'
-                          ? 'warning'
-                          : 'default'
-                      }
-                    >
-                      {tpl.purpose}
-                    </Badge>
-                  </div>
-                  {tpl.description && (
-                    <p className="text-xs text-muted line-clamp-1">{tpl.description}</p>
-                  )}
-                  <span className="text-xs text-muted block">
-                    {tpl.versionsCount} version(s) · Published: {tpl.publishedVersion ? `v${tpl.publishedVersion.versionNumber}` : 'None'}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/settings/forms/${tpl.id}`}
-                    className="text-xs font-medium text-primary hover:underline px-3 py-1.5 rounded-md hover:bg-primary-soft/10"
-                  >
-                    Open Editor →
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
+      {isLoading ? <Panel><p className="ov-loading">Loading form templates…</p></Panel> : error ? <ErrorState message="Failed to load form templates." onRetry={() => refetch()} /> : filtered.length === 0 ? <Panel><div className="ov-loading"><Icon name="file" /><p>No templates match these filters.</p><Button onClick={() => { setSearchQuery(''); setFilterPurpose('ALL'); }}>Clear filters</Button></div></Panel> : <div className="ft-grid">
+        {filtered.map((tpl) => <Panel className="ft-template" key={tpl.id}>
+          <div className="ft-template-top"><span className="ft-symbol"><Icon name={tpl.purpose === 'QC_EVIDENCE' ? 'shield' : tpl.purpose === 'TASK_EVIDENCE' ? 'work' : 'file'} /></span><Badge variant={tpl.publishedVersion ? 'success' : 'default'}>{tpl.publishedVersion ? `Published v${tpl.publishedVersion.versionNumber}` : 'Not published'}</Badge></div>
+          <Link className="ft-template-name" href={`/settings/forms/${tpl.id}`}>{tpl.name}</Link>
+          <span className="ft-template-code">{tpl.code}</span>
+          <p className="ft-description">{tpl.description || 'No description added.'}</p>
+          <div className="ft-template-footer"><span>{tpl.purpose === 'ORDER_SPEC' ? 'Order specification' : tpl.purpose === 'QC_EVIDENCE' ? 'Quality evidence' : 'Work evidence'}<small>{tpl.versionsCount} {tpl.versionsCount === 1 ? 'version' : 'versions'}</small></span><Link href={`/settings/forms/${tpl.id}`} className="btn small-btn">Open editor<Icon name="arrow" /></Link></div>
+        </Panel>)}
+      </div>}
 
       {/* Centered Modal for Template Creation (Consistent Design Contract) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-xl border border-line bg-surface p-6 shadow-xl space-y-4">
-            <h2 className="text-lg font-bold text-ink">New Form Template</h2>
+        <Dialog isOpen type="modal" size="md" title="New form template" subtitle="Define a reusable form for orders, work, or quality evidence." onClose={() => setIsModalOpen(false)} pending={createMutation.isPending}>
 
             {createError && (
               <div className="p-3 text-sm text-danger bg-danger-soft rounded-md border border-danger/20">
@@ -215,12 +145,11 @@ export function TemplateList() {
                   Cancel
                 </Button>
                 <Button variant="primary" type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? 'Creating…' : 'Create & Open Editor'}
+                  {createMutation.isPending ? 'Creating…' : 'Create template'}
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
+        </Dialog>
       )}
       <Pagination {...pagination} />
     </div>

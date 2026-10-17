@@ -1,5 +1,6 @@
 "use client";
 
+import "./workflow-editor.css";
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import React, { useState } from "react";
@@ -17,9 +18,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/icons";
 import { WorkflowCanvas } from "./workflow-canvas";
-import { NodePalette } from "./node-palette";
+import { Dialog } from "@/components/ui/dialog";
 import { NodeInspector } from "./node-inspector";
 import { WorkflowCanvasLayout } from "../canvas-adapter";
+import { connectWorkflowSteps } from "../canvas-state";
 import { WorkflowNodeDefinition } from "@/domain/workflow-definition";
 import { GenerationPanel } from "@/features/builder-proposals/components/generation-panel";
 import { ProposalReview } from "@/features/builder-proposals/components/proposal-review";
@@ -59,7 +61,22 @@ export function DefinitionEditor({
   const [fromNode, setFromNode] = useState("");
   const [toNode, setToNode] = useState("");
 
-  const [selectedNode, setSelectedNode] = useState<WorkflowNodeDefinition | null>(null);
+  const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
+  const selectedNode = definition.nodes.find(node => node.key === selectedNodeKey) ?? null;
+  const setSelectedNode = (node: WorkflowNodeDefinition | null) => setSelectedNodeKey(node?.key ?? null);
+  const [editorDialog, setEditorDialog] = useState<'node' | 'dependencies' | null>(null);
+  const [editorError, setEditorError] = useState('');
+  const openAddStep = () => {
+    let index = 10;
+    while (definition.nodes.some(node => node.key === `OP-${index}`)) index += 10;
+    setNewNodeKey(`OP-${index}`);
+    setNewNodeName('');
+    setNewNodeType('OPERATION');
+    setNewNodeDuration(60);
+    setNewNodeDept('');
+    setEditorError('');
+    setEditorDialog('node');
+  };
   const [canvasLayout, setCanvasLayout] = useState<WorkflowCanvasLayout | undefined>(undefined);
   const [aiProposal, setAiProposal] = useState<BuilderProposalDto | null>(null);
 
@@ -74,8 +91,16 @@ export function DefinitionEditor({
 
   const handleAddNode = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly) return;
     if (!newNodeKey.trim() || !newNodeName.trim()) return;
-    if (definition.nodes.some((n) => n.key === newNodeKey.trim())) return;
+    if (definition.nodes.some((n) => n.key === newNodeKey.trim().toUpperCase())) {
+      setEditorError('This step key already exists. Choose a unique key.');
+      return;
+    }
+    if (!Number.isFinite(newNodeDuration) || newNodeDuration < 1) {
+      setEditorError('Enter a duration of at least one minute.');
+      return;
+    }
 
     setDefinition((prev) => ({
       ...prev,
@@ -91,6 +116,9 @@ export function DefinitionEditor({
       ],
     }));
 
+    setSelectedNodeKey(newNodeKey.trim().toUpperCase());
+    setEditorDialog(null);
+    setEditorError('');
     setNewNodeKey("");
     setNewNodeName("");
   };
@@ -108,25 +136,16 @@ export function DefinitionEditor({
 
   const handleAddEdge = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fromNode || !toNode || fromNode === toNode) return;
-    if (
-      definition.edges.some(
-        (e) => e.fromNodeKey === fromNode && e.toNodeKey === toNode,
-      )
-    )
+    if (isReadOnly) return;
+    const result = connectWorkflowSteps(definition, fromNode, toNode);
+    if (!result.definition) {
+      setEditorError(result.error ?? 'Unable to connect these steps.');
       return;
-
-    setDefinition((prev) => ({
-      ...prev,
-      edges: [
-        ...prev.edges,
-        {
-          fromNodeKey: fromNode,
-          toNodeKey: toNode,
-          joinPolicy: "AND",
-        },
-      ],
-    }));
+    }
+    setDefinition(result.definition);
+    setEditorError('');
+    setFromNode('');
+    setToNode('');
   };
 
   const handleRemoveEdge = (from: string, to: string) => {
@@ -159,12 +178,12 @@ export function DefinitionEditor({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="workflow-editor">
       {/* Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4 border-line">
+      <div className="wf-header">
         <div>
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold">{template.name}</h2>
+            <h1>{template.name}</h1>
             <Badge
               variant={version.status === "PUBLISHED" ? "success" : "default"}
             >
@@ -172,7 +191,7 @@ export function DefinitionEditor({
             </Badge>
           </div>
           <p className="text-sm text-muted">
-            Order Type: {template.orderType?.name} · Code: {template.code}
+            {template.orderType?.name || "No order type assigned"} · {template.code}
           </p>
         </div>
 
@@ -216,14 +235,15 @@ export function DefinitionEditor({
           {version.status === "PUBLISHED" && (
             <>
               <Button
-                variant="default"
+                variant="primary"
+                icon="plus"
                 onClick={() => handleAction("fork")}
                 disabled={actionMutation.isPending}
               >
                 Fork new version
               </Button>
               <Button
-                variant="soft"
+                variant="ghost"
                 onClick={() => handleAction("retire")}
                 disabled={actionMutation.isPending}
               >
@@ -247,15 +267,20 @@ export function DefinitionEditor({
       )}
 
       {isReadOnly && (
-        <div className="rounded-md border border-warning/20 bg-warning-soft p-4 text-sm text-warning">
-          This workflow version is <strong>{version.status}</strong> and
-          immutable. Fork a new version to modify operations or routing.
+        <div className="wf-version-notice">
+          <Icon name="lock" />
+          <div><strong>{version.status === 'PUBLISHED' ? 'Published version' : 'Retired version'} · read only</strong><p>Inspect the routing and step properties. Fork a new version to make changes.</p></div>
+          <span>v{version.versionNumber}</span>
         </div>
       )}
 
+      {(saveMutation.error || actionMutation.error) && <div role="alert" className="wf-error">{(saveMutation.error || actionMutation.error)?.message || 'Unable to update this workflow. Please try again.'}</div>}
+
       {/* AI Builder Assistant */}
       {!isReadOnly && (
-        <div className="space-y-4">
+        <details className="wf-ai-panel" open={aiProposal ? true : undefined}>
+          <summary><Icon name="spark" /><span>Build with AI</span><span>Generate and review a routing proposal</span><Icon name="down" /></summary>
+          <div className="wf-ai-content">
           {!aiProposal ? (
             <GenerationPanel
               target="WORKFLOW"
@@ -267,6 +292,7 @@ export function DefinitionEditor({
             <ProposalReview
               proposal={aiProposal}
               expectedTargetRevision={version.versionNumber}
+              currentDefinition={definition}
               onApplied={(ref) => {
                 setAiProposal(null);
                 try {
@@ -280,21 +306,19 @@ export function DefinitionEditor({
               onDiscard={() => setAiProposal(null)}
             />
           )}
-        </div>
+          </div>
+        </details>
       )}
 
       {/* Interactive Workflow Canvas & Inspector */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-8 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-ink">
-              Interactive Execution DAG Canvas
-            </h3>
-            <span className="text-xs text-muted">
-              {definition.nodes.length} nodes · {definition.edges.length} dependencies
-            </span>
+      <div className="wf-workbench">
+        <section className="wf-canvas-panel" aria-label="Workflow routing">
+          <div className="wf-canvas-toolbar">
+            <div><Icon name="graph" /><h2>Routing canvas</h2></div>
+            <div className="wf-canvas-stats"><span>{definition.nodes.length} {definition.nodes.length === 1 ? 'step' : 'steps'}</span><span>{definition.edges.length} dependencies</span><span className="wf-mode"><Icon name={isReadOnly ? 'lock' : 'edit'} />{isReadOnly ? 'View mode' : 'Edit mode'}</span></div>
           </div>
 
+          {!isReadOnly && <div className="wf-builder-actions"><Button variant="primary" icon="plus" onClick={openAddStep}>Add step</Button><Button onClick={() => { setEditorError(''); setEditorDialog('dependencies'); }}>Manage dependencies</Button><span>Changes stay in this draft until you save.</span></div>}
           <WorkflowCanvas
             definition={definition}
             layout={canvasLayout}
@@ -304,30 +328,17 @@ export function DefinitionEditor({
             }}
             onSelectNode={setSelectedNode}
             readOnly={isReadOnly}
+            onAddStep={openAddStep}
+            selectedNodeKey={selectedNodeKey}
           />
-        </div>
+          <div className="wf-canvas-footer"><span><Icon name="info" />{isReadOnly ? 'Select a step to inspect its configuration' : 'Select a step to edit · drag between handles to connect'}</span><span>Scroll to zoom · drag canvas to pan</span></div>
+        </section>
 
-        <div className="lg:col-span-4 space-y-4">
-          <NodePalette
-            onAddNode={(type) => {
-              const count = definition.nodes.length + 1;
-              const prefix = type === 'OPERATION' ? 'OP' : type === 'INSPECTION' ? 'QC' : 'AP';
-              const key = `${prefix}${count * 10}`;
-              setDefinition((prev) => ({
-                ...prev,
-                nodes: [
-                  ...prev.nodes,
-                  {
-                    key,
-                    name: `New ${type.toLowerCase()} step`,
-                    type,
-                    plannedDurationMinutes: 60,
-                  },
-                ],
-              }));
-            }}
-            disabled={isReadOnly}
-          />
+        <aside className="wf-sidebar" aria-label="Workflow configuration">
+          <div className="wf-step-outline">
+            <div className="wf-sidebar-heading"><h2>Workflow steps</h2><span>{definition.nodes.length}</span></div>
+            {definition.nodes.length === 0 ? <p className="wf-outline-empty">Add a step to start building your routing.</p> : <div className="wf-outline-list">{definition.nodes.map((node) => <button type="button" key={node.key} aria-pressed={selectedNode?.key === node.key} onClick={() => setSelectedNode(node)}><Icon name={node.type === 'OPERATION' ? 'work' : node.type === 'INSPECTION' ? 'shield' : 'check'} /><span><strong>{node.name}</strong><small>{node.key} · {node.plannedDurationMinutes} min</small></span><Icon name="chevron" /></button>)}</div>}
+          </div>
 
           <NodeInspector
             node={selectedNode}
@@ -345,16 +356,17 @@ export function DefinitionEditor({
             catalog={catalog}
             readOnly={isReadOnly}
           />
-        </div>
+        </aside>
       </div>
 
       {/* Node and Edge Config (only editable in DRAFT) */}
       {!isReadOnly && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Add Node Card */}
-          <div className="rounded-lg border bg-white p-5 border-line">
+        <Dialog isOpen={editorDialog !== null} onClose={() => setEditorDialog(null)} title={editorDialog === 'node' ? 'Add workflow step' : 'Manage dependencies'} subtitle={editorDialog === 'node' ? 'Create a step, then connect it on the routing canvas.' : 'Connect a predecessor to its next step. All predecessors must finish before the successor starts.'} size="md">
+          {editorError && <div role="alert" className="wf-error">{editorError}</div>}
+          {editorDialog === 'node' && (
+          <div className="wf-dialog-form">
             <h4 className="font-semibold text-sm mb-3">
-              Add Operation / Inspection Node
+              Step details
             </h4>
             <form onSubmit={handleAddNode} className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
@@ -434,13 +446,13 @@ export function DefinitionEditor({
               </div>
 
               <Button type="submit" variant="soft" className="w-full">
-                Add Node to Routing
+                Add step to canvas
               </Button>
             </form>
           </div>
 
-          {/* Add Dependency Edge Card */}
-          <div className="rounded-lg border bg-white p-5 border-line">
+          )}
+          {editorDialog === 'dependencies' && <div className="wf-dialog-form">
             <h4 className="font-semibold text-sm mb-3">
               Add Dependency Link (AND Join)
             </h4>
@@ -513,8 +525,8 @@ export function DefinitionEditor({
                 ))}
               </ul>
             </div>
-          </div>
-        </div>
+          </div>}
+        </Dialog>
       )}
     </div>
   );

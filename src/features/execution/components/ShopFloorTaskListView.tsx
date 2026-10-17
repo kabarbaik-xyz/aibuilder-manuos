@@ -10,9 +10,11 @@ import { ButtonLink } from '@/components/ui/button-link';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Pagination } from '@/components/ui/pagination';
+import { Tabs } from '@/components/ui/tabs';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/resource-state';
 import { useScanBarcode } from '../hooks';
 import { getScanOpenPath } from '../scan-routing';
+import { QrScannerOverlay } from '@/components/ui/qr-scanner-overlay';
 import { useOnlineStatus } from '../use-online-status';
 
 interface WorkItem { id: string; nodeKey: string; nodeName: string; status: string; orderNumber: string; customerName: string; itemName: string; plannedDurationMinutes: number; currentElapsedMinutes: number; canStart: boolean; blockReason?: string }
@@ -33,9 +35,10 @@ export function ShopFloorTaskListView() {
   const supervisor = principal?.permissions.some(permission => ['planning.read', 'task.assign', 'workspace.admin'].includes(permission));
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
-  const handleScanSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const code = scanCode.trim();
+  const [showCamera, setShowCamera] = useState(false);
+  const handleScanSubmit = async (event?: React.FormEvent<HTMLFormElement>, override?: string) => {
+    event?.preventDefault();
+    const code = (override ?? scanCode).trim();
     if (!code) return;
     if (!isOnline) {
       setScanMessage('Pemindaian memerlukan koneksi server. Sambungkan kembali sebelum mencoba.');
@@ -62,17 +65,15 @@ export function ShopFloorTaskListView() {
 
   return <div className="page-stack my-work-page">
     <PageHeader title="Semua tugas" description={supervisor ? 'Tinjau pekerjaan produksi aktif di ruang kerja Anda.' : 'Tugas produksi yang ditetapkan kepada Anda.'} actions={<Button icon="reset" disabled={pagination.disabled} onClick={() => void refetch()}>Muat ulang</Button>} />
-    <div className="flex items-center gap-2 border-b border-line pb-3">
-      <ButtonLink href="/shop-floor" size="small" variant="primary">
-        Semua tugas
-      </ButtonLink>
-      <ButtonLink href="/shop-floor/today" size="small" variant="default">
-        Antrean kerja
-      </ButtonLink>
-      <ButtonLink href="/shop-floor/profile" size="small" variant="default">
-        Profil saya
-      </ButtonLink>
-    </div>
+    <Tabs
+      ariaLabel="Navigasi lantai produksi"
+      activeId="all"
+      items={[
+        { id: 'all', label: 'Semua tugas', href: '/shop-floor', icon: 'work', count: isPending ? undefined : total },
+        { id: 'today', label: 'Antrean kerja', href: '/shop-floor/today', icon: 'clock' },
+        { id: 'profile', label: 'Profil saya', href: '/shop-floor/profile', icon: 'technician' },
+      ]}
+    />
       <section className="my-work-queue" aria-label="Pekerjaan produksi aktif">
       <div className="my-work-toolbar">
         <div className="my-work-filters" role="group" aria-label="Filter work by status">{filters.map(filter => <button type="button" key={filter.value} aria-pressed={status === filter.value} className={status === filter.value ? 'active' : ''} onClick={() => setStatus(filter.value)}>{filter.label}<span>{isPending ? '—' : filter.value ? counts[filter.value] || 0 : total}</span></button>)}</div>
@@ -80,12 +81,14 @@ export function ShopFloorTaskListView() {
       </div>
       <form className="my-work-scan" aria-label="Buka pekerjaan dengan barcode atau QR code" onSubmit={handleScanSubmit}>
         <Input type="text" aria-label="Barcode tugas atau job" placeholder="Pindai atau masukkan kode tugas / job" value={scanCode} onChange={event => setScanCode(event.target.value)} />
+        <Button type="button" icon="qr" disabled={!isOnline || scanMutation.isPending} onClick={() => setShowCamera(true)}>Pindai QR</Button>
         <Button type="submit" variant="primary" disabled={!isOnline || !scanCode.trim() || scanMutation.isPending}>
-          {scanMutation.isPending ? 'Memeriksa kode…' : 'Pindai & buka'}
+          {scanMutation.isPending ? 'Memeriksa kode…' : 'Buka kode'}
         </Button>
         {scanMessage && <p role="status" className="my-work-scan-message">{scanMessage}</p>}
         {!isOnline && <p role="status" className="my-work-scan-message">Pemindaian memerlukan koneksi server; tindakan ini tidak disimpan saat luring.</p>}
       </form>
+      <QrScannerOverlay open={showCamera} onClose={() => setShowCamera(false)} onDetect={(code) => { setShowCamera(false); setScanCode(code); void handleScanSubmit(undefined, code); }} />
       {isPending ? <LoadingState message="Memuat pekerjaan produksi…" /> : error ? <ErrorState message={error.message} onRetry={() => void refetch()} /> : !data?.data.length ? <EmptyState title="Tugas tidak ditemukan" description={search || status ? 'Coba status atau kata pencarian lain.' : 'Tugas akan muncul setelah pekerjaan produksi ditetapkan.'} /> : <>
         <div className="my-work-column-head" aria-hidden="true"><span>Tugas & produk</span><span>Order & pelanggan</span><span>Waktu</span><span>Status</span><span /></div>
         <div className="my-work-rows">{data.data.map(task => <article key={task.id} className="my-work-row">

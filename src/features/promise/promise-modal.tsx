@@ -1,176 +1,138 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useGraphStore } from '../../store/graph-store';
-import { checkPromiseFeasibility, PromiseFeasibilityOutput } from '../../engines/capacity';
-import { formatDateEn } from '../../engines/calendar';
-import { Icon } from '../../components/icons';
-import { Button } from '../../components/ui/button';
-import { Badge } from '../../components/ui/badge';
-import { AIContent } from '../../components/ui/ai-content';
+import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Select } from '@/components/ui/select';
+import { LoadingState } from '@/components/ui/resource-state';
+import { apiRequest } from '@/lib/api/client';
+import { ordersApi, type OrderDto } from '@/features/orders/api';
+import { getPromiseDateDeltaLabel } from './promise-presentation';
+
+interface PromiseEvaluation {
+  state: 'EVALUATED' | 'NOT_CONNECTED';
+  evaluationId: string;
+  inputHash: string;
+  evaluatedAt: string;
+  orderId: string;
+  instanceId: string;
+  requestedDate: string;
+  feasibleDate: string | null;
+  isFeasibleOnRequestedDate: boolean | null;
+  scheduleState: string | null;
+  deltaDays: number | null;
+  bottleneckReason: string;
+  missingInputs: string[];
+  assumptions: string[];
+  evidence: null | {
+    facilityTimezone: string | null;
+    workflowVersionId: string;
+    engineeringRevisionId: string;
+    taskVersions: Array<{ taskId: string; version: number }>;
+  };
+}
+
+type ActiveInstance = NonNullable<OrderDto['instances']>[number];
 
 export function PromiseModal() {
-  const { machines } = useGraphStore();
-  const [family, setFamily] = useState('Control panel');
-  const [qty, setQty] = useState(200);
-  const [reqDate, setReqDate] = useState('2026-11-25');
-  const [result, setResult] = useState<PromiseFeasibilityOutput | null>(null);
-  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<OrderDto[]>([]);
+  const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [instances, setInstances] = useState<ActiveInstance[]>([]);
+  const [instanceId, setInstanceId] = useState('');
+  const [requestedDate, setRequestedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [result, setResult] = useState<PromiseEvaluation | null>(null);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [loadingInstance, setLoadingInstance] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleCheck = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  useEffect(() => {
+    let active = true;
+    void ordersApi.listOrders()
+      .then((rows) => { if (active) setOrders(rows.filter((row) => ['RELEASED', 'IN_PRODUCTION', 'PARTIALLY_DELIVERED'].includes(row.status))); })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Could not load released orders.'); })
+      .finally(() => { if (active) setLoadingOrders(false); });
+    return () => { active = false; };
+  }, []);
 
-    // 1. Pure deterministic calculation
-    const feasibility = checkPromiseFeasibility(
-      {
-        partFamily: family,
-        quantity: qty,
-        requestedDate: reqDate,
-      },
-      machines
-    );
-
-    setResult(feasibility);
-
-    // 2. Fetch grounded AI explanation from server route
+  async function selectOrder(orderId: string) {
+    setSelectedOrderId(orderId);
+    setInstances([]);
+    setInstanceId('');
+    setResult(null);
+    setError(null);
+    if (!orderId) return;
+    setLoadingInstance(true);
     try {
-      const res = await fetch('/api/ai/promise-explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          request: { partFamily: family, quantity: qty, requestedDate: reqDate },
-          feasibilityResult: feasibility,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.aiResult?.summary) {
-          setAiExplanation(data.aiResult.summary);
-        } else {
-          setAiExplanation(null);
-        }
-      }
-    } catch {
-      setAiExplanation(null);
+      const order = await ordersApi.getOrder(orderId);
+      const activeInstances = (order.instances ?? []).filter((instance) => instance.status === 'ACTIVE');
+      setInstances(activeInstances);
+      if (activeInstances.length === 1) setInstanceId(activeInstances[0].id);
+      if (!activeInstances.length) setError('This order has no active released job to evaluate.');
+      if (activeInstances.length > 1) setError('Select the exact active job; each is evaluated independently.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load the order jobs.');
     } finally {
-      setLoading(false);
+      setLoadingInstance(false);
     }
-  };
+  }
 
-  return (
-    <div>
-      <form onSubmit={handleCheck}>
-        <div className="field">
-          <label htmlFor="family-select">Part family</label>
-          <Select
-            id="family-select"
-            value={family}
-            onChange={(e) => setFamily(e.target.value)}
-          >
-            <option value="Control panel">Control panel</option>
-            <option value="Chassis bracket">Chassis bracket</option>
-            <option value="Mounting plate">Mounting plate</option>
-          </Select>
-        </div>
+  async function evaluate() {
+    if (!selectedOrderId || !instanceId || submitting) return;
+    setSubmitting(true);
+    setResult(null);
+    setError(null);
+    try {
+      const response = await apiRequest<{ data: PromiseEvaluation }>('/api/intelligence/promise', {
+        method: 'POST',
+        body: JSON.stringify({ orderId: selectedOrderId, instanceId, requestedDate }),
+      });
+      setResult(response.data);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not evaluate the requested delivery date.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="promise-qty">Quantity</label>
-            <input
-              id="promise-qty"
-              type="number"
-              min={1}
-              max={10000}
-              value={qty}
-              onChange={(e) => setQty(Number(e.target.value))}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="promise-date">Requested delivery</label>
-            <DatePicker id="promise-date" value={reqDate} onChange={setReqDate} required />
-          </div>
-        </div>
-
-        <Button
-          type="submit"
-          variant="primary"
-          icon="calendar"
-          disabled={loading}
-        >
-          {loading ? 'Evaluating capacity…' : 'Check feasibility'}
-        </Button>
-      </form>
-
-      {result && (
-        <div className="result-box mt">
-          <div className="between">
-            <h3>Earliest feasible date</h3>
-            <Badge variant="blue">Computed Estimate</Badge>
-          </div>
-
-          <span className="large block my-2 text-ink">
-            {formatDateEn(result.feasibleDate)}
-          </span>
-
-          <p className="text-muted text-xs mb-3">
-            {qty} units · {result.bottleneckReason}
-          </p>
-
-          <div className="spec-row">
-            <span>Requested delivery</span>
-            <strong>{formatDateEn(result.requestedDate)}</strong>
-          </div>
-
-          <div className="spec-row">
-            <span>Delivery variance</span>
-            <strong className={result.deltaDays > 0 ? 'warning-text' : 'success-text'}>
-              {result.deltaDays > 0 ? `+${result.deltaDays} days later` : 'On schedule'}
-            </strong>
-          </div>
-
-          <div className="spec-row">
-            <span>Confidence margin</span>
-            <strong className="text-primary">{result.confidence} (Slack Margin)</strong>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-line">
-            <strong className="text-xs block mb-2">Computed Alternatives:</strong>
-            {result.alternatives.map((alt, i) => (
-              <div key={i} className="spec-row">
-                <span>{alt.title}</span>
-                <strong>
-                  {formatDateEn(alt.feasibleDate)} ({alt.costDeltaPct > 0 ? `+${alt.costDeltaPct}%` : 'Standard'})
-                </strong>
-              </div>
-            ))}
-          </div>
-
-          {aiExplanation ? (
-            <AIContent
-              badgeLabel="Promise Intelligence"
-              sourceContextTitle="Capacity Load & Slack Margin"
-              className="mt-4"
-            >
-              {aiExplanation}
-            </AIContent>
-          ) : (
-            <div className="mt-4 p-3 bg-surface-muted rounded-lg border border-line text-xs text-muted">
-              <Icon name="info" className="inline w-3.5 h-3.5 mr-1 text-primary" />
-              Bottleneck is {result.bottleneckMachineClass}. Earliest open production slot without overbooking is {formatDateEn(result.feasibleDate)}.
-            </div>
-          )}
-        </div>
-      )}
-
-      <p className="approval-note">
-        Feasible date evaluation. This check validates capacity without mutating active production orders.
-      </p>
-    </div>
-  );
+  return <div className="space-y-4">
+    <p className="small muted">Evaluates an existing released job against the same finite-capacity preview used in Planning. This does not commit a customer promise.</p>
+    {loadingOrders ? <LoadingState message="Loading released orders…" /> : orders.length === 0 ? <p className="small muted">No released orders are available.</p> : <div className="space-y-3">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-order">Order</label>
+        <Select id="promise-order" value={selectedOrderId} disabled={submitting} onChange={(event) => void selectOrder(event.target.value)}>
+          <option value="">Select an order</option>
+          {orders.map((order) => <option key={order.id} value={order.id}>{order.orderNumber} · {order.customer?.name ?? 'Customer'}</option>)}
+        </Select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-job">Active job</label>
+        <Select id="promise-job" value={instanceId} disabled={!selectedOrderId || loadingInstance || submitting || instances.length <= 1} onChange={(event) => { setInstanceId(event.target.value); setResult(null); }}>
+          <option value="">{loadingInstance ? 'Loading jobs…' : 'Select a job'}</option>
+          {instances.map((instance) => <option key={instance.id} value={instance.id}>Job {instance.id.slice(0, 8)}</option>)}
+        </Select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-request-date">Requested delivery</label>
+        <DatePicker id="promise-request-date" value={requestedDate} onChange={(value) => { setRequestedDate(value); setResult(null); }} />
+      </div>
+      <Button variant="primary" disabled={!selectedOrderId || !instanceId || loadingInstance || submitting} onClick={() => void evaluate()}>{submitting ? 'Evaluating…' : 'Check requested date'}</Button>
+    </div>}
+    {error && <p role="alert" className="small text-danger">{error}</p>}
+    {result && <div className="rounded-lg border border-line bg-surface-muted p-3">
+      <div className="flex flex-wrap items-center gap-2"><Badge variant={result.state === 'EVALUATED' ? result.isFeasibleOnRequestedDate ? 'success' : 'warning' : 'danger'}>{result.state === 'EVALUATED' ? result.isFeasibleOnRequestedDate ? 'Feasible by requested date' : 'Finishes after requested date' : 'Insufficient schedule evidence'}</Badge><span className="small muted">Schedule: {result.scheduleState ?? 'unavailable'}</span></div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <div className="rounded-md border border-line bg-surface p-3"><p className="small muted">Requested delivery</p><p className="mt-1 text-sm font-semibold text-ink">{result.requestedDate}</p></div>
+        <div className="rounded-md border border-line bg-surface p-3"><p className="small muted">Projected completion</p><p className="mt-1 text-sm font-semibold text-ink">{result.feasibleDate ?? 'Unavailable'}</p></div>
+      </div>
+      <p className="small mt-2 font-medium text-ink">{getPromiseDateDeltaLabel(result.deltaDays)} · {result.evidence?.facilityTimezone ?? 'facility timezone unavailable'}</p>
+      <p className="small muted mt-1">{result.bottleneckReason}</p>
+      {result.missingInputs.map((item) => <p key={item} className="small text-danger mt-1">{item}</p>)}
+      {result.evidence && <p className="small muted mt-2">Workflow {result.evidence.workflowVersionId.slice(0, 8)} · engineering {result.evidence.engineeringRevisionId.slice(0, 8)} · {result.evidence.taskVersions.length} task versions</p>}
+      <p className="small muted mt-2">Evaluation {new Date(result.evaluatedAt).toLocaleString()} · reference {result.evaluationId.slice(0, 8)} · input {result.inputHash.slice(0, 8)}</p>
+      <p className="small muted mt-2">One schedule estimate only. Alternative recovery strategies are not modeled, and this evaluation does not change the customer commitment.</p>
+      <details className="mt-2"><summary className="small cursor-pointer">Assumptions</summary><ul className="mt-1 list-disc space-y-1 pl-5">{result.assumptions.map((item) => <li key={item} className="small muted">{item}</li>)}</ul></details>
+    </div>}
+  </div>;
 }

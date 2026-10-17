@@ -145,7 +145,30 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       case 'stock-balances': {
         requireAnyPermission(principal, ['inventory.read']);
         const locationSearch = params.get('locationSearch') || '';
-        const where: Prisma.StockBalanceWhereInput = { workspaceId, OR: [{ onHandAtoms: { gt: 0n } }, { reservedAtoms: { gt: 0n } }], ...(search ? { item: { OR: [{ code: { contains: search } }, { name: { contains: search } }] } } : {}), ...(locationSearch ? { location: { OR: [{ code: { contains: locationSearch } }, { name: { contains: locationSearch } }] } } : {}) };
+        const kind = params.get('kind') || '';
+        const where: Prisma.StockBalanceWhereInput = {
+          workspaceId,
+          AND: [
+            { OR: [{ onHandAtoms: { gt: 0n } }, { reservedAtoms: { gt: 0n } }] },
+            ...(kind ? [{ location: { kind } }] : []),
+            ...(search
+              ? [
+                  {
+                    OR: [
+                      { item: { code: { contains: search } } },
+                      { item: { name: { contains: search } } },
+                      { location: { code: { contains: search } } },
+                      { location: { name: { contains: search } } },
+                      { lot: { is: { lotNumber: { contains: search } } } },
+                    ],
+                  },
+                ]
+              : []),
+            ...(locationSearch
+              ? [{ location: { OR: [{ code: { contains: locationSearch } }, { name: { contains: locationSearch } }] } }]
+              : []),
+          ],
+        };
         return page(() => tx.stockBalance.count({ where }), (skip, take) => tx.stockBalance.findMany({ where, skip, take, orderBy: [{ item: { code: 'asc' } }, { location: { code: 'asc' } }, { id: 'asc' }], include: { item: true, location: true, lot: true } }), row => ({ ...row, itemCode: row.item.code, itemName: row.item.name, locationCode: row.location.code, locationName: row.location.name, locationKind: row.location.kind, lotNumber: row.lot?.lotNumber, availableAtoms: row.onHandAtoms - row.reservedAtoms }));
       }
       case 'stock-movements': {
@@ -192,7 +215,13 @@ export async function readList(db: PrismaClient, principal: Principal, resource:
       case 'planning': {
         const where: Prisma.TaskWhereInput = { workspaceId, id: { in: schedule!.scheduledTasks.map(task => task.taskId) }, status: { notIn: ['COMPLETED', 'CANCELLED'] }, ...(search ? { OR: [{ nodeKey: { contains: search } }, { instance: { order: { orderNumber: { contains: search } } } }, { instance: { order: { item: { name: { contains: search } } } } }, { instance: { order: { customer: { name: { contains: search } } } } }] } : {}) };
         const byId = new Map(schedule!.scheduledTasks.map(task => [task.taskId, task]));
-        const result = await page(() => tx.task.count({ where }), (skip, take) => tx.task.findMany({ where, skip, take, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true } }), row => byId.get(row.id));
+        // Rows pair each schedule estimate with the display context the search filters on (operation, order, item, customer).
+        const result = await page(() => tx.task.count({ where }), (skip, take) => tx.task.findMany({ where, skip, take, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true, nodeKey: true, instance: { select: { order: { select: { orderNumber: true, item: { select: { name: true } }, customer: { select: { name: true } } } }, workflowVersion: { select: { nodes: { select: { key: true, name: true } } } } } } } }), row => {
+          const scheduled = byId.get(row.id);
+          if (!scheduled) return scheduled;
+          const node = row.instance.workflowVersion.nodes.find(node => node.key === row.nodeKey);
+          return { ...scheduled, nodeKey: row.nodeKey, nodeName: node?.name || row.nodeKey, orderNumber: row.instance.order.orderNumber, itemName: row.instance.order.item.name, customerName: row.instance.order.customer.name };
+        });
         return { ...result, summary: { makespanMinutes: schedule!.makespanMinutes, projectedEndAt: schedule!.projectedEndAt, criticalPathCount: schedule!.criticalPath.length, scheduledTaskCount: schedule!.scheduledTasks.length } };
       }
       case 'workflows': {

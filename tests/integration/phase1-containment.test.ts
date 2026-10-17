@@ -6,6 +6,7 @@ import { POST as explainImpactHandler } from '@/app/api/ai/explain-impact/route'
 import { POST as dispatchRationaleHandler } from '@/app/api/ai/dispatch-rationale/route';
 import { POST as partnerFitHandler } from '@/app/api/ai/partner-fit/route';
 import { POST as recoveryOptionsHandler } from '@/app/api/ai/recovery-options/route';
+import { POST as recoveryProposeHandler } from '@/app/api/intelligence/recovery/propose/route';
 import { POST as promiseExplainHandler } from '@/app/api/ai/promise-explain/route';
 import { POST as memoryRecommendHandler } from '@/app/api/ai/memory-recommend/route';
 import { POST as extractRfqHandler } from '@/app/api/ai/extract-rfq/route';
@@ -111,7 +112,7 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
         expect(res.status).toBe(403);
       });
 
-      it(`returns unavailable without synthetic fallback hallucination when AI returns null on ${ep.name}`, async () => {
+      it(`avoids synthetic fallback hallucination and client-derived Promise narratives on ${ep.name}`, async () => {
         const { alpha } = fixture;
         const spy = vi.spyOn(geminiClient, 'callGeminiStructured').mockResolvedValueOnce({
           aiResult: null,
@@ -130,6 +131,13 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
           });
 
           const res = await ep.handler(req);
+          if (ep.name === 'promise-explain' || ep.name === 'recovery-options') {
+            expect(res.status).toBe(503);
+            const data = await res.json();
+            expect(data.data.state).toBe('NOT_CONNECTED');
+            expect(spy).not.toHaveBeenCalled();
+            return;
+          }
           expect(res.status).toBe(200);
           const data = await res.json();
           // Crucial invariant: never return synthetic fallback order ORD-2026-088 or fake Level 4 cert
@@ -140,6 +148,28 @@ describe('Phase 1 Containment: AI Security, Assignment Ownership, Atom Arithmeti
           spy.mockRestore();
         }
       });
+    }
+  });
+
+  it('rejects legacy recovery generation without an explicit released job scope', async () => {
+    const { alpha } = fixture;
+    const spy = vi.spyOn(geminiClient, 'callGeminiStructured');
+    const req = new NextRequest('http://localhost:3000/api/intelligence/recovery/propose', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${alpha.users.owner.sessionToken}`,
+        'x-workspace-id': alpha.workspaceId,
+      },
+      body: JSON.stringify({ orderId: '00000000-0000-0000-0000-000000000001', delayDays: 3 }),
+    });
+    try {
+      const res = await recoveryProposeHandler(req);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error.message).toContain('Validation failed');
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
     }
   });
 

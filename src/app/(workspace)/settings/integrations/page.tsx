@@ -9,6 +9,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LoadingState } from "@/components/ui/resource-state";
+import { Tabs } from "@/components/ui/tabs";
 import { apiRequest } from "@/lib/api/client";
 
 interface ApiKeyDto {
@@ -79,7 +80,6 @@ export default function IntegrationsSettingsPage() {
       const res = await apiRequest<{ data: WebhookEndpointDto[] }>("/api/integrations/webhooks");
       return res.data;
     },
-    enabled: activeTab === "webhooks",
   });
 
   const [showWebhookModal, setShowWebhookModal] = useState(false);
@@ -133,22 +133,25 @@ export default function IntegrationsSettingsPage() {
       />
 
       {/* Tabs */}
-      <div className="flex border-b border-line gap-6 text-xs font-semibold mb-4">
-        <button
-          type="button"
-          onClick={() => setActiveTab("keys")}
-          className={"pb-3 pt-1 border-b-2 transition-colors " + (activeTab === "keys" ? "border-primary text-primary" : "border-transparent text-muted hover:text-ink")}
-        >
-          REST API Keys ({keysQuery.data?.length || 0})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("webhooks")}
-          className={"pb-3 pt-1 border-b-2 transition-colors " + (activeTab === "webhooks" ? "border-primary text-primary" : "border-transparent text-muted hover:text-ink")}
-        >
-          Webhook Endpoints ({webhooksQuery.data?.length || 0})
-        </button>
-      </div>
+      <Tabs
+        ariaLabel="Integration settings sections"
+        activeId={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            id: "keys",
+            label: "REST API Keys",
+            icon: "lock",
+            count: keysQuery.data?.length ?? 0,
+          },
+          {
+            id: "webhooks",
+            label: "Webhook Endpoints",
+            icon: "network",
+            count: webhooksQuery.data?.length ?? 0,
+          },
+        ]}
+      />
 
       {/* TAB 1: API Keys */}
       {activeTab === "keys" && (

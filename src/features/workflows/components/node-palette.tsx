@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Panel } from '@/components/ui/panel';
-import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/icons';
 import { WorkflowNodeType } from '@/domain/workflow-definition';
 
 interface NodePaletteProps {
@@ -12,41 +12,14 @@ interface NodePaletteProps {
 
 export function NodePalette({ onAddNode, disabled }: NodePaletteProps) {
   return (
-    <Panel className="p-3">
-      <div className="text-xs font-semibold uppercase tracking-wider text-muted mb-2">
-        Add Workflow Node
-      </div>
-      <div className="flex flex-col gap-2">
-        <Button
-          variant="soft"
-          size="small"
-          onClick={() => onAddNode('OPERATION')}
-          disabled={disabled}
-          className="justify-start gap-2"
-        >
-          <span className="h-2 w-2 rounded-full bg-primary" />
-          + Operation Step
-        </Button>
-        <Button
-          variant="soft"
-          size="small"
-          onClick={() => onAddNode('INSPECTION')}
-          disabled={disabled}
-          className="justify-start gap-2"
-        >
-          <span className="h-2 w-2 rounded-full bg-amber-500" />
-          + QC Inspection
-        </Button>
-        <Button
-          variant="soft"
-          size="small"
-          onClick={() => onAddNode('APPROVAL')}
-          disabled={disabled}
-          className="justify-start gap-2"
-        >
-          <span className="h-2 w-2 rounded-full bg-slate-500" />
-          + Sign-off Approval
-        </Button>
+    <Panel className="wf-palette">
+      <div className="wf-sidebar-heading"><h2>Add a step</h2><Icon name="plus" /></div>
+      <div className="wf-palette-options">
+        {([
+          { type: 'OPERATION', name: 'Operation', detail: 'Production task', icon: 'work' },
+          { type: 'INSPECTION', name: 'Inspection', detail: 'Quality checkpoint', icon: 'shield' },
+          { type: 'APPROVAL', name: 'Approval', detail: 'Review and sign-off', icon: 'check' },
+        ] as const).map((item) => <button type="button" key={item.type} onClick={() => onAddNode(item.type)} disabled={disabled}><span className="wf-palette-icon"><Icon name={item.icon} /></span><span><strong>{item.name}</strong><small>{item.detail}</small></span><Icon name="plus" /></button>)}
       </div>
     </Panel>
   );

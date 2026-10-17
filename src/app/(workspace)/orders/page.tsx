@@ -23,7 +23,7 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Order Hub" description="Commercial order drafts, engineering prerequisites, material demand, and production release." actions={<><Link href="/orders/new" className="btn primary ">New Order Intake</Link></>} />
+      <PageHeader title="Order Hub" description="Commercial order drafts, engineering prerequisites, material demand, and production release." actions={<><Link href="/orders/intake" className="btn soft">Import RFQ</Link><Link href="/orders/new" className="btn primary ">New Order Intake</Link></>} />
 
       <ListSearch value={search} onChange={setSearch} placeholder="Search order, customer or item…" label="Search orders" />
 

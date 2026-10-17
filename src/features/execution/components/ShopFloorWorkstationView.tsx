@@ -24,6 +24,7 @@ import {
   useIssueReasons,
 } from '../hooks';
 import { getScanOpenPath } from '../scan-routing';
+import { QrScannerOverlay } from '@/components/ui/qr-scanner-overlay';
 import type { ScanResultDTO } from '@/server/modules/execution/contracts';
 import { useWorkspaceNavigation } from '@/components/workspace-navigation-context';
 import { Icon } from '@/components/icons';
@@ -97,6 +98,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
   const [resolvingIssueId, setResolvingIssueId] = useState<string | null>(null);
   const [resolutionNotes, setResolutionNotes] = useState("");
 
+  const [showCamera, setShowCamera] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
   const [scanCode, setScanCode] = useState("");
   const [scanResult, setScanResult] = useState<ScanResultDTO | null>(null);
@@ -265,9 +267,9 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     }
   };
 
-  const handleScanSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const code = scanCode.trim();
+  const handleScanSubmit = async (e?: React.FormEvent, override?: string) => {
+    e?.preventDefault();
+    const code = (override ?? scanCode).trim();
     if (!code) return;
     if (!isOnline) {
       setScanError('Anda sedang luring. Pemindaian memerlukan koneksi server.');
@@ -477,9 +479,9 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             <Button
-              onClick={() => { setScanResult(null); setScanCode(""); setShowScanModal(true); }}
+              onClick={() => { setScanResult(null); setScanError(null); setScanCode(""); setShowCamera(true); }}
               disabled={!isOnline}
-              icon="search"
+              icon="qr"
             >
               Pindai kode
             </Button>
@@ -1263,6 +1265,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink font-mono focus:outline-none focus:border-primary"
               />
             </div>
+            <Button type="button" icon="qr" className="w-full" onClick={() => { setShowScanModal(false); setShowCamera(true); }}>Buka kamera QR</Button>
 
             {scanError && (
               <p role="alert" className="text-xs text-danger m-0">{scanError}</p>
@@ -1299,6 +1302,12 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
           </form>
         </Dialog>
       )}
+      <QrScannerOverlay
+        open={showCamera}
+        onClose={() => setShowCamera(false)}
+        onManualFallback={() => { setShowCamera(false); setShowScanModal(true); }}
+        onDetect={(code) => { setShowCamera(false); setScanCode(code); setShowScanModal(true); void handleScanSubmit(undefined, code); }}
+      />
 
     </div>
   );

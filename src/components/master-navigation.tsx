@@ -23,7 +23,7 @@ const LIST_PREFETCH_BY_HREF: Record<string, ListPrefetchTarget> = {
   '/supply-orders': { resource: 'supply-orders', filters: { search: undefined } },
   '/inventory/items': { resource: 'items', filters: { search: undefined, type: undefined } },
   '/inventory/receipts': { resource: 'receipts', filters: { search: undefined } },
-  '/inventory': { resource: 'stock-balances', filters: { search: '', locationSearch: '' } },
+  '/inventory': { resource: 'stock-balances', filters: { search: '', kind: '' } },
   '/planning': { resource: 'planning', filters: { search: undefined } },
   '/shop-floor': { resource: 'my-work', filters: { status: '', search: '' } },
   '/quality/inspections': { resource: 'inspections', filters: { status: '', search: undefined } },

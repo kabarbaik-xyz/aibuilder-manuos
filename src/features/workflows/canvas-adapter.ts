@@ -24,8 +24,8 @@ export function toCanvas(
 ): CanvasModel {
   const positions = layout?.positions || {};
   const nodes: Node<CanvasNodeData>[] = definition.nodes.map((node, index) => {
-    const defaultX = (index % 3) * 280 + 50;
-    const defaultY = Math.floor(index / 3) * 160 + 50;
+    const defaultX = (index % 3) * 360 + 50;
+    const defaultY = Math.floor(index / 3) * 280 + 50;
     const pos = positions[node.key] || { x: defaultX, y: defaultY };
 
     return {

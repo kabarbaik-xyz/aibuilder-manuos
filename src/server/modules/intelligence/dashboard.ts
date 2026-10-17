@@ -238,30 +238,36 @@ export class DashboardService {
       where: {
         workspaceId,
         status: 'OPEN',
+        ...(effectiveCustomerId ? { order: { customerId: effectiveCustomerId } } : {}),
       },
       include: {
         item: true,
       },
     });
 
+    const materialBalances = openDemands.length ? await this.prisma.stockBalance.findMany({
+      where: {
+        workspaceId,
+        itemId: { in: [...new Set(openDemands.map(demand => demand.itemId))] },
+        location: { kind: { in: ['RAW', 'INTERNAL'] } },
+      },
+    }) : [];
+    const availableByItem = new Map<string, bigint>();
+    for (const balance of materialBalances) {
+      availableByItem.set(balance.itemId, (availableByItem.get(balance.itemId) ?? 0n) + balance.onHandAtoms - balance.reservedAtoms);
+    }
+
     let materialShortagesCount = 0;
     for (const dem of openDemands) {
-      const stock = await this.prisma.stockBalance.findFirst({
-        where: {
-          workspaceId,
-          itemId: dem.itemId,
-          location: { kind: { in: ['RAW', 'INTERNAL'] } },
-        },
-      });
-
-      const onHand = stock ? stock.onHandAtoms - stock.reservedAtoms : 0n;
-      if (onHand < dem.requiredAtoms) {
+      const available = availableByItem.get(dem.itemId) ?? 0n;
+      if (available < dem.requiredAtoms) {
         materialShortagesCount++;
+        const shortage = dem.requiredAtoms - available;
         exceptions.push({
           id: `ex-shortage-${dem.id}`,
           type: 'MATERIAL_SHORTAGE',
           title: `Shortage: ${dem.item.code}`,
-          description: `Demand for ${Number(dem.requiredAtoms / 1_000_000n)} units requires replenishment.`,
+          description: `Demand for ${formatQuantity(dem.requiredAtoms)} units requires replenishment; ${formatQuantity(shortage)} units are currently uncovered.`,
           severity: 'CRITICAL',
           referenceId: dem.id,
           actionScreen: 'workstation',

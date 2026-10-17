@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
-import { buildAuthorizedContext } from '@/server/ai/context';
+import { buildAuthorizedContext, resolveAuthorizedEvidenceReferences } from '@/server/ai/context';
 import { validateGroundedOutput, Explanation } from '@/server/ai/validation';
 import { ProductionBrainService, BrainAnswerSchema, BrainAnswerDTO } from '@/server/ai/brain';
 import { getCached, setCached, clearCache } from '@/server/ai/cache';
+import { OrderService } from '@/server/modules/orders/service';
+import { WorkflowService } from '@/server/modules/workflow/service';
+import { EngineeringService } from '@/server/modules/engineering/service';
+import { releaseOrder } from '@/server/modules/orders/release';
 import { z } from 'zod';
 
 describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
@@ -53,6 +57,87 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       expect(order.customerName).toBe('Apex Dynamics Corp');
     }
   });
+
+  it('limits assistant evidence to a server-resolved order context', async () => {
+    const { alpha } = fixture;
+    const orderService = new OrderService(fixture.db);
+    const order = await orderService.createOrderDraft(alpha.users.owner.principal, {
+      customerId: alpha.masters.customerId,
+      orderTypeId: alpha.masters.orderTypeId,
+      itemId: alpha.masters.fgItemId,
+      orderedQuantity: 4,
+      requestedDate: '2026-12-20T00:00:00.000Z',
+    }, 'ai-context-order');
+    const otherOrder = await orderService.createOrderDraft(alpha.users.owner.principal, {
+      customerId: alpha.masters.customerId,
+      orderTypeId: alpha.masters.orderTypeId,
+      itemId: alpha.masters.fgItemId,
+      orderedQuantity: 5,
+      requestedDate: '2026-12-21T00:00:00.000Z',
+    }, 'ai-context-order-other');
+
+    const result = await brainService.answerProductionQuestion(
+      alpha.users.planner.principal,
+      'What is the status of this order?',
+      { type: 'ORDER', id: order.data.id },
+    );
+
+    const answer = result.status === 'SUCCESS' ? result.data : result.fallbackData;
+    expect(answer?.evidenceRefs).toContain(order.data.orderNumber);
+    expect(answer?.evidenceRefs).not.toContain(otherOrder.data.orderNumber);
+    expect(answer?.evidence).toContainEqual({
+      recordType: 'ORDER',
+      recordId: order.data.id,
+      label: order.data.orderNumber,
+      href: `/orders/${order.data.id}`,
+      reference: order.data.orderNumber,
+    });
+    const scopedContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { orderId: order.data.id });
+    const item = await fixture.db.item.findUniqueOrThrow({ where: { id: alpha.masters.fgItemId } });
+    expect(resolveAuthorizedEvidenceReferences(scopedContext, [item.code])).toContainEqual({
+      recordType: 'ITEM',
+      recordId: alpha.masters.fgItemId,
+      label: `${item.code} · ${item.name}`,
+      href: `/orders/${order.data.id}`,
+      reference: item.code,
+    });
+  });
+
+  it('resolves task context only for planning-authorized users', async () => {
+    const { alpha } = fixture;
+    const workflows = new WorkflowService(fixture.db);
+    const engineering = new EngineeringService(fixture.db);
+    const orders = new OrderService(fixture.db);
+    const template = await workflows.createTemplate(alpha.users.owner.principal, {
+      orderTypeId: alpha.masters.orderTypeId,
+      code: 'WF-AI-TASK-CONTEXT',
+      name: 'AI task context',
+    }, 'ai-task-context-template');
+    const draft = await workflows.saveVersionDraft(alpha.users.owner.principal, template.data.initialVersionId, {
+      definition: { schemaVersion: 1, name: 'AI task context v1', nodes: [{ key: 'OP-10', name: 'Machining', type: 'OPERATION', plannedDurationMinutes: 40 }], edges: [] },
+    }, 'ai-task-context-version');
+    const version = await workflows.publishVersion(alpha.users.owner.principal, draft.data.id, 'ai-task-context-publish');
+    const order = await orders.createOrderDraft(alpha.users.owner.principal, {
+      customerId: alpha.masters.customerId,
+      orderTypeId: alpha.masters.orderTypeId,
+      itemId: alpha.masters.fgItemId,
+      orderedQuantity: 4,
+      requestedDate: '2026-12-20T00:00:00.000Z',
+    }, 'ai-task-context-order');
+    await engineering.saveEngineeringDraft(alpha.users.owner.principal, order.data.engineeringRevisions[0].id, {
+      workflowVersionId: version.data.id,
+      bomLines: [],
+    }, 'ai-task-context-engineering');
+    await engineering.approveEngineeringRevision(alpha.users.owner.principal, order.data.engineeringRevisions[0].id, 'ai-task-context-approve');
+    const release = await releaseOrder(alpha.users.owner.principal, order.data.id, 'ai-task-context-release', fixture.db);
+    const taskId = release.data.taskIds['OP-10'];
+
+    const response = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'What is blocking this task?', { type: 'TASK', id: taskId });
+    const answer = response.status === 'SUCCESS' ? response.data : response.fallbackData;
+    expect(answer?.evidence).toContainEqual(expect.objectContaining({ recordType: 'TASK', recordId: taskId, href: `/planning/tasks/${taskId}` }));
+    await expect(brainService.answerProductionQuestion(alpha.users.customerUser.principal, 'What is blocking this task?', { type: 'TASK', id: taskId })).rejects.toThrow(/not available/i);
+  });
+
 
   it('validates grounded output and flags ungrounded hallucinated references', async () => {
     const { alpha } = fixture;

@@ -18,6 +18,15 @@ export const ScheduleTasksRequestSchema = z.object({
 
 export type ScheduleTasksRequest = z.infer<typeof ScheduleTasksRequestSchema>;
 
+export const ScheduleProposalRequestSchema = z.object({
+  orderId: z.string().uuid(),
+  instanceId: z.string().uuid().optional(),
+  startHorizon: z.string().datetime(),
+  horizonDays: z.number().int().min(1).max(30).default(14),
+}).strict();
+
+export type ScheduleProposalRequest = z.infer<typeof ScheduleProposalRequestSchema>;
+
 export const EvaluateAssignmentSchema = z.object({
   taskId: z.string().min(1),
   technicianId: z.string().nullable().optional(),

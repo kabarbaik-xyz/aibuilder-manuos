@@ -33,6 +33,7 @@ export const createOrderDraftSchema = z.object({
   contractReference: z.string().max(100).optional(),
   rfqText: z.string().optional(),
   rfqSourceType: z.enum(['MANUAL', 'EMAIL', 'UPLOAD']).default('MANUAL'),
+  rfqDraftId: z.string().uuid().optional(),
   lines: z.array(createOrderLineSchema).optional(),
 });
 

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { LoadingState, ErrorState } from "@/components/ui/resource-state";
+import { Tabs } from "@/components/ui/tabs";
 import { apiRequest } from "@/lib/api/client";
 import { formatQuantity } from "@/domain/quantity";
 
@@ -59,7 +60,6 @@ export default function EngineeringHubPage() {
       const res = await apiRequest<{ data: EcoDto[] }>("/api/engineering/change-orders");
       return res.data;
     },
-    enabled: activeTab === "ecos",
   });
 
   const [showEcoModal, setShowEcoModal] = useState(false);
@@ -101,7 +101,6 @@ export default function EngineeringHubPage() {
       const res = await apiRequest<{ data: SubstituteDto[] }>("/api/engineering/substitutes");
       return res.data;
     },
-    enabled: activeTab === "substitutes",
   });
 
   const [showSubModal, setShowSubModal] = useState(false);
@@ -155,22 +154,31 @@ export default function EngineeringHubPage() {
       />
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-line gap-6 text-xs font-semibold">
-        {[
-          { id: "orders", label: "Review Queue (" + orders.length + ")" },
-          { id: "ecos", label: "Engineering Change Orders (ECO)" },
-          { id: "substitutes", label: "Approved Material Substitutes" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id as any)}
-            className={"pb-3 pt-1 border-b-2 transition-colors " + (activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted hover:text-ink")}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        ariaLabel="Engineering Hub sections"
+        activeId={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            id: "orders",
+            label: "Review Queue",
+            icon: "engineering",
+            count: pagination.total || orders.length,
+          },
+          {
+            id: "ecos",
+            label: "Engineering Change Orders (ECO)",
+            icon: "file",
+            count: ecosQuery.data?.length,
+          },
+          {
+            id: "substitutes",
+            label: "Approved Material Substitutes",
+            icon: "item",
+            count: substitutesQuery.data?.length,
+          },
+        ]}
+      />
 
       {/* TAB 1: Review Queue Orders */}
       {activeTab === "orders" && (

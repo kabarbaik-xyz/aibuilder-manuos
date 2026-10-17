@@ -75,7 +75,7 @@ export function GenerationPanel({
       {!embedded && <div className="flex items-center gap-2">
         <Icon name="spark" className="h-4 w-4 text-primary" />
         <span className="font-semibold text-xs uppercase tracking-wider text-ink">
-          AI {target === 'WORKFLOW' ? 'Workflow DAG' : 'Form Schema'} Assistant
+          Draft {target === 'WORKFLOW' ? 'workflow' : 'form'} with AI
         </span>
       </div>}
 
@@ -113,6 +113,14 @@ export function GenerationPanel({
           >
             {createMutation.isPending ? 'Generating…' : embedded ? 'Generate draft' : 'Generate with AI'}
           </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <span className="small muted">Try an example:</span>
+          {target === 'WORKFLOW' ? (
+            <Button type="button" size="small" variant="soft" disabled={disabled || createMutation.isPending} onClick={() => setPrompt('Create a 3-step aluminum bracket route: rough cut, CNC milling requiring the verified machining skill and matching machine class, then dimensional inspection. Include realistic planned durations and predecessor dependencies.')}>CNC bracket route</Button>
+          ) : (
+            <Button type="button" size="small" variant="soft" disabled={disabled || createMutation.isPending} onClick={() => setPrompt('Create a paint inspection form with finish type, paint code required only when the finish is painted, and dry film thickness in microns.')}>Paint inspection form</Button>
+          )}
         </div>
       </form>
     </Container>

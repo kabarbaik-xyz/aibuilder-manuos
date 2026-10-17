@@ -86,6 +86,212 @@ export interface ScheduleOutput {
   criticalPath: string[];
 }
 
+export interface CapacityInterval {
+  startAt: Date | string;
+  endAt: Date | string;
+}
+
+export interface FiniteCapacityTaskInput {
+  id: string;
+  version?: number;
+  plannedDurationMinutes: number;
+  predecessorTaskIds: string[];
+  preconditionReasons?: string[];
+  requiresTechnician: boolean;
+  requiresMachine: boolean;
+  eligibleTechnicianIds?: string[];
+  compatibleMachineIds?: string[];
+  materialReady: boolean;
+}
+
+export interface FiniteCapacityScheduleInput {
+  startHorizon: Date | string;
+  tasks: FiniteCapacityTaskInput[];
+  technicianAvailability: Record<string, CapacityInterval[]>;
+  machineAvailability: Record<string, CapacityInterval[]>;
+}
+
+export interface FiniteCapacityTaskResult {
+  taskId: string;
+  version: number;
+  predecessorTaskIds: string[];
+  status: 'SCHEDULED' | 'UNSCHEDULED';
+  startAt: string | null;
+  endAt: string | null;
+  technicianId: string | null;
+  machineId: string | null;
+  reasons: string[];
+}
+
+export interface FiniteCapacityScheduleOutput {
+  tasks: FiniteCapacityTaskResult[];
+  makespanMinutes: number;
+  projectedEndAt: string | null;
+  assumptions: string[];
+}
+
+interface CapacityReservation {
+  start: number;
+  end: number;
+}
+
+function parseIntervals(intervals: CapacityInterval[]): CapacityReservation[] {
+  return intervals
+    .map((interval) => ({ start: new Date(interval.startAt).getTime(), end: new Date(interval.endAt).getTime() }))
+    .filter((interval) => Number.isFinite(interval.start) && Number.isFinite(interval.end) && interval.start < interval.end)
+    .sort((a, b) => a.start - b.start);
+}
+
+function findAvailableSlot(
+  intervals: CapacityReservation[],
+  reservations: CapacityReservation[],
+  earliest: number,
+  durationMs: number,
+): CapacityReservation | null {
+  for (const interval of intervals) {
+    let candidateStart = Math.max(interval.start, earliest);
+    while (candidateStart + durationMs <= interval.end) {
+      const overlap = reservations
+        .filter((reservation) => reservation.start < candidateStart + durationMs && reservation.end > candidateStart)
+        .sort((a, b) => a.end - b.end)[0];
+      if (!overlap) return { start: candidateStart, end: candidateStart + durationMs };
+      candidateStart = overlap.end;
+    }
+  }
+  return null;
+}
+
+/**
+ * Greedy dry-run scheduler over authoritative, already-filtered published availability.
+ * It never invents a resource, splits work across a break, or mutates bookings.
+ */
+export function scheduleFiniteCapacity(input: FiniteCapacityScheduleInput): FiniteCapacityScheduleOutput {
+  const horizon = new Date(input.startHorizon).getTime();
+  if (!Number.isFinite(horizon)) throw new Error('Schedule horizon must be a valid date');
+  if (input.tasks.length > 100) throw new Error('Finite-capacity preview is limited to 100 tasks');
+
+  const tasksById = new Map<string, FiniteCapacityTaskInput>();
+  for (const task of input.tasks) {
+    if (tasksById.has(task.id)) throw new Error(`Duplicate task '${task.id}' in schedule proposal`);
+    tasksById.set(task.id, task);
+    for (const predecessorId of task.predecessorTaskIds) {
+      if (!tasksById.has(predecessorId) && !input.tasks.some((candidate) => candidate.id === predecessorId)) {
+        throw new Error(`Predecessor task '${predecessorId}' is outside the schedule proposal`);
+      }
+    }
+  }
+
+  const indegree = new Map(input.tasks.map((task) => [task.id, task.predecessorTaskIds.length]));
+  const successors = new Map(input.tasks.map((task) => [task.id, [] as string[]]));
+  for (const task of input.tasks) {
+    for (const predecessorId of task.predecessorTaskIds) successors.get(predecessorId)!.push(task.id);
+  }
+  const queue = input.tasks.filter((task) => indegree.get(task.id) === 0).map((task) => task.id);
+  const topologicalOrder: string[] = [];
+  while (queue.length) {
+    const id = queue.shift()!;
+    topologicalOrder.push(id);
+    for (const successorId of successors.get(id)!) {
+      indegree.set(successorId, indegree.get(successorId)! - 1);
+      if (indegree.get(successorId) === 0) queue.push(successorId);
+    }
+  }
+  if (topologicalOrder.length !== input.tasks.length) throw new Error('Cycle detected in task dependencies');
+
+  const technicianIntervals = Object.fromEntries(Object.entries(input.technicianAvailability).map(([id, intervals]) => [id, parseIntervals(intervals)]));
+  const machineIntervals = Object.fromEntries(Object.entries(input.machineAvailability).map(([id, intervals]) => [id, parseIntervals(intervals)]));
+  const technicianReservations = new Map<string, CapacityReservation[]>();
+  const machineReservations = new Map<string, CapacityReservation[]>();
+  const resultById = new Map<string, FiniteCapacityTaskResult>();
+
+  for (const taskId of topologicalOrder) {
+    const task = tasksById.get(taskId)!;
+    const reasons: string[] = [...(task.preconditionReasons ?? [])];
+    if (!Number.isSafeInteger(task.plannedDurationMinutes) || task.plannedDurationMinutes <= 0) reasons.push('A positive measured or approved task duration is required');
+    if (!task.materialReady) reasons.push('Required materials are not reserved or issued');
+    if (!task.requiresTechnician && !task.requiresMachine) reasons.push('No verified resource requirement is available for this operation');
+    if (task.predecessorTaskIds.some((id) => resultById.get(id)?.status !== 'SCHEDULED')) reasons.push('A predecessor task could not be scheduled');
+    if (reasons.length) {
+      resultById.set(task.id, { taskId: task.id, version: task.version ?? 1, predecessorTaskIds: task.predecessorTaskIds, status: 'UNSCHEDULED', startAt: null, endAt: null, technicianId: null, machineId: null, reasons });
+      continue;
+    }
+
+    const earliest = Math.max(horizon, ...task.predecessorTaskIds.map((id) => Date.parse(resultById.get(id)!.endAt!)));
+    const technicianIds = task.requiresTechnician ? [...new Set(task.eligibleTechnicianIds ?? [])] : [null];
+    const machineIds = task.requiresMachine ? [...new Set(task.compatibleMachineIds ?? [])] : [null];
+    if (!technicianIds.length) reasons.push('No active technician meets every required skill and certification');
+    if (!machineIds.length) reasons.push('No active machine matches the required machine class');
+
+    const durationMs = task.plannedDurationMinutes * 60_000;
+    let best: { slot: CapacityReservation; technicianId: string | null; machineId: string | null } | null = null;
+    if (!reasons.length) {
+      for (const technicianId of technicianIds) {
+        for (const machineId of machineIds) {
+          let slot: CapacityReservation | null;
+          if (technicianId && machineId) {
+            const techIntervals = technicianIntervals[technicianId] ?? [];
+            const machineSlots = machineIntervals[machineId] ?? [];
+            slot = null;
+            for (const techInterval of techIntervals) {
+              for (const machineInterval of machineSlots) {
+                const common = { start: Math.max(techInterval.start, machineInterval.start), end: Math.min(techInterval.end, machineInterval.end) };
+                if (common.start >= common.end) continue;
+                const candidate = findAvailableSlot([common], [
+                  ...(technicianReservations.get(technicianId) ?? []),
+                  ...(machineReservations.get(machineId) ?? []),
+                ], earliest, durationMs);
+                if (candidate && (!slot || candidate.start < slot.start)) slot = candidate;
+              }
+            }
+          } else if (technicianId) {
+            slot = findAvailableSlot(technicianIntervals[technicianId] ?? [], technicianReservations.get(technicianId) ?? [], earliest, durationMs);
+          } else if (machineId) {
+            slot = findAvailableSlot(machineIntervals[machineId] ?? [], machineReservations.get(machineId) ?? [], earliest, durationMs);
+          } else {
+            slot = null;
+          }
+          if (slot && (!best || slot.start < best.slot.start)) best = { slot, technicianId, machineId };
+        }
+      }
+    }
+
+    if (!best) {
+      if (!reasons.length) reasons.push('No contiguous qualified resource window fits the task duration');
+      resultById.set(task.id, { taskId: task.id, version: task.version ?? 1, predecessorTaskIds: task.predecessorTaskIds, status: 'UNSCHEDULED', startAt: null, endAt: null, technicianId: null, machineId: null, reasons });
+      continue;
+    }
+
+    if (best.technicianId) technicianReservations.set(best.technicianId, [...(technicianReservations.get(best.technicianId) ?? []), best.slot]);
+    if (best.machineId) machineReservations.set(best.machineId, [...(machineReservations.get(best.machineId) ?? []), best.slot]);
+    resultById.set(task.id, {
+      taskId: task.id,
+      version: task.version ?? 1,
+      predecessorTaskIds: task.predecessorTaskIds,
+      status: 'SCHEDULED',
+      startAt: new Date(best.slot.start).toISOString(),
+      endAt: new Date(best.slot.end).toISOString(),
+      technicianId: best.technicianId,
+      machineId: best.machineId,
+      reasons: [],
+    });
+  }
+
+  const results = input.tasks.map((task) => resultById.get(task.id)!);
+  const endTimes = results.filter((task) => task.status === 'SCHEDULED').map((task) => Date.parse(task.endAt!));
+  const projectedEnd = endTimes.length ? Math.max(...endTimes) : null;
+  return {
+    tasks: results,
+    makespanMinutes: projectedEnd === null ? 0 : Math.floor((projectedEnd - horizon) / 60_000),
+    projectedEndAt: projectedEnd === null ? null : new Date(projectedEnd).toISOString(),
+    assumptions: [
+      'Each task must fit inside one continuous published availability interval; work is not split across breaks or shifts.',
+      'Machine availability is treated as exclusive even when configured capacity is greater than one.',
+      'Preview reserves no resources and does not change the published schedule.',
+      'Only PENDING and READY tasks are candidates; assigned or in-progress work must be explicitly rescheduled through the existing command.',
+    ],
+  };
+}
+
 /**
  * Calculates working time advancement taking shifts and working days into account.
  * Starts from a given date and adds durationMinutes of actual working time.

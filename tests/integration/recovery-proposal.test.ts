@@ -42,6 +42,23 @@ describe('SCH-09/AII-06: recovery proposal resolution lifecycle', () => {
     await fixture.close();
   });
 
+  it('lists saved proposals in the current workspace and resolves an authorized detail', async () => {
+    const principal = fixture.alpha.users.owner.principal;
+    const page = await recovery.listProposals(principal, { page: 1, pageSize: 10 });
+    expect(page.total).toBeGreaterThanOrEqual(1);
+    expect(page.items.every(item => item.orderId === orderId)).toBe(true);
+    expect(page.items.some(item => item.id && item.orderId === orderId)).toBe(true);
+
+    const proposal = await fixture.db.recoveryProposal.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, orderId },
+    });
+    const detail = await recovery.getProposal(principal, proposal.id);
+    expect(detail.id).toBe(proposal.id);
+    expect(detail.orderNumber).toContain('SO-RECOVERY-');
+
+    await expect(recovery.getProposal(fixture.beta.users.owner.principal, proposal.id)).rejects.toThrowError(NotFoundError);
+  });
+
   it('rejects resolution without planning.write authority', async () => {
     const stripped = {
       ...fixture.alpha.users.owner.principal,

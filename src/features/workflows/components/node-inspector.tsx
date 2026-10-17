@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import { Icon } from '@/components/icons';
 import { Panel } from '@/components/ui/panel';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -27,17 +28,19 @@ export function NodeInspector({
 }: NodeInspectorProps) {
   if (!node) {
     return (
-      <Panel className="p-4 text-center">
-        <p className="text-xs text-muted">Select a node on the canvas to configure properties.</p>
+      <Panel className="wf-inspector-empty">
+        <span><Icon name="settings" /></span>
+        <h2>Step properties</h2>
+        <p>{readOnly ? 'Select a step on the canvas or in the list to inspect its configuration.' : 'Select a step to configure its duration, department, and requirements.'}</p>
       </Panel>
     );
   }
 
   return (
-    <Panel className="p-4 space-y-4">
+    <Panel className="wf-inspector p-4 space-y-4">
       <div className="flex items-center justify-between border-b border-line pb-2">
         <span className="font-semibold text-xs uppercase tracking-wider text-ink">
-          Node Properties
+          Step properties
         </span>
         {!readOnly && (
           <Button

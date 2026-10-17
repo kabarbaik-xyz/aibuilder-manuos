@@ -33,8 +33,10 @@ import { ButtonLink } from '@/components/ui/button-link';
 import { Badge } from '@/components/ui/badge';
 import { formatQuantity } from '@/domain/quantity';
 import { PageHeader } from '@/components/ui/page-header';
+import { Icon } from '@/components/icons';
 import { Panel } from '@/components/ui/panel';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Tabs } from '@/components/ui/tabs';
 
 export function InspectionListView() {
   const [activeMainTab, setActiveMainTab] = useState<"inspections" | "ncrs">("inspections");
@@ -48,7 +50,6 @@ export function InspectionListView() {
       const res = await apiRequest<{ data: NcrDto[] }>("/api/quality/ncrs");
       return res.data;
     },
-    enabled: activeMainTab === "ncrs",
   });
 
   const [showNcrModal, setShowNcrModal] = useState(false);
@@ -110,10 +111,10 @@ export function InspectionListView() {
   const inspections = pageData?.data || [];
 
   return (
-    <div className="page-stack">
+    <div className="page-stack quality-workspace">
       <PageHeader
-        title="Quality Control & Inspections"
-        description="Verify manufactured outputs and receipts against engineering specifications, checklists, and Non-Conformance Reports (NCR)."
+        title="Quality Control"
+        description="Review inspections, release decisions, and corrective actions across production and incoming materials."
         actions={
           activeMainTab === "ncrs" ? (
             <Button variant="primary" onClick={() => setShowNcrModal(true)} icon="plus">
@@ -123,54 +124,54 @@ export function InspectionListView() {
         }
       />
 
-            {/* Top Level Category Tabs */}
-      <div className="flex border-b border-line gap-6 text-xs font-semibold mb-4">
-        <button
-          type="button"
-          onClick={() => setActiveMainTab("inspections")}
-          className={"pb-3 pt-1 border-b-2 transition-colors " + (activeMainTab === "inspections" ? "border-primary text-primary" : "border-transparent text-muted hover:text-ink")}
-        >
-          Quality Inspections ({inspections.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveMainTab("ncrs")}
-          className={"pb-3 pt-1 border-b-2 transition-colors " + (activeMainTab === "ncrs" ? "border-primary text-primary" : "border-transparent text-muted hover:text-ink")}
-        >
-          Non-Conformance Reports (NCR)
-        </button>
-      </div>
+      {/* Top Level Category Tabs */}
+      <Tabs
+        variant="underline"
+        ariaLabel="Quality Control sections"
+        activeId={activeMainTab}
+        onChange={setActiveMainTab}
+        items={[
+          {
+            id: "inspections",
+            label: "Quality Inspections",
+            icon: "checklist",
+            count: pagination.total || inspections.length,
+          },
+          {
+            id: "ncrs",
+            label: "Non-conformance reports",
+            icon: "alert",
+            count: ncrsQuery.data?.length,
+          },
+        ]}
+      />
 
       {activeMainTab === "inspections" && (
         <>
-      {/* Filter Tabs */}
-      <div className="tabs">
-        <button
-          type="button"
-          onClick={() => setStatusFilter('')}
-          className={`tab ${statusFilter === '' ? 'active' : ''}`}
-        >
-          All Inspections
-        </button>
-        <button
-          type="button"
-          onClick={() => setStatusFilter('DRAFT')}
-          className={`tab ${statusFilter === 'DRAFT' ? 'active' : ''}`}
-        >
-          Pending / Draft
-        </button>
-        <button
-          type="button"
-          onClick={() => setStatusFilter('FINALIZED')}
-          className={`tab ${statusFilter === 'FINALIZED' ? 'active' : ''}`}
-        >
-          Finalized & Released
-        </button>
-      </div>
+          <div className="qc-page-summary"><div><Icon name="checklist" /><span>Current results page</span><strong>{isLoading || error ? '—' : `${inspections.length} inspections`}</strong></div><div><span>Awaiting disposition</span><strong>{isLoading || error ? '—' : inspections.filter(item => item.status === 'DRAFT').length}</strong></div><div><span>Finalized</span><strong>{isLoading || error ? '—' : inspections.filter(item => item.status === 'FINALIZED').length}</strong></div><div><span>With rework or scrap</span><strong>{isLoading || error ? '—' : inspections.filter(item => item.status === 'FINALIZED' && (item.reworkAtoms > 0n || item.scrappedAtoms > 0n)).length}</strong></div></div>
+          {/* Filter & Search Toolbar */}
+          <Tabs
+            variant="segmented"
+            className="qc-filter-toolbar"
+            ariaLabel="Filter inspections by status"
+            activeId={statusFilter}
+            onChange={setStatusFilter}
+            items={[
+              { id: "", label: "All inspections" },
+              { id: "DRAFT", label: "Pending / draft" },
+              { id: "FINALIZED", label: "Finalized" },
+            ]}
+            rightSlot={
+              <ListSearch
+                value={search}
+                onChange={setSearch}
+                placeholder="Search item, order, lot or inspection…"
+                label="Search inspections"
+              />
+            }
+          />
 
-      <ListSearch value={search} onChange={setSearch} placeholder="Search item, order, lot or inspection…" label="Search inspections" />
-
-      <Panel>
+      <Panel className="qc-ledger">
         {isLoading ? (
           <div className="p-8 text-center text-xs text-muted">
             Loading inspections ledger...
@@ -193,9 +194,7 @@ export function InspectionListView() {
                   <th className="py-3 px-4">Source & Item</th>
                   <th className="py-3 px-4">Lot / Batch</th>
                   <th className="py-3 px-4">Inspected</th>
-                  <th className="py-3 px-4">Passed</th>
-                  <th className="py-3 px-4">Rework</th>
-                  <th className="py-3 px-4">Scrap</th>
+                  <th className="py-3 px-4">Quantity disposition</th>
                   <th className="py-3 px-4">Disposition</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
@@ -208,7 +207,7 @@ export function InspectionListView() {
                         href={`/quality/inspections/${insp.id}`}
                         className="text-primary hover:underline"
                       >
-                        {insp.id.slice(0, 8)}…
+                        <span className="qc-inspection-ref"><Icon name="checklist" />{insp.id.slice(0, 8)}</span>
                       </Link>
                       <div className="text-xs text-muted font-sans mt-0.5">
                         {new Date(insp.createdAt).toLocaleDateString()}
@@ -216,7 +215,7 @@ export function InspectionListView() {
                     </td>
                     <td className="py-3 px-4">
                       <div className="font-medium">
-                        {insp.productionOutput?.item?.name || 'Production Batch'}
+                        {insp.productionOutput?.item?.name || (insp.sourceType === 'GOODS_RECEIPT' ? 'Received material' : 'Production output')}
                       </div>
                       <div className="text-xs text-muted">
                         {insp.productionOutput?.task?.instance?.order?.orderNumber
@@ -230,26 +229,25 @@ export function InspectionListView() {
                     <td className="py-3 px-4 font-mono font-semibold">
                       {formatQuantity(insp.inspectedAtoms)}
                     </td>
-                    <td className="py-3 px-4 font-mono text-success">
-                      {formatQuantity(insp.passedAtoms)}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-warning">
-                      {formatQuantity(insp.reworkAtoms)}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-danger">
-                      {formatQuantity(insp.scrappedAtoms)}
+                    <td className="py-3 px-4">
+                      {insp.status === 'DRAFT' ? <span className="qc-awaiting">Awaiting QC disposition</span> : <div className="qc-outcome">
+                        <div className="qc-outcome-track" role="img" aria-label={`${formatQuantity(insp.passedAtoms)} passed, ${formatQuantity(insp.reworkAtoms)} rework, ${formatQuantity(insp.scrappedAtoms)} scrap`}>
+                          {([{ value: insp.passedAtoms, kind: 'passed' }, { value: insp.reworkAtoms, kind: 'rework' }, { value: insp.scrappedAtoms, kind: 'scrap' }]).map(({ value, kind }) => <span key={kind} className={kind} style={{ width: `${insp.inspectedAtoms > 0n ? Number(value * 10000n / insp.inspectedAtoms) / 100 : 0}%` }} />)}
+                        </div>
+                        <div className="qc-outcome-values"><span><i className="passed" />{formatQuantity(insp.passedAtoms)} passed</span><span><i className="rework" />{formatQuantity(insp.reworkAtoms)} rework</span><span><i className="scrap" />{formatQuantity(insp.scrappedAtoms)} scrap</span></div>
+                      </div>}
                     </td>
                     <td className="py-3 px-4">
                       {insp.status === 'DRAFT' ? (
-                        <Badge variant="warning">DRAFT / PENDING</Badge>
+                        <Badge variant="warning">Pending</Badge>
                       ) : insp.disposition === 'PASSED' ? (
-                        <Badge variant="success">PASSED</Badge>
+                        <Badge variant="success">Passed</Badge>
                       ) : insp.disposition === 'REWORK' ? (
-                        <Badge variant="warning">REWORK HELD</Badge>
+                        <Badge variant="warning">Rework held</Badge>
                       ) : insp.disposition === 'SCRAPPED' ? (
-                        <Badge variant="danger">SCRAPPED</Badge>
+                        <Badge variant="danger">Scrapped</Badge>
                       ) : (
-                        <Badge variant="blue">PARTIAL</Badge>
+                        <Badge variant="blue">Partial</Badge>
                       )}
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -273,12 +271,13 @@ export function InspectionListView() {
 
       {activeMainTab === "ncrs" && (
         <div className="space-y-4">
+          {closeNcrMutation.error && <div role="alert" className="ov-error">{closeNcrMutation.error.message}</div>}
           {ncrsQuery.isLoading ? (
             <div className="p-8 text-center text-xs text-muted">
               Loading Non-Conformance Reports...
             </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border bg-white border-line">
+          ) : ncrsQuery.error ? <div role="alert" className="ov-error">Unable to load non-conformance reports: {ncrsQuery.error.message}</div> : (
+            <div className="overflow-x-auto rounded-xl border bg-white border-line qc-ncr-ledger">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b bg-surface text-muted font-semibold uppercase tracking-wider border-line">
@@ -372,6 +371,7 @@ export function InspectionListView() {
           size="md"
           pending={createNcrMutation.isPending}
         >
+          {createNcrMutation.error && <div role="alert" className="ov-error">{createNcrMutation.error.message}</div>}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -446,6 +446,7 @@ export function InspectionListView() {
           size="md"
           pending={resolveNcrMutation.isPending}
         >
+          {resolveNcrMutation.error && <div role="alert" className="ov-error">{resolveNcrMutation.error.message}</div>}
           <form
             onSubmit={(e) => {
               e.preventDefault();

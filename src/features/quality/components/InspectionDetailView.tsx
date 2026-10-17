@@ -227,6 +227,15 @@ export function InspectionDetailView({
         }
       />
 
+      <Panel className="flex flex-wrap items-start justify-between gap-3 p-4">
+        <div>
+          <h2 className="text-sm font-semibold text-ink">AI visual QC assistance</h2>
+          <p className="small muted mt-1">No visual QC inference adapter is connected. Inspection photos are not analyzed by AI; manual inspection and the existing QC disposition flow remain available.</p>
+          <p className="small muted mt-1">The pilot still needs an approved defect taxonomy, image-capture requirements, a labeled validation set, and QC reviewer criteria.</p>
+        </div>
+        <Badge variant="warning">Pilot gated</Badge>
+      </Panel>
+
       {inspection.serialNumber && inspection.status === 'FINALIZED' && inspection.passedAtoms > 0n && inspection.productionOutput?.item && <PassportPublicationActions
         serialNumber={inspection.serialNumber} itemId={inspection.productionOutput.item.id}
         orderId={inspection.productionOutput.task?.instance?.order?.id}

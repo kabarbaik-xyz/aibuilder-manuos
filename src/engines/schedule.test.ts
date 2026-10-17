@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduleTasks, ScheduleCalendar } from './schedule';
+import { scheduleFiniteCapacity, scheduleTasks, ScheduleCalendar } from './schedule';
 
 describe('Production Scheduling Engine (O05 / acceptance A08-A10)', () => {
   const calendar8h: ScheduleCalendar = {
@@ -141,5 +141,59 @@ describe('Production Scheduling Engine (O05 / acceptance A08-A10)', () => {
 
     expect(taskC.isCriticalPath).toBe(true);
     expect(result.criticalPath).toEqual(['TASK-A', 'TASK-C']);
+  });
+
+  describe('finite-capacity dry-run', () => {
+    const interval = { startAt: '2026-11-24T08:00:00.000Z', endAt: '2026-11-24T16:00:00.000Z' };
+
+    it('places concurrent tasks on separate qualified resources and keeps dependent work after its predecessor', () => {
+      const result = scheduleFiniteCapacity({
+        startHorizon: '2026-11-24T08:00:00.000Z',
+        tasks: [
+          { id: 'A', plannedDurationMinutes: 120, predecessorTaskIds: [], requiresTechnician: true, requiresMachine: true, eligibleTechnicianIds: ['T1', 'T2'], compatibleMachineIds: ['M1', 'M2'], materialReady: true },
+          { id: 'B', plannedDurationMinutes: 120, predecessorTaskIds: [], requiresTechnician: true, requiresMachine: true, eligibleTechnicianIds: ['T1', 'T2'], compatibleMachineIds: ['M1', 'M2'], materialReady: true },
+          { id: 'C', plannedDurationMinutes: 60, predecessorTaskIds: ['A'], requiresTechnician: true, requiresMachine: true, eligibleTechnicianIds: ['T1', 'T2'], compatibleMachineIds: ['M1', 'M2'], materialReady: true },
+        ],
+        technicianAvailability: { T1: [interval], T2: [interval] },
+        machineAvailability: { M1: [interval], M2: [interval] },
+      });
+
+      expect(result.tasks.every(task => task.status === 'SCHEDULED')).toBe(true);
+      const a = result.tasks.find(task => task.taskId === 'A')!;
+      const b = result.tasks.find(task => task.taskId === 'B')!;
+      const c = result.tasks.find(task => task.taskId === 'C')!;
+      expect(a.technicianId).not.toBe(b.technicianId);
+      expect(a.machineId).not.toBe(b.machineId);
+      expect(Date.parse(c.startAt!)).toBeGreaterThanOrEqual(Date.parse(a.endAt!));
+    });
+
+    it('marks missing materials and their dependent tasks unscheduled with explicit reasons', () => {
+      const result = scheduleFiniteCapacity({
+        startHorizon: '2026-11-24T08:00:00.000Z',
+        tasks: [
+          { id: 'A', plannedDurationMinutes: 60, predecessorTaskIds: [], requiresTechnician: true, requiresMachine: false, eligibleTechnicianIds: ['T1'], materialReady: false },
+          { id: 'B', plannedDurationMinutes: 60, predecessorTaskIds: ['A'], requiresTechnician: true, requiresMachine: false, eligibleTechnicianIds: ['T1'], materialReady: true },
+        ],
+        technicianAvailability: { T1: [interval] },
+        machineAvailability: {},
+      });
+
+      expect(result.tasks[0]).toMatchObject({ status: 'UNSCHEDULED', reasons: ['Required materials are not reserved or issued'] });
+      expect(result.tasks[1]).toMatchObject({ status: 'UNSCHEDULED', reasons: ['A predecessor task could not be scheduled'] });
+    });
+
+    it('does not split a task across a break or infer an unqualified resource', () => {
+      const result = scheduleFiniteCapacity({
+        startHorizon: '2026-11-24T08:00:00.000Z',
+        tasks: [{ id: 'A', plannedDurationMinutes: 240, predecessorTaskIds: [], requiresTechnician: true, requiresMachine: false, eligibleTechnicianIds: ['T1'], materialReady: true }],
+        technicianAvailability: { T1: [
+          { startAt: '2026-11-24T08:00:00.000Z', endAt: '2026-11-24T10:00:00.000Z' },
+          { startAt: '2026-11-24T10:30:00.000Z', endAt: '2026-11-24T12:30:00.000Z' },
+        ] },
+        machineAvailability: {},
+      });
+
+      expect(result.tasks[0]).toMatchObject({ status: 'UNSCHEDULED', reasons: ['No contiguous qualified resource window fits the task duration'] });
+    });
   });
 });

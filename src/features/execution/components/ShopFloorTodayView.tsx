@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Tabs } from "@/components/ui/tabs";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/resource-state";
 import { useMyTasks, useScanBarcode } from "../hooks";
 import { getScanOpenPath } from "../scan-routing";
+import { QrScannerOverlay } from '@/components/ui/qr-scanner-overlay';
 import { useOnlineStatus } from "../use-online-status";
 
 function formatMinutes(value: number) {
@@ -36,9 +38,10 @@ export function ShopFloorTodayView() {
 
   const { data: myTasks, isLoading, error, refetch } = useMyTasks();
 
-  const handleScanSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const code = scanCode.trim();
+  const [showCamera, setShowCamera] = useState(false);
+  const handleScanSubmit = async (e?: React.FormEvent<HTMLFormElement>, override?: string) => {
+    e?.preventDefault();
+    const code = (override ?? scanCode).trim();
     if (!code) return;
     if (!isOnline) {
       setScanMessage('Pemindaian memerlukan koneksi server. Sambungkan kembali sebelum mencoba.');
@@ -80,17 +83,15 @@ export function ShopFloorTodayView() {
       />
 
       {/* Subnavigation Bar */}
-      <div className="flex items-center gap-2 border-b border-line pb-3">
-        <ButtonLink href="/shop-floor" size="small" variant="default">
-          Semua tugas
-        </ButtonLink>
-        <ButtonLink href="/shop-floor/today" size="small" variant="primary">
-          Antrean kerja
-        </ButtonLink>
-        <ButtonLink href="/shop-floor/profile" size="small" variant="default">
-          Profil saya
-        </ButtonLink>
-      </div>
+      <Tabs
+        ariaLabel="Navigasi lantai produksi"
+        activeId="today"
+        items={[
+          { id: "all", label: "Semua tugas", href: "/shop-floor", icon: "work" },
+          { id: "today", label: "Antrean kerja", href: "/shop-floor/today", icon: "clock", count: isLoading ? undefined : queuedTasks.length },
+          { id: "profile", label: "Profil saya", href: "/shop-floor/profile", icon: "technician" },
+        ]}
+      />
 
       {/* Online-only mutation state */}
       <div className="p-3 bg-surface border border-line rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs">
@@ -104,34 +105,40 @@ export function ShopFloorTodayView() {
               : "Pemindaian dan eksekusi tersedia setelah tersambung kembali."}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          {principal?.facilityId && <Badge variant="default">Fasilitas: {principal.facilityId}</Badge>}
-        </div>
+        {principal?.facilityId && !/^[a-z]+-[0-9a-f]{8}-/i.test(principal.facilityId) && (
+          <Badge variant="default">Fasilitas: {principal.facilityId}</Badge>
+        )}
       </div>
 
       {/* Quick Scan Entry */}
       <form
-        className="p-4 bg-surface border border-line rounded-xl flex flex-wrap gap-2 items-center"
+        className="my-work-scan rounded-xl border border-line bg-surface"
         onSubmit={handleScanSubmit}
         aria-label="Pindai barcode di workstation"
       >
-        <div className="flex-1 min-w-[200px]">
-          <Input
-            type="text"
-            placeholder="Pindai QR atau masukkan kode tugas / job…"
-            value={scanCode}
-            onChange={(e) => setScanCode(e.target.value)}
-          />
-        </div>
+        <Input
+          type="text"
+          placeholder="Pindai QR atau masukkan kode tugas / job…"
+          value={scanCode}
+          onChange={(e) => setScanCode(e.target.value)}
+        />
+        <Button type="button" icon="qr" disabled={!isOnline || scanMutation.isPending} onClick={() => setShowCamera(true)}>
+          Pindai QR
+        </Button>
         <Button type="submit" variant="primary" disabled={!isOnline || !scanCode.trim() || scanMutation.isPending}>
-          {scanMutation.isPending ? "Memeriksa…" : "Pindai & buka"}
+          {scanMutation.isPending ? "Memeriksa…" : "Buka kode"}
         </Button>
         {scanMessage && (
-          <p role="status" className="w-full text-xs text-amber-700 font-medium mt-1">
+          <p role="status" className="my-work-scan-message text-amber-700 font-medium">
             {scanMessage}
           </p>
         )}
       </form>
+      <QrScannerOverlay
+        open={showCamera}
+        onClose={() => setShowCamera(false)}
+        onDetect={(code) => { setShowCamera(false); setScanCode(code); void handleScanSubmit(undefined, code); }}
+      />
 
       {/* Active Running Session Alert */}
       {activeTask && (

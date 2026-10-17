@@ -133,6 +133,20 @@ export class OrderService {
       payload: input,
       prismaClient: this.prisma,
       handler: async (tx) => {
+        let reviewedRfq: { id: string; rawText: string; extractedFieldsJson: string; orderId: string | null } | null = null;
+        if (input.rfqDraftId) {
+          reviewedRfq = await tx.rfqDraft.findFirst({
+            where: { id: input.rfqDraftId, workspaceId: principal.workspaceId },
+            select: { id: true, rawText: true, extractedFieldsJson: true, orderId: true },
+          });
+          if (!reviewedRfq) throw new NotFoundError(`Reviewed RFQ '${input.rfqDraftId}' not found`);
+          let reviewState: string | undefined;
+          try { reviewState = (JSON.parse(reviewedRfq.extractedFieldsJson) as { reviewState?: string }).reviewState; } catch { /* invalid legacy metadata remains ineligible for handoff */ }
+          if (reviewedRfq.orderId || reviewState !== 'REVIEWED') {
+            throw new BadRequestError('Only an unlinked RFQ that has completed engineering review can be attached to a new order draft.');
+          }
+        }
+
         // Customer check
         const customer = await tx.customer.findFirst({
           where: { id: input.customerId, workspaceId: principal.workspaceId, archivedAt: null },
@@ -273,7 +287,17 @@ export class OrderService {
         }
 
         // RFQ Context
-        if (input.rfqText) {
+        if (reviewedRfq) {
+          const metadata = JSON.parse(reviewedRfq.extractedFieldsJson) as Record<string, unknown>;
+          await tx.rfqDraft.update({
+            where: { id: reviewedRfq.id },
+            data: {
+              orderId: order.id,
+              sourceType: 'TEXT',
+              extractedFieldsJson: JSON.stringify({ ...metadata, handoffOrderId: order.id, handedOffAt: new Date().toISOString() }),
+            },
+          });
+        } else if (input.rfqText) {
           await tx.rfqDraft.create({
             data: {
               workspaceId: principal.workspaceId,
@@ -337,6 +361,7 @@ export class OrderService {
           aggregateType: 'ORDER',
           aggregateId: order.id,
           resourceVersion: order.version,
+          auditDetails: reviewedRfq ? { rfqDraftId: reviewedRfq.id } : undefined,
         };
       },
     });

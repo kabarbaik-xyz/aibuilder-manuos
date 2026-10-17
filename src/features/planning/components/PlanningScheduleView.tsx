@@ -2,7 +2,10 @@
 import { useListSearch, usePaginatedList } from '@/lib/api/use-paginated-list';
 import { Pagination } from '@/components/ui/pagination';
 import { ListSearch } from '@/components/ui/list-search';
-import type { ScheduledTaskResult } from '@/engines/schedule';
+import type { ScheduledTaskRow } from '../schedule-presentation';
+import { ScheduleGantt, ScheduleCalendar } from './ScheduleVisualizations';
+import { Tabs } from '@/components/ui/tabs';
+import './planning-workspace.css';
 
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
@@ -18,10 +21,21 @@ import type { AssignmentEvaluationResult } from '@/server/modules/planning/contr
 import { Icon } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/api/client';
+import type { TechnicianRecommendationReportDTO } from '@/server/modules/planning/recommendations';
+import { ScheduleProposalWorkbench } from './ScheduleProposalWorkbench';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState, LoadingState } from '@/components/ui/resource-state';
+import { ButtonLink } from '@/components/ui/button-link';
+
+const slotFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const formatSlot = (value: string) => slotFormatter.format(new Date(value));
 
 export function PlanningScheduleView() {
   const { search, setSearch, query } = useListSearch();
-  const { data: pageData, isLoading, error, refetch, pagination } = usePaginatedList<ScheduledTaskResult, { makespanMinutes: number; projectedEndAt: string; criticalPathCount: number; scheduledTaskCount: number }>('planning', { search: query || undefined });
+  const [view, setView] = useState<'gantt' | 'calendar' | 'list'>('gantt');
+  const { data: pageData, isLoading, error, refetch, pagination } = usePaginatedList<ScheduledTaskRow, { makespanMinutes: number; projectedEndAt: string; criticalPathCount: number; scheduledTaskCount: number }>('planning', { search: query || undefined });
   const schedule = pageData?.summary ? { ...pageData.summary, scheduledTasks: pageData.data } : undefined;
   const assignMutation = useAssignTask();
   const techniciansQuery = useTechnicians();
@@ -29,6 +43,15 @@ export function PlanningScheduleView() {
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedTaskVersion, setSelectedTaskVersion] = useState<number | null>(null);
+  const selectedScheduledTask = schedule?.scheduledTasks.find(task => task.taskId === selectedTaskId);
+  const recommendations = useQuery({
+    queryKey: ['planning', 'technician-recommendations', selectedTaskId, selectedScheduledTask?.startAt, selectedScheduledTask?.endAt],
+    enabled: Boolean(selectedTaskId && selectedScheduledTask),
+    queryFn: () => apiRequest<{ data: TechnicianRecommendationReportDTO }>('/api/planning/technician-recommendations', {
+      method: 'POST',
+      body: JSON.stringify({ taskId: selectedTaskId, slotStart: selectedScheduledTask!.startAt, slotEnd: selectedScheduledTask!.endAt }),
+    }).then(response => response.data),
+  });
   const [technicianId, setTechnicianId] = useState('');
   const [machineId, setMachineId] = useState('');
   const [assignError, setAssignError] = useState<string | null>(null);
@@ -111,33 +134,10 @@ export function PlanningScheduleView() {
       taskId: selectedTaskId,
       technicianId: technicianId.trim() || null,
       machineId: machineId.trim() || null,
+      scheduledStartAt: selectedScheduledTask?.startAt,
+      scheduledEndAt: selectedScheduledTask?.endAt,
     }).then(res => setEvaluation(res)).catch(() => setEvaluation(null));
-  }, [selectedTaskId, technicianId, machineId]);
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-muted">
-        <Icon name="clock" className="w-8 h-8 animate-spin mb-3 text-primary" />
-        <p className="text-sm">Loading production schedule…</p>
-      </div>
-    );
-  }
-
-  if (error || !schedule) {
-    return (
-      <div className="p-8 text-center bg-danger-soft border border-line rounded-xl my-6">
-        <p className="text-danger font-medium mb-2">Unable to load production schedule</p>
-        <p className="text-xs text-muted mb-4">{error?.message || 'Unknown error'}</p>
-        <button
-          type="button"
-          onClick={() => refetch()}
-          className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded-lg transition"
-        >
-          Retry Calculation
-        </button>
-      </div>
-    );
-  }
+  }, [selectedTaskId, technicianId, machineId, selectedScheduledTask?.startAt, selectedScheduledTask?.endAt]);
 
   const handleAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,6 +150,8 @@ export function PlanningScheduleView() {
         expectedVersion: selectedTaskVersion,
         technicianId: technicianId.trim() || null,
         machineId: machineId.trim() || null,
+        startAt: selectedScheduledTask?.startAt,
+        endAt: selectedScheduledTask?.endAt,
       });
       setSelectedTaskId(null);
       setSelectedTaskVersion(null);
@@ -161,9 +163,15 @@ export function PlanningScheduleView() {
     }
   };
 
+  const openAssignment = (task: ScheduledTaskRow) => {
+    setAssignError(null);
+    setSelectedTaskId(task.taskId);
+    setSelectedTaskVersion(task.version);
+  };
+
   return (
-    <div className="page-stack">
-      <PageHeader title="Planning" description="Review the production schedule, critical work and resource assignments." actions={
+    <div className="page-stack planning-workspace">
+      <PageHeader title="Planning" description="Sequence production work, inspect critical paths, and coordinate resource assignments." actions={
         <div className="flex items-center gap-2">
           <Button onClick={() => refetch()} icon="reset">
             Recalculate
@@ -209,26 +217,44 @@ export function PlanningScheduleView() {
           </span>
         </div>
       )}
+      {isLoading ? (
+        <LoadingState message="Calculating production schedule…" />
+      ) : error || !schedule ? (
+        <ErrorState
+          title="Unable to load production schedule"
+          message={error?.message || 'Please try again. Your changes have not been submitted.'}
+          onRetry={() => refetch()}
+        />
+      ) : (
+        <>
+      <div className="ps-estimate-banner" role="note" aria-label="Schedule estimate limitations">
+        <span className="ps-estimate-symbol"><Icon name="graph" /></span>
+        <div className="ps-estimate-copy"><div><strong>Dependency sequence preview</strong><Badge variant="warning">Estimate only</Badge></div>
+          <p>Explore timing and critical work. Validate resource capacity before dispatch.</p>
+          <details><summary>About these dates</summary><p>This sequence uses dependencies and the default calendar. It does not validate finite resource capacity, full-slot qualifications, published shifts and leave, confirmed bookings, or BOM-specific material readiness. These dates are not a delivery promise or a capacity-validated schedule. Use a schedule proposal and assignment checks to review feasibility.</p></details>
+        </div>
+        <ScheduleProposalWorkbench />
+      </div>
       <div className="planning-metrics">
         <div className="planning-metric">
-          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Scheduled duration</span>
-          <div className="text-2xl font-bold text-ink mt-1">
+          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Sequence duration</span>
+          <div className="text-2xl font-bold text-ink mt-1 tabular-nums">
             {Math.floor(schedule.makespanMinutes / 60)}h {schedule.makespanMinutes % 60}m
           </div>
-          <p className="text-xs text-muted mt-1">Total active working duration</p>
+          <p className="text-xs text-muted mt-1">Dependency-based calendar estimate</p>
         </div>
 
         <div className="planning-metric">
-          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Expected finish</span>
-          <div className="text-lg font-bold text-ink mt-1 truncate">
-            {schedule.scheduledTaskCount && schedule.projectedEndAt ? new Date(schedule.projectedEndAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not scheduled'}
+          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Sequence finish</span>
+          <div className="text-2xl font-bold text-ink mt-1 tabular-nums truncate">
+            {schedule.scheduledTaskCount > 0 && schedule.projectedEndAt ? formatSlot(schedule.projectedEndAt) : 'Not scheduled'}
           </div>
-          <p className="text-xs text-muted mt-1">Taking shifts & weekends into account</p>
+          <p className="text-xs text-muted mt-1">Uses the current default calendar</p>
         </div>
 
         <div className="planning-metric">
-          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Critical Path</span>
-          <div className="text-2xl font-bold text-ink mt-1">
+          <span className="text-xs font-semibold text-muted tracking-wider uppercase">Critical path</span>
+          <div className="text-2xl font-bold text-ink mt-1 tabular-nums">
             {schedule.criticalPathCount} Tasks
           </div>
           <p className="text-xs text-muted mt-1">Zero slack activities</p>
@@ -236,7 +262,7 @@ export function PlanningScheduleView() {
 
         <div className="planning-metric">
           <span className="text-xs font-semibold text-muted tracking-wider uppercase">Scheduled tasks</span>
-          <div className="text-2xl font-bold text-ink mt-1">
+          <div className="text-2xl font-bold text-ink mt-1 tabular-nums">
             {schedule.scheduledTaskCount}
           </div>
           <p className="text-xs text-muted mt-1">Sequenced in routing network</p>
@@ -244,26 +270,28 @@ export function PlanningScheduleView() {
       </div>
 
       {/* Schedule Table */}
-      <ListSearch value={search} onChange={setSearch} placeholder="Search order, item or operation…" label="Search production schedule" />
-      <div className="bg-surface border border-line rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-line flex justify-between items-center bg-surface">
-          <div>
-            <h2 className="text-base font-semibold text-ink">Production schedule</h2>
-            <p className="text-xs text-muted">Scheduled stages, material readiness and available time before a delay affects delivery.</p>
-          </div>
-
+      <div className="ps-view-toolbar">
+        <ListSearch value={search} onChange={setSearch} placeholder="Search order, item or operation…" label="Search production schedule" />
+        <Tabs variant="segmented" activeId={view} onChange={setView} ariaLabel="Production schedule view" items={[{ id: 'gantt', label: 'Gantt', icon: 'chart' }, { id: 'calendar', label: 'Calendar', icon: 'calendar' }, { id: 'list', label: 'List', icon: 'order' }]} />
+      </div>
+      <div className="ps-schedule-panel" role="tabpanel" aria-label={`${view} production schedule`}>
+        <div className="ps-schedule-heading">
+          <div><h2>{view === 'gantt' ? 'Production timeline' : view === 'calendar' ? 'Production calendar' : 'Production task list'}</h2>
+          <p>{schedule.scheduledTasks.length} of {pageData?.pagination.total || 0} matching tasks · current results page · {Intl.DateTimeFormat().resolvedOptions().timeZone}</p></div>
+          <div className="ps-legend"><span><i className="is-flexible" />Flexible</span><span><i className="is-critical" />Critical path</span><span><i className="has-wait" />Material wait</span></div>
         </div>
 
-        {schedule.scheduledTasks.length === 0 ? <div className="resource-state"><span className="state-icon"><Icon name="calendar" /></span><h3>No production work scheduled</h3><p>Release an order with an approved workflow to see its stages and delivery schedule here.</p><Link className="btn" href="/orders">View orders</Link></div> : <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs border-line">
+        {schedule.scheduledTasks.length === 0 ? <EmptyState icon="calendar" title="No production work scheduled" description="Release an order with an approved workflow to see its stages and delivery schedule here." action={<ButtonLink href="/orders">View orders</ButtonLink>} /> : view === 'gantt' ? <ScheduleGantt tasks={schedule.scheduledTasks} onAssign={openAssignment} /> : view === 'calendar' ? <ScheduleCalendar key={`${pagination.page}-${pagination.pageSize}-${query}`} tasks={schedule.scheduledTasks} onAssign={openAssignment} /> : <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-line bg-surface text-muted uppercase tracking-wider font-semibold">
-                <th className="py-3 px-4">Task ID</th>
-                <th className="py-3 px-4">Path Type</th>
-                <th className="py-3 px-4">Earliest Start</th>
+              <tr className="border-b border-line">
+                <th className="py-3 px-4">Operation</th>
+                <th className="py-3 px-4">Order</th>
+                <th className="py-3 px-4">Path</th>
+                <th className="py-3 px-4">Earliest start</th>
                 <th className="py-3 px-4">Expected finish</th>
                 <th className="py-3 px-4">Slack</th>
-                <th className="py-3 px-4">Material Wait</th>
+                <th className="py-3 px-4">Material wait</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -271,61 +299,58 @@ export function PlanningScheduleView() {
               {schedule.scheduledTasks.map((task) => (
                 <tr
                   key={task.taskId}
-                  className={`hover:bg-surface transition-colors ${
+                  className={`transition-colors hover:bg-surface-muted/50 ${
                     task.isCriticalPath ? 'bg-warning-soft' : ''
                   }`}
                 >
-                  <td className="py-3 px-4 font-mono font-medium text-ink">
+                  <td className="py-3 px-4">
                     <Link
                       href={`/planning/tasks/${task.taskId}`}
-                      className="hover:text-primary underline underline-offset-2 decoration-line hover:decoration-sky-400 transition"
+                      className="text-primary font-semibold hover:underline"
                     >
-                      {task.taskId.slice(0, 12)}...
+                      {task.nodeName || task.nodeKey || `${task.taskId.slice(0, 12)}…`}
                     </Link>
+                    {task.nodeName && task.nodeKey && task.nodeKey !== task.nodeName && (
+                      <div className="font-mono text-xs text-muted mt-0.5">{task.nodeKey}</div>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="font-medium text-ink">{task.orderNumber || '—'}</div>
+                    {task.itemName && <div className="text-xs text-muted mt-0.5">{task.itemName}</div>}
                   </td>
                   <td className="py-3 px-4">
                     {task.isCriticalPath ? (
-                      <Badge variant="warning">CRITICAL PATH</Badge>
+                      <Badge variant="warning">Critical path</Badge>
                     ) : (
                       <Badge variant="default">Flexible</Badge>
                     )}
                   </td>
-                  <td className="py-3 px-4 text-ink">
-                    {new Date(task.startAt).toLocaleString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                  <td className="py-3 px-4 tabular-nums">
+                    {formatSlot(task.startAt)}
                   </td>
-                  <td className="py-3 px-4 text-ink">
-                    {new Date(task.endAt).toLocaleString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                  <td className="py-3 px-4 tabular-nums">
+                    {formatSlot(task.endAt)}
                   </td>
                   <td className="py-3 px-4">
                     {task.slackMinutes === 0 ? (
                       <span className="text-warning font-mono font-semibold">0m</span>
                     ) : (
-                      <span className="text-muted font-mono">
+                      <span className="text-muted font-mono tabular-nums">
                         {Math.floor(task.slackMinutes / 60)}h {task.slackMinutes % 60}m
                       </span>
                     )}
                   </td>
                   <td className="py-3 px-4">
                     {task.materialWaitMinutes > 0 ? (
-                      <span className="text-danger font-semibold font-mono">
+                      <span className="text-danger font-semibold font-mono tabular-nums">
                         +{Math.floor(task.materialWaitMinutes / 60)}h wait
                       </span>
                     ) : (
-                      <span className="text-success font-medium">Ready</span>
+                      <span className="text-muted">No estimated wait</span>
                     )}
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <PermissionGate permission={['task.assign', 'planning.write', 'resource.manage']}><Button size="small" onClick={() => { setAssignError(null); setSelectedTaskId(task.taskId); setSelectedTaskVersion(task.version); }}>Assign resources</Button></PermissionGate>
+                    <PermissionGate permission={['task.assign', 'planning.write', 'resource.manage']}><Button size="small" onClick={() => openAssignment(task)}>Assign resources</Button></PermissionGate>
                   </td>
                 </tr>
               ))}
@@ -335,6 +360,8 @@ export function PlanningScheduleView() {
       </div>
 
       <Pagination {...pagination} />
+        </>
+      )}
 
       {/* Resource Assignment Modal */}
       {selectedTaskId && (
@@ -369,23 +396,49 @@ export function PlanningScheduleView() {
                 </div>
               ) : null}
 
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">
-                  Task ID
-                
+              <label className="block text-xs font-medium text-ink mb-1">
+                Task ID
                 <Input
                   type="text"
                   disabled
                   value={selectedTaskId}
-                  className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-muted font-mono"
-                /></label>
-              </div>
+                  className="mt-1 font-mono text-muted"
+                />
+              </label>
 
               <div>
                 <label className="block text-xs font-medium text-ink mb-1">
                   Technician
                 
                 <Select value={technicianId} onChange={e => setTechnicianId(e.target.value)} disabled={techniciansQuery.isPending || !!techniciansQuery.error}><option value="">No technician assigned</option>{techniciansQuery.data?.data.map(resource => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</Select></label>
+              </div>
+
+              <div className="rounded-lg border border-line bg-surface-muted p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-ink">Qualified technician suggestions</p>
+                    <p className="small muted">For the task's scheduled window. Confirm revalidates that same slot.</p>
+                  </div>
+                  {recommendations.isFetching && <span className="small muted">Checking…</span>}
+                </div>
+                {recommendations.isError ? (
+                  <p className="small mt-2 text-danger" role="alert">Suggestions unavailable: {recommendations.error.message}</p>
+                ) : recommendations.data ? (
+                  recommendations.data.eligibleCount === 0 ? (
+                    <p className="small mt-2 text-warning">{recommendations.data.qualifiedCapacityGap}</p>
+                  ) : (
+                    <ul className="mt-2 grid gap-2">
+                      {recommendations.data.candidates.filter(candidate => candidate.isEligible).slice(0, 3).map(candidate => (
+                        <li key={candidate.technicianId} className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2">
+                          <div><strong className="text-sm">{candidate.name}</strong><p className="small muted">{candidate.rationale}</p></div>
+                          <Button type="button" variant="soft" size="small" onClick={() => setTechnicianId(candidate.technicianId)}>
+                            {technicianId === candidate.technicianId ? 'Selected' : 'Use suggestion'}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                ) : null}
               </div>
 
               <div>
@@ -436,21 +489,20 @@ export function PlanningScheduleView() {
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-line">
-                <button
+              <div className="dialog-actions">
+                <Button
                   type="button"
                   onClick={() => { setSelectedTaskId(null); setSelectedTaskVersion(null); }}
-                  className="px-4 py-2 bg-surface hover:bg-surface-muted text-ink text-xs rounded transition"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="primary"
                   disabled={assignMutation.isPending}
-                  className="btn primary"
                 >
-                  {assignMutation.isPending ? 'Verifying & Assigning...' : 'Confirm Assignment'}
-                </button>
+                  {assignMutation.isPending ? 'Verifying & assigning...' : 'Confirm assignment'}
+                </Button>
               </div>
             </form>
           

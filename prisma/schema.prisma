@@ -998,7 +998,7 @@ model RfqDraft {
   workspaceId         String    @map("workspace_id")
   orderId             String?   @map("order_id")
   rawText             String    @map("raw_text")
-  sourceType          String    @default("MANUAL") @map("source_type") // MANUAL | EMAIL | UPLOAD
+  sourceType          String    @default("MANUAL") @map("source_type") // MANUAL | EMAIL | UPLOAD | TEXT
   extractedFieldsJson String    @default("{}") @map("extracted_fields_json")
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")

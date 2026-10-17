@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCreateOrderDraft } from '../hooks';
@@ -15,9 +15,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { FormErrorSummary } from '@/components/ui/form-errors';
 import { ErrorState, LoadingState } from '@/components/ui/resource-state';
 import { useWorkspaceNavigation } from '@/components/workspace-navigation-context';
+import { apiRequest } from '@/lib/api/client';
 
 export function OrderForm() {
   const router = useRouter();
+  const [rfqDraftId, setRfqDraftId] = useState<string | null>(null);
   const prefix = useId();
   const createOrder = useCreateOrderDraft();
   const customersQuery = useCustomers();
@@ -36,9 +38,31 @@ export function OrderForm() {
   const [rfqText, setRfqText] = useState('');
   const [rfqSourceType, setRfqSourceType] = useState<'MANUAL' | 'EMAIL' | 'UPLOAD'>('MANUAL');
   const [error, setError] = useState<Error | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
   const pending = createOrder.isPending;
   const queries = [customersQuery, typesQuery, itemsQuery];
   const ready = queries.every(query => !query.isPending && !query.error) && customers.length > 0 && orderTypes.length > 0 && items.length > 0;
+
+  useEffect(() => {
+    const sourceId = new URLSearchParams(window.location.search).get('rfqDraftId');
+    if (!sourceId) return;
+    setRfqDraftId(sourceId);
+    let active = true;
+    setSourceLoading(true);
+    apiRequest<{ data: { rawText: string; orderId: string | null; reviewState: string; extraction: { qty: number }; matchedMasters: { customerId: string | null; itemId: string | null } } }>(`/api/engineering/intake/extractions/${sourceId}`)
+      .then(({ data }) => {
+        if (!active) return;
+        if (data.orderId) throw new Error('This RFQ review has already been attached to an order.');
+        if (data.reviewState !== 'REVIEWED') throw new Error('This RFQ must be reviewed before it can be attached to an order.');
+        if (data.matchedMasters.customerId) setCustomerId(data.matchedMasters.customerId);
+        if (data.matchedMasters.itemId) setLines([{ key: 1, itemId: data.matchedMasters.itemId, quantity: String(data.extraction.qty) }]);
+        else setLines([{ key: 1, itemId: '', quantity: String(data.extraction.qty) }]);
+        setRfqText(data.rawText);
+      })
+      .catch(reason => { if (active) setError(reason instanceof Error ? reason : new Error('Unable to load reviewed RFQ source.')); })
+      .finally(() => { if (active) setSourceLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -49,7 +73,7 @@ export function OrderForm() {
       setError(new Error('Set an item and a positive quantity for every order line.'));
       return;
     }
-    createOrder.mutate({ customerId, orderTypeId, itemId: lines[0].itemId, lines: lines.map(line => ({ itemId: line.itemId, orderedQuantity: line.quantity })), requestedDate: new Date(requestedDate).toISOString(), promisedDate: promisedDate ? new Date(promisedDate).toISOString() : null, rfqText, rfqSourceType }, {
+    createOrder.mutate({ customerId, orderTypeId, itemId: lines[0].itemId, lines: lines.map(line => ({ itemId: line.itemId, orderedQuantity: line.quantity })), requestedDate: new Date(requestedDate).toISOString(), promisedDate: promisedDate ? new Date(promisedDate).toISOString() : null, rfqText: rfqDraftId ? '' : rfqText, rfqSourceType, ...(rfqDraftId ? { rfqDraftId } : {}) }, {
       onSuccess: response => router.push(`/orders/${response.data.id}`),
       onError: err => setError(err),
     });
@@ -61,9 +85,11 @@ export function OrderForm() {
   }
 
   return <div className="page-stack order-intake">
-    <PageHeader title="New order" description="Capture the customer request. Engineering and production release follow after review." actions={<Link className="btn" href="/orders">Back to orders</Link>} />
+    <PageHeader title="New order" description="Capture the customer request. Engineering and production release follow after review." actions={<><Link className="btn soft" href="/orders/intake">Import RFQ</Link><Link className="btn" href="/orders">Back to orders</Link></>} />
     {queries.some(query => query.isPending) ? <LoadingState message="Loading customers, order types and items…" /> : queries.some(query => query.error) ? <ErrorState title="Unable to load order references" onRetry={() => queries.forEach(query => query.refetch())} /> : !ready && <div className="form-section page-stack"><h2>Set up order references first</h2><p className="muted">An order needs a customer, an order type and an item before it can be saved.</p><div className="page-header-actions">{!customers.length && principal?.permissions.includes('customer.manage') && <Link className="btn" href="/settings/customers">Add customer</Link>}{!orderTypes.length && principal?.permissions.includes('workflow.author') && <Link className="btn" href="/settings/order-types">Set up order types</Link>}{!items.length && principal?.permissions.includes('item.manage') && <Link className="btn" href="/inventory/items">Add item</Link>}</div></div>}
-    <form onSubmit={handleSubmit} className="page-stack" aria-busy={pending}>
+    {rfqDraftId && <div className="rounded-lg border border-line bg-surface p-3 small" role="status">Reviewed RFQ source {rfqDraftId} will be attached to this order draft. Confirm the customer, item, quantity and dates before saving.</div>}
+    {sourceLoading && <LoadingState message="Loading reviewed RFQ and matched masters…" />}
+    <form onSubmit={handleSubmit} className="page-stack" aria-busy={pending || sourceLoading}>
       <FormErrorSummary error={error} />
       <section className="form-section page-stack"><div><h2>Order details</h2><p className="field-help">Fields marked * are required.</p></div><div className="form-grid">
         <FormField id={`${prefix}-customer`} label="Customer" required><Select value={customerId} onChange={e => setCustomerId(e.target.value)} disabled={!ready || pending}><option value="">Select customer…</option>{customers.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}</Select></FormField>
@@ -81,7 +107,7 @@ export function OrderForm() {
         <FormField id={`${prefix}-promised`} label="Committed delivery date" help="Optional. Set only when a delivery date has been agreed."><DatePicker value={promisedDate} onChange={setPromisedDate} clearable disabled={pending} /></FormField>
       </div></section>
       <section className="form-section page-stack"><h2>Customer request</h2><FormField id={`${prefix}-source`} label="Request source"><Select value={rfqSourceType} onChange={e => setRfqSourceType(e.target.value as typeof rfqSourceType)} disabled={pending}><option value="MANUAL">Manual entry</option><option value="EMAIL">Email</option></Select></FormField><FormField id={`${prefix}-notes`} label="RFQ context and notes" help="Include specifications, drawing references and questions that engineering needs to review."><Textarea value={rfqText} onChange={e => setRfqText(e.target.value)} disabled={pending} placeholder="Describe the customer request…" /></FormField></section>
-      <div className="form-page-actions"><Link href="/orders" className="btn">Cancel</Link><Button type="submit" variant="primary" disabled={!ready || pending}>{pending ? 'Creating draft…' : 'Create order draft'}</Button></div>
+      <div className="form-page-actions"><Link href="/orders" className="btn">Cancel</Link><Button type="submit" variant="primary" disabled={!ready || pending || sourceLoading}>{pending ? 'Creating draft…' : 'Create order draft'}</Button></div>
     </form>
   </div>;
 }

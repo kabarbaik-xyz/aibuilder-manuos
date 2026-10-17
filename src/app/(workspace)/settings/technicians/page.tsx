@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { ErrorState } from '@/components/ui/resource-state';
+import { Tabs } from '@/components/ui/tabs';
 import { FormErrorSummary } from '@/components/ui/form-errors';
 import { ApiError } from '@/lib/api/client';
 import { MasterRowActions, ArchiveMasterDialog } from '@/features/masters/components/master-row-actions';
@@ -283,25 +284,27 @@ export default function TechniciansPage() {
       />
 
       {/* Tabs */}
-      <div className="flex border-b border-line gap-6">
-        <button
-          onClick={() => setActiveTab('technicians')}
-          className={`pb-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'technicians' ? 'border-primary text-primary font-semibold' : 'border-transparent text-muted hover:text-ink'}`}
-        >
-          All Technicians ({technicians.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('reassessment')}
-          className={`pb-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'reassessment' ? 'border-primary text-primary font-semibold' : 'border-transparent text-muted hover:text-ink'}`}
-        >
-          Reassessment & Expiry Queue (RES-05)
-          {queueItems.length > 0 && (
-            <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800 font-bold">
-              {queueItems.length}
-            </span>
-          )}
-        </button>
-      </div>
+      <Tabs
+        ariaLabel="Technicians & skills sections"
+        activeId={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            id: 'technicians',
+            label: 'All Technicians',
+            icon: 'technician',
+            count: pagination.total || technicians.length,
+          },
+          {
+            id: 'reassessment',
+            label: 'Reassessment & Expiry Queue (RES-05)',
+            icon: 'certificate',
+            badge: queueItems.length > 0 ? String(queueItems.length) : undefined,
+            badgeVariant: 'warning',
+            count: queueItems.length === 0 ? 0 : undefined,
+          },
+        ]}
+      />
 
       {activeTab === 'technicians' ? (
         <>

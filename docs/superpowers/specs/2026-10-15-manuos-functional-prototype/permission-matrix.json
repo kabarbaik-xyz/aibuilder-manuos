@@ -24,6 +24,7 @@
     "documents.upload is restricted to an allowed parent; TECHNICIAN may upload only evidence for assigned work.",
     "Document downloads authorize the typed parent; CUSTOMER uses owned-order visibility and never a general internal-document grant.",
     "Changing grants or disabling a membership affects subsequent commands, including idempotent receipt replay.",
+    "Internal job-cost evidence is limited to Owner; ACCESS_ADMIN is not a business-data administrator.",
     "No supplied actor, persona, customer ID or resource permission is accepted as authentication."
   ],
   "permissions": [
@@ -348,6 +349,18 @@
     },
     {
       "code": "audit.read",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "cost.read",
+      "roles": [
+        "OWNER"
+      ]
+    },
+    {
+      "code": "cost.manage",
       "roles": [
         "OWNER"
       ]

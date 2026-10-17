@@ -207,6 +207,7 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
             <ProposalReview
               proposal={aiProposal}
               expectedTargetRevision={version.versionNumber}
+              currentDefinition={definition}
               onApplied={() => {
                 setAiProposal(null);
                 try {

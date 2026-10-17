@@ -34,6 +34,7 @@ export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
   { title: 'My Work', href: '/shop-floor', icon: 'work', permissions: ['task.read_assigned', 'task.execute_assigned', 'planning.read'] },
   { title: 'Quality Control', href: '/quality/inspections', icon: 'checklist', permissions: ['quality.read', 'quality.inspect'] },
   { title: 'Delivery & Shipping', href: '/delivery/shipments', icon: 'delivery', permissions: ['delivery.read', 'order.read'] },
+  { title: 'CoreAI', href: '/ai', icon: 'brain', permissions: ['order.read', 'planning.read', 'inventory.read', 'resource.manage', 'engineering.read', 'quality.read', 'owner'] },
   { title: 'Customer Portal', href: '/portal/orders', icon: 'order', permissions: ['customer_order.read_own'] },
 ];
 
@@ -74,7 +75,7 @@ export interface FunctionalNavigationGroup {
 // References stay beside the workflow they support. Existing permission filters
 // remain authoritative for visibility, including owner and access-admin roles.
 const FUNCTIONAL_NAVIGATION = [
-  { id: 'overview', title: 'Overview', paths: ['/dashboard'] },
+  { id: 'overview', title: 'Overview', paths: ['/dashboard', '/ai'] },
   { id: 'sales', title: 'Sales', paths: ['/orders', '/settings/customers', '/portal/orders'] },
   { id: 'engineering', title: 'Engineering', paths: ['/engineering', '/workflows', '/settings/order-types', '/settings/forms'] },
   { id: 'production', title: 'Production', paths: ['/planning', '/shop-floor'] },

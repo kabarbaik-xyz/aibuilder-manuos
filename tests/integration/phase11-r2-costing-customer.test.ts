@@ -69,6 +69,37 @@ describe('Phase 11: R2 Costing, Customer Requests & Connectors', () => {
   });
 
   describe('1. Standard vs Actual Job Costing Ledger (CST-01, CST-02)', () => {
+    it('keeps absent cost evidence unavailable instead of reporting zero variance', async () => {
+      const summary = await costingService.getOrderCostSummary(fixture.alpha.users.owner.principal, otherCustomerOrderId);
+      expect(summary.hasEntries).toBe(false);
+      expect(summary.currency).toBeNull();
+      expect(summary.totalStandardCents).toBeNull();
+      expect(summary.totalActualCents).toBeNull();
+      expect(summary.totalVarianceCents).toBeNull();
+      expect(summary.isFavorable).toBeNull();
+      const explanation = await costingService.getOrderCostExplanation(fixture.alpha.users.owner.principal, otherCustomerOrderId);
+      expect(explanation.unavailableReason).toContain('both standard and actual');
+      expect(explanation.coverage).toEqual({ standard: false, actual: false });
+      expect(explanation.contributors).toEqual([]);
+    });
+
+    it('replays a cost write with the same idempotency key without duplicating the entry', async () => {
+      const owner = fixture.alpha.users.owner.principal;
+      const input = {
+        orderId: otherCustomerOrderId,
+        costCategory: 'MACHINE' as const,
+        costType: 'ACTUAL' as const,
+        amountCents: '12500',
+        currency: 'IDR',
+      };
+      const first = await costingService.recordCostEntry(owner, input, 'costing-replay-test');
+      const replay = await costingService.recordCostEntry(owner, input, 'costing-replay-test');
+      expect(first.data.id).toBe(replay.data.id);
+      expect(replay.meta.replayed).toBe(true);
+      const summary = await costingService.getOrderCostSummary(owner, otherCustomerOrderId);
+      expect(summary.categories.find(category => category.category === 'MACHINE')?.entries).toHaveLength(1);
+    });
+
     it('records standard budgets and actual incurred costs in integer minor units', async () => {
       const { alpha } = fixture;
       const owner = alpha.users.owner.principal;
@@ -129,6 +160,33 @@ describe('Phase 11: R2 Costing, Customer Requests & Connectors', () => {
       expect(laborCat).toBeDefined();
       expect(laborCat?.varianceCents).toBe('500000');
       expect(laborCat?.isFavorable).toBe(false);
+      expect(matCat?.entries.map(entry => entry.notes)).toContain('Initial BOM standard material cost');
+      await expect(costingService.recordCostEntry(owner, {
+        orderId: testOrderId,
+        costCategory: 'SCRAP',
+        costType: 'ACTUAL',
+        amountCents: 100n,
+        currency: 'USD',
+      })).rejects.toThrow(BadRequestError);
+      await expect(costingService.getOrderCostSummary(alpha.users.planner.principal, testOrderId)).rejects.toThrow(ForbiddenError);
+      await expect(costingService.getOrderCostExplanation(alpha.users.planner.principal, testOrderId)).rejects.toThrow(ForbiddenError);
+    });
+
+    it('ranks variance contributors by integer magnitude and includes authorized cost evidence references', async () => {
+      const explanation = await costingService.getOrderCostExplanation(
+        fixture.alpha.users.owner.principal,
+        testOrderId,
+      );
+
+      expect(explanation.coverage).toEqual({ standard: true, actual: true });
+      expect(explanation.unavailableReason).toBeNull();
+      expect(explanation.contributors.map(item => item.category)).toEqual(['LABOR', 'MATERIAL']);
+      expect(explanation.contributors[0]).toMatchObject({
+        varianceCents: '500000',
+        sourceEntryCount: 2,
+        evidenceHref: `/orders/${testOrderId}`,
+      });
+      expect(explanation.contributors[1].varianceCents).toBe('-200000');
     });
 
     it('rejects negative cost ledger entries', async () => {

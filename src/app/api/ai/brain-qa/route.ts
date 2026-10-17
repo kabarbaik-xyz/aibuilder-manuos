@@ -7,13 +7,17 @@ import { ProductionBrainService } from '@/server/ai/brain';
 import { db } from '@/server/db/client';
 
 const brainService = new ProductionBrainService(db);
+const QuestionSchema = z.object({
+  question: z.string().trim().min(1).max(2000),
+  context: z.object({ type: z.enum(['ORDER', 'ITEM', 'TASK']), id: z.string().min(1).max(100) }).optional(),
+}).strict();
 
 export async function POST(req: NextRequest) {
   try {
     const principal = await requirePrincipal(req);
-    const { question } = await parseJsonBody<{ question: string }>(req, z.object({ question: z.string().trim().min(1).max(2000) }));
+    const { question, context } = await parseJsonBody(req, QuestionSchema);
 
-    const explanation = await brainService.answerProductionQuestion(principal, question);
+    const explanation = await brainService.answerProductionQuestion(principal, question, context);
 
     // Return explanation with data for brain drawer compatibility
     const answerData = explanation.status === 'SUCCESS' ? explanation.data : explanation.fallbackData;

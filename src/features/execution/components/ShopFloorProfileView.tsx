@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Badge } from "@/components/ui/badge";
+import { Tabs } from "@/components/ui/tabs";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/resource-state";
 import { useTechnicianProfile } from "../hooks";
 
@@ -37,17 +38,15 @@ export function ShopFloorProfileView() {
       />
 
       {/* Subnavigation Bar */}
-      <div className="flex items-center gap-2 border-b border-line pb-3">
-        <ButtonLink href="/shop-floor" size="small" variant="default">
-          Semua tugas
-        </ButtonLink>
-        <ButtonLink href="/shop-floor/today" size="small" variant="default">
-          Antrean kerja
-        </ButtonLink>
-        <ButtonLink href="/shop-floor/profile" size="small" variant="primary">
-          Profil saya
-        </ButtonLink>
-      </div>
+      <Tabs
+        ariaLabel="Navigasi lantai produksi"
+        activeId="profile"
+        items={[
+          { id: "all", label: "Semua tugas", href: "/shop-floor", icon: "work" },
+          { id: "today", label: "Antrean kerja", href: "/shop-floor/today", icon: "clock" },
+          { id: "profile", label: "Profil saya", href: "/shop-floor/profile", icon: "technician" },
+        ]}
+      />
 
       {isLoading ? (
         <LoadingState message="Memuat profil operator dan kualifikasi…" />

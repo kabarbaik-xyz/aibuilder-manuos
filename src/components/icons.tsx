@@ -1,7 +1,7 @@
 import React from 'react';
-import { FileCog, ShoppingCart, PackageCheck, Boxes, Users, Truck, Package, Ruler, MapPin, Network, Cog, UserRoundCog, Award, Tags, ClipboardCheck, Brain, Route, ArrowLeft } from 'lucide-react';
+import { FileCog, ShoppingCart, PackageCheck, Boxes, Users, Truck, Package, Ruler, MapPin, Network, Cog, UserRoundCog, Award, Tags, ClipboardCheck, Brain, Route, ArrowLeft, QrCode } from 'lucide-react';
 const symbols = {
- 'arrow-left': ArrowLeft,
+ 'arrow-left': ArrowLeft, qr: QrCode,
  engineering: FileCog, supply: ShoppingCart, receipt: PackageCheck, inventory: Boxes,
  customers: Users, supplier: Truck, delivery: Truck, item: Package, ruler: Ruler, location: MapPin,
  department: Network, machine: Cog, technician: UserRoundCog, certificate: Award,

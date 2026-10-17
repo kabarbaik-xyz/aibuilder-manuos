@@ -6,6 +6,10 @@ import { useOrder } from '@/features/orders/hooks';
 import { useEngineeringRevision } from '@/features/engineering/hooks';
 import { ReviewEditor } from '@/features/engineering/components/review-editor';
 import { LoadingState, ErrorState } from '@/components/ui/resource-state';
+import Link from 'next/link';
+import { Panel } from '@/components/ui/panel';
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { memoryHrefForItem } from '@/features/intelligence/memory-navigation';
 
 export default function OrderEngineeringReviewPage() {
   const params = useParams();
@@ -42,7 +46,13 @@ export default function OrderEngineeringReviewPage() {
   }
 
   return (
-    <div className="">
+    <div className="page-stack">
+      <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <p className="small muted">Compare this item with completed work using measured duration and finalized inspection evidence.</p>
+        <PermissionGate permission={['planning.read', 'execution.read']}>
+          <Link className="btn soft" href={memoryHrefForItem(order.itemId) ?? '/ai/memory'}>Similar jobs</Link>
+        </PermissionGate>
+      </Panel>
       <ReviewEditor orderId={orderId} revision={revision} />
     </div>
   );

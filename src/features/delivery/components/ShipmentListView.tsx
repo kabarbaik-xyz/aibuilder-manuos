@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Panel } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Tabs } from "@/components/ui/tabs";
 import { formatQuantity } from "@/domain/quantity";
 import { ShipmentCreateModal } from "./ShipmentCreateModal";
 
@@ -33,44 +34,31 @@ export function ShipmentListView() {
         actions={
           <Button
             variant="primary"
+            icon="plus"
             onClick={() => setShowCreateModal(true)}
           >
-            + New Shipment
+            New Shipment
           </Button>
         }
       />
 
       {/* Status Filter Tabs */}
-      <div className="tabs">
-        <button
-          type="button"
-          onClick={() => setStatusFilter("")}
-          className={`tab ${statusFilter === "" ? "active" : ""}`}
-        >
-          All Shipments
-        </button>
-        <button
-          type="button"
-          onClick={() => setStatusFilter("ALLOCATED")}
-          className={`tab ${statusFilter === "ALLOCATED" ? "active" : ""}`}
-        >
-          Allocated / Ready to Dispatch
-        </button>
-        <button
-          type="button"
-          onClick={() => setStatusFilter("DISPATCHED")}
-          className={`tab ${statusFilter === "DISPATCHED" ? "active" : ""}`}
-        >
-          In Transit / Dispatched
-        </button>
-        <button
-          type="button"
-          onClick={() => setStatusFilter("DELIVERED")}
-          className={`tab ${statusFilter === "DELIVERED" ? "active" : ""}`}
-        >
-          Delivered
-        </button>
-      </div>
+      <Tabs
+        ariaLabel="Filter shipments by status"
+        activeId={statusFilter}
+        onChange={setStatusFilter}
+        items={[
+          {
+            id: "",
+            label: "All Shipments",
+            icon: "delivery",
+            count: statusFilter === "" ? pagination.total || shipments.length : undefined,
+          },
+          { id: "ALLOCATED", label: "Allocated / Ready to Dispatch" },
+          { id: "DISPATCHED", label: "In Transit / Dispatched" },
+          { id: "DELIVERED", label: "Delivered", icon: "check" },
+        ]}
+      />
 
       <ListSearch value={search} onChange={setSearch} placeholder="Search shipment, order, customer or tracking…" label="Search shipments" />
 
