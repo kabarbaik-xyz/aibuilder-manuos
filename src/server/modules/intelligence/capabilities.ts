@@ -185,7 +185,7 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
     code: 'AII-06',
     title: 'Disruption Recovery Proposals',
     summary:
-      'Save and review a finite-capacity schedule snapshot for one released job; apply the reviewed assignments transactionally after current capacity and material revalidation. Alternative recovery strategies remain unavailable.',
+      'Save finite-capacity schedule reviews, compare feasible alternate machines and supervisor-approved overtime, and track subcontract batches through vendor return to internal work.',
     category: 'RECOVERY',
     href: '/ai/recovery',
     contextualEntryLabel: 'Recovery → Generate schedule review',
@@ -194,9 +194,9 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
       state: 'DETERMINISTIC_READY',
       availablePage: true,
       engineConfigured: true,
-      statusLabel: 'Schedule review and transactional Apply available; alternatives unavailable',
-      unavailableReason: 'Only complete finite-capacity schedule snapshots can be saved. Overtime, alternate routing, split shipment, subcontracting and cost impacts are not modeled.',
-      prerequisite: 'Before applying, revalidate current bookings and versions. Overtime, alternate routing, split shipment, subcontracting and cost impacts remain unavailable.',
+      statusLabel: 'Schedule review, alternate machines, overtime proposals, and subcontract tracking available',
+      unavailableReason: 'Alternate routing and split-shipment allocation remain unsupported. Machine cost is an estimate from configured hourly rates only; overtime labor cost is not modeled.',
+      prerequisite: 'Alternative machine assignments and subcontract send/return transitions are supervisor-gated and revalidate saved order/task evidence. Overtime intervals are simulated against current capacity and daily/weekly workspace limits, then published only when the affected technician direct supervisor approves the selected Recovery schedule. Subcontract return does not record production output or QC; the operation returns to internal READY for normal evidence capture.',
     }),
   },
   {

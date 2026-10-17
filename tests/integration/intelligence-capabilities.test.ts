@@ -49,11 +49,12 @@ describe('CoreAI capability readiness', () => {
       state: 'DETERMINISTIC_READY',
       availablePage: true,
       href: '/ai/recovery',
-      statusLabel: 'Schedule review and transactional Apply available; alternatives unavailable',
+      statusLabel: 'Schedule review, alternate machines, overtime proposals, and subcontract tracking available',
     });
     expect(recovery?.prerequisite).toContain('Before applying, revalidate current bookings and versions');
-    expect(recovery?.summary).toContain('Alternative recovery strategies remain unavailable');
-    expect(recovery?.unavailableReason).toContain('Overtime');
+    expect(recovery?.prerequisite).toContain('supervisor-gated');
+    expect(recovery?.unavailableReason).toContain('split-shipment allocation');
+    expect(recovery?.prerequisite).toContain('affected technician direct supervisor');
   });
 
   it('describes supported RFQ file types and remaining citation limits', () => {

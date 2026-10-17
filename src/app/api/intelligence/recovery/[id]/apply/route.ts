@@ -11,7 +11,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const principal = await requirePrincipal(req);
     const { id } = await params;
-    const result = await service.applyScheduleReview(principal, id, parseIdempotencyKey(req));
+    const rawBody = await req.text();
+    const selection = rawBody ? JSON.parse(rawBody) : {};
+    const result = await service.applyScheduleReview(principal, id, parseIdempotencyKey(req), selection);
     return jsonResponse(result);
   } catch (error) {
     return formatErrorResponse(error);

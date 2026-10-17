@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { PlanningService } from '@/server/modules/planning/service';
 import { TechnicianRecommendationService } from '@/server/modules/planning/recommendations';
@@ -31,6 +32,10 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
   let task2Id: string;
   let secondTechId: string;
   let certId: string;
+  let overtimeRecoveryProposalId = '';
+  let overtimeRecoveryOptionId = '';
+  let overtimeTestShiftIds: string[] = [];
+  let overtimeOriginalIntervals: Prisma.RosterIntervalCreateManyInput[] = [];
 
   beforeAll(async () => {
     fixture = await createFactoryFixture();
@@ -280,6 +285,124 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(before);
     });
 
+    it('uses an explicitly proposed overtime interval only for a constraint-checked schedule dry-run', async () => {
+      const { alpha } = fixture;
+      const owner = alpha.users.owner.principal;
+      const shiftStart = new Date('2026-10-19T08:00:00.000Z');
+      const shortShiftEnd = new Date('2026-10-19T10:00:00.000Z');
+      const overtimeEnd = new Date('2026-10-19T11:00:00.000Z');
+      const recoveryHorizonEnd = new Date('2026-11-18T00:00:00.000Z');
+      const machine = await fixture.db.machine.findUniqueOrThrow({ where: { id: alpha.masters.machineId } });
+      const instance = await fixture.db.workflowInstance.findUniqueOrThrow({ where: { id: testInstanceId } });
+      const nodes = await fixture.db.workflowNode.findMany({ where: { versionId: instance.workflowVersionId } });
+      await Promise.all(nodes.map((node) => fixture.db.workflowNode.update({
+        where: { id: node.id },
+        data: { requirementsJson: JSON.stringify({ machineClassId: machine.machineClassId, requiredCertIds: ['CERT-AERO-WELD'] }) },
+      })));
+      const existingIntervals = await fixture.db.rosterInterval.findMany({
+        where: {
+          workspaceId: alpha.workspaceId,
+          OR: [{ technicianId: alpha.masters.technicianId }, { machineId: alpha.masters.machineId }],
+          status: 'PUBLISHED', intervalType: { in: ['SHIFT', 'OVERTIME'] },
+          startAt: { lt: recoveryHorizonEnd }, endAt: { gt: shiftStart },
+        },
+      });
+      overtimeOriginalIntervals = existingIntervals;
+      await fixture.db.rosterInterval.deleteMany({ where: { id: { in: existingIntervals.map(interval => interval.id) } } });
+      const [technicianShift, machineShift] = await Promise.all([
+        fixture.db.rosterInterval.create({ data: {
+          workspaceId: alpha.workspaceId, technicianId: alpha.masters.technicianId,
+          intervalType: 'SHIFT', status: 'PUBLISHED', startAt: shiftStart, endAt: shortShiftEnd,
+        } }),
+        fixture.db.rosterInterval.create({ data: {
+          workspaceId: alpha.workspaceId, machineId: alpha.masters.machineId,
+          intervalType: 'SHIFT', status: 'PUBLISHED', startAt: shiftStart, endAt: new Date('2026-10-19T16:00:00.000Z'),
+        } }),
+      ]);
+      overtimeTestShiftIds = [technicianShift.id, machineShift.id];
+
+      try {
+        const input = {
+          orderId: testOrderId,
+          instanceId: testInstanceId,
+          startHorizon: shiftStart.toISOString(),
+          horizonDays: 1,
+        };
+        const withoutOvertime = await scheduleProposalService.propose(owner, input);
+        expect(withoutOvertime.state).not.toBe('COMPLETE');
+
+        const withOvertime = await scheduleProposalService.propose(owner, input, {
+          overtimeOverride: { technicianId: alpha.masters.technicianId, startAt: shortShiftEnd, endAt: overtimeEnd },
+        });
+        expect(withOvertime.state).toBe('COMPLETE');
+        expect(withOvertime.tasks).toHaveLength(2);
+        expect(withOvertime.tasks.every((task) => task.status === 'SCHEDULED')).toBe(true);
+        expect(new Date(withOvertime.projectedEndAt!).getTime()).toBe(overtimeEnd.getTime());
+        expect(await fixture.db.rosterInterval.count({ where: {
+          workspaceId: alpha.workspaceId, technicianId: alpha.masters.technicianId,
+          intervalType: 'OVERTIME', startAt: shortShiftEnd, endAt: overtimeEnd,
+        } })).toBe(0);
+
+        const technicianMembership = await fixture.db.membership.findFirstOrThrow({ where: { workspaceId: alpha.workspaceId, technicianId: alpha.masters.technicianId, status: 'ACTIVE' } });
+        await fixture.db.membership.update({ where: { id: technicianMembership.id }, data: { supervisorMembershipId: owner.membershipId } });
+        const recoveryHorizon = new Date(Date.now() + 5 * 60_000);
+        const recoveryHorizonDryRun = await scheduleProposalService.propose(owner, {
+          orderId: testOrderId, instanceId: testInstanceId, startHorizon: recoveryHorizon.toISOString(), horizonDays: 30,
+        }, { overtimeOverride: { technicianId: alpha.masters.technicianId, startAt: shortShiftEnd, endAt: overtimeEnd } });
+        if (recoveryHorizonDryRun.state !== 'COMPLETE') throw new Error(`Recovery horizon dry-run failed: ${JSON.stringify(recoveryHorizonDryRun.tasks)}`);
+        const recovery = await recoveryService.proposeScheduleReview(alpha.users.planner.principal, {
+          orderId: testOrderId, instanceId: testInstanceId,
+        }, 'phase10-recovery-overtime-review');
+        if ('state' in recovery && recovery.state === 'NOT_CONNECTED') throw new Error(JSON.stringify(recovery));
+        if ('scheduleReview' in recovery && recovery.scheduleReview) {
+          expect(recovery.scheduleReview.projectedEndAt).toBeNull();
+          expect(recovery.scheduleReview.overtimeAlternatives?.length).toBeGreaterThan(0);
+          expect(recovery.scheduleReview.overtimeAlternatives?.[0]).toMatchObject({
+            technicianId: alpha.masters.technicianId,
+            approverMembershipId: owner.membershipId,
+            state: 'COMPLETE',
+          });
+          overtimeRecoveryProposalId = recovery.id;
+          overtimeRecoveryOptionId = recovery.scheduleReview.overtimeAlternatives![0].id;
+        } else {
+          throw new Error('Expected Recovery to save a feasible overtime scenario for supervisor review.');
+        }
+        expect(await fixture.db.rosterInterval.count({ where: {
+          workspaceId: alpha.workspaceId, technicianId: alpha.masters.technicianId, intervalType: 'OVERTIME',
+        } })).toBe(0);
+      } finally {
+        // The apply test consumes this proposal and its published shift evidence.
+      }
+    });
+
+    it('publishes overtime and applies its reviewed schedule only through the technician supervisor', async () => {
+      const { alpha } = fixture;
+      const owner = alpha.users.owner.principal;
+      const shiftStart = new Date('2026-10-19T08:00:00.000Z');
+      const overtimeStart = new Date('2026-10-19T10:00:00.000Z');
+      const overtimeEnd = new Date('2026-10-19T11:00:00.000Z');
+      const taskStates = await fixture.db.task.findMany({ where: { workspaceId: alpha.workspaceId, id: { in: [task1Id, task2Id] } }, select: { id: true, status: true, version: true, assignedTechnicianId: true, assignedMachineId: true } });
+      try {
+        await expect(recoveryService.applyScheduleReview(alpha.users.planner.principal, overtimeRecoveryProposalId, 'phase10-recovery-overtime-wrong-approver', { optionId: overtimeRecoveryOptionId })).rejects.toThrow(/supervisor/i);
+        const supervisor = { ...owner, permissions: alpha.users.planner.principal.permissions };
+        const applied = await recoveryService.applyScheduleReview(supervisor, overtimeRecoveryProposalId, 'phase10-recovery-overtime-apply', { optionId: overtimeRecoveryOptionId });
+        expect(applied.data).toMatchObject({ status: 'APPROVED', appliedTaskIds: expect.arrayContaining([task1Id, task2Id]) });
+        const overtime = await fixture.db.rosterInterval.findFirst({ where: { workspaceId: alpha.workspaceId, technicianId: alpha.masters.technicianId, intervalType: 'OVERTIME', startAt: overtimeStart, endAt: overtimeEnd } });
+        expect(overtime).toMatchObject({ status: 'PUBLISHED', approverMembershipId: owner.membershipId });
+        const bookedTasks = await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, status: 'CONFIRMED' } });
+        expect(bookedTasks).toBe(4);
+      } finally {
+        await fixture.db.resourceBooking.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] } } });
+        await fixture.db.workflowEvent.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, action: 'RECOVERY_SCHEDULE_APPLY' } });
+        await Promise.all(taskStates.map(task => fixture.db.task.update({ where: { id: task.id }, data: {
+          status: task.status, version: task.version, assignedTechnicianId: task.assignedTechnicianId, assignedMachineId: task.assignedMachineId,
+        } })));
+        await fixture.db.rosterInterval.deleteMany({ where: { id: { in: overtimeTestShiftIds } } });
+        await fixture.db.rosterInterval.deleteMany({ where: { workspaceId: alpha.workspaceId, technicianId: alpha.masters.technicianId, intervalType: 'OVERTIME', startAt: overtimeStart, endAt: overtimeEnd } });
+        if (overtimeOriginalIntervals.length > 0) await fixture.db.rosterInterval.createMany({ data: overtimeOriginalIntervals });
+      }
+    });
+
     it('rejects a caller-supplied calendar instead of treating it as site availability authority', async () => {
       const { alpha } = fixture;
       await expect(scheduleProposalService.propose(alpha.users.owner.principal, {
@@ -352,10 +475,45 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
   });
 
   describe('4. Schedule-grounded recovery review proposals', () => {
+    it('includes only complete, capable, available machine alternatives with exact schedule evidence', async () => {
+      const { alpha } = fixture;
+      const primary = await fixture.db.machine.findUniqueOrThrow({ where: { id: alpha.masters.machineId } });
+      await fixture.db.machine.update({ where: { id: primary.id }, data: { recoveryPriority: 10, hourlyRateCents: 6000 } });
+      const alternate = await fixture.db.machine.create({ data: {
+        workspaceId: alpha.workspaceId, code: 'RECOVERY-ALT-01', name: 'Recovery Alternate 01',
+        machineClassId: primary.machineClassId, facilityId: primary.facilityId, recoveryPriority: 20, hourlyRateCents: 12000,
+      } });
+      const unavailable = await fixture.db.machine.create({ data: {
+        workspaceId: alpha.workspaceId, code: 'RECOVERY-OFFLINE-01', name: 'Recovery Offline 01',
+        machineClassId: primary.machineClassId, facilityId: primary.facilityId, status: 'MAINTENANCE', recoveryPriority: 1,
+      } });
+      const primaryShifts = await fixture.db.rosterInterval.findMany({ where: { workspaceId: alpha.workspaceId, machineId: primary.id, status: 'PUBLISHED', intervalType: 'SHIFT' } });
+      for (const shift of primaryShifts) {
+        await fixture.db.rosterInterval.create({ data: {
+          workspaceId: alpha.workspaceId, machineId: alternate.id, intervalType: 'SHIFT', status: 'PUBLISHED', startAt: shift.startAt, endAt: shift.endAt,
+        } });
+      }
+
+      const result = await recoveryService.proposeScheduleReview(alpha.users.planner.principal, {
+        orderId: testOrderId, instanceId: testInstanceId,
+      }, 'phase10-recovery-machine-alternatives');
+
+      expect(result.state).toBe('SAVED');
+      if (result.state !== 'SAVED') throw new Error('Expected a complete recovery schedule.');
+      const alternative = result.scheduleReview?.alternatives?.find((option) => option.machineId === alternate.id);
+      expect(alternative).toMatchObject({ state: 'COMPLETE', machineId: alternate.id, machineName: alternate.name });
+      expect(alternative?.tasks.every((task) => task.status === 'SCHEDULED' && task.startAt && task.endAt)).toBe(true);
+      expect(alternative?.machineCostEstimate).toMatchObject({ status: 'COMPLETE', currency: 'IDR', unpricedTaskCount: 0 });
+      expect(result.scheduleReview?.alternatives?.some((option) => option.machineId === unavailable.id)).toBe(false);
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(0);
+    });
+
     it('persists one idempotent schedule review with captured versions and no bookings', async () => {
       const { alpha } = fixture;
       await fixture.db.machine.updateMany({ where: { workspaceId: alpha.workspaceId, archivedAt: null }, data: { hourlyRateCents: 6000 } });
       const beforeBookings = await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } });
+      const beforeProposals = await fixture.db.recoveryProposal.count({ where: { workspaceId: alpha.workspaceId, orderId: testOrderId } });
+      const beforeAuditEvents = await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'recovery.schedule-review.create' } });
       const input = { orderId: testOrderId, instanceId: testInstanceId };
       const first = await recoveryService.proposeScheduleReview(alpha.users.planner.principal, input, 'phase10-recovery-review');
       const replay = await recoveryService.proposeScheduleReview(alpha.users.planner.principal, input, 'phase10-recovery-review');
@@ -367,9 +525,9 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(first.scheduleReview?.machineCostEstimate?.totalMinorUnits).toBeGreaterThan(0);
       expect(first.scheduleReview?.workflowVersionId).toBeTruthy();
       expect(replay.id).toBe(first.id);
-      expect(await fixture.db.recoveryProposal.count({ where: { workspaceId: alpha.workspaceId, orderId: testOrderId } })).toBe(1);
+      expect(await fixture.db.recoveryProposal.count({ where: { workspaceId: alpha.workspaceId, orderId: testOrderId } })).toBe(beforeProposals + 1);
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeBookings);
-      expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'recovery.schedule-review.create' } })).toBe(1);
+      expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'recovery.schedule-review.create' } })).toBe(beforeAuditEvents + 1);
     });
 
     it('does not save a recovery review when qualifications no longer support a complete schedule', async () => {
@@ -510,6 +668,9 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       }, 'phase10-recovery-apply-review');
       expect(recoveryReview.state).toBe('SAVED');
       if (recoveryReview.state !== 'SAVED') throw new Error('Expected a saved recovery schedule review.');
+      const selectedAlternative = recoveryReview.scheduleReview?.alternatives?.[0];
+      expect(selectedAlternative?.state).toBe('COMPLETE');
+      const selectedOption = selectedAlternative ? { optionId: selectedAlternative.id } : {};
 
       const recoveryRecord = await fixture.db.recoveryProposal.findFirstOrThrow({ where: { id: recoveryReview.id, workspaceId: alpha.workspaceId } });
       expect(recoveryRecord.approverMembershipId).toBe(alpha.users.owner.principal.membershipId);
@@ -533,7 +694,7 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
         return originalRecoveryEvaluation.apply(this, args);
       });
       try {
-        await expect(recoveryService.applyScheduleReview({ ...alpha.users.owner.principal, permissions: planner.permissions }, recoveryRecord.id, 'phase10-recovery-apply-rollback')).rejects.toThrow('Injected Recovery second-task revalidation failure');
+        await expect(recoveryService.applyScheduleReview({ ...alpha.users.owner.principal, permissions: planner.permissions }, recoveryRecord.id, 'phase10-recovery-apply-rollback', selectedOption)).rejects.toThrow('Injected Recovery second-task revalidation failure');
       } finally {
         recoveryEvaluationSpy.mockRestore();
       }
@@ -544,8 +705,8 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
 
       const supervisor = { ...alpha.users.owner.principal, permissions: planner.permissions };
       const concurrentResults = await Promise.allSettled([
-        recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, 'phase10-recovery-apply-race-a'),
-        recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, 'phase10-recovery-apply-race-b'),
+        recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, 'phase10-recovery-apply-race-a', selectedOption),
+        recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, 'phase10-recovery-apply-race-b', selectedOption),
       ]);
       const successfulApply = concurrentResults.filter((result) => result.status === 'fulfilled');
       const rejectedApply = concurrentResults.filter((result) => result.status === 'rejected');
@@ -553,13 +714,56 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(rejectedApply).toHaveLength(1);
       const successfulKey = successfulApply[0] === concurrentResults[0] ? 'phase10-recovery-apply-race-a' : 'phase10-recovery-apply-race-b';
       const recoveryApplied = (successfulApply[0] as PromiseFulfilledResult<Awaited<ReturnType<RecoveryService['applyScheduleReview']>>>).value;
-      const recoveryReplay = await recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, successfulKey);
+      const recoveryReplay = await recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, successfulKey, selectedOption);
       expect(recoveryApplied.data.status).toBe('APPROVED');
       expect(recoveryReplay.meta.replayed).toBe(true);
       expect((await fixture.db.recoveryProposal.findUniqueOrThrow({ where: { id: recoveryRecord.id } })).status).toBe('APPROVED');
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, status: 'CONFIRMED' } })).toBe(4);
+      if (selectedAlternative) {
+        expect(await fixture.db.task.count({ where: { workspaceId: alpha.workspaceId, id: selectedAlternative.taskId, assignedMachineId: selectedAlternative.machineId, status: 'ASSIGNED' } })).toBe(1);
+      }
       expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'RECOVERY_SCHEDULE_APPLY' } })).toBe(2);
-      expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'recovery.schedule-review.apply' } })).toBe(1);
+      expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'recovery.schedule-review.apply' } })).toBe(2);
+    });
+
+    it('supervisor approval sends configured subcontract batches and returns the operation to internal work only at full quantity', async () => {
+      const { alpha } = fixture;
+      const planner = alpha.users.planner.principal;
+      const supervisor = { ...alpha.users.owner.principal, permissions: planner.permissions };
+      const supplier = await fixture.db.supplier.findFirstOrThrow({ where: { workspaceId: alpha.workspaceId, isActive: true, archivedAt: null } });
+      const task = await fixture.db.task.findUniqueOrThrow({ where: { id: task1Id } });
+      await fixture.db.resourceBooking.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: task1Id } });
+      await fixture.db.task.update({ where: { id: task1Id }, data: { status: 'READY', assignedTechnicianId: null, assignedMachineId: null, targetAtoms: 10_000_000n, version: { increment: 1 } } });
+      await fixture.db.workspace.update({ where: { id: alpha.workspaceId }, data: { recoveryBatchAtoms: 4_500_000n } });
+      await expect(recoveryService.createSubcontractPlan(planner, { taskId: task1Id, supplierId: supplier.id }, 'phase10-subcontract-invalid-precision')).rejects.toThrow(/unit precision/i);
+      await fixture.db.workspace.update({ where: { id: alpha.workspaceId }, data: { recoveryBatchAtoms: 4_000_000n } });
+
+      const plan = await recoveryService.createSubcontractPlan(planner, { taskId: task1Id, supplierId: supplier.id }, 'phase10-subcontract-create');
+      expect(plan.data.status).toBe('PROPOSED');
+      expect(plan.data.batches.map(batch => batch.quantityAtoms)).toEqual(['4000000', '4000000', '2000000']);
+      expect((await fixture.db.task.findUniqueOrThrow({ where: { id: task1Id } })).status).toBe('READY');
+      await expect(recoveryService.approveSubcontractPlan(planner, plan.data.id, 'phase10-subcontract-wrong-approver')).rejects.toThrow(/direct supervisor/i);
+      const approved = await recoveryService.approveSubcontractPlan(supervisor, plan.data.id, 'phase10-subcontract-approve');
+      expect(approved.data.status).toBe('SENT');
+      expect((await fixture.db.task.findUniqueOrThrow({ where: { id: task1Id } })).status).toBe('BLOCKED');
+
+      const [firstBatch, ...remainingBatches] = approved.data.batches;
+      await recoveryService.updateSubcontractBatchStatus(planner, plan.data.id, firstBatch.id, { status: 'IN_PROGRESS' }, `phase10-subcontract-status-${firstBatch.id}`);
+      await expect(recoveryService.returnSubcontractBatch(planner, plan.data.id, firstBatch.id, { returnedAtoms: '4000001' }, `phase10-subcontract-overreturn-${firstBatch.id}`)).rejects.toThrow(/exceeds the remaining quantity/i);
+      await recoveryService.returnSubcontractBatch(planner, plan.data.id, firstBatch.id, { returnedAtoms: '2000000' }, `phase10-subcontract-return-part-${firstBatch.id}`);
+      expect((await recoveryService.getSubcontractPlan(planner, plan.data.id)).status).toBe('IN_PROGRESS');
+      expect((await fixture.db.task.findUniqueOrThrow({ where: { id: task1Id } })).status).toBe('BLOCKED');
+      await recoveryService.returnSubcontractBatch(planner, plan.data.id, firstBatch.id, { returnedAtoms: '2000000' }, `phase10-subcontract-return-rest-${firstBatch.id}`);
+      for (const batch of remainingBatches) {
+        await recoveryService.updateSubcontractBatchStatus(planner, plan.data.id, batch.id, { status: 'IN_PROGRESS' }, `phase10-subcontract-status-${batch.id}`);
+        await recoveryService.returnSubcontractBatch(planner, plan.data.id, batch.id, { returnedAtoms: batch.quantityAtoms }, `phase10-subcontract-return-${batch.id}`);
+      }
+      const returned = await recoveryService.getSubcontractPlan(planner, plan.data.id);
+      expect(returned.status).toBe('RETURNED');
+      expect(returned.returnedAtoms).toBe('10000000');
+      expect((await fixture.db.task.findUniqueOrThrow({ where: { id: task1Id } })).status).toBe('READY');
+      expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, taskId: task1Id, action: 'SUBCONTRACT_RETURNED_TO_INTERNAL_FLOW' } })).toBe(1);
+      expect(task.targetAtoms).toBe(10_000_000n);
     });
   });
 });

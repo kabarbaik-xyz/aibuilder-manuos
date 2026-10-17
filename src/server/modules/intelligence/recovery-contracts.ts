@@ -69,8 +69,55 @@ export interface RecoveryProposalDTO {
     horizonStart: string;
     horizonEnd: string;
     evaluatedAt: string;
-    projectedEndAt: string;
+    projectedEndAt: string | null;
     machineCostEstimate?: { status: 'COMPLETE' | 'PARTIAL' | 'NOT_AVAILABLE'; currency: string; totalMinorUnits: number | null; pricedTaskCount: number; unpricedTaskCount: number };
+    overtimeAlternatives?: Array<{
+      id: string;
+      state: 'COMPLETE';
+      technicianId: string;
+      technicianName: string;
+      approverMembershipId: string;
+      approverName: string;
+      startAt: string;
+      endAt: string;
+      projectedEndAt: string;
+      tasks: Array<{
+        taskId: string;
+        version: number;
+        nodeKey: string;
+        status: 'SCHEDULED';
+        startAt: string;
+        endAt: string;
+        technicianId?: string | null;
+        technicianName: string | null;
+        machineId?: string | null;
+        machineName: string | null;
+        predecessorTaskIds: string[];
+      }>;
+    }>;
+    alternatives?: Array<{
+      id: string;
+      state: 'COMPLETE';
+      taskId: string;
+      nodeKey: string;
+      machineId: string;
+      machineName: string;
+      projectedEndAt: string;
+      machineCostEstimate: { status: 'COMPLETE' | 'PARTIAL' | 'NOT_AVAILABLE'; currency: string; totalMinorUnits: number | null; pricedTaskCount: number; unpricedTaskCount: number };
+      tasks: Array<{
+        taskId: string;
+        version: number;
+        nodeKey: string;
+        status: 'SCHEDULED';
+        startAt: string;
+        endAt: string;
+        technicianId?: string | null;
+        technicianName: string | null;
+        machineId?: string | null;
+        machineName: string | null;
+        predecessorTaskIds: string[];
+      }>;
+    }>;
     taskVersions: Array<{ taskId: string; version: number }>;
     tasks: Array<{
       taskId: string;
