@@ -137,7 +137,10 @@ export function validateAnswers(
       }
 
       case 'date': {
-        if (typeof val !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(val) || isNaN(Date.parse(val))) {
+        const parsedDate = typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)
+          ? new Date(`${val}T00:00:00.000Z`)
+          : null;
+        if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== val) {
           issues.push({ fieldKey: field.key, code: 'INVALID_DATE', message: `${field.label} must be a valid date in YYYY-MM-DD format` });
         } else {
           normalized[field.key] = val;
