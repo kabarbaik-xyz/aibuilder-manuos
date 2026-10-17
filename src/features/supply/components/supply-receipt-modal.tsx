@@ -31,7 +31,7 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
     Record<
       string,
       {
-        receivedQty: number;
+        receivedQty: string;
         lotNumber: string;
         supplierLotNumber: string;
         expirationDate: string;
@@ -40,9 +40,8 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
   >(() => {
     const init: Record<string, any> = {};
     for (const line of order.lines) {
-      const openQtyNum = Number(line.openAtoms) / 1_000_000;
       init[line.id] = {
-        receivedQty: openQtyNum > 0 ? openQtyNum : 0,
+        receivedQty: formatQuantity(line.openAtoms),
         lotNumber: `LOT-${Date.now().toString().slice(-6)}`,
         supplierLotNumber: '',
         expirationDate: '',
@@ -68,9 +67,10 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
     const receiptLines: any[] = [];
     for (const line of order.lines) {
       const entry = lineReceipts[line.id];
-      if (!entry || entry.receivedQty <= 0) continue;
+      if (!entry || !entry.receivedQty.trim()) continue;
 
-      const receivedAtoms = parseQuantity(String(entry.receivedQty), 0);
+      const receivedAtoms = parseQuantity(entry.receivedQty, line.quantityPrecision);
+      if (receivedAtoms <= 0n) continue;
       if (receivedAtoms > line.openAtoms) {
         setErrorMsg(
           `Cannot receive more than open quantity (${formatQuantity(line.openAtoms)}) for ${line.itemCode}`
@@ -83,6 +83,15 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
         return;
       }
 
+      let unassignedAtoms = receivedAtoms;
+      const demandAllocations = line.materialAllocations.flatMap((allocation) => {
+        const remainingAtoms = allocation.allocatedAtoms - allocation.receivedAtoms;
+        const assignedAtoms = remainingAtoms < unassignedAtoms ? remainingAtoms : unassignedAtoms;
+        if (assignedAtoms <= 0n) return [];
+        unassignedAtoms -= assignedAtoms;
+        return [{ demandId: allocation.demandId, receivedAtoms: assignedAtoms }];
+      });
+
       receiptLines.push({
         supplyOrderLineId: line.id,
         locationId: targetLocationId,
@@ -90,6 +99,7 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
         lotNumber: line.tracking === 'LOT' ? entry.lotNumber.trim() : undefined,
         supplierLotNumber: entry.supplierLotNumber?.trim() || undefined,
         expirationDate: entry.expirationDate ? new Date(entry.expirationDate).toISOString() : undefined,
+        demandAllocations,
       });
     }
 
@@ -143,8 +153,8 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
             <h4 className="text-sm font-medium border-b border-line pb-1">Line Items to Receive</h4>
             {order.lines.map((line) => {
               const entry = lineReceipts[line.id];
-              const openQtyNum = Number(line.openAtoms) / 1_000_000;
-              const isClosed = openQtyNum <= 0;
+              const openQty = formatQuantity(line.openAtoms);
+              const isClosed = line.openAtoms <= 0n;
 
               return (
                 <div
@@ -158,25 +168,27 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                       {line.itemCode} - {line.itemName}
                     </span>
                     <span className="text-xs px-2 py-0.5 rounded bg-surface-muted">
-                      Open: {openQtyNum} units
+                      Open: {openQty} {line.uomCode}
                     </span>
                   </div>
 
                   {!isClosed && (
+                    <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                       <div>
                         <label className="block text-muted mb-0.5">Quantity to Receive
                         <Input
                           type="number"
-                          min="1"
-                          max={openQtyNum}
-                          value={entry?.receivedQty ?? 0}
+                          min="0"
+                          step={line.quantityPrecision > 0 ? `0.${'0'.repeat(Math.max(line.quantityPrecision - 1, 0))}1` : '1'}
+                          max={openQty}
+                          value={entry?.receivedQty ?? '0'}
                           onChange={(e) =>
                             setLineReceipts({
                               ...lineReceipts,
                               [line.id]: {
                                 ...entry,
-                                receivedQty: Number(e.target.value),
+                                receivedQty: e.target.value,
                               },
                             })
                           }
@@ -241,6 +253,21 @@ export function SupplyReceiptModal({ order, isOpen, onClose }: SupplyReceiptModa
                         </div>
                       )}
                     </div>
+                    {line.materialAllocations.length > 0 && (
+                      <div className="rounded border border-line bg-surface px-3 py-2 text-xs text-muted">
+                        <div className="font-medium text-ink">Demand receipt allocation</div>
+                        <div className="mt-1">Received quantity is assigned in order to these linked demands. Remaining allocation will stay open; receipts into quarantine are not ready for production.</div>
+                        <ul className="mt-2 space-y-1">
+                          {line.materialAllocations.map((allocation) => (
+                            <li key={allocation.id} className="flex justify-between gap-3">
+                              <span>{allocation.orderNumber}</span>
+                              <span>{formatQuantity(allocation.allocatedAtoms - allocation.receivedAtoms)} remaining</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               );

@@ -29,6 +29,18 @@ export async function findInspectionById(
           destinationLocation: true,
         },
       },
+      supplyReceiptLine: {
+        include: {
+          item: true,
+          lot: true,
+          location: true,
+          receipt: { select: { receiptNumber: true } },
+          demandAllocations: {
+            include: { demand: true },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      },
       qcChecklist: {
         include: {
           checks: true,
@@ -71,6 +83,7 @@ export async function listInspections(
           task: true,
         },
       },
+      supplyReceiptLine: { include: { item: true, lot: true, location: true, receipt: { select: { receiptNumber: true } } } },
       qcChecklist: true,
       inspectorUser: true,
       results: true,

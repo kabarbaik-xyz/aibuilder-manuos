@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
-import { BadRequestError, NotFoundError } from '@/domain/errors';
+import { BadRequestError, ConflictError, NotFoundError } from '@/domain/errors';
 import { randomUUID } from 'crypto';
 import { postMovement } from '../inventory/ledger';
 import { MovementType, MovementReferenceType } from '../inventory/contracts';
@@ -164,7 +164,7 @@ async function assertActiveLocationKind(
   tx: any,
   workspaceId: string,
   locationId: string | undefined,
-  expectedKind: 'FG' | 'SCRAP'
+  expectedKind: 'RAW' | 'FG' | 'SCRAP'
 ): Promise<void> {
   if (!locationId) {
     throw new BadRequestError(`A destination ${expectedKind} location is required for this QC disposition.`);
@@ -188,14 +188,37 @@ export async function createInspection(
   const input = CreateInspectionSchema.parse(rawInput);
   const workspaceId = principal.workspaceId;
 
-  if (!input.productionOutputId && !input.supplyReceiptId) {
-    throw new BadRequestError('Either productionOutputId or supplyReceiptId must be specified');
-  }
-
   let productionOutput: any = null;
+  let supplyReceiptLine: any = null;
   let inspectedAtoms: bigint | undefined = input.inspectedAtoms === undefined
     ? undefined
     : parseAtomInput(input.inspectedAtoms);
+
+  if (input.sourceType === 'GOODS_RECEIPT') {
+    if (!input.supplyReceiptLineId || input.productionOutputId) {
+      throw new BadRequestError('Incoming-material QC must target exactly one supplyReceiptLineId.');
+    }
+    supplyReceiptLine = await db.supplyReceiptLine.findFirst({
+      where: { workspaceId, id: input.supplyReceiptLineId },
+      include: { location: { select: { kind: true } } },
+    });
+    if (!supplyReceiptLine) throw new NotFoundError(`Receipt line '${input.supplyReceiptLineId}' not found`);
+    if (input.supplyReceiptId && input.supplyReceiptId !== supplyReceiptLine.receiptId) {
+      throw new BadRequestError('The receipt line does not belong to the supplied receipt.');
+    }
+    if (supplyReceiptLine.location.kind !== 'QUARANTINE') {
+      throw new BadRequestError('Incoming-material QC can only be started for receipt lines held in QUARANTINE.');
+    }
+    if (inspectedAtoms !== undefined && inspectedAtoms !== supplyReceiptLine.receivedAtoms) {
+      throw new BadRequestError('Incoming-material QC must inspect the full receipt line as one controlled batch.');
+    }
+    inspectedAtoms = supplyReceiptLine.receivedAtoms;
+    if (await db.inspection.findFirst({ where: { workspaceId, supplyReceiptLineId: supplyReceiptLine.id } })) {
+      throw new BadRequestError('This receipt line already has an inspection record.');
+    }
+  } else if (input.supplyReceiptLineId || input.supplyReceiptId || !input.productionOutputId) {
+    throw new BadRequestError('Production-output QC must target a productionOutputId only.');
+  }
 
   if (input.productionOutputId) {
     productionOutput = await db.productionOutput.findUnique({
@@ -248,6 +271,19 @@ export async function createInspection(
     prismaClient: db,
     handler: async (tx, { requestId }) => {
       let committedInspectedAtoms: bigint = inspectedAtoms!;
+      let currentReceiptLine: any = null;
+      if (input.sourceType === 'GOODS_RECEIPT') {
+        currentReceiptLine = await tx.supplyReceiptLine.findFirst({
+          where: { workspaceId, id: input.supplyReceiptLineId },
+          include: { location: { select: { kind: true } } },
+        });
+        if (!currentReceiptLine || currentReceiptLine.location.kind !== 'QUARANTINE') {
+          throw new BadRequestError('Receipt line is no longer held in QUARANTINE.');
+        }
+        if (currentReceiptLine.receivedAtoms !== committedInspectedAtoms || await tx.inspection.findFirst({ where: { workspaceId, supplyReceiptLineId: currentReceiptLine.id } })) {
+          throw new ConflictError('Receipt line quantity or inspection state changed; refresh before starting QC.');
+        }
+      }
       if (input.productionOutputId) {
         const currentOutput = await tx.productionOutput.findUnique({
           where: { workspaceId_id: { workspaceId, id: input.productionOutputId }, task: { is: executionTaskScope(principal) } },
@@ -285,7 +321,8 @@ export async function createInspection(
           workspaceId,
           sourceType: input.sourceType,
           productionOutputId: input.productionOutputId,
-          supplyReceiptId: input.supplyReceiptId,
+          supplyReceiptId: currentReceiptLine?.receiptId,
+          supplyReceiptLineId: currentReceiptLine?.id,
           qcChecklistId: input.qcChecklistId,
           checklistRevision,
           inspectedAtoms: committedInspectedAtoms,
@@ -339,9 +376,22 @@ export async function finalizeInspection(
 
   // 3. Resolve destination locations
   let destFgLocationId = input.destinationFgLocationId;
+  let destRawLocationId = input.destinationRawLocationId;
   let destScrapLocationId = input.destinationScrapLocationId;
 
-  if (input.passedAtoms > 0n && !destFgLocationId) {
+  if (inspection.sourceType === 'GOODS_RECEIPT') {
+    if (!inspection.supplyReceiptLine || input.reworkAtoms > 0n) {
+      throw new BadRequestError('Incoming-material QC requires a receipt-line inspection; rework remains held until a material reinspection flow is available.');
+    }
+    if (inspection.supplyReceiptLine.location.kind !== 'QUARANTINE') {
+      throw new BadRequestError('Incoming-material QC can only release stock from QUARANTINE.');
+    }
+    if (input.passedAtoms > 0n && !destRawLocationId) {
+      const defaultRaw = await findDefaultLocationByKind(db, workspaceId, 'RAW');
+      if (!defaultRaw) throw new BadRequestError('No default Raw Materials (RAW) location found. Please specify destinationRawLocationId.');
+      destRawLocationId = defaultRaw.id;
+    }
+  } else if (input.passedAtoms > 0n && !destFgLocationId) {
     const defaultFg = await findDefaultLocationByKind(db, workspaceId, 'FG');
     if (!defaultFg) {
       throw new BadRequestError(
@@ -380,6 +430,14 @@ export async function finalizeInspection(
               task: true,
             },
           },
+          supplyReceiptLine: {
+            include: {
+              item: true,
+              lot: true,
+              location: true,
+              demandAllocations: { include: { demand: true }, orderBy: { createdAt: 'asc' } },
+            },
+          },
         },
       });
       if (!currentInspection) {
@@ -404,7 +462,15 @@ export async function finalizeInspection(
       }
       assertChecklistReadings(currentInspection.qcChecklist, input.results);
       await assertEvidenceDocumentsInWorkspace(tx, workspaceId, input.results);
-      if (input.passedAtoms > 0n) {
+      if (currentInspection.sourceType === 'GOODS_RECEIPT' && input.passedAtoms > 0n) {
+        await assertActiveLocationKind(tx, workspaceId, destRawLocationId, 'RAW');
+        if (destRawLocationId === currentInspection.supplyReceiptLine?.locationId) {
+          throw new BadRequestError('QC destination RAW location must differ from the source QUARANTINE location.');
+        }
+        if (currentInspection.supplyReceiptLine?.receivedAtoms !== currentInspection.inspectedAtoms) {
+          throw new ConflictError('Receipt line quantity changed after inspection was created.');
+        }
+      } else if (currentInspection.sourceType !== 'GOODS_RECEIPT' && input.passedAtoms > 0n) {
         await assertActiveLocationKind(tx, workspaceId, destFgLocationId, 'FG');
       }
       if (input.scrappedAtoms > 0n) {
@@ -438,12 +504,86 @@ export async function finalizeInspection(
       });
 
       const output = currentInspection.productionOutput;
-      const itemId = output?.itemId;
-      const lotId = output?.lotId;
-      const sourceLocationId = output?.destinationLocationId;
+      const receiptLine = currentInspection.supplyReceiptLine;
+      const itemId = output?.itemId ?? receiptLine?.itemId;
+      const lotId = output?.lotId ?? receiptLine?.lotId;
+      const sourceLocationId = output?.destinationLocationId ?? receiptLine?.locationId;
 
       // Post QC_DISPOSITION movements
-      if (input.passedAtoms > 0n && itemId && sourceLocationId && destFgLocationId) {
+      if (receiptLine && input.reworkAtoms > 0n) {
+        throw new BadRequestError('Incoming-material rework remains held until a material reinspection flow is available.');
+      }
+      if (receiptLine && input.passedAtoms > 0n && itemId && sourceLocationId && destRawLocationId) {
+        await postMovement(tx, principal, {
+          movementType: MovementType.QC_DISPOSITION,
+          itemId,
+          sourceLocationId,
+          destinationLocationId: destRawLocationId,
+          sourceLotId: lotId,
+          destinationLotId: lotId,
+          atoms: input.passedAtoms,
+          referenceType: MovementReferenceType.QC_INSPECTION,
+          referenceId: currentInspection.id,
+          notes: `Incoming QC: ${input.passedAtoms} atoms accepted to RAW`,
+        }, requestId);
+
+        let remainingPassedAtoms = input.passedAtoms;
+        for (const receiptAllocation of receiptLine.demandAllocations) {
+          if (remainingPassedAtoms <= 0n) break;
+          const coveredAtoms = receiptAllocation.receivedAtoms < remainingPassedAtoms
+            ? receiptAllocation.receivedAtoms
+            : remainingPassedAtoms;
+          const activeDemandReservations = await tx.stockReservation.aggregate({
+            where: { workspaceId, demandId: receiptAllocation.demandId, status: 'ACTIVE' },
+            _sum: { reservedAtoms: true },
+          });
+          const activeDemandAtoms = activeDemandReservations._sum.reservedAtoms ?? 0n;
+          const remainingDemandAtoms = receiptAllocation.demand.requiredAtoms > activeDemandAtoms
+            ? receiptAllocation.demand.requiredAtoms - activeDemandAtoms
+            : 0n;
+          const reserveAtoms = coveredAtoms < remainingDemandAtoms ? coveredAtoms : remainingDemandAtoms;
+          remainingPassedAtoms -= coveredAtoms;
+          if (reserveAtoms === 0n || !['OPEN', 'ALLOCATED'].includes(receiptAllocation.demand.status)) continue;
+          const bucketKey = `${itemId}:${destRawLocationId}:${lotId || '__NO_LOT__'}`;
+          const balance = await tx.stockBalance.findUnique({ where: { workspaceId_bucketKey: { workspaceId, bucketKey } } });
+          if (!balance || balance.onHandAtoms - balance.reservedAtoms < reserveAtoms) {
+            throw new BadRequestError(`QC-passed stock is not available to reserve for demand '${receiptAllocation.demandId}'.`);
+          }
+          const updatedBalance = await tx.stockBalance.updateMany({
+            where: { id: balance.id, version: balance.version },
+            data: { reservedAtoms: { increment: reserveAtoms }, version: { increment: 1 } },
+          });
+          if (updatedBalance.count !== 1) throw new ConflictError(`Concurrent reservation conflict for QC-passed stock bucket '${bucketKey}'.`);
+          const reservation = await tx.stockReservation.create({
+            data: {
+              workspaceId,
+              demandId: receiptAllocation.demandId,
+              orderId: receiptAllocation.demand.orderId,
+              taskId: receiptAllocation.demand.taskId,
+              itemId,
+              locationId: destRawLocationId,
+              lotId,
+              reservedAtoms: reserveAtoms,
+              status: 'ACTIVE',
+            },
+          });
+          await tx.materialSupplyReceiptAllocation.update({
+            where: { workspaceId_id: { workspaceId, id: receiptAllocation.id } },
+            data: { reservedAtoms: reserveAtoms, stockReservationId: reservation.id },
+          });
+          await tx.materialSupplyAllocation.update({
+            where: { workspaceId_id: { workspaceId, id: receiptAllocation.supplyAllocationId } },
+            data: { reservedAtoms: { increment: reserveAtoms }, version: { increment: 1 } },
+          });
+          const allActiveReservations = await tx.stockReservation.aggregate({
+            where: { workspaceId, demandId: receiptAllocation.demandId, status: 'ACTIVE' },
+            _sum: { reservedAtoms: true },
+          });
+          if ((allActiveReservations._sum.reservedAtoms ?? 0n) >= receiptAllocation.demand.requiredAtoms && receiptAllocation.demand.status === 'OPEN') {
+            await tx.materialDemand.update({ where: { id: receiptAllocation.demandId }, data: { status: 'ALLOCATED', version: { increment: 1 } } });
+          }
+        }
+      } else if (input.passedAtoms > 0n && itemId && sourceLocationId && destFgLocationId) {
         // Only transfer if source location is different from dest FG location
         if (sourceLocationId !== destFgLocationId) {
           await postMovement(

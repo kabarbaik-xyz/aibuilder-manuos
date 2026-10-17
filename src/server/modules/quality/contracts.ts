@@ -33,6 +33,7 @@ export const CreateInspectionSchema = z.object({
     .default(InspectionSourceType.PRODUCTION_OUTPUT),
   productionOutputId: z.string().uuid().optional(),
   supplyReceiptId: z.string().uuid().optional(),
+  supplyReceiptLineId: z.string().uuid().optional(),
   qcChecklistId: z.string().uuid().optional(),
   inspectedAtoms: z
     .union([z.bigint(), z.string(), z.number()])
@@ -70,6 +71,7 @@ export const FinalizeInspectionSchema = z.object({
     .transform(parseAtomInput)
     .default(0n),
   destinationFgLocationId: z.string().uuid().optional(),
+  destinationRawLocationId: z.string().uuid().optional(),
   destinationScrapLocationId: z.string().uuid().optional(),
   results: z.array(InspectionCheckResultSchema).default([]),
   notes: z.string().max(1000).optional(),

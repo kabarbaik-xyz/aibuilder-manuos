@@ -4,9 +4,12 @@ import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { SupplyOrderDTO } from '@/server/modules/supply/contracts';
 import { useApproveSupplyOrder, useChangeSupplyEta, useSupplyReceipts } from '../hooks';
 import { SupplyReceiptModal } from './supply-receipt-modal';
+import { MaterialDemandAllocationModal } from './material-demand-allocation-modal';
+import { useCreateInspection } from '@/features/quality/hooks';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { FormErrorSummary } from '@/components/ui/form-errors';
@@ -17,11 +20,14 @@ interface SupplyOrderDetailProps {
 }
 
 export function SupplyOrderDetail({ order }: SupplyOrderDetailProps) {
+  const router = useRouter();
   const approveOrder = useApproveSupplyOrder();
+  const createInspection = useCreateInspection();
   const changeEta = useChangeSupplyEta();
   const { data: receipts } = useSupplyReceipts({ supplyOrderId: order.id });
 
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [isMaterialAllocationOpen, setIsMaterialAllocationOpen] = useState(false);
   const [isChangeEtaOpen, setIsChangeEtaOpen] = useState(false);
   const [newEta, setNewEta] = useState(order.expectedDate.slice(0, 10));
   const [etaReason, setEtaReason] = useState('');
@@ -50,6 +56,16 @@ export function SupplyOrderDetail({ order }: SupplyOrderDetailProps) {
       setIsChangeEtaOpen(false);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to update ETA');
+    }
+  };
+
+  const handleStartIncomingQc = async (receiptLineId: string) => {
+    setErrorMsg(null);
+    try {
+      const result = await createInspection.mutateAsync({ sourceType: 'GOODS_RECEIPT', supplyReceiptLineId: receiptLineId });
+      router.push(`/quality/inspections/${result.data.id}`);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Unable to start incoming-material QC');
     }
   };
 
@@ -99,12 +115,10 @@ export function SupplyOrderDetail({ order }: SupplyOrderDetailProps) {
             )}
 
             {(order.status === 'APPROVED' || order.status === 'PARTIALLY_RECEIVED') && (
-              <Button
-                variant="primary"
-                onClick={() => setIsReceiptModalOpen(true)}
-              >
-                Receive Shipment
-              </Button>
+              <>
+                <Button variant="default" onClick={() => setIsMaterialAllocationOpen(true)}>Allocate to demand</Button>
+                <Button variant="primary" onClick={() => setIsReceiptModalOpen(true)}>Receive Shipment</Button>
+              </>
             )}
 
             {order.status !== 'CANCELLED' && order.status !== 'RECEIVED' && (
@@ -200,27 +214,32 @@ export function SupplyOrderDetail({ order }: SupplyOrderDetailProps) {
                 const isFulfilled = line.openAtoms === 0n;
 
                 return (
-                  <tr key={line.id} className={isFulfilled ? 'opacity-70 bg-surface-muted' : ''}>
-                    <td className="px-4 py-3 font-mono font-medium">{line.itemCode}</td>
-                    <td className="px-4 py-3">{line.itemName}</td>
-                    <td className="px-4 py-3 text-xs">
-                      <span className="px-2 py-0.5 rounded bg-surface-muted">{line.tracking}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">
-                      {formatQuantity(line.orderedAtoms)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-success">
-                      {formatQuantity(line.receivedAtoms)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono font-bold">
-                      <span className={isFulfilled ? 'text-muted' : 'text-primary'}>
-                        {openUnits}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted">
-                      {line.unitPriceCents ? `Rp ${(line.unitPriceCents).toLocaleString()}` : '-'}
-                    </td>
-                  </tr>
+                  <React.Fragment key={line.id}>
+                    <tr className={isFulfilled ? 'opacity-70 bg-surface-muted' : ''}>
+                      <td className="px-4 py-3 font-mono font-medium">{line.itemCode}</td>
+                      <td className="px-4 py-3">{line.itemName}</td>
+                      <td className="px-4 py-3 text-xs"><span className="px-2 py-0.5 rounded bg-surface-muted">{line.tracking}</span></td>
+                      <td className="px-4 py-3 text-right font-mono">{formatQuantity(line.orderedAtoms)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-success">{formatQuantity(line.receivedAtoms)}</td>
+                      <td className="px-4 py-3 text-right font-mono font-bold"><span className={isFulfilled ? 'text-muted' : 'text-primary'}>{openUnits}</span></td>
+                      <td className="px-4 py-3 text-xs text-muted">{line.unitPriceCents ? `Rp ${(line.unitPriceCents).toLocaleString()}` : '-'}</td>
+                    </tr>
+                    {line.materialAllocations.length > 0 && (
+                      <tr>
+                        <td colSpan={7} className="bg-surface-muted px-4 py-3">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Demand allocation · expected supply only</p>
+                          <div className="flex flex-wrap gap-2">
+                            {line.materialAllocations.map((allocation) => (
+                              <span key={allocation.id} className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink">
+                                {allocation.orderNumber} · {formatQuantity(allocation.allocatedAtoms)}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="mt-2 text-xs text-muted">A PO allocation is not stock readiness. Actual receipt and an active stock reservation are required before scheduling.</p>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -255,6 +274,7 @@ export function SupplyOrderDetail({ order }: SupplyOrderDetailProps) {
                         <th className="py-1">Location</th>
                         <th className="py-1">Lot Number</th>
                         <th className="py-1 text-right">Received</th>
+                        <th className="py-1 text-right">Quality status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line/50">
@@ -265,6 +285,19 @@ export function SupplyOrderDetail({ order }: SupplyOrderDetailProps) {
                           <td className="py-1.5 font-mono text-primary">{rl.lotNumber || '-'}</td>
                           <td className="py-1.5 text-right font-mono font-bold text-success">
                             +{formatQuantity(rl.receivedAtoms)}
+                          </td>
+                          <td className="py-1.5 text-right">
+                            {rl.locationKind === 'QUARANTINE' && rl.inspectionId ? (
+                              <Button size="small" onClick={() => router.push(`/quality/inspections/${rl.inspectionId}`)}>
+                                {rl.inspectionStatus === 'FINALIZED' ? 'View QC' : 'Continue QC'}
+                              </Button>
+                            ) : rl.locationKind === 'QUARANTINE' ? (
+                              <Button size="small" onClick={() => void handleStartIncomingQc(rl.id)} disabled={createInspection.isPending}>
+                                {createInspection.isPending ? 'Starting…' : 'Start QC'}
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted">{rl.locationKind === 'RAW' ? 'Ready location' : 'Not quarantined'}</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -284,6 +317,11 @@ export function SupplyOrderDetail({ order }: SupplyOrderDetailProps) {
         order={order}
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
+      />
+      <MaterialDemandAllocationModal
+        supplyOrderId={order.id}
+        isOpen={isMaterialAllocationOpen}
+        onClose={() => setIsMaterialAllocationOpen(false)}
       />
     </div>
   );

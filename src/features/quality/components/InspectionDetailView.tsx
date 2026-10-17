@@ -219,7 +219,9 @@ export function InspectionDetailView({
     <div className="page-stack">
       <PageHeader
         title={`Inspection #${inspection.id.slice(0, 8)}`}
-        description={`Quality disposition for ${inspection.productionOutput?.item?.name || "produced batch"}`}
+        description={inspection.supplyReceiptLine
+          ? `Incoming material QC for ${inspection.supplyReceiptLine.item?.name || 'received material'} · ${inspection.supplyReceiptLine.receipt?.receiptNumber || 'receipt'} · ${inspection.supplyReceiptLine.lot?.lotNumber || 'no lot'}`
+          : `Quality disposition for ${inspection.productionOutput?.item?.name || "produced batch"}`}
         actions={
           <ButtonLink href="/quality/inspections">
             Back to Inspections
@@ -299,7 +301,7 @@ export function InspectionDetailView({
               units
             </span>
           </div>
-          <div className="metric-caption">100% of production batch sampled</div>
+          <div className="metric-caption">{inspection.sourceType === 'GOODS_RECEIPT' ? 'Full quarantined receipt line' : '100% of production batch sampled'}</div>
         </div>
 
         <div className="metric">
@@ -309,19 +311,19 @@ export function InspectionDetailView({
           </div>
           <div className="h-9 flex items-center">
             <span className="font-mono text-sm font-bold text-ink bg-surface-muted px-2 py-0.5 rounded border border-line">
-              {inspection.productionOutput?.lot?.lotNumber || "NO-LOT"}
+              {inspection.productionOutput?.lot?.lotNumber || inspection.supplyReceiptLine?.lot?.lotNumber || "NO-LOT"}
             </span>
           </div>
           <div
             className="metric-caption flex items-center gap-1 truncate"
             title={
-              inspection.productionOutput?.destinationLocation?.name ||
+              inspection.productionOutput?.destinationLocation?.name || inspection.supplyReceiptLine?.location?.name ||
               "Quarantine Area"
             }
           >
             <MapPin className="w-3 h-3 text-muted shrink-0" />
             <span className="truncate">
-              {inspection.productionOutput?.destinationLocation?.name ||
+              {inspection.productionOutput?.destinationLocation?.name || inspection.supplyReceiptLine?.location?.name ||
                 "Quarantine Area"}
             </span>
           </div>
@@ -363,8 +365,9 @@ export function InspectionDetailView({
               Quantity Allocation & Conservation
             </h3>
             <p className="text-xs text-muted mb-4">
-              Allocate the inspected population into Accepted (FG), Rework
-              (Held), or Scrapped. Sum must exactly equal{" "}
+              {inspection.sourceType === 'GOODS_RECEIPT'
+                ? 'Release accepted atoms to Raw Materials (RAW) or move rejected atoms to Scrap. Incoming material rework remains held and is not supported in this workflow. Sum must exactly equal '
+                : 'Allocate the inspected population into Accepted (FG), Rework (Held), or Scrapped. Sum must exactly equal '}{" "}
               {formatQuantity(inspection.inspectedAtoms)} units.
             </p>
 
@@ -383,11 +386,17 @@ export function InspectionDetailView({
                   className="w-full bg-surface border border-line rounded px-3 py-2 text-xs text-ink focus:outline-none focus:border-primary"
                 />
                 <span className="text-xs text-success block mt-1">
-                  Reclassified from Quarantine → Finished Goods (FG)
+                  {inspection.sourceType === 'GOODS_RECEIPT' ? 'Released from QUARANTINE → RAW and reserved for linked demand' : 'Reclassified from Quarantine → Finished Goods (FG)'}
                 </span>
               </div>
 
-              <div>
+              {inspection.sourceType === 'GOODS_RECEIPT' ? (
+                <div className="rounded-lg border border-line bg-surface-muted p-3">
+                  <span className="block text-xs font-medium text-ink">Rework / held</span>
+                  <span className="mt-1 block text-sm font-semibold text-warning">Not available for incoming receipts</span>
+                  <span className="mt-1 block text-xs text-muted">A separate material reinspection workflow is required; do not mark rework as released.</span>
+                </div>
+              ) : <div>
                 <label className="block text-xs font-medium text-ink mb-1">
                   Rework / Held (Units)
                 </label>
@@ -403,7 +412,7 @@ export function InspectionDetailView({
                 <span className="text-xs text-warning block mt-1">
                   Held in Quarantine until authorized rework
                 </span>
-              </div>
+              </div>}
 
               <div>
                 <label className="block text-xs font-medium text-ink mb-1">
@@ -637,7 +646,7 @@ export function InspectionDetailView({
                   </div>
                 </div>
                 <p className="text-xs text-muted mt-3 pt-2 border-t border-emerald-100">
-                  Reclassified from Quarantine → Finished Goods
+                  {inspection.sourceType === 'GOODS_RECEIPT' ? 'Released from QUARANTINE → RAW' : 'Reclassified from Quarantine → Finished Goods'}
                 </p>
               </div>
 

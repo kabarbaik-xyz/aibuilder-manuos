@@ -215,16 +215,16 @@ export function InspectionListView() {
                     </td>
                     <td className="py-3 px-4">
                       <div className="font-medium">
-                        {insp.productionOutput?.item?.name || (insp.sourceType === 'GOODS_RECEIPT' ? 'Received material' : 'Production output')}
+                        {insp.productionOutput?.item?.name || insp.supplyReceiptLine?.item?.name || (insp.sourceType === 'GOODS_RECEIPT' ? 'Received material' : 'Production output')}
                       </div>
                       <div className="text-xs text-muted">
                         {insp.productionOutput?.task?.instance?.order?.orderNumber
                           ? `Order ${insp.productionOutput.task.instance.order.orderNumber}`
-                          : insp.sourceType}
+                          : insp.supplyReceiptLine?.receipt?.receiptNumber || insp.sourceType}
                       </div>
                     </td>
                     <td className="py-3 px-4 font-mono text-xs">
-                      {insp.productionOutput?.lot?.lotNumber || '—'}
+                      {insp.productionOutput?.lot?.lotNumber || insp.supplyReceiptLine?.lot?.lotNumber || '—'}
                     </td>
                     <td className="py-3 px-4 font-mono font-semibold">
                       {formatQuantity(insp.inspectedAtoms)}

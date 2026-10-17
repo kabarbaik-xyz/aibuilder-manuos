@@ -39,6 +39,67 @@ export const ChangeSupplyEtaSchema = z.object({
 
 export type ChangeSupplyEtaInput = z.infer<typeof ChangeSupplyEtaSchema>;
 
+const SetMaterialSupplyAllocationLineSchema = z.object({
+  supplyOrderLineId: z.string().uuid(),
+  demandId: z.string().uuid(),
+  allocatedAtoms: z.union([z.bigint(), z.string(), z.number()])
+    .transform(parseAtomInput)
+    .refine((value) => value > 0n, { message: 'Allocated atoms must be strictly positive (> 0)' }),
+}).strict();
+
+export const SetMaterialSupplyAllocationsSchema = z.object({
+  allocations: z.array(SetMaterialSupplyAllocationLineSchema).max(200),
+}).strict().superRefine(({ allocations }, context) => {
+  const seen = new Set<string>();
+  for (const [index, allocation] of allocations.entries()) {
+    const key = `${allocation.supplyOrderLineId}:${allocation.demandId}`;
+    if (seen.has(key)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['allocations', index], message: 'Each PO line and material demand pair can be allocated only once.' });
+    seen.add(key);
+  }
+});
+
+export type SetMaterialSupplyAllocationsInput = z.infer<typeof SetMaterialSupplyAllocationsSchema>;
+
+export interface MaterialSupplyAllocationDTO {
+  id: string;
+  supplyOrderLineId: string;
+  demandId: string;
+  orderId: string;
+  orderNumber: string;
+  itemId: string;
+  allocatedAtoms: bigint;
+  receivedAtoms: bigint;
+  reservedAtoms: bigint;
+  version: number;
+}
+
+export interface MaterialDemandAllocationCandidateDTO {
+  supplyOrderLineId: string;
+  supplyOrderLineItemCode: string;
+  supplyOrderLineItemName: string;
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  uomCode: string;
+  quantityPrecision: number;
+  requiredAtoms: bigint;
+  reservedAtoms: bigint;
+  alreadyAllocatedAtoms: bigint;
+  availableToAllocateAtoms: bigint;
+  currentAllocatedAtoms: bigint;
+}
+
+export interface MaterialDemandAllocationContextDTO {
+  supplyOrderId: string;
+  orderNumber: string;
+  status: string;
+  lines: Array<{ id: string; itemCode: string; itemName: string; uomCode: string; quantityPrecision: number; openAtoms: bigint; allocatedAtoms: bigint }>;
+  candidates: MaterialDemandAllocationCandidateDTO[];
+}
+
 export const ReceiveSupplyLineSchema = z.object({
   supplyOrderLineId: z.string().uuid(),
   locationId: z.string().uuid(),
@@ -52,7 +113,13 @@ export const ReceiveSupplyLineSchema = z.object({
   supplierLotNumber: z.string().trim().optional(),
   expirationDate: z.string().datetime().optional(),
   notes: z.string().optional(),
-});
+  demandAllocations: z.array(z.object({
+    demandId: z.string().uuid(),
+    receivedAtoms: z.union([z.bigint(), z.string(), z.number()])
+      .transform(parseAtomInput)
+      .refine((val) => val > 0n, { message: 'Demand receipt allocation must be strictly positive (> 0)' }),
+  }).strict()).max(200).default([]),
+}).strict();
 
 export const ReceiveSupplySchema = z.object({
   supplyOrderId: z.string().uuid(),
@@ -60,6 +127,19 @@ export const ReceiveSupplySchema = z.object({
   receivedDate: z.string().datetime().optional(),
   notes: z.string().optional(),
   lines: z.array(ReceiveSupplyLineSchema).min(1, 'At least one receipt line is required'),
+}).strict().superRefine(({ lines }, context) => {
+  const seenOrderLines = new Set<string>();
+  for (const [lineIndex, line] of lines.entries()) {
+    if (seenOrderLines.has(line.supplyOrderLineId)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['lines', lineIndex, 'supplyOrderLineId'], message: 'Each supply order line may appear only once per receipt.' });
+    seenOrderLines.add(line.supplyOrderLineId);
+    const totalAllocated = line.demandAllocations.reduce((sum, allocation) => sum + allocation.receivedAtoms, 0n);
+    if (totalAllocated > line.receivedAtoms) context.addIssue({ code: z.ZodIssueCode.custom, path: ['lines', lineIndex, 'demandAllocations'], message: 'Demand allocations cannot exceed received quantity.' });
+    const seen = new Set<string>();
+    for (const [allocationIndex, allocation] of line.demandAllocations.entries()) {
+      if (seen.has(allocation.demandId)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['lines', lineIndex, 'demandAllocations', allocationIndex], message: 'Each material demand may appear only once per receipt line.' });
+      seen.add(allocation.demandId);
+    }
+  }
 });
 
 export type ReceiveSupplyInput = z.infer<typeof ReceiveSupplySchema>;
@@ -71,9 +151,12 @@ export interface SupplyOrderLineDTO {
   itemCode: string;
   itemName: string;
   tracking: string;
+  uomCode: string;
+  quantityPrecision: number;
   orderedAtoms: bigint;
   receivedAtoms: bigint;
   openAtoms: bigint;
+  materialAllocations: MaterialSupplyAllocationDTO[];
   unitPriceCents: number | null;
   notes: string | null;
   version: number;
@@ -105,11 +188,15 @@ export interface SupplyReceiptLineDTO {
   itemName: string;
   locationId: string;
   locationCode: string;
+  locationKind: string;
   lotId: string | null;
   lotNumber: string | null;
   receivedAtoms: bigint;
   movementId: string | null;
   notes: string | null;
+  inspectionId: string | null;
+  inspectionStatus: string | null;
+  demandAllocations: Array<{ demandId: string; orderNumber: string; receivedAtoms: bigint; reservedAtoms: bigint; stockReservationId: string | null }>;
 }
 
 export interface SupplyReceiptDTO {

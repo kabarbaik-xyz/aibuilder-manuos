@@ -7,11 +7,14 @@ import {
   changeSupplyEta,
   receiveSupply,
   fetchSupplyReceipts,
+  fetchMaterialDemandAllocationContext,
+  setMaterialDemandAllocations,
 } from './api';
 import {
   CreateSupplyOrderInput,
   ChangeSupplyEtaInput,
   ReceiveSupplyInput,
+  SetMaterialSupplyAllocationsInput,
 } from '@/server/modules/supply/contracts';
 
 export const supplyKeys = {
@@ -21,6 +24,7 @@ export const supplyKeys = {
   order: (id: string) => [...supplyKeys.all, 'order', id] as const,
   receipts: (filters?: { supplyOrderId?: string }) =>
     [...supplyKeys.all, 'receipts', filters] as const,
+  allocationContext: (id: string) => [...supplyKeys.all, 'allocation-context', id] as const,
 };
 
 export function useSupplyOrders(filters?: { supplierId?: string; status?: string }) {
@@ -42,6 +46,27 @@ export function useSupplyReceipts(filters?: { supplyOrderId?: string }) {
   return useQuery({
     queryKey: supplyKeys.receipts(filters),
     queryFn: () => fetchSupplyReceipts(filters),
+  });
+}
+
+export function useMaterialDemandAllocationContext(id: string, enabled = true) {
+  return useQuery({
+    queryKey: supplyKeys.allocationContext(id),
+    queryFn: () => fetchMaterialDemandAllocationContext(id),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useSetMaterialDemandAllocations() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input, idempotencyKey }: { id: string; input: SetMaterialSupplyAllocationsInput; idempotencyKey?: string }) =>
+      setMaterialDemandAllocations(id, input, idempotencyKey),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: supplyKeys.order(vars.id) });
+      queryClient.invalidateQueries({ queryKey: supplyKeys.allocationContext(vars.id) });
+      queryClient.invalidateQueries({ queryKey: supplyKeys.all });
+    },
   });
 }
 

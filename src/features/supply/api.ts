@@ -10,6 +10,8 @@ import {
   CreateSupplyOrderInput,
   ChangeSupplyEtaInput,
   ReceiveSupplyInput,
+  SetMaterialSupplyAllocationsInput,
+  MaterialDemandAllocationContextDTO,
 } from '@/server/modules/supply/contracts';
 import { Committed } from '@/domain/commands';
 
@@ -28,6 +30,23 @@ export async function fetchSupplyOrders(
 export async function fetchSupplyOrder(id: string): Promise<SupplyOrderDTO> {
   const res = await apiRequest<{ data: SupplyOrderDTO }>(`/api/supply-orders/${id}`);
   return res.data;
+}
+
+export async function fetchMaterialDemandAllocationContext(id: string): Promise<MaterialDemandAllocationContextDTO> {
+  const res = await apiRequest<{ data: MaterialDemandAllocationContextDTO }>(`/api/supply-orders/${id}/allocations`);
+  return res.data;
+}
+
+export async function setMaterialDemandAllocations(
+  id: string,
+  input: SetMaterialSupplyAllocationsInput,
+  idempotencyKey?: string,
+): Promise<Committed<{ allocations: SupplyOrderDTO['lines'][number]['materialAllocations'] }>> {
+  return apiRequest<Committed<{ allocations: SupplyOrderDTO['lines'][number]['materialAllocations'] }>>(`/api/supply-orders/${id}/allocations`, {
+    method: 'PUT',
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    body: stringifyQuantities(input),
+  });
 }
 
 export async function createSupplyOrder(

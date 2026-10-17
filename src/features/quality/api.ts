@@ -13,6 +13,7 @@ export interface InspectionDTO {
   sourceType: 'PRODUCTION_OUTPUT' | 'GOODS_RECEIPT';
   productionOutputId?: string | null;
   supplyReceiptId?: string | null;
+  supplyReceiptLineId?: string | null;
   qcChecklistId?: string | null;
   checklistRevision: number;
   inspectedAtoms: bigint;
@@ -41,6 +42,15 @@ export interface InspectionDTO {
       };
     } | null;
     destinationLocation?: { id: string; name: string; kind: string };
+  } | null;
+  supplyReceiptLine?: {
+    id: string;
+    receivedAtoms: bigint;
+    locationId: string;
+    item?: { id: string; code: string; name: string };
+    lot?: { id: string; lotNumber: string } | null;
+    location?: { id: string; name: string; kind: string };
+    receipt?: { receiptNumber: string };
   } | null;
   qcChecklist?: {
     id: string;
@@ -99,13 +109,14 @@ export interface CreateInspectionInput {
   sourceType?: 'PRODUCTION_OUTPUT' | 'GOODS_RECEIPT';
   productionOutputId?: string;
   supplyReceiptId?: string;
+  supplyReceiptLineId?: string;
   qcChecklistId?: string;
   inspectedAtoms?: bigint | string | number;
   notes?: string;
 }
 
-export async function createInspection(input: CreateInspectionInput) {
-  return apiRequest('/api/quality/inspections', {
+export async function createInspection(input: CreateInspectionInput): Promise<{ data: InspectionDTO }> {
+  return apiRequest<{ data: InspectionDTO }>('/api/quality/inspections', {
     method: 'POST',
     body: JSON.stringify(stringifyQuantities(input)),
   });
@@ -117,6 +128,7 @@ export interface FinalizeInspectionInput {
   reworkAtoms?: bigint | string | number;
   scrappedAtoms?: bigint | string | number;
   destinationFgLocationId?: string;
+  destinationRawLocationId?: string;
   destinationScrapLocationId?: string;
   results?: Array<{
     checkCode: string;
