@@ -264,7 +264,7 @@ paths:
   /api/intelligence/recovery/propose:
     post:
       summary: Save a finite-capacity schedule review for disruption recovery
-      description: Runs the same schedule proposal service used by Planning. Only COMPLETE proposals are saved, through an idempotent audited command that rechecks order and task versions. The requester's active direct supervisor is captured as the approver; People & Access must have that reporting line configured. The schedule includes a machine-cost estimate only from configured integer minor-unit hourly rates; unknown rates produce PARTIAL or NOT_AVAILABLE rather than zero. Partial schedule results return NOT_CONNECTED without persistence. The saved resource IDs are the reviewed assignment inputs for the separate transactional apply command.
+      description: Runs the same schedule proposal service used by Planning. Only COMPLETE proposals are saved, through an idempotent audited command that rechecks order and task versions. It persists complete alternate-machine schedules that pass a full capacity simulation and complete overtime scenarios that stay within workspace daily and weekly limits. The requester's active direct supervisor is captured for the baseline and machine alternatives; each overtime scenario is routed to the affected technician's active direct supervisor, who must approve that option. People & Access must have the relevant reporting line configured. Schedule machine-cost estimates use configured integer minor-unit hourly rates; unknown rates produce PARTIAL or NOT_AVAILABLE rather than zero. Partial schedule results return NOT_CONNECTED without persistence. The saved resource IDs are the reviewed assignment inputs for the separate transactional apply command.
       parameters:
         - $ref: '#/components/parameters/AccessIdempotency'
       requestBody:
@@ -279,7 +279,7 @@ paths:
                 orderId: { type: string, format: uuid }
                 instanceId: { type: string, format: uuid }
       responses:
-        '200': { description: Persisted schedule review with evidence, or NOT_CONNECTED with unscheduled reasons and no persistence }
+        '200': { description: Persisted schedule review with evidence, complete alternate-machine and supervisor-approved overtime options, or NOT_CONNECTED with unscheduled reasons and no persistence }
         '400': { $ref: '#/components/responses/BadRequest' }
         '409': { description: Order or task version changed while saving; re-evaluate before retrying }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -332,14 +332,173 @@ paths:
   /api/intelligence/recovery/{id}/apply:
     post:
       summary: Approve and apply a reviewed finite-capacity recovery schedule
-      description: Only the direct supervisor membership captured when the proposal was submitted may approve. In one audited idempotent transaction, rechecks the saved order, facility, active job, workflow and engineering revision, task versions/status, dependencies, issued or fully reserved material, qualifications and published resource availability. It claims the open proposal with a conditional PROPOSED-to-APPLYING update before writing assignments, confirmed bookings and workflow events, then resolves it. Any stale or infeasible task aborts the whole transaction, including the claim. Historical simulation proposals and old snapshots without resource IDs cannot be applied.
+      description: For the baseline and machine-alternative schedule, only the direct supervisor membership captured when the proposal was submitted may approve. The optional optionId selects a saved complete alternate-machine or overtime schedule; an overtime option may only be approved by the affected technician's current direct supervisor. Overtime intervals are published atomically with the reviewed schedule. Omit optionId to apply a complete baseline schedule. In one audited idempotent transaction, rechecks the saved order, facility, active job, workflow and engineering revision, task versions/status, dependencies, issued or fully reserved material, qualifications and published resource availability. It claims the open proposal with a conditional PROPOSED-to-APPLYING update before writing assignments, confirmed bookings, workflow events and (for overtime options) the published overtime interval, then resolves it. Any stale or infeasible task aborts the whole transaction, including the claim and overtime interval. Historical simulation proposals and old snapshots without resource IDs cannot be applied.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                optionId: { type: string, minLength: 1, description: Saved complete alternate-machine or overtime schedule option. Omit to approve a complete baseline schedule. }
+      responses:
+        '200': { description: Proposal status, applied task IDs and selected option }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Saved evidence is stale or the assignment is no longer feasible; no task or booking is applied }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/intelligence/recovery/policy:
+    get:
+      summary: Read the workspace recovery batch policy
+      responses:
+        '200': { description: Workspace revision and maximum batch quantity as an integer atom string; zero means no split }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      summary: Configure maximum quantity in one recovery subcontract batch
+      description: Workspace administrators set the ceiling in integer atoms. The server splits the task target into batches and preserves the exact total; zero keeps one batch.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision, recoveryBatchAtoms]
+              properties:
+                expectedRevision: { type: integer, minimum: 1 }
+                recoveryBatchAtoms: { type: string, pattern: '^\\d+$', description: Integer quantity atoms; 0 disables batch splitting }
+      responses:
+        '200': { description: Audited workspace policy update }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Workspace policy revision changed; reload before retrying }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/recovery/subcontracts/options:
+    get:
+      summary: List eligible internal operations and active subcontract vendors
+      description: Lists READY, unassigned operations with positive target quantity and no open subcontract plan, plus active workspace suppliers.
+      responses:
+        '200': { description: Workspace-scoped task and supplier choices, with batch policy in integer atoms }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/recovery/subcontracts:
+    get:
+      summary: List subcontract recovery plans and batch status
+      responses:
+        '200': { description: Scoped subcontract plans with supplier, order, operation and integer-atom batch status }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Request supervisor approval for subcontracting a ready operation
+      description: Captures the requester's direct supervisor, operation and order versions, active supplier, and task target quantity. Splits exact target atoms at the configured workspace limit; does not block the task or change its schedule before supervisor approval.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [taskId, supplierId]
+              properties:
+                taskId: { type: string, format: uuid }
+                supplierId: { type: string, format: uuid }
+                notes: { type: string, maxLength: 1000 }
+      responses:
+        '201': { description: Saved supervisor-routed subcontract plan and conserved batches }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Operation already has an open plan or changed while saving }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/recovery/subcontracts/{id}/approve:
+    post:
+      summary: Approve and send the subcontract plan to its vendor
+      description: Only the captured active direct supervisor may approve. Rechecks order and task versions; only then moves the operation from READY to BLOCKED and each vendor batch to SENT in one audit transaction.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - $ref: '#/components/parameters/AccessIdempotency'
       responses:
-        '200': { description: Proposal status and applied task IDs }
+        '200': { description: Approved plan with batches sent to vendor }
         '400': { $ref: '#/components/responses/BadRequest' }
-        '409': { description: Saved evidence is stale or the assignment is no longer feasible; no task or booking is applied }
+        '409': { description: Order or task evidence is stale; no task or vendor batch is changed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/intelligence/recovery/subcontracts/{id}/reject:
+    post:
+      summary: Reject a pending subcontract plan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [note]
+              properties:
+                note: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200': { description: Audited rejection; operation remains in its prior internal state }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/intelligence/recovery/subcontracts/{id}/batches/{batchId}/status:
+    post:
+      summary: Record that a vendor subcontract batch is in progress
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: batchId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [IN_PROGRESS] }
+                vendorReference: { type: string, maxLength: 120 }
+      responses:
+        '200': { description: Updated vendor batch status and reference }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/intelligence/recovery/subcontracts/{id}/batches/{batchId}/return:
+    post:
+      summary: Record returned vendor quantity for a subcontract batch
+      description: Returned atoms cannot exceed the unreturned batch quantity. The operation re-enters internal READY only when every subcontract batch has returned the exact planned target; this records no production output, inventory movement, or QC disposition.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: batchId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [returnedAtoms]
+              properties:
+                returnedAtoms: { type: string, pattern: '^\\d+$', description: Positive quantity atoms being received }
+                vendorReference: { type: string, maxLength: 120 }
+      responses:
+        '200': { description: Recorded quantity and batch/plan status; final return resumes internal work }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Concurrent state change prevented applying the return }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

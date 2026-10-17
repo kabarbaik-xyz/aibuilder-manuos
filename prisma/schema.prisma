@@ -102,6 +102,7 @@ model Workspace {
   currency    String       @default("IDR")
   maxOvertimeMinutesPerDay  Int @default(240) @map("max_overtime_minutes_per_day")
   maxOvertimeMinutesPerWeek Int @default(1200) @map("max_overtime_minutes_per_week")
+  recoveryBatchAtoms BigInt @default(0) @map("recovery_batch_atoms")
   revision    Int          @default(1)
   isDemo      Boolean      @default(false) @map("is_demo")
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -169,6 +170,7 @@ model Workspace {
   reworkAttempts    ReworkAttempt[]
   shipments         Shipment[]
   recoveryProposals RecoveryProposal[]
+  recoverySubcontractPlans RecoverySubcontractPlan[]
   shipmentLines     ShipmentLine[]
   documents         Document[]
   documentLinks     DocumentLink[]
@@ -220,6 +222,7 @@ model Membership {
   facilityGrants MembershipFacilityGrant[]
   overtimeApprovalIntervals RosterInterval[]
   recoveryApprovals RecoveryProposal[]
+  recoverySubcontractApprovals RecoverySubcontractPlan[] @relation("SubcontractApprover")
   roles        MembershipRole[]
 
   @@unique([workspaceId, userId])
@@ -408,6 +411,7 @@ model Supplier {
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   supplyOrders  SupplyOrder[]
   supplyReceipts SupplyReceipt[]
+  recoverySubcontractPlans RecoverySubcontractPlan[]
 
   @@unique([workspaceId, code])
   @@unique([workspaceId, id])
@@ -955,6 +959,7 @@ model Order {
   reservations         StockReservation[]
   shipments            Shipment[]
   recoveryProposals    RecoveryProposal[]
+  recoverySubcontractPlans RecoverySubcontractPlan[]
   passports            Passport[]
   changeRequests       OrderChangeRequest[]
   jobCostEntries       JobCostEntry[]
@@ -1199,6 +1204,7 @@ model Task {
   productionOutputs      ProductionOutput[]
   reworkAttempts         ReworkAttempt[]
   issues                 TaskIssue[]
+  recoverySubcontractPlans RecoverySubcontractPlan[]
 
   @@unique([instanceId, nodeKey, attemptNumber])
   @@unique([workspaceId, id])
@@ -1870,6 +1876,62 @@ model RecoveryProposal {
   @@unique([workspaceId, id])
   @@index([workspaceId, orderId, status])
   @@map("recovery_proposals")
+}
+
+model RecoverySubcontractPlan {
+  id                   String    @id @default(uuid())
+  workspaceId          String    @map("workspace_id")
+  orderId              String    @map("order_id")
+  taskId               String    @map("task_id")
+  taskVersion          Int       @map("task_version")
+  orderVersion         Int       @map("order_version")
+  supplierId           String    @map("supplier_id")
+  plannedAtoms         BigInt    @map("planned_atoms")
+  batchLimitAtoms      BigInt    @map("batch_limit_atoms")
+  status               String    @default("PROPOSED") // PROPOSED | SENT | IN_PROGRESS | RETURNED | REJECTED
+  proposedById         String    @map("proposed_by_id")
+  approverMembershipId String    @map("approver_membership_id")
+  approvedById         String?   @map("approved_by_id")
+  approvedAt           DateTime? @map("approved_at")
+  returnedAt           DateTime? @map("returned_at")
+  notes                String?
+  version              Int       @default(1)
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  workspace          Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order              Order                      @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  task               Task                       @relation(fields: [workspaceId, taskId], references: [workspaceId, id], onDelete: Cascade)
+  supplier           Supplier                   @relation(fields: [workspaceId, supplierId], references: [workspaceId, id], onDelete: Restrict)
+  approverMembership Membership                 @relation("SubcontractApprover", fields: [approverMembershipId], references: [id], onDelete: NoAction)
+  batches            RecoverySubcontractBatch[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, taskId, status])
+  @@index([workspaceId, supplierId, status])
+  @@index([approverMembershipId, status])
+  @@map("recovery_subcontract_plans")
+}
+
+model RecoverySubcontractBatch {
+  id              String    @id @default(uuid())
+  workspaceId     String    @map("workspace_id")
+  planId          String    @map("plan_id")
+  batchNumber     Int       @map("batch_number")
+  quantityAtoms   BigInt    @map("quantity_atoms")
+  returnedAtoms   BigInt    @default(0) @map("returned_atoms")
+  status          String    @default("PLANNED") // PLANNED | SENT | IN_PROGRESS | PARTIALLY_RETURNED | RETURNED
+  vendorReference String?   @map("vendor_reference")
+  sentAt          DateTime? @map("sent_at")
+  returnedAt      DateTime? @map("returned_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  plan RecoverySubcontractPlan @relation(fields: [workspaceId, planId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, planId, batchNumber])
+  @@map("recovery_subcontract_batches")
 }
 
 // -------------------------------------------------------------

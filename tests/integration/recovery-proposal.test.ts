@@ -15,6 +15,7 @@ describe('SCH-09/AII-06: recovery proposal resolution lifecycle', () => {
     recovery = new RecoveryService(fixture.db);
 
     const alpha = fixture.alpha;
+    const approverMembershipId = alpha.users.owner.membershipId;
     const order = await fixture.db.order.create({
       data: {
         workspaceId: alpha.workspaceId,
@@ -32,6 +33,7 @@ describe('SCH-09/AII-06: recovery proposal resolution lifecycle', () => {
         workspaceId: alpha.workspaceId,
         orderId: order.id,
         orderVersion: order.version,
+        approverMembershipId,
         proposalJson: JSON.stringify({ id: 'seed-proposal', orderId: order.id }),
       },
     });

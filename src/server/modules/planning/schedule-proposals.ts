@@ -191,7 +191,11 @@ export class ScheduleProposalService {
     });
   }
 
-  async propose(principal: Principal, rawInput: unknown) {
+  async propose(principal: Principal, rawInput: unknown, options?: {
+    machineOverride?: { taskId: string; machineId: string };
+    /** Adds a non-persistent interval for Recovery scenario evaluation only. */
+    overtimeOverride?: { technicianId: string; startAt: Date; endAt: Date };
+  }) {
     requireAnyPermission(principal, ['planning.read', 'planning.write', 'task.assign']);
     const input = ScheduleProposalRequestSchema.parse(rawInput);
     const workspaceId = principal.workspaceId;
@@ -315,6 +319,10 @@ export class ScheduleProposalService {
         .filter((machine) => machine.machineClassId === requirements.machineClassId || machine.machineClass.code === requirements.machineClassId)
         .filter((machine) => !order.facilityId || !machine.facilityId || machine.facilityId === order.facilityId)
         .map((machine) => machine.id);
+      const forcedMachineId = options?.machineOverride?.taskId === task.id ? options.machineOverride.machineId : null;
+      const selectedMachineIds = forcedMachineId
+        ? compatibleMachineIds.includes(forcedMachineId) ? [forcedMachineId] : []
+        : compatibleMachineIds;
       if (requiresTechnician) eligibleTechnicianIds.forEach((id) => allUsedTechnicianIds.add(id));
       if (requiresMachine) compatibleMachineIds.forEach((id) => allUsedMachineIds.add(id));
       return {
@@ -326,7 +334,7 @@ export class ScheduleProposalService {
         requiresTechnician,
         requiresMachine,
         eligibleTechnicianIds,
-        compatibleMachineIds,
+        compatibleMachineIds: selectedMachineIds,
         materialReady,
       };
     });
@@ -341,10 +349,34 @@ export class ScheduleProposalService {
       })] as const)),
     ]);
 
+    const technicianAvailability = Object.fromEntries(technicianAvailabilityEntries);
+    if (options?.overtimeOverride) {
+      const interval = options.overtimeOverride;
+      if (!allUsedTechnicianIds.has(interval.technicianId) || !Number.isFinite(interval.startAt.getTime()) || !Number.isFinite(interval.endAt.getTime()) || interval.startAt >= interval.endAt || interval.startAt < horizonStart || interval.endAt > horizonEnd) {
+        throw new BadRequestError('Recovery overtime scenario must be a valid interval inside the schedule horizon for a technician required by this job.');
+      }
+      const overlappingBooking = await this.db.resourceBooking.findFirst({
+        where: { workspaceId, resourceType: 'TECHNICIAN', resourceId: interval.technicianId, status: 'CONFIRMED', startAt: { lt: interval.endAt }, endAt: { gt: interval.startAt } },
+        select: { id: true },
+      });
+      const overlappingExclusion = await this.db.rosterInterval.findFirst({
+        where: { workspaceId, technicianId: interval.technicianId, status: 'PUBLISHED', intervalType: { in: ['LEAVE', 'TRAINING', 'HOLIDAY'] }, startAt: { lt: interval.endAt }, endAt: { gt: interval.startAt } },
+        select: { id: true },
+      });
+      const overlappingOvertime = await this.db.rosterInterval.findFirst({
+        where: { workspaceId, technicianId: interval.technicianId, status: { in: ['DRAFT', 'PUBLISHED'] }, intervalType: 'OVERTIME', startAt: { lt: interval.endAt }, endAt: { gt: interval.startAt } },
+        select: { id: true },
+      });
+      if (overlappingBooking || overlappingExclusion || overlappingOvertime) throw new BadRequestError('Recovery overtime scenario overlaps an existing booking, exclusion, or overtime interval.');
+      technicianAvailability[interval.technicianId] = [
+        ...(technicianAvailability[interval.technicianId] ?? []),
+        { startAt: interval.startAt, endAt: interval.endAt, durationMinutes: Math.round((interval.endAt.getTime() - interval.startAt.getTime()) / 60_000) },
+      ];
+    }
     const result = scheduleFiniteCapacity({
       startHorizon: horizonStart,
       tasks: engineTasks,
-      technicianAvailability: Object.fromEntries(technicianAvailabilityEntries),
+      technicianAvailability,
       machineAvailability: Object.fromEntries(machineAvailabilityEntries),
     });
     const scheduledCount = result.tasks.filter((task) => task.status === 'SCHEDULED').length;
