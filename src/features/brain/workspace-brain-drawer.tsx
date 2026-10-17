@@ -55,7 +55,7 @@ export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: Brai
     setMessages(previous => [...previous, { question: text, context: selectedContext }]);
     try {
       const result = await apiRequest<{ data?: BrainAnswerDTO; explanation: Explanation<BrainAnswerDTO> }>('/api/ai/brain-qa', {
-        method: 'POST', body: JSON.stringify({ question: text, context: selectedContext }), signal: controller.signal,
+        method: 'POST', body: JSON.stringify({ question: text, context: selectedContext ?? undefined }), signal: controller.signal,
       });
       const answer = result.data;
       if (!answer?.answer) throw new Error('No answer was returned. Please try again.');

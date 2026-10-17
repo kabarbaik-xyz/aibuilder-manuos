@@ -9,7 +9,9 @@ import { db } from '@/server/db/client';
 const brainService = new ProductionBrainService(db);
 const QuestionSchema = z.object({
   question: z.string().trim().min(1).max(2000),
-  context: z.object({ type: z.enum(['ORDER', 'ITEM', 'TASK']), id: z.string().min(1).max(100) }).optional(),
+  // nullish, not optional: clients clear the selected record by sending
+  // `context: null`, which plain `.optional()` (undefined-only) would reject.
+  context: z.object({ type: z.enum(['ORDER', 'ITEM', 'TASK']), id: z.string().min(1).max(100) }).nullish(),
 }).strict();
 
 export async function POST(req: NextRequest) {
@@ -17,7 +19,7 @@ export async function POST(req: NextRequest) {
     const principal = await requirePrincipal(req);
     const { question, context } = await parseJsonBody(req, QuestionSchema);
 
-    const explanation = await brainService.answerProductionQuestion(principal, question, context);
+    const explanation = await brainService.answerProductionQuestion(principal, question, context ?? undefined);
 
     // Return explanation with data for brain drawer compatibility
     const answerData = explanation.status === 'SUCCESS' ? explanation.data : explanation.fallbackData;
