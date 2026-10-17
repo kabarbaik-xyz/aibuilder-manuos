@@ -251,7 +251,7 @@ export class ScheduleProposalService {
     const machines = await this.db.machine.findMany({
       where: { workspaceId, archivedAt: null, status: { notIn: ['OFFLINE', 'MAINTENANCE'] } },
       include: { machineClass: true },
-      orderBy: { name: 'asc' },
+      orderBy: [{ recoveryPriority: 'asc' }, { name: 'asc' }],
       take: 100,
     });
 

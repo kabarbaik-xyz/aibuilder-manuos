@@ -133,6 +133,8 @@ export const createMachineSchema = z.object({
   calendarId: z.string().nullable().optional(),
   facilityId: z.string().nullable().optional(),
   status: z.enum(['AVAILABLE', 'MAINTENANCE', 'OFFLINE']).default('AVAILABLE'),
+  hourlyRateCents: z.number().int().min(0).nullable().optional(),
+  recoveryPriority: z.number().int().min(0).max(10000).optional(),
 });
 
 export const updateMachineSchema = z.object({
@@ -143,6 +145,8 @@ export const updateMachineSchema = z.object({
   calendarId: z.string().nullable().optional(),
   facilityId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
+  hourlyRateCents: z.number().int().min(0).nullable().optional(),
+  recoveryPriority: z.number().int().min(0).max(10000).optional(),
 });
 
 export const createTechnicianSchema = z.object({
@@ -369,6 +373,12 @@ export const requestOvertimeSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 export type RequestOvertimeInput = z.infer<typeof requestOvertimeSchema>;
+
+export const updateOvertimePolicySchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  maxOvertimeHoursPerDay: z.number().int().min(0).max(24),
+  maxOvertimeHoursPerWeek: z.number().int().min(0).max(168),
+}).strict();
 
 export interface ReassessmentQueueQuery {
   daysAhead?: number;

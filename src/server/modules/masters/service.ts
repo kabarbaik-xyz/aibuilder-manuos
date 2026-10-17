@@ -5,6 +5,7 @@ import { requirePermission, requireAnyPermission } from '@/server/auth/permissio
 import { ConflictError, NotFoundError, BadRequestError, ForbiddenError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
+import { accumulateOvertimeMinutes } from './overtime-policy';
 
 export type EditableCatalogResource =
   | 'technicians'
@@ -28,10 +29,52 @@ export type EditableCatalogInput = {
   scaleMax?: number;
   precision?: number;
   maxWeeklyMinutes?: number;
+  hourlyRateCents?: number | null;
+  recoveryPriority?: number;
 };
 
 export class MastersService {
   constructor(private readonly prisma: PrismaClient = defaultDb) {}
+
+  async getOvertimePolicy(principal: Principal) {
+    requireAnyPermission(principal, ['resource.manage', 'planning.read', 'planning.write', 'task.assign', 'workspace.admin', 'owner']);
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: principal.workspaceId }, select: {
+      revision: true, timezone: true, maxOvertimeMinutesPerDay: true, maxOvertimeMinutesPerWeek: true,
+    } });
+    if (!workspace) throw new NotFoundError('Workspace not found');
+    return { revision: workspace.revision, timezone: workspace.timezone,
+      maxOvertimeHoursPerDay: workspace.maxOvertimeMinutesPerDay / 60,
+      maxOvertimeHoursPerWeek: workspace.maxOvertimeMinutesPerWeek / 60 };
+  }
+
+  async updateOvertimePolicy(principal: Principal, raw: unknown, idempotencyKey: string) {
+    requireAnyPermission(principal, ['resource.manage', 'workspace.admin', 'owner']);
+    const input = contracts.updateOvertimePolicySchema.parse(raw);
+    return executeCommand({ principal, commandType: 'workforce.overtime-policy.update', idempotencyKey,
+      expectedVersion: input.expectedRevision, payload: input, prismaClient: this.prisma,
+      handler: async tx => {
+        const current = await tx.workspace.findUnique({ where: { id: principal.workspaceId } });
+        if (!current) throw new NotFoundError('Workspace not found');
+        if (current.revision !== input.expectedRevision) throw new ConflictError('Overtime policy changed. Reload the current workspace limits.', 'STALE_VERSION', true);
+        const updated = await tx.workspace.update({ where: { id: current.id }, data: {
+          maxOvertimeMinutesPerDay: input.maxOvertimeHoursPerDay * 60,
+          maxOvertimeMinutesPerWeek: input.maxOvertimeHoursPerWeek * 60,
+          revision: { increment: 1 },
+        } });
+        return { data: { revision: updated.revision, maxOvertimeHoursPerDay: input.maxOvertimeHoursPerDay,
+          maxOvertimeHoursPerWeek: input.maxOvertimeHoursPerWeek }, aggregateType: 'WORKSPACE', aggregateId: current.id,
+          previousVersion: current.revision, resourceVersion: updated.revision,
+          auditDetails: { maxOvertimeHoursPerDay: input.maxOvertimeHoursPerDay, maxOvertimeHoursPerWeek: input.maxOvertimeHoursPerWeek } };
+      } });
+  }
+
+  async listOvertimeApprovals(principal: Principal) {
+    requireAnyPermission(principal, ['planning.read', 'planning.write', 'task.assign', 'resource.manage', 'workspace.admin', 'owner']);
+    const intervals = await this.prisma.rosterInterval.findMany({ where: {
+      workspaceId: principal.workspaceId, intervalType: 'OVERTIME', status: 'DRAFT', approverMembershipId: principal.membershipId,
+    }, include: { technician: { select: { id: true, code: true, name: true } } }, orderBy: { createdAt: 'asc' }, take: 100 });
+    return intervals;
+  }
 
   async updateCatalogRecord(
     principal: Principal,
@@ -90,6 +133,8 @@ export class MastersService {
               departmentId: input.departmentId !== undefined ? input.departmentId : current.departmentId,
               calendarId: input.calendarId !== undefined ? input.calendarId : current.calendarId,
               facilityId: input.facilityId !== undefined ? input.facilityId : current.facilityId,
+              hourlyRateCents: input.hourlyRateCents !== undefined ? input.hourlyRateCents : current.hourlyRateCents,
+              recoveryPriority: input.recoveryPriority ?? current.recoveryPriority,
               version: { increment: 1 },
             } });
             return { data, aggregateType: 'MACHINE', aggregateId: data.id, resourceVersion: data.version, previousVersion: current.version };
@@ -2597,10 +2642,8 @@ export class MastersService {
           throw new BadRequestError(`Invalid interval: startAt (${validated.startAt}) must precede endAt (${validated.endAt})`);
         }
 
-        const durationHours = (endAt.getTime() - startAt.getTime()) / (1000 * 60 * 60);
-        if (durationHours > 8) {
-          throw new BadRequestError(`Overtime request exceeds maximum single-shift limit of 8 hours (requested: ${durationHours.toFixed(1)}h)`);
-        }
+        if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime())) throw new BadRequestError('Overtime start and end must be valid dates');
+        if (endAt.getTime() - startAt.getTime() > 24 * 60 * 60 * 1000) throw new BadRequestError('An overtime request cannot span more than 24 hours');
 
         const tech = await tx.technician.findFirst({
           where: { id: validated.technicianId, workspaceId: principal.workspaceId, isActive: true },
@@ -2608,32 +2651,21 @@ export class MastersService {
         if (!tech) {
           throw new NotFoundError(`Technician '${validated.technicianId}' not found or inactive`);
         }
-
-        // Check daily overtime limit
-        const dayStart = new Date(startAt);
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(startAt);
-        dayEnd.setHours(23, 59, 59, 999);
-
-        const existingOvertimeToday = await tx.rosterInterval.findMany({
-          where: {
-            workspaceId: principal.workspaceId,
-            technicianId: validated.technicianId,
-            intervalType: 'OVERTIME',
-            status: { in: ['DRAFT', 'PUBLISHED'] },
-            startAt: { gte: dayStart, lte: dayEnd },
-          },
-        });
-
-        const totalHoursToday = existingOvertimeToday.reduce(
-          (acc: number, cur: any) => acc + (cur.endAt.getTime() - cur.startAt.getTime()) / (1000 * 60 * 60),
-          0
-        );
-
-        if (totalHoursToday + durationHours > 8) {
-          throw new BadRequestError(
-            `Total overtime on ${startAt.toISOString().slice(0, 10)} would exceed daily safety limit of 8 hours (existing: ${totalHoursToday}h, requested: ${durationHours}h)`
-          );
+        const technicianMembership = await tx.membership.findFirst({ where: { workspaceId: principal.workspaceId, technicianId: tech.id, status: 'ACTIVE' }, select: { id: true, supervisorMembershipId: true } });
+        if (!technicianMembership?.supervisorMembershipId) throw new BadRequestError(`Assign an active direct supervisor to ${tech.name} before requesting overtime`);
+        const approver = await tx.membership.findFirst({ where: { id: technicianMembership.supervisorMembershipId, workspaceId: principal.workspaceId, status: 'ACTIVE' } });
+        if (!approver) throw new BadRequestError('The technician’s direct supervisor is inactive or outside this workspace');
+        const workspace = await tx.workspace.findUniqueOrThrow({ where: { id: principal.workspaceId }, select: { timezone: true, maxOvertimeMinutesPerDay: true, maxOvertimeMinutesPerWeek: true } });
+        const existingOvertime = await tx.rosterInterval.findMany({ where: {
+          workspaceId: principal.workspaceId, technicianId: tech.id, intervalType: 'OVERTIME', status: { in: ['DRAFT', 'PUBLISHED'] },
+          startAt: { lt: new Date(endAt.getTime() + 7 * 86400000) }, endAt: { gt: new Date(startAt.getTime() - 7 * 86400000) },
+        }, select: { startAt: true, endAt: true } });
+        const totals = accumulateOvertimeMinutes([...existingOvertime, { startAt, endAt }], workspace.timezone);
+        for (const [day, minutes] of totals.byDay) if (minutes > workspace.maxOvertimeMinutesPerDay) {
+          throw new BadRequestError(`Overtime on ${day} exceeds the workspace daily limit of ${workspace.maxOvertimeMinutesPerDay / 60} hours`);
+        }
+        for (const [week, minutes] of totals.byWeek) if (minutes > workspace.maxOvertimeMinutesPerWeek) {
+          throw new BadRequestError(`Overtime in the week of ${week} exceeds the workspace weekly limit of ${workspace.maxOvertimeMinutesPerWeek / 60} hours`);
         }
 
         // Create DRAFT overtime interval - unapproved overtime is NOT published and not available
@@ -2647,6 +2679,7 @@ export class MastersService {
             endAt,
             status: 'DRAFT',
             notes: `Reason: ${validated.reason}${validated.notes ? ` | ${validated.notes}` : ''}`,
+            approverMembershipId: approver.id,
           },
         });
 
@@ -2665,7 +2698,7 @@ export class MastersService {
     intervalId: string,
     idempotencyKey: string
   ) {
-    requireAnyPermission(principal, ['resource.manage', 'planning.write', 'admin.access', 'owner']);
+    requireAnyPermission(principal, ['resource.manage', 'planning.write', 'task.assign', 'workspace.admin', 'owner']);
 
     return executeCommand({
       principal,
@@ -2675,7 +2708,7 @@ export class MastersService {
       prismaClient: this.prisma,
       handler: async (tx) => {
         const interval = await tx.rosterInterval.findFirst({
-          where: { id: intervalId, workspaceId: principal.workspaceId },
+          where: { id: intervalId, workspaceId: principal.workspaceId, approverMembershipId: principal.membershipId },
         });
         if (!interval) {
           throw new NotFoundError(`Roster interval '${intervalId}' not found`);
@@ -2697,6 +2730,8 @@ export class MastersService {
         if (interval.status === 'CANCELLED') {
           throw new BadRequestError(`Cannot approve CANCELLED overtime interval '${intervalId}'.`);
         }
+
+        if (interval.status !== 'DRAFT') throw new BadRequestError(`Cannot approve overtime interval in status '${interval.status}'.`);
 
         const updated = await tx.rosterInterval.update({
           where: { id: intervalId },

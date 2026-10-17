@@ -70,6 +70,7 @@ export interface RecoveryProposalDTO {
     horizonEnd: string;
     evaluatedAt: string;
     projectedEndAt: string;
+    machineCostEstimate?: { status: 'COMPLETE' | 'PARTIAL' | 'NOT_AVAILABLE'; currency: string; totalMinorUnits: number | null; pricedTaskCount: number; unpricedTaskCount: number };
     taskVersions: Array<{ taskId: string; version: number }>;
     tasks: Array<{
       taskId: string;

@@ -60,7 +60,7 @@ export class AvailabilityService {
     principal: Principal,
     query: AvailabilityQuery
   ): Promise<TimeInterval[]> {
-    requireAnyPermission(principal, ['planning.read', 'resource.manage', 'task.assign', 'planning.write']);
+    requireAnyPermission(principal, ['planning.read', 'resource.manage']);
 
     const { resourceType, resourceId, startAt, endAt } = query;
 
@@ -262,7 +262,7 @@ export class AvailabilityService {
     principal: Principal,
     query: EligibilityQuery
   ): Promise<EligibilityResult> {
-    requireAnyPermission(principal, ['planning.read', 'resource.manage']);
+    requireAnyPermission(principal, ['planning.read', 'resource.manage', 'task.assign', 'planning.write']);
 
     const violations: string[] = [];
 

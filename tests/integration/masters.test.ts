@@ -160,6 +160,19 @@ describe('F05: Commercial, Item & Location Masters', () => {
     ).rejects.toThrow(/Cannot create conversion between item and its own base UOM/i);
   });
 
+  it('persists optional machine hourly cost and manual recovery priority', async () => {
+    const access = await seedTestAccess(testDb.db, { roles: ['OWNER'] });
+    const machineClass = await testDb.db.machineClass.create({ data: { workspaceId: access.workspaceId, code: `COST-${Date.now()}`, name: 'Costed machine' } });
+    const machine = await service.createMachine(access.principal, {
+      code: `COSTED-${Date.now()}`, name: 'Costed machine one', machineClassId: machineClass.id, hourlyRateCents: 12575, recoveryPriority: 5,
+    }, 'machine-hourly-cost');
+    expect(machine.data.hourlyRateCents).toBe(12575);
+    expect(machine.data.recoveryPriority).toBe(5);
+    const listed = (await service.listMachines(access.principal)).find(row => row.id === machine.data.id);
+    expect(listed?.hourlyRateCents).toBe(12575);
+    expect(listed?.recoveryPriority).toBe(5);
+  });
+
   it('creates locations and enforces valid kind enumeration', async () => {
     const access = await seedTestAccess(testDb.db, { roles: ['OWNER'] });
 

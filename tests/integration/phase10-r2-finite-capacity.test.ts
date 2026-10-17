@@ -47,6 +47,10 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
 
     const { alpha } = fixture;
     const owner = alpha.users.owner.principal;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: alpha.users.planner.principal.membershipId } },
+      data: { supervisorMembershipId: owner.membershipId },
+    });
 
     // 1. Create a mandatory aerospace welding certification
     const cert = await fixture.db.certification.create({
@@ -310,6 +314,7 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
   describe('4. Schedule-grounded recovery review proposals', () => {
     it('persists one idempotent schedule review with captured versions and no bookings', async () => {
       const { alpha } = fixture;
+      await fixture.db.machine.updateMany({ where: { workspaceId: alpha.workspaceId, archivedAt: null }, data: { hourlyRateCents: 6000 } });
       const beforeBookings = await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } });
       const input = { orderId: testOrderId, instanceId: testInstanceId };
       const first = await recoveryService.proposeScheduleReview(alpha.users.planner.principal, input, 'phase10-recovery-review');
@@ -318,6 +323,8 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(first.state).toBe('SAVED');
       if (first.state !== 'SAVED' || replay.state !== 'SAVED') throw new Error('Expected complete schedule review to be saved.');
       expect(first.scheduleReview?.tasks).toHaveLength(2);
+      expect(first.scheduleReview?.machineCostEstimate).toMatchObject({ status: 'COMPLETE', currency: 'IDR', pricedTaskCount: expect.any(Number), unpricedTaskCount: 0 });
+      expect(first.scheduleReview?.machineCostEstimate?.totalMinorUnits).toBeGreaterThan(0);
       expect(first.scheduleReview?.workflowVersionId).toBeTruthy();
       expect(replay.id).toBe(first.id);
       expect(await fixture.db.recoveryProposal.count({ where: { workspaceId: alpha.workspaceId, orderId: testOrderId } })).toBe(1);
@@ -445,13 +452,15 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       if (recoveryReview.state !== 'SAVED') throw new Error('Expected a saved recovery schedule review.');
 
       const recoveryRecord = await fixture.db.recoveryProposal.findFirstOrThrow({ where: { id: recoveryReview.id, workspaceId: alpha.workspaceId } });
+      expect(recoveryRecord.approverMembershipId).toBe(alpha.users.owner.principal.membershipId);
       const originalProposalJson = recoveryRecord.proposalJson;
-      await expect(recoveryService.applyScheduleReview({ ...planner, permissions: planner.permissions, facilityIds: [] }, recoveryRecord.id, 'phase10-recovery-apply-facility-denied')).rejects.toThrow(/not found/i);
+      await expect(recoveryService.applyScheduleReview({ ...alpha.users.owner.principal, permissions: planner.permissions, facilityIds: [] }, recoveryRecord.id, 'phase10-recovery-apply-facility-denied')).rejects.toThrow(/not found/i);
       await expect(recoveryService.applyScheduleReview({ ...fixture.beta.users.owner.principal, permissions: planner.permissions }, recoveryRecord.id, 'phase10-recovery-apply-tenant-denied')).rejects.toThrow(/not found/i);
+      await expect(recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-wrong-approver')).rejects.toThrow(/direct supervisor/i);
       const corruptedReview = JSON.parse(originalProposalJson) as { scheduleReview: { facilityId: string | null } };
       corruptedReview.scheduleReview.facilityId = '00000000-0000-4000-8000-000000000000';
       await fixture.db.recoveryProposal.update({ where: { id: recoveryRecord.id }, data: { proposalJson: JSON.stringify(corruptedReview) } });
-      await expect(recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-scope')).rejects.toMatchObject({ code: 'STALE_SCOPE' });
+      await expect(recoveryService.applyScheduleReview({ ...alpha.users.owner.principal, permissions: planner.permissions }, recoveryRecord.id, 'phase10-recovery-apply-scope')).rejects.toMatchObject({ code: 'STALE_SCOPE' });
       await fixture.db.recoveryProposal.update({ where: { id: recoveryRecord.id }, data: { proposalJson: originalProposalJson } });
       expect((await fixture.db.recoveryProposal.findUniqueOrThrow({ where: { id: recoveryRecord.id } })).status).toBe('PROPOSED');
 
@@ -464,7 +473,7 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
         return originalRecoveryEvaluation.apply(this, args);
       });
       try {
-        await expect(recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-rollback')).rejects.toThrow('Injected Recovery second-task revalidation failure');
+        await expect(recoveryService.applyScheduleReview({ ...alpha.users.owner.principal, permissions: planner.permissions }, recoveryRecord.id, 'phase10-recovery-apply-rollback')).rejects.toThrow('Injected Recovery second-task revalidation failure');
       } finally {
         recoveryEvaluationSpy.mockRestore();
       }
@@ -473,9 +482,10 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeRecoveryBookings);
       expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'RECOVERY_SCHEDULE_APPLY' } })).toBe(0);
 
+      const supervisor = { ...alpha.users.owner.principal, permissions: planner.permissions };
       const concurrentResults = await Promise.allSettled([
-        recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-race-a'),
-        recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-race-b'),
+        recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, 'phase10-recovery-apply-race-a'),
+        recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, 'phase10-recovery-apply-race-b'),
       ]);
       const successfulApply = concurrentResults.filter((result) => result.status === 'fulfilled');
       const rejectedApply = concurrentResults.filter((result) => result.status === 'rejected');
@@ -483,7 +493,7 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(rejectedApply).toHaveLength(1);
       const successfulKey = successfulApply[0] === concurrentResults[0] ? 'phase10-recovery-apply-race-a' : 'phase10-recovery-apply-race-b';
       const recoveryApplied = (successfulApply[0] as PromiseFulfilledResult<Awaited<ReturnType<RecoveryService['applyScheduleReview']>>>).value;
-      const recoveryReplay = await recoveryService.applyScheduleReview(planner, recoveryRecord.id, successfulKey);
+      const recoveryReplay = await recoveryService.applyScheduleReview(supervisor, recoveryRecord.id, successfulKey);
       expect(recoveryApplied.data.status).toBe('APPROVED');
       expect(recoveryReplay.meta.replayed).toBe(true);
       expect((await fixture.db.recoveryProposal.findUniqueOrThrow({ where: { id: recoveryRecord.id } })).status).toBe('APPROVED');

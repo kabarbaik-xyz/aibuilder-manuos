@@ -469,9 +469,12 @@ describe('Phase 8: R1 Controlled Changes, Published Schedules & Connected Tracea
   // -----------------------------------------------------------------
   it('enforces overtime safety limits, unapproved availability denial, and approved schedule expansion', async () => {
     const owner = fixture.alpha.users.owner.principal;
+    const planner = fixture.alpha.users.planner.principal;
     const availabilityService = new AvailabilityService(fixture.db);
 
     const techId = fixture.alpha.masters.technicianId;
+    const operatorMembership = await fixture.db.membership.findFirstOrThrow({ where: { workspaceId: owner.workspaceId, technicianId: techId } });
+    await fixture.db.membership.update({ where: { id: operatorMembership.id }, data: { supervisorMembershipId: planner.membershipId } });
     const otDate = '2026-11-25';
     const startAt = `${otDate}T18:00:00.000Z`;
     const endAt = `${otDate}T22:00:00.000Z`;
@@ -517,7 +520,8 @@ describe('Phase 8: R1 Controlled Changes, Published Schedules & Connected Tracea
     expect(otAvailBefore).toBe(false);
 
     // D. Approve overtime interval
-    const approveRes = await mastersService.approveOvertime(owner, intervalId, 'idemp-ot-appr');
+    await expect(mastersService.approveOvertime(owner, intervalId, 'idemp-ot-wrong-approver')).rejects.toThrow(/not found/i);
+    const approveRes = await mastersService.approveOvertime(planner, intervalId, 'idemp-ot-appr');
     expect(approveRes.data.status).toBe('PUBLISHED');
 
     // E. Check availability after approval: approved overtime is now available!
@@ -531,6 +535,32 @@ describe('Phase 8: R1 Controlled Changes, Published Schedules & Connected Tracea
       (iv) => iv.startAt.getTime() <= new Date(startAt).getTime() && iv.endAt.getTime() >= new Date(endAt).getTime()
     );
     expect(otAvailAfter).toBe(true);
+  });
+
+  it('enforces configurable workspace-local daily and weekly overtime caps and routes approval to the direct supervisor', async () => {
+    const owner = fixture.alpha.users.owner.principal;
+    const planner = fixture.alpha.users.planner.principal;
+    const technicianId = fixture.alpha.masters.technicianId;
+    const membership = await fixture.db.membership.findFirstOrThrow({ where: { workspaceId: owner.workspaceId, technicianId } });
+    await fixture.db.membership.update({ where: { id: membership.id }, data: { supervisorMembershipId: planner.membershipId } });
+    await fixture.db.rosterInterval.deleteMany({ where: { workspaceId: owner.workspaceId, technicianId, intervalType: 'OVERTIME' } });
+    const policy = await mastersService.getOvertimePolicy(owner);
+    expect(policy.maxOvertimeHoursPerDay).toBe(4);
+    expect(policy.maxOvertimeHoursPerWeek).toBe(20);
+    await mastersService.updateOvertimePolicy(owner, { expectedRevision: policy.revision, maxOvertimeHoursPerDay: 4, maxOvertimeHoursPerWeek: 5 }, 'set-test-overtime-policy');
+    const create = (day: number, hours: number, key: string) => mastersService.requestOvertime(owner, {
+      technicianId, startAt: `2026-11-${String(day).padStart(2, '0')}T08:00:00.000Z`,
+      endAt: `2026-11-${String(day).padStart(2, '0')}T${String(8 + hours).padStart(2, '0')}:00:00.000Z`, reason: 'Approved policy validation',
+    }, key);
+    const first = await create(25, 4, 'policy-ot-day-one');
+    expect(first.data.approverMembershipId).toBe(planner.membershipId);
+    await expect(create(25, 1, 'policy-ot-day-over')).rejects.toThrow(/daily limit/i);
+    await create(26, 1, 'policy-ot-day-two');
+    await expect(create(27, 1, 'policy-ot-week-over')).rejects.toThrow(/weekly limit/i);
+    await expect(mastersService.approveOvertime(owner, first.data.id, 'policy-ot-wrong-approver')).rejects.toThrow(/not found/i);
+    expect((await mastersService.approveOvertime(planner, first.data.id, 'policy-ot-supervisor-approve')).data.status).toBe('PUBLISHED');
+    const latestPolicy = await mastersService.getOvertimePolicy(owner);
+    await mastersService.updateOvertimePolicy(owner, { expectedRevision: latestPolicy.revision, maxOvertimeHoursPerDay: 4, maxOvertimeHoursPerWeek: 20 }, 'restore-test-overtime-policy');
   });
 
   // -----------------------------------------------------------------

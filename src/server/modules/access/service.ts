@@ -13,6 +13,8 @@ const scope = {
   roleCodes: grants,
   facilityId: z.string().min(1).nullable().optional(),
   departmentId: z.string().min(1).nullable().optional(),
+  jobTitle: z.string().trim().max(120).nullable().optional(),
+  supervisorMembershipId: z.string().min(1).nullable().optional(),
   landingPage: z.string().min(1).nullable().optional(),
   newTechnician: z.object({ code: z.string().trim().min(1).max(50), calendarId: z.string().min(1).nullable().optional() }).strict().optional(),
   customerId: z.string().min(1).nullable().default(null),
@@ -63,12 +65,12 @@ export class AccessService {
     const manageableWorkspaces = await this.identityWorkspaces(this.db, principal);
     const memberships = await this.db.membership.findMany({
       where: { workspaceId: principal.workspaceId, id },
-      include: { user: { select: { id: true, name: true, email: true, updatedAt: true, memberships: { select: { workspaceId: true } } } }, roles: { include: { role: true } }, department: true },
+      include: { user: { select: { id: true, name: true, email: true, updatedAt: true, memberships: { select: { workspaceId: true } } } }, roles: { include: { role: true } }, department: true, supervisor: { include: { user: { select: { name: true } } } } },
       orderBy: { createdAt: 'desc' },
     });
     return memberships.map(m => ({ id: m.id, userId: m.userId, name: m.user.name, email: m.user.email,
       identityUpdatedAt: m.user.updatedAt.toISOString(), canEditIdentity: m.user.memberships.every(link => manageableWorkspaces.has(link.workspaceId)),
-      facilityId: m.facilityId, departmentId: m.departmentId, department: m.department, landingPage: m.landingPage, status: m.status, customerId: m.customerId, technicianId: m.technicianId, version: m.version,
+      facilityId: m.facilityId, departmentId: m.departmentId, department: m.department, jobTitle: m.jobTitle, supervisorMembershipId: m.supervisorMembershipId, supervisorName: m.supervisor?.user.name ?? null, landingPage: m.landingPage, status: m.status, customerId: m.customerId, technicianId: m.technicianId, version: m.version,
       roles: m.roles.map(grant => grant.role.code), createdAt: m.createdAt.toISOString() }));
   }
 
@@ -95,14 +97,30 @@ export class AccessService {
 
   async scopeOptions(principal: Principal) {
     await this.authorize(this.db, principal);
-    const [customers, technicians, departments, calendars, facilities] = await Promise.all([
+    const [customers, technicians, departments, calendars, facilities, supervisors] = await Promise.all([
       this.db.customer.findMany({ where: { workspaceId: principal.workspaceId }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
       this.db.technician.findMany({ where: { workspaceId: principal.workspaceId, isActive: true, archivedAt: null, OR: [{ facilityId: null }, { facilityId: { in: principal.facilityIds ?? [] } }] }, select: { id: true, code: true, name: true, membershipId: true }, orderBy: { name: 'asc' } }),
       this.db.department.findMany({ where: { workspaceId: principal.workspaceId, isActive: true, archivedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
       this.db.workCalendar.findMany({ where: { workspaceId: principal.workspaceId }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
       this.db.facility.findMany({ where: { workspaceId: principal.workspaceId, id: { in: principal.facilityIds ?? [] }, status: 'ACTIVE' }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
+      this.db.membership.findMany({ where: { workspaceId: principal.workspaceId, status: 'ACTIVE' }, select: { id: true, jobTitle: true, user: { select: { name: true } } }, orderBy: { createdAt: 'asc' } }),
     ]);
-    return { customers, technicians, departments, calendars, facilities };
+    return { customers, technicians, departments, calendars, facilities, supervisors: supervisors.map(m => ({ id: m.id, name: m.user.name, jobTitle: m.jobTitle })) };
+  }
+
+  private async validateSupervisor(tx: Tx, workspaceId: string, supervisorMembershipId: string | null | undefined, subjectMembershipId?: string) {
+    if (!supervisorMembershipId) return;
+    const visited = new Set(subjectMembershipId ? [subjectMembershipId] : []);
+    let currentId: string | null = supervisorMembershipId;
+    while (currentId) {
+      if (visited.has(currentId)) throw new BadRequestError('Supervisor reporting lines cannot contain a cycle or point to the same person');
+      visited.add(currentId);
+      const current: { id: string; supervisorMembershipId: string | null; status: string } | null = await tx.membership.findFirst({
+        where: { id: currentId, workspaceId }, select: { id: true, supervisorMembershipId: true, status: true },
+      });
+      if (!current || current.status !== 'ACTIVE') throw new BadRequestError('Choose an active supervisor membership in this workspace');
+      currentId = current.supervisorMembershipId;
+    }
   }
 
   private async resolveScope(tx: Tx, workspaceId: string, input: z.infer<typeof UpdateMembershipSchema> | z.infer<typeof CreateAccessUserSchema>, existingCodes: string[] = [], membershipId?: string) {
@@ -163,12 +181,13 @@ export class AccessService {
         await this.authorize(tx, principal);
         await this.validateFacility(tx, principal, input.facilityId);
         const roles = await this.resolveScope(tx, principal.workspaceId, input);
+        await this.validateSupervisor(tx, principal.workspaceId, input.supervisorMembershipId);
         if (await tx.user.findUnique({ where: { email: input.email } })) throw new ConflictError('An account with this email already exists. Existing account credentials cannot be changed here.');
         const technicianId = await this.createOnboardingTechnician(tx, principal, input, input.name);
         const user = await tx.user.create({ data: { name: input.name, email: input.email } });
         await tx.account.create({ data: { userId: user.id, providerId: 'credential', accountId: user.id, password: await hashPassword(input.password) } });
         const membership = await tx.membership.create({ data: { workspaceId: principal.workspaceId, userId: user.id,
-          departmentId: input.departmentId ?? null, landingPage: input.landingPage ?? null, customerId: input.customerId, technicianId, facilityId: input.facilityId ?? (technicianId ? (await tx.technician.findUnique({ where: { id: technicianId } }))?.facilityId : null) ?? principal.facilityId ?? (await ensureDefaultFacility(tx, principal.workspaceId)).id } });
+          departmentId: input.departmentId ?? null, jobTitle: input.jobTitle ?? null, supervisorMembershipId: input.supervisorMembershipId ?? null, landingPage: input.landingPage ?? null, customerId: input.customerId, technicianId, facilityId: input.facilityId ?? (technicianId ? (await tx.technician.findUnique({ where: { id: technicianId } }))?.facilityId : null) ?? principal.facilityId ?? (await ensureDefaultFacility(tx, principal.workspaceId)).id } });
         for (const role of roles) await tx.membershipRole.create({ data: { workspaceId: principal.workspaceId, membershipId: membership.id, roleId: role.id, grantedBy: principal.userId } });
         if (technicianId) await tx.technician.update({ where: { id: technicianId }, data: { membershipId: membership.id } });
         return { data: { membershipId: membership.id, userId: user.id, name: user.name, email: user.email }, aggregateType: 'MEMBERSHIP', aggregateId: membership.id,
@@ -212,7 +231,10 @@ export class AccessService {
         await tx.membershipRole.deleteMany({ where: { workspaceId: principal.workspaceId, membershipId: id } });
         await tx.technician.updateMany({ where: { workspaceId: principal.workspaceId, membershipId: id }, data: { membershipId: null } });
         if (technicianId) await tx.technician.update({ where: { id: technicianId }, data: { membershipId: id } });
-        await tx.membership.update({ where: { id }, data: { status: input.status, customerId: input.customerId, technicianId, departmentId: input.departmentId, landingPage: input.landingPage, facilityId: input.facilityId,
+        const nextJobTitle = input.jobTitle === undefined ? membership.jobTitle : input.jobTitle;
+        const nextSupervisorMembershipId = input.supervisorMembershipId === undefined ? membership.supervisorMembershipId : input.supervisorMembershipId;
+        await this.validateSupervisor(tx, principal.workspaceId, nextSupervisorMembershipId, id);
+        await tx.membership.update({ where: { id }, data: { status: input.status, customerId: input.customerId, technicianId, departmentId: input.departmentId, jobTitle: nextJobTitle, supervisorMembershipId: nextSupervisorMembershipId, landingPage: input.landingPage, facilityId: input.facilityId,
           version: { increment: 1 } } });
         for (const role of roles) await tx.membershipRole.create({ data: { workspaceId: principal.workspaceId, membershipId: id, roleId: role.id, grantedBy: principal.userId } });
         return { data: { id, status: input.status, name, email, reauthenticate: emailChanged && user.id === principal.userId }, aggregateType: 'MEMBERSHIP', aggregateId: id,

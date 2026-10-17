@@ -1,0 +1,1 @@
+ALTER TABLE "machines" ADD COLUMN "recovery_priority" INTEGER NOT NULL DEFAULT 100;

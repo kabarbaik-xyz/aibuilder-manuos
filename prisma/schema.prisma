@@ -100,6 +100,8 @@ model Workspace {
   name        String
   timezone    String       @default("Asia/Jakarta")
   currency    String       @default("IDR")
+  maxOvertimeMinutesPerDay  Int @default(240) @map("max_overtime_minutes_per_day")
+  maxOvertimeMinutesPerWeek Int @default(1200) @map("max_overtime_minutes_per_week")
   revision    Int          @default(1)
   isDemo      Boolean      @default(false) @map("is_demo")
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -200,6 +202,10 @@ model Membership {
   technicianId String?          @map("technician_id")
   departmentId String? @map("department_id")
   department Department? @relation(fields: [workspaceId, departmentId], references: [workspaceId, id])
+  jobTitle String? @map("job_title")
+  supervisorMembershipId String? @map("supervisor_membership_id")
+  supervisor Membership? @relation("MembershipSupervisor", fields: [supervisorMembershipId], references: [id], onDelete: NoAction)
+  directReports Membership[] @relation("MembershipSupervisor")
   landingPage String? @map("landing_page")
   notificationPreferencesJson String @default("{}") @map("notification_preferences_json")
   version      Int              @default(1)
@@ -212,6 +218,8 @@ model Membership {
   facilityId   String?          @map("facility_id")
   facility     Facility?        @relation(fields: [workspaceId, facilityId], references: [workspaceId, id])
   facilityGrants MembershipFacilityGrant[]
+  overtimeApprovalIntervals RosterInterval[]
+  recoveryApprovals RecoveryProposal[]
   roles        MembershipRole[]
 
   @@unique([workspaceId, userId])
@@ -611,6 +619,8 @@ model Machine {
   facilityId     String?       @map("facility_id")
   facility       Facility?     @relation(fields: [workspaceId, facilityId], references: [workspaceId, id])
   status         String        @default("AVAILABLE") // AVAILABLE | MAINTENANCE | OFFLINE
+  hourlyRateCents Int? @map("hourly_rate_cents")
+  recoveryPriority Int @default(100) @map("recovery_priority")
   capacityUnits  Int           @default(1) @map("capacity_units")
   capabilitiesJson String      @default("[]") @map("capabilities_json")
   downtimes      MachineDowntime[]
@@ -1845,6 +1855,7 @@ model RecoveryProposal {
   proposalJson    String   @map("proposal_json")
   status          String   @default("PROPOSED") // PROPOSED | APPROVED | REJECTED | SUPERSEDED
   proposedById    String?  @map("proposed_by_id")
+  approverMembershipId String? @map("approver_membership_id")
   resolvedOptionId String? @map("resolved_option_id")
   resolvedById    String?  @map("resolved_by_id")
   resolvedAt      DateTime? @map("resolved_at")
@@ -1854,6 +1865,7 @@ model RecoveryProposal {
 
   workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   order           Order     @relation(fields: [workspaceId, orderId], references: [workspaceId, id], onDelete: Cascade)
+  approverMembership Membership? @relation(fields: [approverMembershipId], references: [id], onDelete: NoAction)
 
   @@unique([workspaceId, id])
   @@index([workspaceId, orderId, status])
@@ -2328,6 +2340,8 @@ model RosterInterval {
   status             String         @default("PUBLISHED") // DRAFT | PUBLISHED | CANCELLED
   breakIntervalsJson String         @default("[]") @map("break_intervals_json")
   notes              String?
+  approverMembershipId String? @map("approver_membership_id")
+  approverMembership Membership? @relation(fields: [approverMembershipId], references: [id], onDelete: NoAction)
   version            Int            @default(1)
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
@@ -2343,6 +2357,29 @@ model RosterInterval {
   @@map("roster_intervals")
 }
 
+model ShiftSwapRequest {
+  id String @id @default(uuid())
+  workspaceId String @map("workspace_id")
+  sourceRosterId String @map("source_roster_id")
+  targetRosterId String @map("target_roster_id")
+  sourceTechnicianId String @map("source_technician_id")
+  targetTechnicianId String @map("target_technician_id")
+  status String @default("PENDING")
+  reason String
+  snapshotJson String @map("snapshot_json")
+  snapshotHash String @map("snapshot_hash")
+  requestedById String @map("requested_by_id")
+  decidedById String? @map("decided_by_id")
+  decisionNote String? @map("decision_note")
+  decidedAt DateTime? @map("decided_at")
+  version Int @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, id])
+  @@index([workspaceId, status])
+  @@map("shift_swap_requests")
+}
 
 model TaskIssue {
   id                    String       @id @default(uuid())
@@ -2611,30 +2648,6 @@ model CommunicationConsent {
   @@unique([workspaceId, id])
   @@unique([workspaceId, recipient, channel])
   @@map("communication_consents")
-}
-
-model ShiftSwapRequest {
-  id String @id @default(uuid())
-  workspaceId String @map("workspace_id")
-  sourceRosterId String @map("source_roster_id")
-  targetRosterId String @map("target_roster_id")
-  sourceTechnicianId String @map("source_technician_id")
-  targetTechnicianId String @map("target_technician_id")
-  status String @default("PENDING")
-  reason String
-  snapshotJson String @map("snapshot_json")
-  snapshotHash String @map("snapshot_hash")
-  requestedById String @map("requested_by_id")
-  decidedById String? @map("decided_by_id")
-  decisionNote String? @map("decision_note")
-  decidedAt DateTime? @map("decided_at")
-  version Int @default(1)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  @@unique([workspaceId, id])
-  @@index([workspaceId, status])
-  @@map("shift_swap_requests")
 }
 
 model AssistantChatEntry {

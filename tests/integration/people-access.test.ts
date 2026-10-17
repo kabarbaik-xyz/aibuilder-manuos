@@ -61,6 +61,18 @@ describe('Connected People & Access', () => {
   const roles=(await service.listRoles(fixture.alpha.users.admin.principal)).filter(r=>r.code==='SALES');
   expect(getLandingPage(roles.flatMap(r=>r.permissions),['SALES'],null,'/quality/inspections')).toBe('/orders');
  });
+ it('routes organizational approval through an active same-workspace supervisor and prevents cycles',async()=>{
+  const admin=fixture.alpha.users.admin.principal;
+  const supervisor=await service.createUser(admin,{name:'Shift Supervisor',email:'shift-supervisor@people.test',password,roleCodes:['PLANNER'],departmentId:fixture.alpha.masters.departmentId},key());
+  const operator=await service.createUser(admin,{name:'Shift Operator',email:'shift-operator@people.test',password,roleCodes:['TECHNICIAN'],departmentId:fixture.alpha.masters.departmentId,newTechnician:{code:'SUPERVISED-OP'}},key());
+  const supervisorUser=(await service.listUsers(admin,supervisor.data.membershipId))[0];
+  const operatorUser=(await service.listUsers(admin,operator.data.membershipId))[0];
+  await service.updateMembership(admin,operatorUser.id,{roleCodes:operatorUser.roles,status:'ACTIVE',expectedVersion:operatorUser.version,departmentId:operatorUser.departmentId,technicianId:operatorUser.technicianId,jobTitle:'CNC Operator',supervisorMembershipId:supervisorUser.id},key());
+  const updated=(await service.listUsers(admin,operatorUser.id))[0];
+  expect(updated.jobTitle).toBe('CNC Operator');expect(updated.supervisorMembershipId).toBe(supervisorUser.id);expect(updated.supervisorName).toBe('Shift Supervisor');
+  await expect(service.updateMembership(admin,supervisorUser.id,{roleCodes:supervisorUser.roles,status:'ACTIVE',expectedVersion:supervisorUser.version,supervisorMembershipId:operatorUser.id},key())).rejects.toThrow(/cycle|supervisor/i);
+  await expect(service.updateMembership(admin,operatorUser.id,{roleCodes:updated.roles,status:'ACTIVE',expectedVersion:updated.version,technicianId:updated.technicianId,supervisorMembershipId:operatorUser.id},key())).rejects.toThrow(/self|supervisor/i);
+ });
  it('shows real calendar, roster and assignment evidence separately with workspace/facility guards',async()=>{
   const start=new Date('2026-10-20T00:00:00Z');const end=new Date('2026-10-22T00:00:00Z');
   const input={intervals:[{technicianId:fixture.alpha.masters.technicianId,intervalType:'SHIFT' as const,startAt:'2026-10-20T08:00:00Z',endAt:'2026-10-20T16:00:00Z'}]};

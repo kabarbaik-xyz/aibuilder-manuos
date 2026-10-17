@@ -29,6 +29,9 @@ type RecoveryListItem = {
   createdAt: string;
   resolvedAt: string | null;
   resolutionNote: string | null;
+  approverName: string | null;
+  approverJobTitle: string | null;
+  isCurrentApprover: boolean;
   proposal: RecoveryProposalDTO | null;
 };
 
@@ -44,6 +47,7 @@ function parseSavedProposal(value: string): RecoveryProposalDTO | null {
       instanceId: z.string(), workflowVersionId: z.string(), engineeringRevisionId: z.string(),
       facilityId: z.string().nullable(), facilityTimezone: z.string().nullable(), horizonStart: z.string(), horizonEnd: z.string(),
       evaluatedAt: z.string(), projectedEndAt: z.string(),
+      machineCostEstimate: z.object({ status: z.enum(['COMPLETE', 'PARTIAL', 'NOT_AVAILABLE']), currency: z.string(), totalMinorUnits: z.number().int().nullable(), pricedTaskCount: z.number().int(), unpricedTaskCount: z.number().int() }).optional(),
       taskVersions: z.array(z.object({ taskId: z.string(), version: z.number().int() })),
       tasks: z.array(z.object({
         taskId: z.string(), version: z.number().int(), nodeKey: z.string(), startAt: z.string().nullable(), endAt: z.string().nullable(),
@@ -126,6 +130,29 @@ export class RecoveryService {
       return { state: 'NOT_CONNECTED', scheduleState: schedule.state, missingInputs };
     }
 
+    const scheduledMachineIds = [...new Set(schedule.tasks.flatMap(task => task.machineId ? [task.machineId] : []))];
+    const [costedMachines, workspace] = await Promise.all([
+      scheduledMachineIds.length ? this.db.machine.findMany({ where: { workspaceId: principal.workspaceId, id: { in: scheduledMachineIds } }, select: { id: true, hourlyRateCents: true } }) : Promise.resolve([]),
+      this.db.workspace.findUnique({ where: { id: principal.workspaceId }, select: { currency: true } }),
+    ]);
+    const machineRates = new Map(costedMachines.map(machine => [machine.id, machine.hourlyRateCents]));
+    let costTotal = 0n;
+    let pricedTaskCount = 0;
+    let unpricedTaskCount = 0;
+    for (const task of schedule.tasks) {
+      if (!task.machineId) continue;
+      const rate = machineRates.get(task.machineId);
+      const durationMs = task.startAt && task.endAt ? BigInt(new Date(task.endAt).getTime() - new Date(task.startAt).getTime()) : 0n;
+      if (rate === null || rate === undefined || durationMs <= 0n) { unpricedTaskCount += 1; continue; }
+      costTotal += (BigInt(rate) * durationMs + 3_600_000n - 1n) / 3_600_000n;
+      pricedTaskCount += 1;
+    }
+    const totalMinorUnits = costTotal <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(costTotal) : null;
+    const machineCostEstimate = {
+      status: !pricedTaskCount && !unpricedTaskCount ? 'NOT_AVAILABLE' as const : unpricedTaskCount || totalMinorUnits === null ? 'PARTIAL' as const : 'COMPLETE' as const,
+      currency: workspace?.currency ?? 'UNKNOWN', totalMinorUnits, pricedTaskCount, unpricedTaskCount,
+    };
+
     const proposalId = crypto.randomUUID();
     const proposal: RecoveryProposalDTO = {
       id: proposalId,
@@ -145,6 +172,7 @@ export class RecoveryService {
         horizonEnd: schedule.scope.horizonEnd,
         evaluatedAt: schedule.evaluatedAt,
         projectedEndAt: schedule.projectedEndAt,
+        machineCostEstimate,
         taskVersions: schedule.tasks.map(({ taskId, version }) => ({ taskId, version })),
         tasks: schedule.tasks.map((task) => ({
           taskId: task.taskId, version: task.version, nodeKey: task.nodeKey,
@@ -169,6 +197,18 @@ export class RecoveryService {
       payload: input,
       prismaClient: this.db,
       handler: async (tx: Prisma.TransactionClient) => {
+        const requester = await tx.membership.findFirst({
+          where: { id: principal.membershipId, userId: principal.userId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+          select: { supervisorMembershipId: true },
+        });
+        if (!requester?.supervisorMembershipId) {
+          throw new BadRequestError('Assign an active direct supervisor in People & Access before submitting a Recovery schedule for approval.');
+        }
+        const approver = await tx.membership.findFirst({
+          where: { id: requester.supervisorMembershipId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+          select: { id: true },
+        });
+        if (!approver) throw new ConflictError('The assigned supervisor is no longer active. Update the reporting line before submitting Recovery.', 'APPROVER_UNAVAILABLE', true);
         const order = await tx.order.findFirst({
           where: { workspaceId: principal.workspaceId, id: input.orderId },
           select: { version: true },
@@ -186,12 +226,12 @@ export class RecoveryService {
         await tx.recoveryProposal.create({
           data: {
             id: proposalId, workspaceId: principal.workspaceId, orderId: input.orderId,
-            orderVersion: order.version, proposedById: principal.userId, proposalJson: JSON.stringify(proposal),
+            orderVersion: order.version, proposedById: principal.userId, approverMembershipId: approver.id, proposalJson: JSON.stringify(proposal),
           },
         });
         return {
           data: proposal, aggregateType: 'RECOVERY_PROPOSAL', aggregateId: proposalId, resourceVersion: 1,
-          auditDetails: { mode: 'SCHEDULE_REVIEW', instanceId: input.instanceId, taskCount: taskVersions.length, scheduleState: schedule.state },
+          auditDetails: { mode: 'SCHEDULE_REVIEW', instanceId: input.instanceId, taskCount: taskVersions.length, scheduleState: schedule.state, machineCostEstimate },
         };
       },
     });
@@ -211,7 +251,7 @@ export class RecoveryService {
     const [rows, total] = await Promise.all([
       this.db.recoveryProposal.findMany({
         where,
-        include: { order: { select: { id: true, orderNumber: true, status: true } } },
+        include: { order: { select: { id: true, orderNumber: true, status: true } }, approverMembership: { include: { user: { select: { name: true } } } } },
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -228,6 +268,9 @@ export class RecoveryService {
       createdAt: row.createdAt.toISOString(),
       resolvedAt: row.resolvedAt?.toISOString() ?? null,
       resolutionNote: row.resolutionNote,
+      approverName: row.approverMembership?.user.name ?? null,
+      approverJobTitle: row.approverMembership?.jobTitle ?? null,
+      isCurrentApprover: row.approverMembershipId === principal.membershipId,
       proposal: parseSavedProposal(row.proposalJson),
     }));
     return { items, page: query.page, pageSize: query.pageSize, total, pageCount: Math.ceil(total / query.pageSize) };
@@ -237,7 +280,7 @@ export class RecoveryService {
     requireAnyPermission(principal, ['planning.read', 'planning.write', 'task.assign', 'order.read']);
     const row = await this.db.recoveryProposal.findFirst({
       where: { id: proposalId, workspaceId: principal.workspaceId },
-      include: { order: { select: { id: true, orderNumber: true, status: true } } },
+      include: { order: { select: { id: true, orderNumber: true, status: true } }, approverMembership: { include: { user: { select: { name: true } } } } },
     });
     if (!row) throw new NotFoundError(`Recovery proposal '${proposalId}' not found`);
     return {
@@ -250,6 +293,9 @@ export class RecoveryService {
       createdAt: row.createdAt.toISOString(),
       resolvedAt: row.resolvedAt?.toISOString() ?? null,
       resolutionNote: row.resolutionNote,
+      approverName: row.approverMembership?.user.name ?? null,
+      approverJobTitle: row.approverMembership?.jobTitle ?? null,
+      isCurrentApprover: row.approverMembershipId === principal.membershipId,
       proposal: parseSavedProposal(row.proposalJson),
     };
   }
@@ -332,6 +378,11 @@ export class RecoveryService {
         if (!row) throw new NotFoundError(`Recovery proposal '${proposalId}' not found`);
         const grantedFacilityIds = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
         if (row.order.facilityId && !grantedFacilityIds.includes(row.order.facilityId)) throw new NotFoundError(`Recovery proposal '${proposalId}' not found`);
+        if (!row.approverMembershipId || row.approverMembershipId !== principal.membershipId) {
+          throw new BadRequestError('Only the direct supervisor captured when this Recovery proposal was submitted can approve it.');
+        }
+        const approver = await tx.membership.findFirst({ where: { id: row.approverMembershipId, userId: principal.userId, workspaceId: principal.workspaceId, status: 'ACTIVE' }, select: { id: true } });
+        if (!approver) throw new NotFoundError(`Recovery proposal '${proposalId}' not found`);
         if (row.status !== 'PROPOSED') throw new BadRequestError('Only an open recovery proposal can be applied.');
         if (row.order.status === 'DELIVERED' || row.order.status === 'CANCELLED') throw new BadRequestError(`Cannot apply recovery for order in status ${row.order.status}.`);
         if (row.order.version !== row.orderVersion) throw new ConflictError('The order changed after this schedule was reviewed. Generate a fresh proposal.', 'STALE_VERSION', true);
@@ -690,6 +741,14 @@ export class RecoveryService {
             `Recovery proposal '${proposal.id}' is already ${proposal.status.toLowerCase()}`
           );
         }
+        if (!proposal.approverMembershipId || proposal.approverMembershipId !== principal.membershipId) {
+          throw new BadRequestError('Only the direct supervisor captured when this Recovery proposal was submitted can reject it.');
+        }
+        const activeApprover = await tx.membership.findFirst({
+          where: { id: proposal.approverMembershipId, userId: principal.userId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+          select: { id: true },
+        });
+        if (!activeApprover) throw new NotFoundError(`Recovery proposal '${input.proposalId}' not found`);
         const updated = await tx.recoveryProposal.update({
           where: { id: proposal.id },
           data: {

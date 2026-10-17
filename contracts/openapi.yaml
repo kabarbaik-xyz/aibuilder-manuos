@@ -264,7 +264,7 @@ paths:
   /api/intelligence/recovery/propose:
     post:
       summary: Save a finite-capacity schedule review for disruption recovery
-      description: Runs the same schedule proposal service used by Planning. Only COMPLETE proposals are saved, through an idempotent audited command that rechecks order and task versions. Partial results return NOT_CONNECTED without persistence. The saved resource IDs are the reviewed assignment inputs for the separate transactional apply command.
+      description: Runs the same schedule proposal service used by Planning. Only COMPLETE proposals are saved, through an idempotent audited command that rechecks order and task versions. The requester's active direct supervisor is captured as the approver; People & Access must have that reporting line configured. The schedule includes a machine-cost estimate only from configured integer minor-unit hourly rates; unknown rates produce PARTIAL or NOT_AVAILABLE rather than zero. Partial schedule results return NOT_CONNECTED without persistence. The saved resource IDs are the reviewed assignment inputs for the separate transactional apply command.
       parameters:
         - $ref: '#/components/parameters/AccessIdempotency'
       requestBody:
@@ -331,8 +331,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
   /api/intelligence/recovery/{id}/apply:
     post:
-      summary: Apply a reviewed finite-capacity recovery schedule
-      description: In one audited idempotent transaction, rechecks the saved order, facility, active job, workflow and engineering revision, task versions/status, dependencies, issued or fully reserved material, qualifications and published resource availability. It claims the open proposal with a conditional PROPOSED-to-APPLYING update before writing assignments, confirmed bookings and workflow events, then resolves it. Any stale or infeasible task aborts the whole transaction, including the claim. Historical simulation proposals and old snapshots without resource IDs cannot be applied.
+      summary: Approve and apply a reviewed finite-capacity recovery schedule
+      description: Only the direct supervisor membership captured when the proposal was submitted may approve. In one audited idempotent transaction, rechecks the saved order, facility, active job, workflow and engineering revision, task versions/status, dependencies, issued or fully reserved material, qualifications and published resource availability. It claims the open proposal with a conditional PROPOSED-to-APPLYING update before writing assignments, confirmed bookings and workflow events, then resolves it. Any stale or infeasible task aborts the whole transaction, including the claim. Historical simulation proposals and old snapshots without resource IDs cannot be applied.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - $ref: '#/components/parameters/AccessIdempotency'
@@ -881,6 +881,18 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /api/inventory/movement-options:
+    get:
+      summary: Named material requirements and source stock for movement forms
+      description: Requires inventory.read plus inventory.issue for issue/return or inventory.transfer for transfer. Requirements are scoped to granted order facilities and the current workspace. Stock lots are scoped to workspace, item and source location. Quantities are formatted strings with raw atoms serialized as strings; truncated is explicit at500 requirements or200 buckets.
+      parameters:
+        - { in: query, name: mode, required: true, schema: { type: string, enum: [issue, return, transfer] } }
+        - { in: query, name: itemId, schema: { type: string, format: uuid } }
+        - { in: query, name: locationId, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Data containing named demands and positive source stock buckets }
+        '401': { description: Authentication required }
+        '403': { description: Required inventory permission missing }
   /api/ai/brain-qa:
     get:
       summary: Restore the current member's last 20 assistant exchanges
@@ -2524,6 +2536,70 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/resources/machines:
+    get:
+      summary: List workspace machines
+      description: Machine read models include nullable hourlyRateCents; null means no verified hourly rate is configured and cost comparisons must remain unavailable.
+      responses:
+        '200': { description: Envelope containing workspace-scoped machine records }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a machine and optional hourly cost
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code, name, machineClassId]
+              properties:
+                code: { type: string, minLength: 1, maxLength: 50 }
+                name: { type: string, minLength: 1, maxLength: 100 }
+                machineClassId: { type: string }
+                departmentId: { type: string, nullable: true }
+                calendarId: { type: string, nullable: true }
+                facilityId: { type: string, nullable: true }
+                status: { type: string, enum: [AVAILABLE, MAINTENANCE, OFFLINE], default: AVAILABLE }
+                hourlyRateCents: { type: integer, minimum: 0, nullable: true, description: Integer cents per operating hour; null means unknown, not zero cost. }
+                recoveryPriority: { type: integer, minimum: 0, maximum: 10000, default: 100, description: Lower values break ties between equally available capable machines; they never override capability or availability. }
+      responses:
+        '201': { description: Created machine }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Duplicate machine code or idempotency payload conflict }
+
+  /api/resources/catalog/{resource}/{id}:
+    patch:
+      summary: Update a versioned workspace catalog record
+      description: For resource=machines, hourlyRateCents is an optional non-negative integer in cents per machine hour; null preserves an explicitly unknown rate.
+      parameters:
+        - { name: resource, in: path, required: true, schema: { type: string, enum: [departments, calendars, machines, technicians, skills, certifications, uoms, qc-checklists] } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                name: { type: string }
+                status: { type: string, enum: [AVAILABLE, MAINTENANCE, OFFLINE] }
+                hourlyRateCents: { type: integer, minimum: 0, nullable: true }
+                recoveryPriority: { type: integer, minimum: 0, maximum: 10000 }
+      responses:
+        '200': { description: Updated catalog record }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/machines/{id}/downtimes:
     get:
       summary: List machine downtimes
@@ -2653,6 +2729,65 @@ paths:
       responses:
         '201': { description: 'Created definition; edit/archive use existing resources/catalog/certifications/{id} commands' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/roster/shift-swaps:
+    get:
+      summary: List a technician's shift swaps and optionally candidate shifts
+      description: Requires live resource.manage or planning.write. Workspace and facility grants apply. Latest 50 requests; up to 200 candidate published shifts within 31 days, same effective facility.
+      parameters:
+        - { name: technicianId, in: query, required: true, schema: { type: string } }
+        - { name: sourceId, in: query, schema: { type: string } }
+      responses:
+        '200': { description: 'data contains requests, candidates and truncated.' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Request a versioned shift swap without changing the schedule
+      description: Manager workflow. Stores exact shift, technician and contained confirmed-booking snapshot. Only future published SHIFT intervals for different active technicians in one facility. Running or partially contained work is rejected.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sourceRosterId, targetRosterId, sourceVersion, targetVersion, reason]
+              properties:
+                sourceRosterId: { type: string, format: uuid }
+                targetRosterId: { type: string, format: uuid }
+                sourceVersion: { type: integer, minimum: 1 }
+                targetVersion: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        '201': { description: Pending request; no shifts or work moved }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Stale shift or existing pending swap }
+  /api/roster/shift-swaps/{id}:
+    patch:
+      summary: Approve and atomically swap shifts/work, or reject without changes
+      description: Uses live roster-management grants. Approval rejects stale snapshots and revalidates incoming availability, qualifications, facility scope and conservative gross UTC weekly working limits. Transfers contained technician task assignments/bookings, leaves machine bookings and physical inventory unchanged, appends workflow/audit history and in-app notifications. Any failure rolls back every write. Self-approval by a roster manager is allowed; no employee self-service consent or supervisor hierarchy is implied.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, decision]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                decision: { type: string, enum: [APPROVE, REJECT] }
+                note: { type: string, maxLength: 500, description: 'At least 3 characters required for rejection.' }
+      responses:
+        '200': { description: 'data contains id, status, version and movedTasks.' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Already decided, stale version or snapshot }
 
   /api/roster/intervals:
     get:
@@ -2830,7 +2965,7 @@ paths:
   /api/planning/overtime/request:
     post:
       summary: Request technician overtime interval
-      description: Submits a draft overtime request subject to daily safety limits (<= 8 hours) and supervisor approval.
+      description: Submits a draft overtime request routed to the technician membership's active direct supervisor. Workspace-configurable limits default to 240 minutes per local day and 1,200 minutes per local Monday-through-Sunday week; existing draft and published overtime counts toward the limits.
       parameters:
         - $ref: "#/components/parameters/AccessIdempotency"
       requestBody:
@@ -2856,7 +2991,7 @@ paths:
   /api/planning/overtime/{id}/approve:
     post:
       summary: Approve requested technician overtime
-      description: Promotes draft overtime interval to PUBLISHED, making it available for production scheduling.
+      description: Only the direct supervisor membership captured when requested can approve. Rechecks workspace daily and weekly limits in the approval transaction, then promotes the interval to PUBLISHED for production scheduling.
       parameters:
         - in: path
           name: id
@@ -2869,6 +3004,46 @@ paths:
         '400': { $ref: "#/components/responses/BadRequest" }
         '401': { $ref: "#/components/responses/Unauthorized" }
         '404': { $ref: "#/components/responses/NotFound" }
+
+  /api/planning/overtime/approvals:
+    get:
+      summary: List overtime requests assigned to the authenticated supervisor
+      description: Returns active DRAFT overtime intervals whose captured approver membership is the current principal membership.
+      responses:
+        '200': { description: Pending overtime approval entries with technician and interval evidence }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/settings/workforce-policy:
+    get:
+      summary: Read workspace overtime limits
+      responses:
+        '200': { description: Workspace revision, timezone, daily and weekly overtime limits in hours }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      summary: Update workspace overtime limits
+      description: Requires resource.manage, workspace.admin or owner; revisions and idempotency are checked transactionally. Limits are integer hours per local day and local Monday-through-Sunday week.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision, maxOvertimeHoursPerDay, maxOvertimeHoursPerWeek]
+              properties:
+                expectedRevision: { type: integer, minimum: 1 }
+                maxOvertimeHoursPerDay: { type: integer, minimum: 0, maximum: 24 }
+                maxOvertimeHoursPerWeek: { type: integer, minimum: 0, maximum: 168 }
+      responses:
+        '200': { description: Updated overtime policy and workspace revision }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Workspace policy changed since it was read }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/documents/upload:
     post:
@@ -3092,80 +3267,6 @@ paths:
         '400': { description: Over-receipt, invalid demand split, or unavailable reservation balance }
         '403': { description: Principal lacks inventory receive permission }
 
-  /api/roster/shift-swaps:
-    get:
-      summary: List a technician's shift swaps and optionally candidate shifts
-      description: Requires live resource.manage or planning.write. Workspace and facility grants apply. Latest 50 requests; up to 200 candidate published shifts within 31 days, same effective facility.
-      parameters:
-        - { name: technicianId, in: query, required: true, schema: { type: string } }
-        - { name: sourceId, in: query, schema: { type: string } }
-      responses:
-        '200': { description: 'data contains requests, candidates and truncated.' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-    post:
-      summary: Request a versioned shift swap without changing the schedule
-      description: Manager workflow. Stores exact shift, technician and contained confirmed-booking snapshot. Only future published SHIFT intervals for different active technicians in one facility. Running or partially contained work is rejected.
-      parameters:
-        - $ref: '#/components/parameters/AccessIdempotency'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [sourceRosterId, targetRosterId, sourceVersion, targetVersion, reason]
-              properties:
-                sourceRosterId: { type: string, format: uuid }
-                targetRosterId: { type: string, format: uuid }
-                sourceVersion: { type: integer, minimum: 1 }
-                targetVersion: { type: integer, minimum: 1 }
-                reason: { type: string, minLength: 3, maxLength: 500 }
-      responses:
-        '201': { description: Pending request; no shifts or work moved }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { description: Stale shift or existing pending swap }
-
-  /api/roster/shift-swaps/{id}:
-    patch:
-      summary: Approve and atomically swap shifts/work, or reject without changes
-      description: Uses live roster-management grants. Approval rejects stale snapshots and revalidates incoming availability, qualifications, facility scope and conservative gross UTC weekly working limits. Transfers contained technician task assignments/bookings, leaves machine bookings and physical inventory unchanged, appends workflow/audit history and in-app notifications. Any failure rolls back every write. Self-approval by a roster manager is allowed; no employee self-service consent or supervisor hierarchy is implied.
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-        - $ref: '#/components/parameters/AccessIdempotency'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [expectedVersion, decision]
-              properties:
-                expectedVersion: { type: integer, minimum: 1 }
-                decision: { type: string, enum: [APPROVE, REJECT] }
-                note: { type: string, maxLength: 500, description: 'At least 3 characters required for rejection.' }
-      responses:
-        '200': { description: 'data contains id, status, version and movedTasks.' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { description: Already decided, stale version or snapshot }
-
-
-  /api/inventory/movement-options:
-    get:
-      summary: Named material requirements and source stock for movement forms
-      description: Requires inventory.read plus inventory.issue for issue/return or inventory.transfer for transfer. Requirements are scoped to granted order facilities and the current workspace. Stock lots are scoped to workspace, item and source location. Quantities are formatted strings with raw atoms serialized as strings; truncated is explicit at500 requirements or200 buckets.
-      parameters:
-        - { in: query, name: mode, required: true, schema: { type: string, enum: [issue, return, transfer] } }
-        - { in: query, name: itemId, schema: { type: string, format: uuid } }
-        - { in: query, name: locationId, schema: { type: string, format: uuid } }
-      responses:
-        '200': { description: Data containing named demands and positive source stock buckets }
-        '401': { description: Authentication required }
-        '403': { description: Required inventory permission missing }
-
 components:
   parameters:
     AccessIdempotency:
@@ -3231,6 +3332,8 @@ components:
         customerId: { type: string, nullable: true, description: 'Required for CUSTOMER; only CUSTOMER role may be assigned to a customer-scoped membership.' }
         technicianId: { type: string, nullable: true, description: 'Required for TECHNICIAN unless newTechnician is supplied; must be active, within granted facilities and not already linked. Mutually exclusive with customer scope and newTechnician.' }
         departmentId: { type: string, nullable: true, description: 'Organizational department in the same workspace. Does not grant or imply department data isolation.' }
+        jobTitle: { type: string, nullable: true, maxLength: 120, description: 'Optional organizational title for approval routing and display.' }
+        supervisorMembershipId: { type: string, nullable: true, description: 'Active direct supervisor membership in the same workspace. Reporting chains cannot contain cycles.' }
         facilityId: { type: string, nullable: true, description: 'Primary facility, restricted to the administering principal granted active facilities. Omit to retain current/default. Additional existing grants remain separate.' }
         landingPage: { type: string, nullable: true, description: 'Preferred workspace menu path; must be visible for combined selected active roles. Null uses persona default. Rechecked at login against current grants.' }
         newTechnician:
