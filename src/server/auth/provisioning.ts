@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { hashPassword } from 'better-auth/crypto';
 import { db as defaultDb } from '@/server/db/client';
+import { ensureDefaultFacility } from '@/server/db/default-facility';
 import { BadRequestError, NotFoundError } from '@/domain/errors';
 import { assertNotLastAccessAdmin } from './policy';
 
@@ -75,6 +76,11 @@ export async function provisionUser(
     }
   }
 
+  // Every membership is scoped to a facility so facility-scoped planning and
+  // execution reads resolve (an empty scope denies all tasks). The default
+  // facility mirrors the upgrade migration's backfill.
+  const defaultFacility = await ensureDefaultFacility(client, workspace.id);
+
   // Check existing membership
   let membership = await client.membership.findUnique({
     where: {
@@ -93,6 +99,7 @@ export async function provisionUser(
         status: 'ACTIVE',
         customerId: input.customerId || null,
         technicianId: input.technicianId || null,
+        facilityId: defaultFacility.id,
       },
     });
   } else {
@@ -103,6 +110,8 @@ export async function provisionUser(
         status: 'ACTIVE',
         customerId: input.customerId !== undefined ? input.customerId : membership.customerId,
         technicianId: input.technicianId !== undefined ? input.technicianId : membership.technicianId,
+        // Backfill a facility scope for memberships created before scoping existed.
+        ...(membership.facilityId ? {} : { facilityId: defaultFacility.id }),
       },
     });
   }

@@ -4,6 +4,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { Principal } from '@/server/auth/principal';
 import { requirePermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
+import { ensureDefaultFacility } from '@/server/db/default-facility';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@/domain/errors';
 
 const grants = z.array(z.string().trim().min(1)).min(1).max(200).transform(values => [...new Set(values)]);
@@ -129,7 +130,7 @@ export class AccessService {
         const user = await tx.user.create({ data: { name: input.name, email: input.email } });
         await tx.account.create({ data: { userId: user.id, providerId: 'credential', accountId: user.id, password: await hashPassword(input.password) } });
         const membership = await tx.membership.create({ data: { workspaceId: principal.workspaceId, userId: user.id,
-          customerId: input.customerId, technicianId: input.technicianId } });
+          customerId: input.customerId, technicianId: input.technicianId, facilityId: (await ensureDefaultFacility(tx, principal.workspaceId)).id } });
         for (const role of roles) await tx.membershipRole.create({ data: { workspaceId: principal.workspaceId, membershipId: membership.id, roleId: role.id, grantedBy: principal.userId } });
         if (input.technicianId) await tx.technician.update({ where: { id: input.technicianId }, data: { membershipId: membership.id } });
         return { data: { membershipId: membership.id, userId: user.id, name: user.name, email: user.email }, aggregateType: 'MEMBERSHIP', aggregateId: membership.id,

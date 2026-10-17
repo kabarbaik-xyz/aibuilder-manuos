@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
+import { ensureDefaultFacility } from '../src/server/db/default-facility';
 
 const prisma = new PrismaClient();
 
@@ -98,6 +99,12 @@ export async function seedPermissionsAndRoles(db: PrismaClient, workspaceId?: st
       });
     }
   }
+
+  // 5. Guarantee the workspace default operating site. Facility-scoped reads in
+  // planning and execution deny members without a facility scope, so workspace
+  // initialisation must own the same default facility the upgrade migration
+  // backfills (see ensureDefaultFacility).
+  await ensureDefaultFacility(db, targetWorkspaceId);
 
   return { workspaceId: targetWorkspaceId, rolesCount: matrix.roles.length };
 }

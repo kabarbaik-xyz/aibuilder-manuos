@@ -7,6 +7,7 @@ import { seedPermissionsAndRoles } from '../prisma/seed';
 import { provisionUser } from '../src/server/auth/provisioning';
 import type { Principal } from '../src/server/auth/principal';
 import { configurePrismaSqlite } from '../src/server/db/client';
+import { ensureDefaultFacility } from '../src/server/db/default-facility';
 import { MastersService } from '../src/server/modules/masters/service';
 import { OrderService } from '../src/server/modules/orders/service';
 import { EngineeringService } from '../src/server/modules/engineering/service';
@@ -54,7 +55,13 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
   }
   const membership = await db.membership.findUnique({ where: { workspaceId_userId: { workspaceId: workspace.id, userId: actor.id } }, include: { roles: { include: { role: { include: { permissions: true } } } } } });
   if (!membership || membership.status !== 'ACTIVE') throw new Error('Demo seed actor is not an active workspace member');
-  const principal: Principal = { userId: actor.id, email: actor.email, name: actor.name, membershipId: membership.id, workspaceId: workspace.id, workspaceName: workspace.name, roles: membership.roles.map(r => r.role.code), permissions: new Set(membership.roles.filter(r => r.role.isActive).flatMap(r => r.role.permissions.map(p => p.permissionCode))), customerId: null, technicianId: null };
+  // Uphold the facility-scope invariant for the seeded workspace and its members
+  // (mirrors the facility_scope migration backfill). Facility-scoped planning and
+  // execution reads deny members without a facility scope, so an unscoped demo
+  // actor could not assign, start, or record output for any task.
+  const defaultFacility = await ensureDefaultFacility(db, workspace.id);
+  await db.membership.updateMany({ where: { workspaceId: workspace.id, facilityId: null }, data: { facilityId: defaultFacility.id } });
+  const principal: Principal = { userId: actor.id, email: actor.email, name: actor.name, membershipId: membership.id, workspaceId: workspace.id, workspaceName: workspace.name, roles: membership.roles.map(r => r.role.code), permissions: new Set(membership.roles.filter(r => r.role.isActive).flatMap(r => r.role.permissions.map(p => p.permissionCode))), customerId: null, technicianId: null, facilityId: defaultFacility.id, facilityIds: [defaultFacility.id] };
   const prefix = `${VERSION}:${workspace.code}:`;
   async function step<T>(key: string, command: (idempotencyKey: string) => Promise<T>): Promise<T> {
     const receipt = await db.commandReceipt.findUnique({ where: { workspaceId_principalId_key: { workspaceId: workspace.id, principalId: actor!.id, key: prefix + key } } });
@@ -85,6 +92,20 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
   const skill = (await step('skill', k => masters.createSkill(principal, { code: 'DM-MACHINING', name: 'Precision manufacturing', scaleMax: 5 }, k))).data;
   const certification = (await step('cert', k => masters.createCertification(principal, { code: 'DM-SAFETY', name: 'Machine safety authorization', issuer: 'Demo Training Centre' }, k))).data;
   const checklist = (await step('checklist', k => masters.createQcChecklist(principal, { code: 'DM-FINAL', name: 'Final dimensional and surface inspection', checks: [{ code: 'DIM', description: 'Dimension within drawing tolerance', method: 'MEASUREMENT', unit: 'mm', limitsJson: '{"min":"24.95","max":"25.05"}', isRequired: true }, { code: 'SURFACE', description: 'No burrs, cracks or surface damage', method: 'VISUAL', isRequired: true }] }, k))).data;
+  // Workspace reason catalog. Shop-floor pause requires an active PAUSE reason
+  // code rather than free text, and the QC issue/scrap flows resolve codes from
+  // the same catalog.
+  const reasonCatalog = [
+    ['PAUSE', 'TOOL_CHANGE', 'Tool change or cutter replacement'],
+    ['PAUSE', 'MATERIAL_WAIT', 'Waiting for material availability'],
+    ['PAUSE', 'MACHINE_FAULT', 'Unexpected machine fault'],
+    ['SCRAP', 'DIMENSIONAL_DEFECT', 'Dimensional defect outside tolerance'],
+    ['REWORK', 'SURFACE_FINISH', 'Surface finish rework required'],
+    ['BLOCKER', 'QUALITY_HOLD', 'Quality hold pending disposition'],
+  ] as const;
+  for (const [category, code, label] of reasonCatalog) {
+    await step(`reason-${category}-${code}`, k => masters.createIssueReason(principal, { category, code, label }, k));
+  }
   const catalog: Array<{ rawId: string; fgId: string; typeId: string; workflowId: string; techId: string; machineId: string }> = [];
   for (const [f, [code, name, operation]] of FAMILIES.entries()) {
     const department = (await step(`dept-${f}`, k => masters.createDepartment(principal, { code: `DM-${code}`, name: `${operation} cell` }, k))).data;
@@ -103,6 +124,17 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     catalog.push({ rawId: raw.id, fgId: fg.id, typeId: type.id, workflowId: template.initialVersionId, techId: tech.id, machineId: machine.id });
     await step(`opening-${f}`, k => inventory.postOpeningBalance(principal, { itemId: raw.id, locationId: loc('RAW'), atoms: parseQuantity('5000'), lotNumber: `DM-OPEN-${f}`, notes: 'Demo opening stock; independent supplier lots below' }, k));
   }
+  // Publish site availability for every demo work centre across the full
+  // assignment horizon. Planning derives coverage from published roster
+  // intervals only ("unknown/draft availability never silently means free"), so
+  // the seeded technicians and machines must be rostered before any task can be
+  // assigned. Windows span anchor+2d .. anchor+13d at even UTC hours.
+  const availabilityStart = day(1);
+  const availabilityEnd = day(16);
+  await step('roster-availability', k => masters.publishRosterIntervals(principal, { intervals: catalog.flatMap(c => [
+    { facilityId: defaultFacility.id, technicianId: c.techId, intervalType: 'SHIFT' as const, startAt: availabilityStart, endAt: availabilityEnd },
+    { facilityId: defaultFacility.id, machineId: c.machineId, intervalType: 'SHIFT' as const, startAt: availabilityStart, endAt: availabilityEnd },
+  ]) }, k));
   // Fractional units and real zero/low stock contrast with stocked batch blanks.
   for (const [i, name] of ['Aluminium 6061 plate', 'Stainless 316 bar', 'Welding wire', 'Powder coating', 'Copper busbar', 'Hydraulic oil'].entries()) {
     const item = (await step(`bulk-${i}`, k => masters.createItem(principal, { code: `DM-BULK-${i + 1}`, name, itemType: 'RAW', baseUomId: kg.id, tracking: 'LOT' }, k))).data;
@@ -147,11 +179,13 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     await step(`qc-finalize-${i}`, k => finalizeInspection(db, principal, { inspectionId: inspection.id, passedAtoms: parseQuantity(String(quantity - reworkUnits - scrapUnits)), reworkAtoms: parseQuantity(String(reworkUnits)), scrappedAtoms: parseQuantity(String(scrapUnits)), destinationFgLocationId: loc('FG'), destinationScrapLocationId: loc('SCRAP'), results: [{ checkCode: 'DIM', checkDescription: 'Dimension within drawing tolerance', measuredValue: '25.01', isPassed: true }, { checkCode: 'SURFACE', checkDescription: 'No burrs, cracks or surface damage', isPassed: !reworkUnits && !scrapUnits, ...(reworkUnits || scrapUnits ? { defectReason: reworkUnits ? 'Burrs require deburring and reinspection' : 'Surface crack; scrap disposition' } : {}) }] }, k));
     if (scenario === 'rework') {
       const rework = (await step(`rework-${i}`, k => authorizeRework(db, principal, { inspectionId: inspection.id, targetAtoms: parseQuantity('4'), instruction: 'Deburr edges, clean, and reinspect surface finish.' }, k))).data;
-      if (family % 2) await step(`reinspect-${i}`, k => recordReinspection(db, principal, { originalInspectionId: inspection.id, reworkAttemptId: rework.id, passedAtoms: parseQuantity('4'), scrappedAtoms: 0n, destinationFgLocationId: loc('FG'), results: [{ checkCode: 'SURFACE-RECHECK', checkDescription: 'Burr removed after rework', isPassed: true }] }, k));
+      if (family % 2) await step(`reinspect-${i}`, k => recordReinspection(db, principal, { originalInspectionId: inspection.id, reworkAttemptId: rework.id, passedAtoms: parseQuantity('4'), scrappedAtoms: 0n, destinationFgLocationId: loc('FG'), results: [{ checkCode: 'DIM', checkDescription: 'Dimension within drawing tolerance', measuredValue: '25.00', isPassed: true }, { checkCode: 'SURFACE', checkDescription: 'Burr removed and surface re-verified after rework', isPassed: true }] }, k));
       continue;
     }
     if (scenario === 'scrap') continue;
-    const shipment = (await step(`shipment-${i}`, k => delivery.allocateShipment(principal, { orderId: order.id, carrierName: ['DHL Supply Chain', 'Ninja Logistics', 'Precision Transport'][family % 3], trackingNumber: `DM-TRACK-${i}`, lines: [{ itemId: c.fgId, lotId: output.lotId || undefined, sourceLocationId: loc('FG'), allocatedAtoms: (scenario === 'in-transit' ? parseQuantity(String(quantity)) / 2n : parseQuantity(String(quantity))) }] }, k))).data;
+    // Shipments trace to the customer order line created with the draft.
+    const shipmentOrderLineId = order.lines.find((line: { id: string; itemId: string }) => line.itemId === c.fgId)?.id ?? order.lines[0].id;
+    const shipment = (await step(`shipment-${i}`, k => delivery.allocateShipment(principal, { orderId: order.id, carrierName: ['DHL Supply Chain', 'Ninja Logistics', 'Precision Transport'][family % 3], trackingNumber: `DM-TRACK-${i}`, lines: [{ orderLineId: shipmentOrderLineId, itemId: c.fgId, lotId: output.lotId || undefined, sourceLocationId: loc('FG'), allocatedAtoms: (scenario === 'in-transit' ? parseQuantity(String(quantity)) / 2n : parseQuantity(String(quantity))) }] }, k))).data;
     if (scenario === 'allocated') continue;
     await step(`dispatch-${i}`, k => delivery.dispatchShipment(principal, { shipmentId: shipment.id }, k));
     if (scenario === 'delivered') await step(`delivered-${i}`, k => delivery.confirmDelivery(principal, { shipmentId: shipment.id, receivedBy: 'Customer receiving team', proofOfDelivery: `DEMO-POD-${i}`, notes: 'Demo delivery confirmed in good condition' }, k));
