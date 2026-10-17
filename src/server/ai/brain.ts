@@ -94,7 +94,7 @@ ${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.orderNumber} 
 ${(inventoryQuestion ? [] : context.confirmedBookings).map(booking => `  * ${booking.orderNumber} / operation ${booking.operation}: ${booking.resourceName ?? booking.resourceType.toLowerCase()} booked ${booking.startAt} to ${booking.endAt}`).join('\n')}
 
 - Finalized Form Evidence (${inventoryQuestion ? 'omitted: inventory-only question' : context.submittedFormEvidence.length}):
-${(inventoryQuestion ? [] : context.submittedFormEvidence).map(form => `  * ${form.orderNumber} / ${form.subject}, ${form.purpose} finalized ${form.finalizedAt}: ${form.answers.map(answer => `${answer.field}=${answer.value}`).join('; ')}`).join('\n')}
+${(inventoryQuestion ? [] : context.submittedFormEvidence).map(form => `  * ${form.orderNumber} / ${form.subject}, ${form.purpose.replaceAll('_', ' ').toLowerCase()} submission ${form.sequenceNumber} finalized ${form.finalizedAt}: ${form.answers.map(answer => `${answer.field}=${answer.value}`).join('; ')}`).join('\n')}
 
 User Question: "${question}"
 

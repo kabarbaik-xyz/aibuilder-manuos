@@ -62,6 +62,7 @@ export interface AuthorizedContextFormEvidence {
   orderNumber: string;
   subject: string;
   purpose: string;
+  sequenceNumber: number;
   finalizedAt: string;
   answers: Array<{ field: string; value: string }>;
 }
@@ -233,7 +234,14 @@ export async function buildAuthorizedContext(
         const answers = Object.entries(submission.answers).flatMap(([key, value]) => {
           const field = form.definition.fields.find(candidate => candidate.key === key);
           if (!field || field.kind === 'reference' || field.kind === 'attachment' || value === null) return [];
-          const readableValue = Array.isArray(value) ? value.join(', ') : String(value);
+          const displayValue = field.kind === 'boolean'
+            ? value ? 'Yes' : 'No'
+            : field.kind === 'select' && typeof value === 'string'
+              ? field.options?.find(option => option.value === value)?.label ?? value
+              : field.kind === 'multiselect' && Array.isArray(value)
+                ? value.map(item => field.options?.find(option => option.value === item)?.label ?? item).join(', ')
+                : Array.isArray(value) ? value.join(', ') : String(value);
+          const readableValue = displayValue;
           return [{ field: field.label, value: readableValue.slice(0, 500) }];
         }).slice(0, 12);
         if (answers.length === 0) continue;
@@ -241,6 +249,7 @@ export async function buildAuthorizedContext(
           orderNumber: subject.subjectType === 'ORDER' ? (orderById.get(subject.subjectId) ?? subject.subjectLabel) : (taskOrderById.get(subject.subjectId) ?? subject.subjectLabel),
           subject: subject.subjectLabel,
           purpose: form.definition.purpose,
+          sequenceNumber: submission.sequenceNumber,
           finalizedAt: submission.finalizedAt,
           answers,
         });

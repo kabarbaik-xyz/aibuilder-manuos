@@ -278,6 +278,7 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       orderNumber: order.data.orderNumber,
       subject: `${order.data.orderNumber} / operation OP-10`,
       purpose: 'TASK_EVIDENCE',
+      sequenceNumber: 1,
       answers: [{ field: 'Setup notes', value: 'Clamp inspected and secured.' }],
     }));
     await expect(brainService.answerProductionQuestion(alpha.users.customerUser.principal, 'What is blocking this task?', { type: 'TASK', id: taskId })).rejects.toThrow(/not available/i);
