@@ -1,7 +1,8 @@
 import { PrismaClient } from '@prisma/client';
-import { ConflictError, ForbiddenError, NotFoundError } from '@/domain/errors';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@/domain/errors';
 import { Principal } from '@/server/auth/principal';
 import { executeCommand } from '@/server/db/transaction';
+import { completeLifecycleAction } from './service';
 
 const permissionByAction: Record<string, string> = {
   ORDER_CONFIRM: 'order.create',
@@ -78,6 +79,47 @@ export async function claimLifecycleStage(
       });
       const data = { stageId: stage.id, assignedMembershipId: membership.id, version: stage.version + 1 };
       return { data, aggregateType: 'OrderLifecycleStage', aggregateId: stage.id, previousVersion: stage.version, resourceVersion: data.version, auditDetails: { action: 'claim', instanceId: stage.instance.id } };
+    },
+  });
+}
+
+/** Completes an evidence-review stage without inventing a separate operational side effect. */
+export async function completeEvidenceReviewStage(
+  db: PrismaClient,
+  principal: Principal,
+  input: { stageId: string; expectedVersion: number },
+  idempotencyKey: string
+) {
+  if (!principal.permissions.has('order.read')) throw new ForbiddenError('You do not have permission to review order evidence.');
+  return executeCommand({
+    principal,
+    commandType: 'order_lifecycle.stage.review_evidence',
+    idempotencyKey,
+    payload: input,
+    prismaClient: db,
+    handler: async (tx) => {
+      const stage = await tx.orderLifecycleStage.findFirst({
+        where: { id: input.stageId, workspaceId: principal.workspaceId },
+        include: { instance: { select: { id: true, status: true, order: { select: { id: true, facilityId: true } } } } },
+      });
+      if (!stage || stage.instance.status !== 'ACTIVE') throw new NotFoundError('Lifecycle stage not found.');
+      if (stage.action !== 'REVIEW_EVIDENCE') throw new BadRequestError('Only evidence-review stages can be completed directly.');
+      const facilityIds = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
+      if (!principal.roles.includes('OWNER') && (!stage.instance.order.facilityId || !facilityIds.includes(stage.instance.order.facilityId))) {
+        throw new ForbiddenError('This stage is outside your facility scope.');
+      }
+      if (!['READY', 'ACTIVE'].includes(stage.state)) throw new ConflictError('Only a ready or active evidence-review stage can be completed.');
+      await completeLifecycleAction(tx, {
+        workspaceId: principal.workspaceId,
+        orderId: stage.instance.order.id,
+        action: 'REVIEW_EVIDENCE',
+        actorUserId: principal.userId,
+        commandId: idempotencyKey,
+        stageId: stage.id,
+        expectedStageVersion: input.expectedVersion,
+      });
+      const data = { stageId: stage.id, state: 'COMPLETED' as const };
+      return { data, aggregateType: 'OrderLifecycleStage', aggregateId: stage.id, previousVersion: stage.version, resourceVersion: stage.version + 1, auditDetails: { action: 'review_evidence', instanceId: stage.instance.id } };
     },
   });
 }

@@ -2276,6 +2276,30 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /api/order-lifecycle/stages/{id}/complete:
+    post:
+      summary: Complete an assigned evidence-review lifecycle stage
+      description: Completes only REVIEW_EVIDENCE stages after validating the current membership assignment, facility scope, pinned required form evidence, and expected stage version. This action records the lifecycle transition and does not perform production, quality, inventory, or delivery mutations.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+              additionalProperties: false
+      responses:
+        '200': { description: Evidence-review stage completed and audited }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/orders:
     post:
       summary: Create an order draft with one or more item lines

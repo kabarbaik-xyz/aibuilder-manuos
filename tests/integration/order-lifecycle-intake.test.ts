@@ -3,7 +3,7 @@ import { createFactoryFixture, type FactoryFixture } from '../fixtures/factory';
 import { WorkflowService } from '@/server/modules/workflow/service';
 import { OrderService } from '@/server/modules/orders/service';
 import { listLifecycleDepartmentMembers, listLifecycleWorkItems } from '@/server/modules/order-lifecycle/queries';
-import { claimLifecycleStage } from '@/server/modules/order-lifecycle/assignments';
+import { claimLifecycleStage, completeEvidenceReviewStage } from '@/server/modules/order-lifecycle/assignments';
 import { FormService } from '@/server/modules/forms/service';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
 
@@ -178,5 +178,41 @@ describe('order lifecycle intake', () => {
 
     await expect(orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-confirm-with-retired-pin'))
       .resolves.toMatchObject({ data: { id: order.data.id } });
+  });
+
+  it('lets the assigned reviewer complete an evidence-review stage with a version check', async () => {
+    const owner = fixture.alpha.users.owner;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: fixture.alpha.masters.departmentId },
+    });
+    const template = await workflowService.createTemplate(owner.principal, {
+      orderTypeId: fixture.alpha.masters.orderTypeId, code: 'LIFECYCLE-REVIEW-ACTION',
+      name: 'Evidence review action', kind: 'ORDER_LIFECYCLE',
+    }, 'lifecycle-review-template');
+    await workflowService.saveVersionDraft(owner.principal, template.data.initialVersionId!, {
+      definition: {
+        schemaVersion: 1, name: 'Evidence review action', stages: [{
+          key: 'REVIEW', name: 'Review evidence', action: 'REVIEW_EVIDENCE',
+          departmentId: fixture.alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: fixture.alpha.masters.departmentId },
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 60 }, predecessors: [], forms: [],
+        }],
+      },
+    }, 'lifecycle-review-draft');
+    await workflowService.publishVersion(owner.principal, template.data.initialVersionId!, 'lifecycle-review-publish');
+    const order = await orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId, orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId, orderedQuantity: '1', requestedDate: '2026-11-01T00:00:00.000Z',
+      lifecycleWorkflowVersionId: template.data.initialVersionId,
+    }, 'lifecycle-review-order-create');
+    const stage = await fixture.db.orderLifecycleStage.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id } },
+    });
+
+    const result = await completeEvidenceReviewStage(fixture.db, owner.principal, { stageId: stage.id, expectedVersion: stage.version }, 'lifecycle-review-complete');
+    expect(result.data).toMatchObject({ stageId: stage.id, state: 'COMPLETED' });
+    await expect(completeEvidenceReviewStage(fixture.db, owner.principal, { stageId: stage.id, expectedVersion: stage.version }, 'lifecycle-review-stale'))
+      .rejects.toThrow(/not found|changed|ready or active/i);
   });
 });

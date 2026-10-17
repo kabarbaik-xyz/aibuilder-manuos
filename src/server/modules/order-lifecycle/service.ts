@@ -6,14 +6,14 @@ type Tx = any;
 
 export async function assertLifecycleActionReady(
   tx: Tx,
-  input: { workspaceId: string; orderId: string; action: LifecycleAction }
+  input: { workspaceId: string; orderId: string; action: LifecycleAction; stageId?: string; expectedStageVersion?: number }
 ) {
   const instance = await tx.orderLifecycleInstance.findFirst({
     where: { workspaceId: input.workspaceId, orderId: input.orderId, status: 'ACTIVE' },
     include: { stages: true },
   });
   if (!instance) return null;
-  const matchingStages = instance.stages.filter((candidate: any) => candidate.action === input.action);
+  const matchingStages = instance.stages.filter((candidate: any) => candidate.action === input.action && (!input.stageId || candidate.id === input.stageId));
   if (matchingStages.length === 0) return null;
   const stage = matchingStages.find((candidate: any) => ['READY', 'ACTIVE'].includes(candidate.state));
   if (!stage) {
@@ -22,12 +22,15 @@ export async function assertLifecycleActionReady(
       ? `The selected order lifecycle requires '${nextStage.name}' before this action.`
       : `No ready '${input.action}' stage exists for this order.`);
   }
+  if (input.expectedStageVersion !== undefined && stage.version !== input.expectedStageVersion) {
+    throw new ConflictError('Lifecycle stage changed; refresh and try again.');
+  }
   return { instance, stage };
 }
 
 export async function completeLifecycleAction(
   tx: Tx,
-  input: { workspaceId: string; orderId: string; action: LifecycleAction; actorUserId: string; commandId: string }
+  input: { workspaceId: string; orderId: string; action: LifecycleAction; actorUserId: string; commandId: string; stageId?: string; expectedStageVersion?: number }
 ) {
   const ready = await assertLifecycleActionReady(tx, input);
   if (!ready) return;
