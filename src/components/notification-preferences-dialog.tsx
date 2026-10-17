@@ -66,7 +66,7 @@ export function NotificationPreferencesDialog({ isOpen, onClose }: { isOpen: boo
           setPreferences({ ...preferences, [category]: event.target.checked }); setSuccess(false);
         }} />
       </FormField>)}
-      <p className="small muted">Perubahan berlaku untuk notifikasi berikutnya. Tugas dan issue tetap tersedia pada halaman operasional meskipun notifikasinya dibisukan.</p>
+      <p className="small muted">Changes apply to future notifications. Tasks and issues remain available on the operational page even if notifications are filtered.</p>
       {success && <p role="status">Preferensi tersimpan.</p>}
     </div>
   </Dialog>;

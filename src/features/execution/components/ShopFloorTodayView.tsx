@@ -58,7 +58,7 @@ export function ShopFloorTodayView() {
       }
       setScanMessage(
         result.type === "JOB"
-          ? `${result.displayCode} ditemukan, tetapi tidak ada tugas aktif yang dapat dibuka.`
+          ? `${result.displayCode} found, but no active tasks can be opened.`
           : "Kode dikenali, tetapi akun ini tidak memiliki akses untuk membuka order tersebut."
       );
     } catch (submitErr) {

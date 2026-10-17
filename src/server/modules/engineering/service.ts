@@ -334,8 +334,8 @@ export class EngineeringService {
         }
 
         await new NotificationService(tx).notifyFacilityMembers(principal.workspaceId, rev.order.facilityId, 'planning.read', {
-          category: 'APPROVAL', title: `Engineering disetujui: ${rev.order.orderNumber}`,
-          body: `Revisi ${rev.revisionNumber} disetujui.`, subjectType: 'ORDER', subjectId: rev.orderId,
+          category: 'APPROVAL', title: `Engineering approved: ${rev.order.orderNumber}`,
+          body: `Revision ${rev.revisionNumber} approved.`, subjectType: 'ORDER', subjectId: rev.orderId,
           dedupeKey: `engineering-approved:${rev.id}`,
         });
 
