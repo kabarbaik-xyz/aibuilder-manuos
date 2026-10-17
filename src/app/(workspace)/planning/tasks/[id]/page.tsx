@@ -20,8 +20,8 @@ const statusLabelMap: Record<string, string> = {
   READY: 'Siap',
   ASSIGNED: 'Ditugaskan',
   RUNNING: 'Sedang berjalan',
-  PAUSED: 'Dijeda',
-  WAITING_QC: 'Menunggu QC',
+  PAUSED: 'Paused',
+  WAITING_QC: 'Waiting QC',
   COMPLETED: 'Selesai',
   CANCELLED: 'Dibatalkan',
 };

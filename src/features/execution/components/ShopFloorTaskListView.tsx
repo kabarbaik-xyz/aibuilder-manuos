@@ -18,7 +18,7 @@ import { QrScannerOverlay } from '@/components/ui/qr-scanner-overlay';
 import { useOnlineStatus } from '../use-online-status';
 
 interface WorkItem { id: string; nodeKey: string; nodeName: string; status: string; orderNumber: string; customerName: string; itemName: string; plannedDurationMinutes: number; currentElapsedMinutes: number; canStart: boolean; blockReason?: string }
-const filters = [{ value: '', label: 'Semua aktif' }, { value: 'RUNNING', label: 'Berjalan' }, { value: 'PAUSED', label: 'Dijeda' }, { value: 'READY', label: 'Siap' }, { value: 'ASSIGNED', label: 'Ditetapkan' }, { value: 'WAITING_QC', label: 'Menunggu QC' }];
+const filters = [{ value: '', label: 'All active' }, { value: 'RUNNING', label: 'Running' }, { value: 'PAUSED', label: 'Paused' }, { value: 'READY', label: 'Ready' }, { value: 'ASSIGNED', label: 'Assigned' }, { value: 'WAITING_QC', label: 'Waiting QC' }];
 function minutes(value: number) { return value < 60 ? `${value}m` : `${Math.floor(value / 60)}h${value % 60 ? ` ${value % 60}m` : ''}`; }
 
 export function ShopFloorTaskListView() {
@@ -64,14 +64,14 @@ export function ShopFloorTaskListView() {
   };
 
   return <div className="page-stack my-work-page">
-    <PageHeader title="Semua tugas" description={supervisor ? 'Tinjau pekerjaan produksi aktif di ruang kerja Anda.' : 'Tugas produksi yang ditetapkan kepada Anda.'} actions={<Button icon="reset" disabled={pagination.disabled} onClick={() => void refetch()}>Muat ulang</Button>} />
+    <PageHeader title="My Tasks" description={supervisor ? 'Review active production tasks in your workspace.' : 'Assigned production tasks.'} actions={<Button icon="reset" disabled={pagination.disabled} onClick={() => void refetch()}>Refresh</Button>} />
     <Tabs
       ariaLabel="Navigasi lantai produksi"
       activeId="all"
       items={[
-        { id: 'all', label: 'Semua tugas', href: '/shop-floor', icon: 'work', count: isPending ? undefined : total },
+        { id: 'all', label: 'All tasks', href: '/shop-floor', icon: 'work', count: isPending ? undefined : total },
         { id: 'today', label: 'Antrean kerja', href: '/shop-floor/today', icon: 'clock' },
-        { id: 'profile', label: 'Profil saya', href: '/shop-floor/profile', icon: 'technician' },
+        { id: 'profile', label: 'My profile', href: '/shop-floor/profile', icon: 'technician' },
       ]}
     />
       <section className="my-work-queue" aria-label="Pekerjaan produksi aktif">
@@ -96,7 +96,7 @@ export function ShopFloorTaskListView() {
           <div className="my-work-order"><strong>{task.orderNumber}</strong><p>{task.customerName}</p></div>
           <div className="my-work-time"><strong>{minutes(task.currentElapsedMinutes)} <span>berjalan</span></strong><p>{minutes(task.plannedDurationMinutes)} rencana</p></div>
           <div className="my-work-status"><Badge variant={task.status === 'RUNNING' ? 'success' : task.status === 'PAUSED' || task.status === 'WAITING_QC' ? 'warning' : 'default'}>{filters.find(filter => filter.value === task.status)?.label || task.status}</Badge>{task.blockReason && <p>{task.blockReason}</p>}</div>
-          <ButtonLink href={`/shop-floor/tasks/${task.id}`} size="small" variant={task.status === 'RUNNING' || task.status === 'PAUSED' ? 'primary' : 'default'}>{task.status === 'RUNNING' ? 'Lanjutkan kerja' : task.status === 'PAUSED' ? 'Tinjau jeda' : 'Buka tugas'}</ButtonLink>
+          <ButtonLink href={`/shop-floor/tasks/${task.id}`} size="small" variant={task.status === 'RUNNING' || task.status === 'PAUSED' ? 'primary' : 'default'}>{task.status === 'RUNNING' ? 'Continue work' : task.status === 'PAUSED' ? 'Review' : 'View task'}</ButtonLink>
         </article>)}</div>
       </>}
       {!error && <Pagination {...pagination} />}

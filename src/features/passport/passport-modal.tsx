@@ -18,7 +18,7 @@ export function PassportModal({ serial }: { serial: string }) {
     setLoading(true); setError(null); setPassport(null);
     void fetch(`/api/passports/${encodeURIComponent(serial)}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error('Passport tidak tersedia atau akses Anda belum diberikan.');
+        if (!response.ok) throw new Error('Passport not available or access not granted.');
         const payload = await response.json() as UnitPassportDTO;
         if (!controller.signal.aborted) setPassport(payload);
       })
@@ -34,7 +34,7 @@ export function PassportModal({ serial }: { serial: string }) {
   };
   if (!serial) return <EmptyState title="Nomor seri belum dipilih" description="Buka passport melalui unit yang tercatat pada order atau inspeksi." />;
   if (loading) return <p role="status" className="muted">Memuat bukti passport…</p>;
-  if (error) return <ErrorState title="Passport tidak tersedia" message={error} onRetry={() => setReload((value) => value + 1)} />;
+  if (error) return <ErrorState title="Passport not available" message={error} onRetry={() => setReload((value) => value + 1)} />;
   if (!passport) return null;
   return <div className="page-stack">
     <div><Badge variant={passport.status === 'RELEASED' ? 'success' : 'warning'}>{passport.status}</Badge><h3>{passport.serialNumber}</h3><p className="small muted">{passport.order?.orderNumber} · {passport.order?.itemName}</p></div>

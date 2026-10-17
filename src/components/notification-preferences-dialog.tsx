@@ -48,7 +48,7 @@ export function NotificationPreferencesDialog({ isOpen, onClose }: { isOpen: boo
         body: JSON.stringify({ preferences, expectedVersion: saved.version }),
       });
       if (!response.ok) throw new Error(response.status === 409
-        ? 'Pengaturan akun berubah. Muat ulang sebelum menyimpan kembali.' : 'Preferensi gagal disimpan. Coba lagi.');
+        ? 'Preferences changed. Reload before saving.' : 'Preferensi gagal disimpan. Coba lagi.');
       const payload = await response.json() as { data: PreferenceState };
       setSaved(payload.data); setPreferences(payload.data.preferences); setSuccess(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Preferensi gagal disimpan.'); }
