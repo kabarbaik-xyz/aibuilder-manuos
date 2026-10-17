@@ -217,4 +217,48 @@ describe('order lifecycle intake', () => {
     await expect(completeEvidenceReviewStage(fixture.db, owner.principal, { stageId: stage.id, expectedVersion: stage.version }, 'lifecycle-review-stale'))
       .rejects.toThrow(/not found|changed|ready or active/i);
   });
+
+  it('starts a successor deadline only when its predecessor makes it ready', async () => {
+    const owner = fixture.alpha.users.owner;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: fixture.alpha.masters.departmentId },
+    });
+    const template = await workflowService.createTemplate(owner.principal, {
+      orderTypeId: fixture.alpha.masters.orderTypeId, code: 'LIFECYCLE-DEADLINE-ACTIVATION',
+      name: 'Deadline activation', kind: 'ORDER_LIFECYCLE',
+    }, 'lifecycle-deadline-template');
+    await workflowService.saveVersionDraft(owner.principal, template.data.initialVersionId!, {
+      definition: { schemaVersion: 1, name: 'Deadline activation', stages: [
+        {
+          key: 'CONFIRM', name: 'Confirm order', action: 'ORDER_CONFIRM', departmentId: fixture.alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: fixture.alpha.masters.departmentId },
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 60 }, predecessors: [], forms: [],
+        },
+        {
+          key: 'REVIEW', name: 'Review evidence', action: 'REVIEW_EVIDENCE', departmentId: fixture.alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: fixture.alpha.masters.departmentId },
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 30 }, predecessors: ['CONFIRM'], forms: [],
+        },
+      ] },
+    }, 'lifecycle-deadline-draft');
+    await workflowService.publishVersion(owner.principal, template.data.initialVersionId!, 'lifecycle-deadline-publish');
+    const order = await orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId, orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId, orderedQuantity: '1', requestedDate: '2026-11-01T00:00:00.000Z',
+      lifecycleWorkflowVersionId: template.data.initialVersionId,
+    }, 'lifecycle-deadline-order-create');
+    const stagesBefore = await fixture.db.orderLifecycleStage.findMany({
+      where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id } },
+    });
+    expect(stagesBefore.find(stage => stage.stageKey === 'REVIEW')?.dueAt).toBeNull();
+
+    await orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-deadline-confirm');
+    const review = await fixture.db.orderLifecycleStage.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id }, stageKey: 'REVIEW' },
+    });
+    expect(review.state).toBe('READY');
+    expect(review.dueAt?.getTime()).toBeGreaterThanOrEqual(Date.now() + 29 * 60_000);
+    expect(review.dueAt?.getTime()).toBeLessThanOrEqual(Date.now() + 30 * 60_000);
+  });
 });

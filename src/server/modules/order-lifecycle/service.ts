@@ -97,12 +97,15 @@ export async function completeLifecycleAction(
   for (const change of decision.changes) {
     const current = instance.stages.find((candidate: any) => candidate.stageKey === change.stageKey);
     if (!current || current.state === change.state) continue;
+    const changedAt = new Date();
+    const schedule = JSON.parse(current.scheduleJson) as { kind: 'DEADLINE'; dueAfterMinutes: number } | { kind: 'RESOURCE_CAPACITY' };
     const updated = await tx.orderLifecycleStage.updateMany({
       where: { workspaceId: input.workspaceId, id: current.id, version: current.version, state: current.state },
       data: {
         state: change.state,
         version: { increment: 1 },
-        ...(change.state === 'COMPLETED' ? { startedAt: current.startedAt ?? new Date(), completedAt: new Date() } : {}),
+        ...(change.state === 'COMPLETED' ? { startedAt: current.startedAt ?? changedAt, completedAt: changedAt } : {}),
+        ...(change.state === 'READY' ? { dueAt: schedule.kind === 'DEADLINE' ? new Date(changedAt.getTime() + schedule.dueAfterMinutes * 60_000) : null } : {}),
       },
     });
     if (updated.count !== 1) throw new ConflictError('Lifecycle stage changed concurrently; reload the order and retry.');
