@@ -307,6 +307,9 @@ export class AvailabilityService {
         continue;
       }
 
+      if (!found.skill.isActive || found.revokedAt) violations.push(`Technician '${tech.name}' skill '${found.skill.name}' is inactive or revoked`);
+      if (found.validFrom && found.validFrom > query.slotStart) violations.push(`Technician '${tech.name}' skill '${found.skill.name}' is not yet effective at slot start`);
+
       if (found.level < req.minLevel) {
         violations.push(
           `Technician '${tech.name}' skill '${found.skill.name}' level ${found.level} is below required level ${req.minLevel}`
@@ -336,7 +339,7 @@ export class AvailabilityService {
         continue;
       }
 
-      if (found.status !== 'ACTIVE' || found.revokedAt) {
+      if (found.status !== 'ACTIVE' || found.revokedAt || !found.certification.isActive) {
         violations.push(
           `Technician '${tech.name}' certificate '${found.certification.name}' is revoked or inactive (status: ${found.status})`
         );

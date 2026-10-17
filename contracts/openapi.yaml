@@ -3082,6 +3082,67 @@ paths:
         '400': { description: Over-receipt, invalid demand split, or unavailable reservation balance }
         '403': { description: Principal lacks inventory receive permission }
 
+  /api/roster/shift-swaps:
+    get:
+      summary: List a technician's shift swaps and optionally candidate shifts
+      description: Requires live resource.manage or planning.write. Workspace and facility grants apply. Latest 50 requests; up to 200 candidate published shifts within 31 days, same effective facility.
+      parameters:
+        - { name: technicianId, in: query, required: true, schema: { type: string } }
+        - { name: sourceId, in: query, schema: { type: string } }
+      responses:
+        '200': { description: 'data contains requests, candidates and truncated.' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Request a versioned shift swap without changing the schedule
+      description: Manager workflow. Stores exact shift, technician and contained confirmed-booking snapshot. Only future published SHIFT intervals for different active technicians in one facility. Running or partially contained work is rejected.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sourceRosterId, targetRosterId, sourceVersion, targetVersion, reason]
+              properties:
+                sourceRosterId: { type: string, format: uuid }
+                targetRosterId: { type: string, format: uuid }
+                sourceVersion: { type: integer, minimum: 1 }
+                targetVersion: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        '201': { description: Pending request; no shifts or work moved }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Stale shift or existing pending swap }
+
+  /api/roster/shift-swaps/{id}:
+    patch:
+      summary: Approve and atomically swap shifts/work, or reject without changes
+      description: Uses live roster-management grants. Approval rejects stale snapshots and revalidates incoming availability, qualifications, facility scope and conservative gross UTC weekly working limits. Transfers contained technician task assignments/bookings, leaves machine bookings and physical inventory unchanged, appends workflow/audit history and in-app notifications. Any failure rolls back every write. Self-approval by a roster manager is allowed; no employee self-service consent or supervisor hierarchy is implied.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, decision]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                decision: { type: string, enum: [APPROVE, REJECT] }
+                note: { type: string, maxLength: 500, description: 'At least 3 characters required for rejection.' }
+      responses:
+        '200': { description: 'data contains id, status, version and movedTasks.' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Already decided, stale version or snapshot }
+
+
 components:
   parameters:
     AccessIdempotency:

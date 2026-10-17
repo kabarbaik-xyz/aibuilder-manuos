@@ -111,6 +111,7 @@ model Workspace {
   machineDowntimes  MachineDowntime[]
   shiftTemplates    ShiftTemplate[]
   rosterIntervals   RosterInterval[]
+  shiftSwapRequests ShiftSwapRequest[]
   membershipFacilityGrants MembershipFacilityGrant[]
   issueReasons      IssueReason[]
   notifications     NotificationInbox[]
@@ -2610,4 +2611,28 @@ model CommunicationConsent {
   @@unique([workspaceId, id])
   @@unique([workspaceId, recipient, channel])
   @@map("communication_consents")
+}
+
+model ShiftSwapRequest {
+  id String @id @default(uuid())
+  workspaceId String @map("workspace_id")
+  sourceRosterId String @map("source_roster_id")
+  targetRosterId String @map("target_roster_id")
+  sourceTechnicianId String @map("source_technician_id")
+  targetTechnicianId String @map("target_technician_id")
+  status String @default("PENDING")
+  reason String
+  snapshotJson String @map("snapshot_json")
+  snapshotHash String @map("snapshot_hash")
+  requestedById String @map("requested_by_id")
+  decidedById String? @map("decided_by_id")
+  decisionNote String? @map("decision_note")
+  decidedAt DateTime? @map("decided_at")
+  version Int @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, id])
+  @@index([workspaceId, status])
+  @@map("shift_swap_requests")
 }

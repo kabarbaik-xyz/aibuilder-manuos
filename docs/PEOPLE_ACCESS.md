@@ -47,3 +47,11 @@ Department is organizational metadata, scoped to the same workspace. It does **n
 Changing the primary facility does not erase additional existing facility grants. Administrators can select only facilities within their own grants. Technician profile evidence and roster actions enforce workspace/facility scope. Working availability cannot be cancelled while it overlaps confirmed bookings; replan first. Publishing leave/training does not automatically move existing bookings.
 
 This flow does not send invitation emails. Initial credentials are set by the authorized administrator and shared through the organization’s approved channel.
+
+## Shift swaps
+
+Open a technician’s **Availability → Shift swaps → Request swap**. Select the outgoing published shift and another technician’s shift in the same facility, give a reason, then submit. Candidate shifts are bounded to 31 days either side. The request changes no schedule.
+
+A roster manager (`planning.write` or `resource.manage`) reviews the two shifts and affected task count, then approves or rejects. Approval recomputes the reviewed evidence and atomically exchanges roster owners and contained technician task bookings/assignments. Machine reservations and task times remain fixed. Any failed validation rolls back the full decision. Unstarted work can move only to a currently qualified technician. Running work, partial/out-of-sync bookings, roster conflicts, stale evidence and configured weekly-limit violations block approval.
+
+The configured weekly working limit is checked conservatively using gross published hours, including breaks, in Monday–Sunday UTC weeks. No overtime exemption is inferred. Reject a stale request and create a fresh one. History remains visible for both original participants. Rejection requires a reason and makes no roster changes. This is a manager workflow; a distinct supervisor hierarchy, employee self-service request flow, or mandatory two-person separation is not implied.
