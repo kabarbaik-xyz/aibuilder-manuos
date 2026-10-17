@@ -67,6 +67,40 @@ Each account only sees what its role permits, so signing in as different users i
 - The service scales to zero when idle; the **first request may take a few seconds** to cold-start. Subsequent requests are fast.
 - `/api/health` returns a JSON readiness probe that also confirms the database is live and enforcing foreign keys.
 
+## AI Usage (CoreAI)
+
+ManuOS uses **Google Gemini** (AI Studio Developer API, free tier) for **server-side grounded assistance only**. Every AI call reads a strictly scoped view of workspace state (evidence indexed, permissions enforced), and outputs are validated against that scope. Hallucinated IDs are rejected and the service falls back to grounded, record-derived answers when needed.
+
+- **Operational assistant (Production Brain) — `/api/ai/brain-qa`**
+  - Answers "what/where/why" questions about orders, inventory, planning, and tasks using *only* authorized evidence.
+  - Click the assistant (copilot drawer) to ask natural-language questions; suggestions include "What is the status of active orders?", "Summarize inventory balances", and "Give me a production overview".
+  - Grounded by `ProductionBrainService` + `buildAuthorizedContext`; context can be scoped to a specific order/task/item.
+
+- **RFQ extraction — `/api/ai/extract-rfq`**
+  - Parses RFQ text into a draft customer, part, quantity, material, tolerances, ambiguities, BOM, routing, and QC checklist for review/handoff to order intake.
+
+- **Builder proposals — `/api/ai/builder-proposals`**
+  - Generates proposal drafts from requirements (cost/material/routing) to help speed review before publishing a proposal.
+
+- **Workflow generation — `/api/ai/generate-workflow`**
+  - Proposes an initial versioned workflow (nodes/edges/transition rules/warnings) from an order-type description; the proposal must be reviewed and published before use.
+
+- **Impact explanation — `/api/ai/explain-impact`**
+  - Explains disruption impact (orders, blocked/runnable tasks, blast radius, watch items) using the provided operational snapshot.
+
+- **Dispatch rationale — `/api/ai/dispatch-rationale`**
+  - Produces a grounded rationale for a proposed dispatch (skill match, certifications, queue depth) based on the supplied task and ranked candidates.
+
+- **Factory memory recommendations — `/api/ai/memory-recommend`**
+  - Surfaces operational lessons/recommendations grounded in the provided query and stats.
+
+- **Partner fit — `/api/ai/partner-fit`**
+  - Assesses partner fit against requirements (department, machine class, quantity, distance, rate, quality) with a short narrative and risk notes.
+
+**AI configuration (cheap/free-friendly):**
+- Cheapest viable model is `gemini-flash-lite-latest` (non-thinking), avoiding thinking-token truncation and minimizing cost. Live demo defaults to it.
+- No client-authoritative AI; every AI call is server-side with permission checks and schema validation.
+
 ## Technology Stack
 
 - **Application:** Next.js 15 App Router, React 19, TypeScript in strict mode.
@@ -149,8 +183,7 @@ New demo account credentials are written to a local temporary file with restrict
 | `BETTER_AUTH_SECRET` | Server-side authentication secret. Replace the example value. |
 | `BETTER_AUTH_URL` | Application origin used by authentication. Use `http://localhost:3000` for default development. |
 | `GEMINI_API_KEY` | Server-only Gemini credential. Replace the placeholder to enable provider-backed AI. |
-| `GEMINI_FLASH_MODEL` | Optional fast-model override; configured default is `gemini-2.5-flash`. |
-| `GEMINI_PRO_MODEL` | Optional model override for routes that use the Pro configuration; example is `gemini-2.5-pro`. |
+| `GEMINI_FLASH_MODEL` | Optional fast-model override; configured default is `gemini-flash-lite-latest`. |
 | `MANUOS_DIST_DIR` | Optional override for Next.js generated output location. |
 
 Never expose server secrets through `NEXT_PUBLIC_` variables or commit `.env`. The application can run without a valid Gemini key, but provider-backed AI features will be unavailable or show their supported fallback/error state.
