@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { createTestDatabase } from './database';
 import { seedTestAccess, TestAccessResult } from './access';
 import { MastersService } from '@/server/modules/masters/service';
+import { AccessService } from '@/server/modules/access/service';
 
 export interface Clock {
   now(): Date;
@@ -270,11 +271,16 @@ export async function createFactoryFixture(): Promise<FactoryFixture> {
     {
       code: 'TECH-01',
       name: 'Lead CNC Operator',
-      membershipId: operatorAlpha.membershipId,
       departmentId: dept.data.id,
       calendarId: cal.data.id,
     },
     'key-tech-alpha'
+  );
+  await new AccessService(testDb.db).updateMembership(
+    adminAlpha.principal,
+    operatorAlpha.membershipId,
+    { roleCodes: ['TECHNICIAN'], status: 'ACTIVE', expectedVersion: 1, technicianId: tech.data.id },
+    'key-access-link-operator-alpha'
   );
   operatorAlpha.principal.technicianId = tech.data.id;
 

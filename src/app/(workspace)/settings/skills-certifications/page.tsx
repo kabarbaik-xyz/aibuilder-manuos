@@ -4,6 +4,7 @@ import { ListSearch } from '@/components/ui/list-search';
 
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
+import { CertificationCatalog } from '@/features/masters/components/certification-catalog';
 import React, { useState } from 'react';
 
 import { Skill } from '@/features/masters/api';
@@ -71,6 +72,7 @@ export default function SkillsPage() {
         />
       )}
 
+      <CertificationCatalog />
       <CreateSkillModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} />
       <CatalogNameEditDialog resource="skills" record={selectedSkill} onClose={() => setSelectedSkill(null)} />
       <ArchiveMasterDialog

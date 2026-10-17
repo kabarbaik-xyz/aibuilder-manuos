@@ -177,6 +177,8 @@ export async function resolvePrincipal(
     roles: roleCodes,
     customerId: membership.customerId,
     technicianId: membership.technicianId,
+    departmentId: membership.departmentId,
+    landingPage: membership.landingPage,
     facilityId: membership.facilityId,
     facilityIds: Array.from(grantedFacilityIds),
   };

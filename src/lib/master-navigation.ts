@@ -39,7 +39,7 @@ export const WORKFLOW_NAV_ITEMS: readonly MasterNavItem[] = [
 ];
 
 export const ADMIN_NAV_ITEMS: readonly MasterNavItem[] = [
-  { title: 'Users', href: '/settings/users', icon: 'users', permissions: ['access.manage'] },
+  { title: 'People & Access', href: '/settings/users', icon: 'users', permissions: ['access.manage'] },
   { title: 'Roles', href: '/settings/roles', icon: 'shield', permissions: ['access.manage'] },
   { title: 'Permissions', href: '/settings/permissions', icon: 'checklist', permissions: ['access.manage'] },
   { title: 'Integrations', href: '/settings/integrations', icon: 'network', permissions: ['access.manage', 'owner'] },

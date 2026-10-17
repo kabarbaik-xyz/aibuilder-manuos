@@ -20,6 +20,7 @@ const updateSchemas = {
   machines: updateMachineSchema,
   technicians: updateTechnicianSchema,
   skills: updateSkillSchema,
+  certifications: updateDepartmentSchema,
   uoms: updateUomSchema,
   'qc-checklists': updateQcChecklistSchema,
 };

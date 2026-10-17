@@ -10,7 +10,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 
-export type CatalogNameResource = 'locations' | 'departments' | 'calendars' | 'machines' | 'skills' | 'uoms' | 'qc-checklists';
+export type CatalogNameResource = 'certifications' | 'locations' | 'departments' | 'calendars' | 'machines' | 'skills' | 'uoms' | 'qc-checklists';
 export type CatalogNameRecord = {
   id: string;
   code: string;
@@ -24,6 +24,7 @@ export type CatalogNameRecord = {
 };
 
 const labels: Record<CatalogNameResource, string> = {
+  certifications: 'certification',
   locations: 'location',
   departments: 'department',
   calendars: 'calendar',

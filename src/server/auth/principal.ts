@@ -9,6 +9,8 @@ export interface Principal {
   roles: string[];
   customerId: string | null;
   technicianId: string | null;
+  departmentId?: string | null;
+  landingPage?: string | null;
   facilityId?: string | null;
   facilityIds?: string[];
 }
@@ -24,6 +26,8 @@ export interface PrincipalJson {
   roles: string[];
   customerId: string | null;
   technicianId: string | null;
+  departmentId?: string | null;
+  landingPage?: string | null;
   facilityId?: string | null;
   facilityIds?: string[];
 }

@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import { availablePages } from '@/lib/persona-navigation';
 import { hashPassword } from 'better-auth/crypto';
 import { Principal } from '@/server/auth/principal';
 import { requirePermission } from '@/server/auth/permissions';
@@ -10,6 +11,10 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@
 const grants = z.array(z.string().trim().min(1)).min(1).max(200).transform(values => [...new Set(values)]);
 const scope = {
   roleCodes: grants,
+  facilityId: z.string().min(1).nullable().optional(),
+  departmentId: z.string().min(1).nullable().optional(),
+  landingPage: z.string().min(1).nullable().optional(),
+  newTechnician: z.object({ code: z.string().trim().min(1).max(50), calendarId: z.string().min(1).nullable().optional() }).strict().optional(),
   customerId: z.string().min(1).nullable().default(null),
   technicianId: z.string().min(1).nullable().default(null),
 };
@@ -58,12 +63,12 @@ export class AccessService {
     const manageableWorkspaces = await this.identityWorkspaces(this.db, principal);
     const memberships = await this.db.membership.findMany({
       where: { workspaceId: principal.workspaceId, id },
-      include: { user: { select: { id: true, name: true, email: true, updatedAt: true, memberships: { select: { workspaceId: true } } } }, roles: { include: { role: true } } },
+      include: { user: { select: { id: true, name: true, email: true, updatedAt: true, memberships: { select: { workspaceId: true } } } }, roles: { include: { role: true } }, department: true },
       orderBy: { createdAt: 'desc' },
     });
     return memberships.map(m => ({ id: m.id, userId: m.userId, name: m.user.name, email: m.user.email,
       identityUpdatedAt: m.user.updatedAt.toISOString(), canEditIdentity: m.user.memberships.every(link => manageableWorkspaces.has(link.workspaceId)),
-      status: m.status, customerId: m.customerId, technicianId: m.technicianId, version: m.version,
+      facilityId: m.facilityId, departmentId: m.departmentId, department: m.department, landingPage: m.landingPage, status: m.status, customerId: m.customerId, technicianId: m.technicianId, version: m.version,
       roles: m.roles.map(grant => grant.role.code), createdAt: m.createdAt.toISOString() }));
   }
 
@@ -90,11 +95,14 @@ export class AccessService {
 
   async scopeOptions(principal: Principal) {
     await this.authorize(this.db, principal);
-    const [customers, technicians] = await Promise.all([
+    const [customers, technicians, departments, calendars, facilities] = await Promise.all([
       this.db.customer.findMany({ where: { workspaceId: principal.workspaceId }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
-      this.db.technician.findMany({ where: { workspaceId: principal.workspaceId }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
+      this.db.technician.findMany({ where: { workspaceId: principal.workspaceId, isActive: true, archivedAt: null, OR: [{ facilityId: null }, { facilityId: { in: principal.facilityIds ?? [] } }] }, select: { id: true, code: true, name: true, membershipId: true }, orderBy: { name: 'asc' } }),
+      this.db.department.findMany({ where: { workspaceId: principal.workspaceId, isActive: true, archivedAt: null }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
+      this.db.workCalendar.findMany({ where: { workspaceId: principal.workspaceId }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
+      this.db.facility.findMany({ where: { workspaceId: principal.workspaceId, id: { in: principal.facilityIds ?? [] }, status: 'ACTIVE' }, select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } }),
     ]);
-    return { customers, technicians };
+    return { customers, technicians, departments, calendars, facilities };
   }
 
   private async resolveScope(tx: Tx, workspaceId: string, input: z.infer<typeof UpdateMembershipSchema> | z.infer<typeof CreateAccessUserSchema>, existingCodes: string[] = [], membershipId?: string) {
@@ -102,12 +110,19 @@ export class AccessService {
     if (roles.length !== input.roleCodes.length || roles.some(r => !r.isActive && !existingCodes.includes(r.code))) {
       throw new BadRequestError('Choose valid active roles in this workspace');
     }
+    if (input.newTechnician && (input.technicianId || !input.roleCodes.includes('TECHNICIAN') || input.customerId)) throw new BadRequestError('Create a new technician only for an unlinked Technician account');
+    if (input.departmentId && !await tx.department.findFirst({ where: { id: input.departmentId, workspaceId, isActive: true, archivedAt: null } })) throw new BadRequestError('Choose an active department in this workspace');
+    if (input.newTechnician?.calendarId && !await tx.workCalendar.findFirst({ where: { id: input.newTechnician.calendarId, workspaceId, archivedAt: null } })) throw new BadRequestError('Calendar does not belong to this workspace');
+    const activeRoles = roles.filter(role => role.isActive);
+    const rolePermissions = await tx.rolePermission.findMany({ where: { workspaceId, roleId: { in: activeRoles.map(role => role.id) } } });
+    if (input.landingPage && !availablePages(rolePermissions.map(p => p.permissionCode), activeRoles.map(role => role.code), input.customerId).some(page => page.href === input.landingPage)) throw new BadRequestError('Starting page must be available to the selected active roles');
     if (input.customerId && !await tx.customer.findFirst({ where: { id: input.customerId, workspaceId } })) throw new BadRequestError('Customer does not belong to this workspace');
     if (input.technicianId && !await tx.technician.findFirst({ where: { id: input.technicianId, workspaceId } })) throw new BadRequestError('Technician does not belong to this workspace');
     if (input.roleCodes.includes('CUSTOMER') && !input.customerId) throw new BadRequestError('Customer role requires a linked customer');
-    if (input.roleCodes.includes('TECHNICIAN') && !input.technicianId) throw new BadRequestError('Technician role requires a linked technician');
+    if (input.roleCodes.includes('TECHNICIAN') && !input.technicianId && !input.newTechnician) throw new BadRequestError('Technician role requires a linked technician');
     if (input.technicianId) {
-      const technician = await tx.technician.findFirst({ where: { id: input.technicianId, workspaceId } });
+      const technician = await tx.technician.findFirst({ where: { id: input.technicianId, workspaceId, isActive: true, archivedAt: null } });
+      if (!technician) throw new BadRequestError('Choose an active technician');
       const linked = await tx.membership.findFirst({ where: { workspaceId, technicianId: input.technicianId, ...(membershipId ? { id: { not: membershipId } } : {}) } });
       if (linked || (technician?.membershipId && technician.membershipId !== membershipId)) throw new BadRequestError('Technician is already linked to another membership');
     }
@@ -119,22 +134,45 @@ export class AccessService {
     return roles;
   }
 
+  private async validateFacility(tx: Tx, principal: Principal, facilityId?: string | null) {
+    if (!facilityId) return;
+    if (!principal.facilityIds?.includes(facilityId) || !await tx.facility.findFirst({ where: { id: facilityId, workspaceId: principal.workspaceId, status: 'ACTIVE' } })) throw new ForbiddenError('Choose an active facility within your granted scope');
+  }
+
+  private async createOnboardingTechnician(tx: Tx, principal: Principal, input: z.infer<typeof CreateAccessUserSchema> | z.infer<typeof UpdateMembershipSchema>, name: string) {
+    if (!input.newTechnician) {
+      if (input.technicianId) { const existing = await tx.technician.findFirst({ where: { id: input.technicianId, workspaceId: principal.workspaceId } });
+        await this.validateFacility(tx, principal, existing?.facilityId);
+        if (input.facilityId && existing?.facilityId && input.facilityId !== existing.facilityId) throw new BadRequestError('Primary facility must match the linked technician facility');
+      }
+      return input.technicianId;
+    }
+    if (await tx.technician.findFirst({ where: { workspaceId: principal.workspaceId, code: input.newTechnician.code } })) throw new ConflictError('Technician code already exists');
+    const facility = await ensureDefaultFacility(tx, principal.workspaceId);
+    const facilityId = input.facilityId ?? principal.facilityId ?? facility.id;
+    await this.validateFacility(tx, principal, facilityId);
+    const technician = await tx.technician.create({ data: { workspaceId: principal.workspaceId, code: input.newTechnician.code, name, departmentId: input.departmentId ?? null, calendarId: input.newTechnician.calendarId ?? null, facilityId } });
+    return technician.id;
+  }
+
   async createUser(principal: Principal, raw: unknown, key: string) {
     requirePermission(principal, 'access.manage');
     const input = CreateAccessUserSchema.parse(raw);
     return executeCommand({ principal, commandType: 'access.user.create', idempotencyKey: key, payload: input, prismaClient: this.db,
       handler: async (tx: Tx) => {
         await this.authorize(tx, principal);
+        await this.validateFacility(tx, principal, input.facilityId);
         const roles = await this.resolveScope(tx, principal.workspaceId, input);
         if (await tx.user.findUnique({ where: { email: input.email } })) throw new ConflictError('An account with this email already exists. Existing account credentials cannot be changed here.');
+        const technicianId = await this.createOnboardingTechnician(tx, principal, input, input.name);
         const user = await tx.user.create({ data: { name: input.name, email: input.email } });
         await tx.account.create({ data: { userId: user.id, providerId: 'credential', accountId: user.id, password: await hashPassword(input.password) } });
         const membership = await tx.membership.create({ data: { workspaceId: principal.workspaceId, userId: user.id,
-          customerId: input.customerId, technicianId: input.technicianId, facilityId: (await ensureDefaultFacility(tx, principal.workspaceId)).id } });
+          departmentId: input.departmentId ?? null, landingPage: input.landingPage ?? null, customerId: input.customerId, technicianId, facilityId: input.facilityId ?? (technicianId ? (await tx.technician.findUnique({ where: { id: technicianId } }))?.facilityId : null) ?? principal.facilityId ?? (await ensureDefaultFacility(tx, principal.workspaceId)).id } });
         for (const role of roles) await tx.membershipRole.create({ data: { workspaceId: principal.workspaceId, membershipId: membership.id, roleId: role.id, grantedBy: principal.userId } });
-        if (input.technicianId) await tx.technician.update({ where: { id: input.technicianId }, data: { membershipId: membership.id } });
+        if (technicianId) await tx.technician.update({ where: { id: technicianId }, data: { membershipId: membership.id } });
         return { data: { membershipId: membership.id, userId: user.id, name: user.name, email: user.email }, aggregateType: 'MEMBERSHIP', aggregateId: membership.id,
-          resourceVersion: membership.version, auditDetails: { roleCodes: input.roleCodes } };
+          resourceVersion: membership.version, auditDetails: { roleCodes: input.roleCodes, technicianId, departmentId: input.departmentId, landingPage: input.landingPage } };
       } });
   }
 
@@ -162,6 +200,7 @@ export class AccessService {
             await tx.session.deleteMany({ where: { userId: user.id } });
           }
         }
+        await this.validateFacility(tx, principal, input.facilityId);
         const roles = await this.resolveScope(tx, principal.workspaceId, input, membership.roles.map((r: { role: { code: string } }) => r.role.code), id);
         if (membership.status === 'ACTIVE' && membership.roles.some((r: { role: { code: string; isActive: boolean } }) => r.role.code === 'ACCESS_ADMIN' && r.role.isActive)
           && (input.status !== 'ACTIVE' || !input.roleCodes.includes('ACCESS_ADMIN'))) {
@@ -169,10 +208,11 @@ export class AccessService {
             role: { code: 'ACCESS_ADMIN', isActive: true }, membership: { id: { not: id }, status: 'ACTIVE' } } });
           if (!remaining) throw new ForbiddenError('At least one active ACCESS_ADMIN must remain in the workspace');
         }
+        const technicianId = await this.createOnboardingTechnician(tx, principal, { ...input, facilityId: input.facilityId ?? membership.facilityId }, name);
         await tx.membershipRole.deleteMany({ where: { workspaceId: principal.workspaceId, membershipId: id } });
         await tx.technician.updateMany({ where: { workspaceId: principal.workspaceId, membershipId: id }, data: { membershipId: null } });
-        if (input.technicianId) await tx.technician.update({ where: { id: input.technicianId }, data: { membershipId: id } });
-        await tx.membership.update({ where: { id }, data: { status: input.status, customerId: input.customerId, technicianId: input.technicianId,
+        if (technicianId) await tx.technician.update({ where: { id: technicianId }, data: { membershipId: id } });
+        await tx.membership.update({ where: { id }, data: { status: input.status, customerId: input.customerId, technicianId, departmentId: input.departmentId, landingPage: input.landingPage, facilityId: input.facilityId,
           version: { increment: 1 } } });
         for (const role of roles) await tx.membershipRole.create({ data: { workspaceId: principal.workspaceId, membershipId: id, roleId: role.id, grantedBy: principal.userId } });
         return { data: { id, status: input.status, name, email, reauthenticate: emailChanged && user.id === principal.userId }, aggregateType: 'MEMBERSHIP', aggregateId: id,

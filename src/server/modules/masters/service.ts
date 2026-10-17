@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { db as defaultDb } from '@/server/db/client';
 import { Principal } from '@/server/auth/principal';
 import { requirePermission, requireAnyPermission } from '@/server/auth/permissions';
-import { ConflictError, NotFoundError, BadRequestError } from '@/domain/errors';
+import { ConflictError, NotFoundError, BadRequestError, ForbiddenError } from '@/domain/errors';
 import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
 
@@ -11,6 +11,7 @@ export type EditableCatalogResource =
   | 'departments'
   | 'calendars'
   | 'machines'
+  | 'certifications'
   | 'skills'
   | 'uoms'
   | 'qc-checklists';
@@ -117,6 +118,13 @@ export class MastersService {
             return { data, aggregateType: 'TECHNICIAN', aggregateId: data.id, resourceVersion: data.version, previousVersion: current.version };
           },
         });
+      case 'certifications':
+        return executeCommand({ principal, commandType: 'certification.update', idempotencyKey, payload: input, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.certification.findFirst({ where: { id, workspaceId: principal.workspaceId, isActive: true } });
+          if (!current) throw new NotFoundError('Active certification not found');
+          const data = await tx.certification.update({ where: { id }, data: { name: input.name ?? current.name } });
+          return { data, aggregateType: 'CERTIFICATION', aggregateId: id, resourceVersion: 1 };
+        } });
       case 'skills':
         return executeCommand({
           principal, commandType: 'skill.update', idempotencyKey, payload: input, prismaClient: this.prisma,
@@ -195,6 +203,13 @@ export class MastersService {
           if (!current) throw new NotFoundError(`Technician '${id}' not found`);
           const data = await tx.technician.update({ where: { id }, data: { archivedAt: new Date(), isActive: false, version: { increment: 1 } } });
           return { data, aggregateType: 'TECHNICIAN', aggregateId: data.id, resourceVersion: data.version };
+        } });
+      case 'certifications':
+        return executeCommand({ principal, commandType: 'certification.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
+          const current = await tx.certification.findFirst({ where: { id, workspaceId: principal.workspaceId } });
+          if (!current) throw new NotFoundError('Certification not found');
+          const data = await tx.certification.update({ where: { id }, data: { isActive: false } });
+          return { data, aggregateType: 'CERTIFICATION', aggregateId: id, resourceVersion: 1 };
         } });
       case 'skills':
         return executeCommand({ principal, commandType: 'skill.archive', idempotencyKey, payload: { id }, prismaClient: this.prisma, handler: async (tx) => {
@@ -1227,6 +1242,10 @@ export class MastersService {
           if (!fac) throw new NotFoundError(`Facility '${input.facilityId}' not found in workspace`);
         }
 
+        if (input.departmentId && !await tx.department.findFirst({ where: { id: input.departmentId, workspaceId: principal.workspaceId, isActive: true, archivedAt: null } })) throw new BadRequestError('Choose an active department in this workspace');
+        if (input.calendarId && !await tx.workCalendar.findFirst({ where: { id: input.calendarId, workspaceId: principal.workspaceId, archivedAt: null } })) throw new BadRequestError('Choose a working calendar in this workspace');
+        if (input.membershipId) throw new BadRequestError('Link accounts through People & Access to keep both sides consistent');
+        if (input.facilityId && !principal.facilityIds?.includes(input.facilityId)) throw new ForbiddenError('Facility is outside your granted facilities');
         const tech = await tx.technician.create({
           data: { workspaceId: principal.workspaceId, ...input },
           include: { department: true, calendar: true },
@@ -1415,7 +1434,7 @@ export class MastersService {
         if (!tech) throw new NotFoundError(`Technician '${technicianId}' not found`);
 
         const cert = await tx.certification.findFirst({
-          where: { id: input.certificationId, workspaceId: principal.workspaceId },
+          where: { id: input.certificationId, workspaceId: principal.workspaceId, isActive: true },
         });
         if (!cert) throw new NotFoundError(`Certification '${input.certificationId}' not found`);
 
@@ -1544,7 +1563,7 @@ export class MastersService {
 
         const startAt = new Date(input.startAt);
         const endAt = new Date(input.endAt);
-        if (startAt >= endAt) {
+        if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime()) || startAt >= endAt) {
           throw new BadRequestError('startAt must be strictly before endAt');
         }
 
@@ -1665,15 +1684,19 @@ export class MastersService {
         for (const item of input.intervals) {
           const startAt = new Date(item.startAt);
           const endAt = new Date(item.endAt);
-          if (startAt >= endAt) {
+          if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime()) || startAt >= endAt) {
             throw new BadRequestError(`Invalid interval: startAt (${item.startAt}) must precede endAt (${item.endAt})`);
           }
 
+          if (Boolean(item.technicianId) === Boolean(item.machineId)) throw new BadRequestError('Choose exactly one technician or machine for each roster interval');
+          if (item.facilityId && !principal.facilityIds?.includes(item.facilityId)) throw new ForbiddenError('Roster facility is outside your granted facilities');
           if (item.technicianId) {
             const tech = await tx.technician.findFirst({
               where: { id: item.technicianId, workspaceId: principal.workspaceId, isActive: true },
             });
             if (!tech) throw new BadRequestError(`Technician '${item.technicianId}' not found or inactive`);
+            if (tech.facilityId && !principal.facilityIds?.includes(tech.facilityId)) throw new ForbiddenError('Technician is outside your granted facilities');
+            if (item.facilityId && tech.facilityId && tech.facilityId !== item.facilityId) throw new BadRequestError('Roster facility must match the technician facility');
           }
 
           if (item.machineId) {
@@ -1791,7 +1814,7 @@ export class MastersService {
 
   async listCertifications(principal: Principal) {
     return this.prisma.certification.findMany({
-      where: { workspaceId: principal.workspaceId },
+      where: { workspaceId: principal.workspaceId, isActive: true },
       orderBy: { code: 'asc' },
     });
   }

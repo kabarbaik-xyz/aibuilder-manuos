@@ -5,6 +5,8 @@ import { PermissionGate } from '@/components/ui/permission-gate';
 import { PageHeader } from '@/components/ui/page-header';
 import { Select } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import Link from 'next/link';
+import { TechnicianCreateDialog } from '@/features/masters/components/technician-create-dialog';
 import React, { useState, useEffect } from 'react';
 import { useAddTechnicianSkill, useSkills } from '@/features/masters/hooks';
 import { Technician } from '@/features/masters/api';
@@ -43,6 +45,7 @@ interface ReassessmentQueueItem {
 }
 
 export default function TechniciansPage() {
+  const [createOpen, setCreateOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'technicians' | 'reassessment'>('technicians');
   const { search, setSearch, query } = useListSearch();
   const { data, isLoading, error, refetch, pagination } = usePaginatedList<Technician>('technicians', { search: query || undefined });
@@ -154,7 +157,7 @@ export default function TechniciansPage() {
       header: 'Technician / User',
       render: (t) => (
         <div>
-          <span className="font-medium text-ink">{t.name || t.membership?.user?.name || 'Technician'}</span>
+          <Link className="font-medium text-primary hover:underline" href={`/settings/technicians/${t.id}`}>{t.name || t.membership?.user?.name || 'Technician'}</Link>
           <div className="text-xs text-muted font-mono">{t.code} • {t.membership?.user?.email}</div>
         </div>
       ),
@@ -279,10 +282,12 @@ export default function TechniciansPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Shop Floor Technicians & Workforce Skills"
+        title="Technicians"
+        actions={<PermissionGate permission="resource.manage"><Button variant="primary" icon="plus" onClick={() => setCreateOpen(true)}>Add technician</Button></PermissionGate>}
         description="Manage qualified machine operators, verified skill matrix (0–4 scale), expiration queues and overtime safety limits"
       />
 
+      {createOpen && <TechnicianCreateDialog onClose={() => setCreateOpen(false)} />}
       {/* Tabs */}
       <Tabs
         ariaLabel="Technicians & skills sections"
