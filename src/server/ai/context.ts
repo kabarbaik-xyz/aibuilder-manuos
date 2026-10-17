@@ -136,6 +136,8 @@ export async function buildAuthorizedContext(
     select: { revision: true },
   });
   const workspaceRevision = workspace?.revision ?? 1;
+  const facilityIds = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
+  const canReadAcrossFacilities = principal.roles.includes('OWNER');
 
   // 2. Fetch scoped orders (respect customer tenancy if customer user)
   const effectiveCustomerId = principal.customerId || undefined;
@@ -144,6 +146,7 @@ export async function buildAuthorizedContext(
     where: {
       workspaceId,
       ...(effectiveCustomerId ? { customerId: effectiveCustomerId } : {}),
+      ...(!effectiveCustomerId && !canReadAcrossFacilities ? { facilityId: { in: facilityIds } } : {}),
       ...(scope?.orderId ? { id: scope.orderId } : {}),
       ...(scope?.itemId ? { itemId: scope.itemId } : {}),
       ...(scope?.taskId ? { instances: { some: { tasks: { some: { id: scope.taskId } } } } } : {}),
@@ -176,6 +179,7 @@ export async function buildAuthorizedContext(
       workspaceId,
       ...(scope?.taskId ? { id: scope.taskId } : {}),
       ...(canReadAllTasks ? {} : { assignedTechnicianId: principal.technicianId! }),
+      ...(!canReadAcrossFacilities ? { instance: { order: { facilityId: { in: facilityIds } } } } : {}),
       status: { not: 'CANCELLED' },
     },
     include: { instance: { include: { order: true } } },
@@ -259,12 +263,12 @@ export async function buildAuthorizedContext(
   // 4. Fetch resources (machines & technicians)
   const canReadResources = !effectiveCustomerId && (principal.permissions.has('planning.read') || principal.permissions.has('resource.manage'));
   const machines = canReadResources ? await prisma.machine.findMany({
-    where: { workspaceId, archivedAt: null },
+    where: { workspaceId, archivedAt: null, ...(!canReadAcrossFacilities ? { OR: [{ facilityId: null }, { facilityId: { in: facilityIds } }] } : {}) },
     take: 10,
   }) : [];
 
   const technicians = canReadResources ? await prisma.technician.findMany({
-    where: { workspaceId, archivedAt: null, ...(scope?.itemId ? { id: scope.itemId } : {}) },
+    where: { workspaceId, archivedAt: null, ...(scope?.itemId ? { id: scope.itemId } : {}), ...(!canReadAcrossFacilities ? { OR: [{ facilityId: null }, { facilityId: { in: facilityIds } }] } : {}) },
     take: 10,
   }) : [];
 

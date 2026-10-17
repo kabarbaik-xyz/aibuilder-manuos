@@ -60,6 +60,35 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     }
   });
 
+  it('restricts internal AI order and task context to granted facilities', async () => {
+    const { alpha } = fixture;
+    const owner = alpha.users.owner;
+    const planner = alpha.users.planner;
+    const outOfScopeFacility = await fixture.db.facility.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        code: 'AI-OUT-OF-SCOPE',
+        name: 'AI out-of-scope facility',
+      },
+    });
+    const orders = new OrderService(fixture.db);
+    const order = await orders.createOrderDraft(owner.principal, {
+      customerId: alpha.masters.customerId,
+      orderTypeId: alpha.masters.orderTypeId,
+      itemId: alpha.masters.fgItemId,
+      orderedQuantity: '1',
+      requestedDate: '2026-12-23T00:00:00.000Z',
+    }, 'ai-context-out-of-scope-order');
+    await fixture.db.order.update({
+      where: { id: order.data.id },
+      data: { facilityId: outOfScopeFacility.id },
+    });
+
+    const context = await buildAuthorizedContext(planner.principal, fixture.db, { orderId: order.data.id });
+    expect(context.orders).toEqual([]);
+    expect(context.lifecycleStages).toEqual([]);
+  });
+
   it('grounds AI context in active lifecycle ownership while hiding it from customer users', async () => {
     const { alpha } = fixture;
     const owner = alpha.users.owner;

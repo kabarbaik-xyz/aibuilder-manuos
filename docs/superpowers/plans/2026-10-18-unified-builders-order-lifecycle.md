@@ -210,6 +210,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Tests:** `tests/integration/lifecycle-ai-context.test.ts`; reuse deterministic/mocked provider facilities, not paid live calls.
 
 - [ ] Build bounded typed context containing selected workflow/stage/form versions, authorized current stage/PIC/deadline, predecessor blockers, finalized permitted answers, schedule/booking/material/QC facts and pending approvals.
+- [x] Apply facility grants to internal AI order, task, machine and technician context; customer order context remains restricted to the customer's own records. Verified with an outside-facility regression spec.
 - [ ] Include evidence provenance/timestamps and distinguish current records, historical snapshots, restricted/missing data and actual totals vs samples. Exclude secrets, unauthorized form fields and unrelated departments' restricted records.
 - [ ] Support contextual questions such as why a stage is blocked, who owns the next action and which validated recovery options exist. Evidence links open readable authorized records, never model-authored URLs.
 - [ ] AI builder changes apply only to authorized drafts after deterministic schema/catalog validation. Operational AI changes create the existing validated proposal; approval invokes Task8/domain adapters and never direct state mutation.
