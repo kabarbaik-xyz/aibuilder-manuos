@@ -48,6 +48,15 @@ export interface AuthorizedContextTask {
   orderNumber: string;
 }
 
+export interface AuthorizedContextBooking {
+  orderNumber: string;
+  operation: string;
+  resourceType: 'MACHINE' | 'TECHNICIAN';
+  resourceName: string | null;
+  startAt: string;
+  endAt: string;
+}
+
 export interface AuthorizedContextDisruption {
   materialId?: string;
   materialName?: string;
@@ -75,6 +84,7 @@ export interface AuthorizedContext {
   workspaceRevision: number;
   orders: AuthorizedContextOrder[];
   tasks: AuthorizedContextTask[];
+  confirmedBookings: AuthorizedContextBooking[];
   inventory: AuthorizedContextInventory[];
   resources: AuthorizedContextResource[];
   lifecycleStages: AuthorizedContextLifecycleStage[];
@@ -196,6 +206,19 @@ export async function buildAuthorizedContext(
     orderNumber: task.instance.order.orderNumber,
   }));
 
+  const dbBookings = !effectiveCustomerId && principal.permissions.has('planning.read') && orders.length > 0
+    ? await prisma.resourceBooking.findMany({
+        where: {
+          workspaceId,
+          status: 'CONFIRMED',
+          task: { instance: { orderId: { in: orders.map(order => order.id) } } },
+        },
+        include: { task: { include: { instance: { include: { order: { select: { id: true, orderNumber: true } } } } } } },
+        orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
+        take: 30,
+      })
+    : [];
+
   // Lifecycle ownership is internal operational data; never expose it in customer context.
   const dbLifecycleStages = !effectiveCustomerId && canReadOrders && orders.length > 0
     ? await prisma.orderLifecycleStage.findMany({
@@ -272,6 +295,19 @@ export async function buildAuthorizedContext(
     take: 10,
   }) : [];
 
+  const machineNames = new Map(machines.map(machine => [machine.id, machine.name]));
+  const technicianNames = new Map(technicians.map(technician => [technician.id, technician.name]));
+  const confirmedBookings: AuthorizedContextBooking[] = dbBookings.map(booking => ({
+    orderNumber: booking.task.instance.order.orderNumber,
+    operation: booking.task.nodeKey,
+    resourceType: booking.resourceType === 'TECHNICIAN' ? 'TECHNICIAN' : 'MACHINE',
+    resourceName: booking.resourceType === 'TECHNICIAN'
+      ? technicianNames.get(booking.resourceId) ?? null
+      : machineNames.get(booking.resourceId) ?? null,
+    startAt: booking.startAt.toISOString(),
+    endAt: booking.endAt.toISOString(),
+  }));
+
   const resources: AuthorizedContextResource[] = [
     ...machines.map((m) => ({
       id: m.id,
@@ -334,6 +370,7 @@ export async function buildAuthorizedContext(
     scope,
     orders,
     tasks,
+    confirmedBookings,
     inventory,
     resources,
     lifecycleStages,
@@ -349,6 +386,7 @@ export async function buildAuthorizedContext(
     workspaceRevision,
     orders,
     tasks,
+    confirmedBookings,
     inventory,
     resources,
     lifecycleStages,

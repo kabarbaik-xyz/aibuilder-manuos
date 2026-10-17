@@ -57,7 +57,7 @@ export class ProductionBrainService {
     }
 
     const model = process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest';
-    const promptVersion = 'brain-qa-v7-readable-task-labels';
+    const promptVersion = 'brain-qa-v8-confirmed-bookings';
     const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
     // 1. Check scoped cache
@@ -90,6 +90,9 @@ ${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.o
 - Assigned/Plannable Tasks (${context.tasks.length}):
 ${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.orderNumber} / operation ${task.nodeKey}, status ${task.status}, planned ${task.plannedMinutes ?? 'unavailable'} minutes, actual ${task.actualMinutes ?? 'unavailable'} minutes`).join('\n')}
 
+- Confirmed Resource Bookings (${inventoryQuestion ? 'omitted: inventory-only question' : context.confirmedBookings.length}):
+${(inventoryQuestion ? [] : context.confirmedBookings).map(booking => `  * ${booking.orderNumber} / operation ${booking.operation}: ${booking.resourceName ?? booking.resourceType.toLowerCase()} booked ${booking.startAt} to ${booking.endAt}`).join('\n')}
+
 User Question: "${question}"
 
 Rules:
@@ -99,6 +102,7 @@ Rules:
 - For order status questions: group by human-readable status (In production, Released, Draft, Partially delivered, Delivered). State sample counts only when directly counted from the supplied records. Delivered and cancelled orders are not active. Do not enumerate every order.
 - For inventory: group relevant records into short bullets with item name/code, on-hand amount, and reserved amount when relevant. Never add quantities across different items or infer shortage/sufficiency from stock alone. Never invent a unit when none is supplied.
 - For production overview: separate Orders, Work in progress, and Resources when evidence exists. Do not describe completed tasks as open work, or resource status as confirmed scheduling availability.
+- A confirmed booking is an actual reservation for its time window only; do not infer general availability, shift coverage, or a complete schedule from the bounded booking sample.
 - For workflow questions: use only the supplied current stage, department, owner, due date, and scheduling policy. A stage state is not proof that its domain action or evidence has completed; use task, QC, and delivery records for those outcomes.
 - Translate enum values into natural words: IN_PRODUCTION → In production, PARTIALLY_DELIVERED → Partially delivered. Do not print raw status codes, UUIDs, or internal field names.
 - If there is an evidenced issue, finish with one concrete next step. If none is evidenced, do not invent urgency or recommendations. Make missing evidence explicit.

@@ -203,10 +203,31 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     await engineering.approveEngineeringRevision(alpha.users.owner.principal, order.data.engineeringRevisions[0].id, 'ai-task-context-approve');
     const release = await releaseOrder(alpha.users.owner.principal, order.data.id, 'ai-task-context-release', fixture.db);
     const taskId = release.data.taskIds['OP-10'];
+    const bookingStart = new Date('2026-12-20T08:00:00.000Z');
+    const bookingEnd = new Date('2026-12-20T08:40:00.000Z');
+    await fixture.db.resourceBooking.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        taskId,
+        resourceType: 'MACHINE',
+        resourceId: alpha.masters.machineId,
+        startAt: bookingStart,
+        endAt: bookingEnd,
+      },
+    });
 
     const response = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'What is blocking this task?', { type: 'TASK', id: taskId });
     const answer = response.status === 'SUCCESS' ? response.data : response.fallbackData;
     expect(answer?.evidence).toContainEqual(expect.objectContaining({ recordType: 'TASK', recordId: taskId, href: `/planning/tasks/${taskId}` }));
+    const taskContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { taskId });
+    expect(taskContext.confirmedBookings).toContainEqual(expect.objectContaining({
+      orderNumber: order.data.orderNumber,
+      operation: 'OP-10',
+      resourceType: 'MACHINE',
+      resourceName: expect.any(String),
+      startAt: bookingStart.toISOString(),
+      endAt: bookingEnd.toISOString(),
+    }));
     await expect(brainService.answerProductionQuestion(alpha.users.customerUser.principal, 'What is blocking this task?', { type: 'TASK', id: taskId })).rejects.toThrow(/not available/i);
   });
 
