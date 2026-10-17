@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { jobLabel } from '@/features/orders/job-label';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -67,6 +68,7 @@ export function RecoveryInbox() {
     setLoadingJobs(true);
     try {
       const order = await ordersApi.getOrder(orderId);
+      setOrders(rows => rows.map(row => row.id === order.id ? order : row));
       const activeInstances = (order.instances ?? []).filter((instance) => instance.status === 'ACTIVE');
       setInstances(activeInstances);
       if (activeInstances.length === 1) setInstanceId(activeInstances[0].id);
@@ -101,7 +103,7 @@ export function RecoveryInbox() {
       <p className="small muted mt-1">Saves a qualified finite-capacity schedule snapshot for review. No alternative costs, shipment allocation, booking, or customer commitment is inferred.</p>
       {loadingOrders ? <LoadingState message="Loading released orders…" /> : <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <div><label className="mb-1 block text-xs font-medium text-ink" htmlFor="recovery-order">Order</label><Select id="recovery-order" value={selectedOrderId} disabled={proposing} onChange={(event) => void selectOrder(event.target.value)}><option value="">Select an order</option>{orders.map((order) => <option key={order.id} value={order.id}>{order.orderNumber} · {order.customer?.name ?? 'Customer'}</option>)}</Select></div>
-        <div><label className="mb-1 block text-xs font-medium text-ink" htmlFor="recovery-job">Active job</label><Select id="recovery-job" value={instanceId} disabled={!selectedOrderId || loadingJobs || proposing || instances.length <= 1} onChange={(event) => { setInstanceId(event.target.value); setProposalResult(null); }}><option value="">{loadingJobs ? 'Loading jobs…' : 'Select a job'}</option>{instances.map((instance) => <option key={instance.id} value={instance.id}>Job {instance.id.slice(0, 8)}</option>)}</Select></div>
+        <div><label className="mb-1 block text-xs font-medium text-ink" htmlFor="recovery-job">Active job</label><Select id="recovery-job" value={instanceId} disabled={!selectedOrderId || loadingJobs || proposing || instances.length <= 1} onChange={(event) => { setInstanceId(event.target.value); setProposalResult(null); }}><option value="">{loadingJobs ? 'Loading jobs…' : 'Select a job'}</option>{instances.map((instance, index) => <option key={instance.id} value={instance.id}>{jobLabel(orders.find(order => order.id === selectedOrderId), instance, index)}</option>)}</Select></div>
         <Button variant="primary" disabled={!selectedOrderId || !instanceId || proposing || loadingJobs} onClick={() => void generateReview()}>{proposing ? 'Evaluating…' : 'Generate review'}</Button>
       </div>}
       {proposalError && <p role="alert" className="small text-danger mt-2">{proposalError}</p>}
@@ -109,7 +111,7 @@ export function RecoveryInbox() {
       {proposalResult?.state === 'SAVED' && <p className="small text-success mt-3">Review saved: <Link className="text-primary hover:underline" href={`/ai/recovery/${proposalResult.id}`}>open schedule evidence</Link>. Applying it revalidates and commits the exact reviewed assignments as one transaction.</p>}
     </section>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="small muted">Saved simulations are for review. Applying a proposal remains disabled until it can reserve real resources or shipment quantities.</p>
+      <p className="small muted">Open a saved schedule review to inspect its evidence and apply the reviewed assignments. Historical simulations cannot be applied.</p>
       <div className="w-full sm:w-56"><label className="sr-only" htmlFor="recovery-status">Filter proposals by status</label><Select id="recovery-status" value={status} onChange={event => { setPage(1); setStatus(event.target.value); }}><option value="">All statuses</option><option value="PROPOSED">Proposed</option><option value="REJECTED">Rejected</option><option value="APPROVED">Approved</option><option value="SUPERSEDED">Superseded</option></Select></div>
     </div>
     {loading ? <LoadingState message="Loading saved recovery proposals…" /> : error ? <ErrorState title="Unable to load recovery proposals" message={error} onRetry={() => void load()} /> : !data?.items.length ? <EmptyState title="No saved proposals" description="Recovery proposals created from an order will appear here for review." kind="no-results" /> : <div className="grid gap-3">

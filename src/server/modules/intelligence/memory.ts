@@ -60,8 +60,19 @@ export interface FactoryMemoryDTO {
   };
 }
 
+const DEFAULT_MAX_COHORT_TASKS = 5_000;
+const DEFAULT_MAX_EVIDENCE_RECORDS = 25_000;
+
+interface FactoryMemoryBounds {
+  maxCohortTasks?: number;
+  maxEvidenceRecords?: number;
+}
+
 export class FactoryMemoryService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly bounds: FactoryMemoryBounds = {},
+  ) {}
 
   async queryFactoryMemory(principal: Principal, rawFilter: MemoryFilterInput = {}): Promise<FactoryMemoryDTO> {
     requireAnyPermission(principal, ['planning.read', 'execution.read', 'owner']);
@@ -74,8 +85,7 @@ export class FactoryMemoryService {
     const completedBefore = filter.completedTo ? new Date(`${filter.completedTo}T00:00:00.000Z`) : undefined;
     if (completedBefore) completedBefore.setUTCDate(completedBefore.getUTCDate() + 1);
 
-    const completedTasks = await this.prisma.task.findMany({
-      where: {
+    const taskWhere = {
         workspaceId: principal.workspaceId,
         status: 'COMPLETED',
         ...(filter.departmentId || filter.itemId ? {
@@ -92,7 +102,36 @@ export class FactoryMemoryService {
           } },
         } : {}),
         ...(completedAfter || completedBefore ? { updatedAt: { ...(completedAfter ? { gte: completedAfter } : {}), ...(completedBefore ? { lt: completedBefore } : {}) } } : {}),
-      },
+      } as const;
+    const maxCohortTasks = this.bounds.maxCohortTasks ?? DEFAULT_MAX_COHORT_TASKS;
+    const candidateTasks = await this.prisma.task.findMany({
+      where: taskWhere,
+      select: { id: true },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      take: maxCohortTasks + 1,
+    });
+    if (candidateTasks.length > maxCohortTasks) {
+      throw new BadRequestError(`Factory-memory cohort exceeds the ${maxCohortTasks}-run analysis limit. Add or tighten filters and try again.`);
+    }
+
+    const taskIds = candidateTasks.map(task => task.id);
+    const maxEvidenceRecords = this.bounds.maxEvidenceRecords ?? DEFAULT_MAX_EVIDENCE_RECORDS;
+    if (taskIds.length) {
+      const [sessionCount, outputCount, inspectionCount] = await Promise.all([
+        this.prisma.workSession.count({ where: { workspaceId: principal.workspaceId, taskId: { in: taskIds } } }),
+        this.prisma.productionOutput.count({ where: { workspaceId: principal.workspaceId, taskId: { in: taskIds } } }),
+        this.prisma.inspection.count({ where: {
+          workspaceId: principal.workspaceId,
+          productionOutput: { is: { workspaceId: principal.workspaceId, taskId: { in: taskIds } } },
+        } }),
+      ]);
+      if (sessionCount + outputCount + inspectionCount > maxEvidenceRecords) {
+        throw new BadRequestError(`Factory-memory cohort exceeds the ${maxEvidenceRecords}-record evidence limit. Add or tighten filters and try again.`);
+      }
+    }
+
+    const completedTasks = taskIds.length ? await this.prisma.task.findMany({
+      where: { workspaceId: principal.workspaceId, id: { in: taskIds } },
       include: {
         jobsheet: { include: { manufacturingOrder: { include: { order: { include: { item: true } } } } } },
         instance: { include: { order: true } },
@@ -100,7 +139,7 @@ export class FactoryMemoryService {
         productionOutputs: { include: { inspections: true } },
       },
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-    });
+    }) : [];
 
     const excludedReasons: Record<string, number> = {};
     const allRuns: MemoryRunEvidence[] = completedTasks.map(task => {

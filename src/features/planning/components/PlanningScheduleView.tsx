@@ -234,7 +234,7 @@ export function PlanningScheduleView() {
           <p>Explore timing and critical work. Validate resource capacity before dispatch.</p>
           <details><summary>About these dates</summary><p>This sequence uses dependencies and the default calendar. It does not validate finite resource capacity, full-slot qualifications, published shifts and leave, confirmed bookings, or BOM-specific material readiness. These dates are not a delivery promise or a capacity-validated schedule. Use a schedule proposal and assignment checks to review feasibility.</p></details>
         </div>
-        <ScheduleProposalWorkbench />
+        <Link href="/ai/promise" className="btn soft">Check delivery date</Link><ScheduleProposalWorkbench />
       </div>
       <div className="planning-metrics">
         <div className="planning-metric">

@@ -281,6 +281,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
           <ButtonLink href={`/ai/assistant?orderId=${encodeURIComponent(order.id)}`}>
             <span className="inline-flex items-center gap-1.5"><Icon name="spark" /> Ask AI</span>
           </ButtonLink>
+          {['RELEASED', 'IN_PRODUCTION', 'PARTIALLY_DELIVERED'].includes(order.status) && <PermissionGate permission={['planning.read', 'task.assign']}><ButtonLink href={`/ai/promise?orderId=${encodeURIComponent(order.id)}`}>Check delivery date</ButtonLink></PermissionGate>}
           {latestEng && (
             <ButtonLink href={`/engineering/orders/${order.id}`}>
               <span className="inline-flex items-center gap-1.5"><FileCode className="w-3.5 h-3.5" /> Engineering spec · {latestEng.status.toLowerCase()}</span>
@@ -343,7 +344,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
         <div><h2 className="text-sm font-semibold text-ink">Order lines</h2><p className="field-help">Each line has its own engineering revision and manufacturing jobs.</p></div>
         <div className="page-stack">
           {order.lines.map(line => <div key={line.id} className="order-detail-line">
-            <div><strong>{line.item?.code || line.itemId} · {line.item?.name || 'Item'}</strong>{(() => { const revision = order.engineeringRevisions?.find(candidate => candidate.orderLineId === line.id); return revision ? <Link className="small text-primary underline" href={`/engineering/orders/${order.id}?revisionId=${revision.id}`}>Line {line.lineNumber} · Engineering {revision.status}</Link> : <span className="small muted">Line {line.lineNumber} · Engineering pending</span>; })()}<PermissionGate permission={['planning.read', 'execution.read']}><Link className="small ml-2 text-primary underline" href={memoryHrefForItem(line.itemId) ?? '/ai/memory'}>Similar jobs</Link></PermissionGate></div>
+            <div><strong>{line.item?.code || line.itemId} · {line.item?.name || 'Item'}</strong>{(() => { const revision = order.engineeringRevisions?.find(candidate => candidate.orderLineId === line.id); return revision ? <Link className="small text-primary underline" href={`/engineering/orders/${order.id}?revisionId=${revision.id}`}>Line {line.lineNumber} · Engineering {revision.status}</Link> : <span className="small muted">Line {line.lineNumber} · Engineering pending</span>; })()}<PermissionGate permission={['planning.read', 'execution.read']}><Link className="small ml-2 text-primary underline" href={memoryHrefForItem(line.itemId, order.id) ?? '/ai/memory'}>Similar jobs</Link></PermissionGate></div>
             <div><span className="small muted">Ordered</span><strong>{formatQuantity(BigInt(line.orderedAtoms))} {line.item?.baseUom?.code || ''}</strong></div>
             <div><span className="small muted">Allocated</span><strong>{formatQuantity(BigInt(line.allocatedAtoms))}</strong></div>
             <div><span className="small muted">Jobs</span><strong>{line.manufacturingOrders?.length ?? 0}</strong></div>
@@ -356,7 +357,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
           <span className="od-fact-label"><Package className="w-3.5 h-3.5" /> Target item</span>
           <strong className="od-fact-value" title={order.item?.name}>{order.item?.name || '—'}</strong>
           <span className="od-fact-sub">{order.item?.code || '—'}</span>
-          <PermissionGate permission={['planning.read', 'execution.read']}><Link className="od-fact-link" href={memoryHrefForItem(order.itemId) ?? '/ai/memory'}>Similar jobs for this item</Link></PermissionGate>
+          <PermissionGate permission={['planning.read', 'execution.read']}><Link className="od-fact-link" href={memoryHrefForItem(order.itemId, order.id) ?? '/ai/memory'}>Similar jobs for this item</Link></PermissionGate>
         </div>
         <div className="od-fact">
           <span className="od-fact-label"><Boxes className="w-3.5 h-3.5" /> Ordered quantity</span>

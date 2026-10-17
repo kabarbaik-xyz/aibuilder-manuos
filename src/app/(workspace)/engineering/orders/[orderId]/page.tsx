@@ -50,7 +50,7 @@ export default function OrderEngineeringReviewPage() {
       <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
         <p className="small muted">Compare this item with completed work using measured duration and finalized inspection evidence.</p>
         <PermissionGate permission={['planning.read', 'execution.read']}>
-          <Link className="btn soft" href={memoryHrefForItem(order.itemId) ?? '/ai/memory'}>Similar jobs</Link>
+          <Link className="btn soft" href={memoryHrefForItem(order.itemId, order.id) ?? '/ai/memory'}>Similar jobs</Link>
         </PermissionGate>
       </Panel>
       <ReviewEditor orderId={orderId} revision={revision} />

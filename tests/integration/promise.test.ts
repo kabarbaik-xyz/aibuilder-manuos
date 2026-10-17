@@ -62,6 +62,7 @@ describe('I02: Promise Feasibility Engine (Capacity & Material Readiness)', () =
     await expect(promiseService.evaluatePromise(fixture.alpha.users.planner.principal, {
       orderId: 'cd004730-82e0-4d0e-8f88-0f7ce40ec30c',
       instanceId: '2f20f305-2e1e-4cd8-a36d-f5d89d52ca72',
+      requestedQuantity: '1',
       requestedDate: '2026-02-30',
     })).rejects.toThrow('valid calendar date');
   });

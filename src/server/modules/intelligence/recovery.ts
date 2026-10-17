@@ -338,6 +338,9 @@ export class RecoveryService {
         const proposal = parseSavedProposal(row.proposalJson);
         const snapshot = proposal?.mode === 'SCHEDULE_REVIEW' ? proposal.scheduleReview : null;
         if (!proposal || !snapshot || !snapshot.tasks.length) throw new BadRequestError('Only a complete schedule review can be applied.');
+        if (!row.order.facilityId || snapshot.facilityId !== row.order.facilityId) {
+          throw new ConflictError('The order facility changed or is missing from the reviewed schedule. Generate a fresh recovery schedule.', 'STALE_SCOPE', true);
+        }
         if (snapshot.tasks.some((task) => !task.startAt || !task.endAt || task.technicianId === undefined || task.machineId === undefined)) {
           throw new ConflictError('This saved review predates assignment evidence. Generate a fresh schedule review before applying.', 'STALE_SCHEDULE', true);
         }
@@ -362,6 +365,13 @@ export class RecoveryService {
         });
         if (currentTasks.length !== snapshot.tasks.length || snapshot.tasks.some((saved) => currentTasks.find((task) => task.id === saved.taskId)?.version !== saved.version)) {
           throw new ConflictError('One or more tasks changed after this schedule was reviewed.', 'STALE_VERSION', true);
+        }
+        const claimed = await tx.recoveryProposal.updateMany({
+          where: { workspaceId: principal.workspaceId, id: row.id, status: 'PROPOSED', orderVersion: row.orderVersion },
+          data: { status: 'APPLYING' },
+        });
+        if (claimed.count !== 1) {
+          throw new ConflictError('This recovery proposal is already being applied or has been resolved. Refresh the proposal before retrying.', 'STALE_PROPOSAL', true);
         }
         const savedById = new Map(snapshot.tasks.map((task) => [task.taskId, task]));
         const applied: string[] = [];

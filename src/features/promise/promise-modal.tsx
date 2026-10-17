@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { jobLabel } from '@/features/orders/job-label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -34,6 +35,7 @@ interface PromiseEvaluation {
   componentReadiness: Array<{
     itemId: string; itemCode: string; itemName: string; quantityUom: string;
     requiredAtoms: string; issuedAtoms: string; reservedAtoms: string; availableRawAtoms: string; state: 'ISSUED' | 'RESERVED' | 'UNALLOCATED';
+    allocatedSupply: Array<{ supplyOrderLineId: string; supplyOrderId: string; supplyOrderNumber: string; supplierName: string; expectedDate: string; allocatedOutstandingAtoms: string; receivedAtoms: string; activelyReservedAtoms: string }>;
     confirmedSupply: Array<{ supplyOrderId: string; supplyOrderNumber: string; supplierName: string; expectedDate: string; remainingAtoms: string }>;
   }>;
   evidence: null | {
@@ -46,7 +48,7 @@ interface PromiseEvaluation {
 
 type ActiveInstance = NonNullable<OrderDto['instances']>[number];
 
-export function PromiseModal() {
+export function PromiseModal({ initialOrderId }: { initialOrderId?: string } = {}) {
   const [orders, setOrders] = useState<OrderDto[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [instances, setInstances] = useState<ActiveInstance[]>([]);
@@ -70,6 +72,8 @@ export function PromiseModal() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => { if (initialOrderId) void selectOrder(initialOrderId); }, [initialOrderId]);
+
   async function selectOrder(orderId: string) {
     setSelectedOrderId(orderId);
     setInstances([]);
@@ -82,6 +86,7 @@ export function PromiseModal() {
     setLoadingInstance(true);
     try {
       const order = await ordersApi.getOrder(orderId);
+      setOrders(rows => rows.map(row => row.id === order.id ? order : row));
       const activeInstances = (order.instances ?? []).filter((instance) => instance.status === 'ACTIVE');
       setInstances(activeInstances);
       if (activeInstances.length === 1) setInstanceId(activeInstances[0].id);
@@ -144,7 +149,7 @@ export function PromiseModal() {
         <label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-job">Active job</label>
         <Select id="promise-job" value={instanceId} disabled={!selectedOrderId || loadingInstance || submitting || instances.length <= 1} onChange={(event) => { setInstanceId(event.target.value); setRequestedQuantity(''); setResult(null); setChangeRequestId(null); }}>
           <option value="">{loadingInstance ? 'Loading jobs…' : 'Select a job'}</option>
-          {instances.map((instance) => <option key={instance.id} value={instance.id}>Job {instance.id.slice(0, 8)}</option>)}
+          {instances.map((instance, index) => <option key={instance.id} value={instance.id}>{jobLabel(orders.find(order => order.id === selectedOrderId), instance, index)}</option>)}
         </Select>
       </div>
       <div>
@@ -176,7 +181,8 @@ export function PromiseModal() {
           <div className="flex flex-wrap items-center justify-between gap-2"><strong className="small text-ink">{component.itemCode} · {component.itemName}</strong><Badge variant={component.state === 'UNALLOCATED' ? 'warning' : 'success'}>{component.state}</Badge></div>
           <p className="small muted mt-1">Required {formatQuantity(BigInt(component.requiredAtoms))} {component.quantityUom} · issued {formatQuantity(BigInt(component.issuedAtoms))} · reserved {formatQuantity(BigInt(component.reservedAtoms))}</p>
           <p className="small muted mt-1">Unreserved RAW stock snapshot: {formatQuantity(BigInt(component.availableRawAtoms))} {component.quantityUom} · not allocated to this job</p>
-          {component.confirmedSupply.length > 0 ? <div className="mt-2 space-y-1"><p className="small muted">Approved PO quantities (not allocated to this job):</p>{component.confirmedSupply.map(line => <p key={line.supplyOrderId} className="small muted"><Link className="text-primary hover:underline" href={`/supply-orders/${line.supplyOrderId}`}>{line.supplyOrderNumber}</Link> · {line.supplierName} · ETA {new Date(line.expectedDate).toLocaleDateString()} · remaining {formatQuantity(BigInt(line.remainingAtoms))} {component.quantityUom}</p>)}</div> : <p className="small muted mt-1">No approved inbound supply line recorded.</p>}
+          {component.allocatedSupply.length > 0 && <div className="mt-2 space-y-1"><p className="small muted">Allocated inbound material (ETA is not production-ready until received and reserved):</p>{component.allocatedSupply.map(line => <p key={line.supplyOrderLineId} className="small muted"><Link className="text-primary hover:underline" href={`/supply-orders/${line.supplyOrderId}`}>{line.supplyOrderNumber}</Link> · {line.supplierName} · ETA {new Date(line.expectedDate).toLocaleDateString()} · outstanding {formatQuantity(BigInt(line.allocatedOutstandingAtoms))} {component.quantityUom} · received {formatQuantity(BigInt(line.receivedAtoms))} · reserved {formatQuantity(BigInt(line.activelyReservedAtoms))}</p>)}</div>}
+          {component.confirmedSupply.length > 0 ? <div className="mt-2 space-y-1"><p className="small muted">Other approved PO quantities (unallocated to this job):</p>{component.confirmedSupply.map(line => <p key={line.supplyOrderId} className="small muted"><Link className="text-primary hover:underline" href={`/supply-orders/${line.supplyOrderId}`}>{line.supplyOrderNumber}</Link> · {line.supplierName} · ETA {new Date(line.expectedDate).toLocaleDateString()} · remaining {formatQuantity(BigInt(line.remainingAtoms))} {component.quantityUom}</p>)}</div> : component.allocatedSupply.length === 0 && <p className="small muted mt-1">No allocated inbound supply line recorded.</p>}
         </article>)}
       </section>}
       <p className="small muted mt-2">Evaluation {new Date(result.evaluatedAt).toLocaleString()} · reference {result.evaluationId.slice(0, 8)} · input {result.inputHash.slice(0, 8)}</p>

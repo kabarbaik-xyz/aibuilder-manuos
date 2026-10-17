@@ -7,13 +7,19 @@ import { db } from '@/server/db/client';
 import { EngineeringIntakeService } from '@/server/modules/engineering/intake';
 
 const service = new EngineeringIntakeService(db);
-const RequestSchema = z.object({ text: z.string().trim().min(1).max(20_000) }).strict();
+const RequestSchema = z.union([
+  z.object({ text: z.string().trim().min(1).max(20_000) }).strict(),
+  z.object({ documentId: z.string().uuid() }).strict(),
+]);
 
 export async function POST(req: NextRequest) {
   try {
     const principal = await requirePrincipal(req);
-    const { text } = await parseJsonBody(req, RequestSchema);
-    const result = await service.extractAndSave(principal, text, parseIdempotencyKey(req));
+    const input = await parseJsonBody(req, RequestSchema);
+    const idempotencyKey = parseIdempotencyKey(req);
+    const result = 'documentId' in input
+      ? await service.extractDocumentAndSave(principal, input.documentId, idempotencyKey)
+      : await service.extractAndSave(principal, input.text, idempotencyKey);
     return jsonResponse(result, { status: result.data ? 201 : 503 });
   } catch (error) {
     return formatErrorResponse(error);

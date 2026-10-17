@@ -13,6 +13,8 @@ import { apiRequest } from '@/lib/api/client';
 import { ordersApi, type OrderDto } from '@/features/orders/api';
 import { formatQuantity } from '@/domain/quantity';
 import Link from 'next/link';
+import { jobLabel } from '@/features/orders/job-label';
+import { Icon } from '@/components/icons';
 import { getPromiseDateDeltaLabel } from '@/features/promise/promise-presentation';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -82,8 +84,8 @@ interface PromiseResult {
 
 type ActiveInstance = NonNullable<OrderDto['instances']>[number];
 
-export function ScheduleProposalWorkbench() {
-  const [open, setOpen] = useState(false);
+export function ScheduleProposalWorkbench({ initialOpen = false }: { initialOpen?: boolean } = {}) {
+  const [open, setOpen] = useState(initialOpen);
   const [orders, setOrders] = useState<OrderDto[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [instances, setInstances] = useState<ActiveInstance[]>([]);
@@ -135,6 +137,7 @@ export function ScheduleProposalWorkbench() {
     setLoadingInstances(true);
     try {
       const order = await ordersApi.getOrder(orderId);
+      setOrders(rows => rows.map(row => row.id === order.id ? order : row));
       const activeInstances = (order.instances ?? []).filter((instance) => instance.status === 'ACTIVE');
       setInstances(activeInstances);
       if (activeInstances.length === 1) setInstanceId(activeInstances[0].id);
@@ -244,9 +247,9 @@ export function ScheduleProposalWorkbench() {
 
   return <>
     <Button variant="soft" onClick={() => { setError(null); setOpen(true); }}>Generate schedule proposal</Button>
-    <Dialog isOpen={open} onClose={() => { if (!submitting && !applyingProposal && !requestingDateChange) setOpen(false); }} title="Finite-capacity schedule proposal" subtitle="Dry-run using the selected job's released routing, BOM, facility, published roster and current bookings." size="lg" pending={submitting || applyingProposal}>
+    <Dialog isOpen={open} onClose={() => { if (!submitting && !applyingProposal && !requestingDateChange) setOpen(false); }} title="Build a production schedule" subtitle="Choose a job, review proposed times and resources, then apply when ready." size="lg" className="schedule-proposal-dialog" pending={submitting || applyingProposal || promiseLoading || requestingDateChange}>
       <div className="space-y-4">
-        <p className="small muted">The facility comes from the order. The horizon starts five minutes ahead to leave room for review. This preview never writes bookings; apply or publication must still revalidate current evidence.</p>
+        <div className="schedule-proposal-notice"><Icon name="info" /><p>Preview first. Tasks and bookings change only after you review and apply the schedule.</p></div>
         {loadingOrders ? <LoadingState message="Loading released orders…" /> : orders.length === 0 ? <p className="small muted">No released orders are available for a schedule proposal.</p> : <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink" htmlFor="schedule-proposal-order">Order</label>
@@ -259,26 +262,26 @@ export function ScheduleProposalWorkbench() {
             <label className="mb-1 block text-xs font-medium text-ink" htmlFor="schedule-proposal-instance">Active job</label>
             <Select id="schedule-proposal-instance" value={instanceId} disabled={!selectedOrderId || loadingInstances || submitting || instances.length <= 1} onChange={(event) => { setInstanceId(event.target.value); setProposal(null); setPromiseResult(null); setRequestedQuantity(''); setDateChangeRequestId(null); }}>
               <option value="">{loadingInstances ? 'Loading jobs…' : 'Select a job'}</option>
-              {instances.map((instance) => <option key={instance.id} value={instance.id}>Job {instance.id.slice(0, 8)}</option>)}
+              {instances.map((instance, index) => <option key={instance.id} value={instance.id}>{jobLabel(orders.find(order => order.id === selectedOrderId), instance, index)}</option>)}
             </Select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink" htmlFor="schedule-proposal-horizon">Planning horizon</label>
+            <label className="mb-1 block text-xs font-medium text-ink" htmlFor="schedule-proposal-horizon">Look ahead</label>
             <Select id="schedule-proposal-horizon" value={horizonDays} disabled={submitting} onChange={(event) => setHorizonDays(event.target.value)}>
               <option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option>
             </Select>
           </div>
           <div className="flex items-end justify-end">
             <Button variant="primary" disabled={!selectedOrder || !instanceId || loadingInstances || submitting} onClick={() => void generate()}>
-              {submitting ? 'Evaluating…' : 'Evaluate schedule'}
+              {submitting ? 'Building preview…' : 'Preview schedule'}
             </Button>
           </div>
         </div>}
 
-        {selectedOrder && instanceId && <Panel className="space-y-3 p-3">
-          <div><p className="font-semibold">Check requested delivery date</p><p className="small muted">Uses the same schedule engine for this released job. It does not change the customer commitment.</p></div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-52"><label className="mb-1 block text-xs font-medium text-ink" htmlFor="planning-promise-quantity">Full job quantity</label><Input id="planning-promise-quantity" inputMode="decimal" value={requestedQuantity} disabled={promiseLoading || submitting || requestingDateChange} onChange={(event) => { setRequestedQuantity(event.target.value); setPromiseResult(null); setDateChangeRequestId(null); }} placeholder="Enter the released job quantity" /><p className="small muted mt-1">Must match the selected manufacturing order; partial quantities are unsupported.</p></div>
+        {selectedOrder && instanceId && <details className="schedule-delivery-check"><summary>Also check a delivery date <span>Optional</span></summary><div className="space-y-3 pt-4">
+          <p className="small muted">Compare this job with a requested date. The customer commitment stays unchanged.</p>
+          <div className="schedule-delivery-fields">
+            <div className="min-w-52"><label className="mb-1 block text-xs font-medium text-ink" htmlFor="planning-promise-quantity">Full job quantity</label><Input id="planning-promise-quantity" inputMode="decimal" value={requestedQuantity} disabled={promiseLoading || submitting || requestingDateChange} onChange={(event) => { setRequestedQuantity(event.target.value); setPromiseResult(null); setDateChangeRequestId(null); }} placeholder="Enter the released job quantity" /><p className="small muted mt-1">Enter the full released job quantity. Partial quantities cannot be evaluated.</p></div>
             <div className="min-w-52"><label className="mb-1 block text-xs font-medium text-ink" htmlFor="promise-requested-date">Requested delivery</label><DatePicker id="promise-requested-date" value={requestedDate} onChange={(value) => { setRequestedDate(value); setPromiseResult(null); setDateChangeRequestId(null); }} /></div>
             <Button variant="soft" disabled={!requestedQuantity.trim() || promiseLoading || loadingInstances || submitting} onClick={() => void evaluatePromise()}>{promiseLoading ? 'Checking…' : 'Evaluate date'}</Button>
           </div>
@@ -311,12 +314,12 @@ export function ScheduleProposalWorkbench() {
             </div>}
             <details className="mt-2"><summary className="small cursor-pointer">Assumptions</summary><ul className="mt-1 list-disc space-y-1 pl-5">{promiseResult.assumptions.map((assumption) => <li key={assumption} className="small muted">{assumption}</li>)}</ul></details>
           </div>}
-        </Panel>}
+        </div></details>}
 
         {error && <p role="alert" className="small text-danger">{error}</p>}
         {proposal && <div className="space-y-3">
           <Panel className="flex flex-wrap items-start justify-between gap-3 p-3">
-            <div><p className="font-semibold">{proposal.scope.orderNumber} · Job {proposal.scope.instanceId.slice(0, 8)}</p><p className="small muted">Facility {proposal.scope.facilityId ?? 'not assigned'} · {proposal.scope.horizonStart.slice(0, 10)} to {proposal.scope.horizonEnd.slice(0, 10)}</p></div>
+            <div><p className="font-semibold">{proposal.scope.orderNumber} · {instances.find(instance => instance.id === proposal.scope.instanceId) ? jobLabel(selectedOrder, instances.find(instance => instance.id === proposal.scope.instanceId)!, instances.findIndex(instance => instance.id === proposal.scope.instanceId)) : 'Production job'}</p><p className="small muted">{selectedOrder?.facility?.name ?? 'Facility not specified'} · {new Date(proposal.scope.horizonStart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – {new Date(proposal.scope.horizonEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>
             <Badge variant={proposal.state === 'COMPLETE' ? 'success' : proposal.state === 'PARTIAL' || proposal.state === 'NO_OPEN_TASKS' ? 'warning' : 'danger'}>{proposal.state.replaceAll('_', ' ')}</Badge>
             <p className="small muted w-full">{proposal.tasks.filter((task) => task.status === 'SCHEDULED').length} of {proposal.tasks.length} tasks scheduled · finish {proposal.projectedEndAt ? new Date(proposal.projectedEndAt).toLocaleString() : 'not available'}</p>
           </Panel>
@@ -339,7 +342,7 @@ export function ScheduleProposalWorkbench() {
             </Panel>}
           </div>}
         </div>}
-        <div className="flex justify-end border-t border-line pt-3"><Button onClick={() => setOpen(false)} disabled={submitting || applyingProposal || requestingDateChange}>Close</Button></div>
+        <div className="schedule-proposal-footer"><details><summary>Scheduling assumptions</summary><p className="small muted">Uses the order facility, released routing, material readiness, published shifts and current bookings. Starts five minutes from now. Apply rechecks current evidence.</p></details><Button onClick={() => setOpen(false)} disabled={submitting || applyingProposal || requestingDateChange}>Close</Button></div>
       </div>
     </Dialog>
   </>;

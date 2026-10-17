@@ -38,6 +38,7 @@ export interface PromiseEvaluationDTO {
     reservedAtoms: string;
     availableRawAtoms: string;
     state: 'ISSUED' | 'RESERVED' | 'UNALLOCATED';
+    allocatedSupply: Array<{ supplyOrderLineId: string; supplyOrderId: string; supplyOrderNumber: string; supplierName: string; expectedDate: string; allocatedOutstandingAtoms: string; receivedAtoms: string; activelyReservedAtoms: string }>;
     confirmedSupply: Array<{ supplyOrderId: string; supplyOrderNumber: string; supplierName: string; expectedDate: string; remainingAtoms: string }>;
   }>;
   evidence: {

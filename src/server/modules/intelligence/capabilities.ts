@@ -125,7 +125,7 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
     code: 'AII-03',
     title: 'RFQ & Document Intake',
     summary:
-      'Extract structured part specifications, quantities, BOM suggestions, and open questions from RFQ text or uploaded documents.',
+      'Extract structured part specifications, quantities, BOM suggestions, and open questions from RFQ text or UTF-8 TXT/CSV uploads.',
     category: 'ENGINEERING',
     href: '/orders/intake',
     contextualEntryLabel: 'Order Hub → Import RFQ',
@@ -138,7 +138,7 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
         engineConfigured: configured,
         statusLabel: configured ? 'Text review and order-draft handoff available' : 'Provider not configured',
         unavailableReason: configured ? null : 'RFQ extraction needs the configured language provider; the workspace source record is not created when extraction is unavailable.',
-        prerequisite: 'Text review is available. Uploaded document ingestion and line-level citation remain future work.',
+        prerequisite: 'PDF/image OCR and page or line-span citations are not connected; uploaded text quotes are checked against the selected source document.',
       };
     },
   },
@@ -149,14 +149,14 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
     summary:
       'Compare a requested date with the same finite-capacity dry-run used in Planning for one selected released order job.',
     category: 'PLANNING',
-    href: '/planning',
-    contextualEntryLabel: 'Planning → Check requested delivery date',
+    href: '/ai/promise',
+    contextualEntryLabel: 'CoreAI or Order detail → Check delivery date',
     permissions: ['planning.read', 'task.assign'],
     evaluateReadiness: () => ({
       state: 'DETERMINISTIC_READY',
       availablePage: true,
       engineConfigured: true,
-      statusLabel: 'Existing-job date evaluation available',
+      statusLabel: 'Delivery-date review available',
       unavailableReason: 'A date is returned only when every open task has a complete finite-capacity proposal; partial and missing evidence remains NOT_CONNECTED.',
       prerequisite: 'Only evaluates an existing released job; it does not commit a customer promise or model partial-shipment allocation.',
     }),
@@ -196,7 +196,7 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
       engineConfigured: true,
       statusLabel: 'Schedule review and transactional Apply available; alternatives unavailable',
       unavailableReason: 'Only complete finite-capacity schedule snapshots can be saved. Overtime, alternate routing, split shipment, subcontracting and cost impacts are not modeled.',
-      prerequisite: 'Revalidate current bookings and versions, then implement an audited schedule or shipment command before enabling Apply.',
+      prerequisite: 'Before applying, revalidate current bookings and versions. Overtime, alternate routing, split shipment, subcontracting and cost impacts remain unavailable.',
     }),
   },
   {
@@ -225,14 +225,14 @@ const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
     summary:
       'Generate a dry-run for one released job using its requirements, BOM material reservations, verified resources, published availability and current bookings.',
     category: 'PLANNING',
-    href: '/planning',
-    contextualEntryLabel: 'Planning → Generate schedule proposal',
+    href: '/ai/schedule',
+    contextualEntryLabel: 'CoreAI → Build a production schedule',
     permissions: ['planning.read', 'task.assign', 'planning.write'],
     evaluateReadiness: () => ({
       state: 'DETERMINISTIC_READY',
       availablePage: true,
       engineConfigured: true,
-      statusLabel: 'Dry-run proposal available in Planning',
+      statusLabel: 'Schedule proposal available for review',
       unavailableReason: 'Unknown requirements, unreserved materials, missing roster coverage and unavailable resources leave tasks unscheduled. Machine use is exclusive and work is not split across shifts.',
       prerequisite: 'Validate conservative scheduling assumptions with planners before using proposals as commitments.',
     }),

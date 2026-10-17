@@ -131,8 +131,14 @@ export class PromiseService {
     const itemIds = [...new Set(demands.map(({ itemId }) => itemId))];
     const [supplyLines, rawBalances] = itemIds.length ? await Promise.all([
       this.db.supplyOrderLine.findMany({
-        where: { workspaceId: principal.workspaceId, itemId: { in: itemIds }, supplyOrder: { status: { in: ['APPROVED', 'PARTIALLY_RECEIVED'] } } },
-        include: { supplyOrder: { select: { id: true, orderNumber: true, expectedDate: true, supplier: { select: { name: true } } } } },
+        where: { workspaceId: principal.workspaceId, itemId: { in: itemIds }, supplyOrder: { status: { in: ['APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED'] } } },
+        include: {
+          supplyOrder: { select: { id: true, orderNumber: true, expectedDate: true, supplier: { select: { name: true } } } },
+          materialAllocations: {
+            where: { demandId: { in: demands.map(({ id }) => id) } },
+            include: { receiptAllocations: { include: { stockReservation: { select: { status: true, reservedAtoms: true } } } } },
+          },
+        },
         orderBy: { supplyOrder: { expectedDate: 'asc' } },
         take: 100,
       }),
@@ -142,12 +148,32 @@ export class PromiseService {
       }),
     ]) : [[], []];
     const supplyByItem = new Map<string, Array<{ supplyOrderId: string; supplyOrderNumber: string; supplierName: string; expectedDate: string; remainingAtoms: string }>>();
+    const allocatedSupplyByDemand = new Map<string, Array<{ supplyOrderLineId: string; supplyOrderId: string; supplyOrderNumber: string; supplierName: string; expectedDate: string; allocatedOutstandingAtoms: string; receivedAtoms: string; activelyReservedAtoms: string }>>();
     for (const line of supplyLines) {
       const remainingAtoms = line.orderedAtoms - line.receivedAtoms;
-      if (remainingAtoms <= 0n) continue;
-      const rows = supplyByItem.get(line.itemId) ?? [];
-      rows.push({ supplyOrderId: line.supplyOrder.id, supplyOrderNumber: line.supplyOrder.orderNumber, supplierName: line.supplyOrder.supplier.name, expectedDate: line.supplyOrder.expectedDate.toISOString(), remainingAtoms: remainingAtoms.toString() });
-      supplyByItem.set(line.itemId, rows);
+      const outstandingAllocatedAtoms = line.materialAllocations.reduce((sum, allocation) => sum + allocation.allocatedAtoms - allocation.receivedAtoms, 0n);
+      const unallocatedAtoms = remainingAtoms > outstandingAllocatedAtoms ? remainingAtoms - outstandingAllocatedAtoms : 0n;
+      if (unallocatedAtoms > 0n) {
+        const rows = supplyByItem.get(line.itemId) ?? [];
+        rows.push({ supplyOrderId: line.supplyOrder.id, supplyOrderNumber: line.supplyOrder.orderNumber, supplierName: line.supplyOrder.supplier.name, expectedDate: line.supplyOrder.expectedDate.toISOString(), remainingAtoms: unallocatedAtoms.toString() });
+        supplyByItem.set(line.itemId, rows);
+      }
+      for (const allocation of line.materialAllocations) {
+        const rows = allocatedSupplyByDemand.get(allocation.demandId) ?? [];
+        const activelyReservedAtoms = allocation.receiptAllocations.reduce((sum, receipt) =>
+          sum + (receipt.stockReservation?.status === 'ACTIVE' ? receipt.stockReservation.reservedAtoms : 0n), 0n);
+        rows.push({
+          supplyOrderLineId: line.id,
+          supplyOrderId: line.supplyOrder.id,
+          supplyOrderNumber: line.supplyOrder.orderNumber,
+          supplierName: line.supplyOrder.supplier.name,
+          expectedDate: line.supplyOrder.expectedDate.toISOString(),
+          allocatedOutstandingAtoms: (allocation.allocatedAtoms - allocation.receivedAtoms).toString(),
+          receivedAtoms: allocation.receivedAtoms.toString(),
+          activelyReservedAtoms: activelyReservedAtoms.toString(),
+        });
+        allocatedSupplyByDemand.set(allocation.demandId, rows);
+      }
     }
     const rawAvailableByItem = new Map<string, bigint>();
     for (const balance of rawBalances) {
@@ -174,6 +200,7 @@ export class PromiseService {
         reservedAtoms: total.reservedAtoms.toString(),
         availableRawAtoms: (rawAvailableByItem.get(itemId) ?? 0n).toString(),
         state: (outstandingAtoms === 0n ? 'ISSUED' : total.reservedAtoms >= outstandingAtoms ? 'RESERVED' : 'UNALLOCATED') as 'ISSUED' | 'RESERVED' | 'UNALLOCATED',
+        allocatedSupply: demands.filter(({ itemId: demandItemId }) => demandItemId === itemId).flatMap(({ id }) => allocatedSupplyByDemand.get(id) ?? []),
         confirmedSupply: supplyByItem.get(itemId) ?? [],
       };
     });

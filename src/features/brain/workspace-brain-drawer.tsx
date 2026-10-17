@@ -18,6 +18,26 @@ const prompts: Array<{ text: string; hint: string; icon: IconName }> = [
   { text: 'Give me a production overview', hint: 'Production', icon: 'work' },
 ];
 
+// Render text as React nodes: provider output must never become executable HTML.
+function AnswerText({ text }: { text: string }) {
+  const blocks = text.split(/\n\s*\n/).filter(Boolean).flatMap(block => {
+    if (block.length < 360 || block.includes('\n')) return [block];
+    const sentences = block.split(/(?<=[.!?])\s+(?=[A-Z])/);
+    const paragraphs: string[] = [];
+    for (let i = 0; i < sentences.length; i += 2) paragraphs.push(sentences.slice(i, i + 2).join(' ').trim());
+    return paragraphs;
+  });
+  function inline(value: string) {
+    return value.split(/(\*\*[^*]+\*\*)/g).map((part, i) => part.startsWith('**') && part.endsWith('**') ? <strong key={i}>{part.slice(2, -2)}</strong> : part);
+  }
+  return <div className="workspace-brain-answer-text">{blocks.map((block, index) => {
+    const lines = block.split('\n').filter(line => line.trim());
+    if (lines.some(line => /^#{1,3}\s+/.test(line))) return <section key={index} className="workspace-brain-answer-section">{lines.map((line, i) => /^#{1,3}\s+/.test(line) ? <h4 key={i}>{inline(line.replace(/^#{1,3}\s+/, ''))}</h4> : /^\s*[-*•]\s+/.test(line) ? <ul key={i}><li>{inline(line.replace(/^\s*[-*•]\s+/, ''))}</li></ul> : <p key={i}>{inline(line)}</p>)}</section>;
+    if (lines.every(line => /^\s*(?:[-*•]|\d+\.)\s+/.test(line))) return <ul key={index}>{lines.map((line, i) => <li key={i}>{inline(line.replace(/^\s*(?:[-*•]|\d+\.)\s+/, ''))}</li>)}</ul>;
+    return <p key={index}>{inline(block)}</p>;
+  })}</div>;
+}
+
 export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: BrainQuestionContext | null }) {
   const { principal } = useWorkspaceNavigation();
   const [selectedContext, setSelectedContext] = useState<BrainQuestionContext | null>(initialContext ?? null);
@@ -74,7 +94,7 @@ export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: Brai
       {messages.map((message, index) => <section className="workspace-brain-exchange" key={index}>
         <div className="workspace-brain-user"><span className="workspace-brain-speaker">You</span><p className="workspace-brain-question">{message.question}</p></div>
         {message.context && <p className="small muted">Context used: {message.context.type.toLowerCase()} {message.context.id}</p>}
-        {message.answer && <div className="workspace-brain-answer"><div className="workspace-brain-answer-heading"><span className="workspace-brain-avatar"><Icon name="spark" /></span><strong>ManuOS</strong><span className="workspace-brain-answer-kind">{message.status === 'SUCCESS' ? 'AI answer' : 'Record summary'}</span></div><p>{message.answer.answer}</p>{message.status === 'FALLBACK' && <p className="small muted">{message.fallbackReason === 'TIMEOUT' ? 'AI took too long to respond.' : message.fallbackReason === 'SCHEMA_ERROR' || message.fallbackReason === 'UNGROUNDED_CLAIM' ? 'The AI response could not be verified.' : 'The AI service could not return an answer.'} Showing a summary from your workspace records.</p>}{message.answer.evidenceRefs.length > 0 && <div className="workspace-brain-evidence" aria-label="Referenced records">{message.answer.evidenceRefs.map((reference, i) => { const evidence = message.answer?.evidence?.find(item => item.reference === reference); return evidence ? <Link key={`${evidence.recordType}:${evidence.recordId}:${i}`} className="text-primary underline" href={evidence.href}>{evidence.label}</Link> : <Badge key={`${reference}:${i}`} variant="default">{reference}</Badge>; })}</div>}</div>}
+        {message.answer && <div className="workspace-brain-answer"><div className="workspace-brain-answer-heading"><span className="workspace-brain-avatar"><Icon name="spark" /></span><strong>ManuOS</strong><span className="workspace-brain-answer-kind">{message.status === 'SUCCESS' ? 'AI answer' : 'Record summary'}</span></div><AnswerText text={message.answer.answer} />{message.status === 'FALLBACK' && <p className="small muted">{message.fallbackReason === 'TIMEOUT' ? 'AI took too long to respond.' : message.fallbackReason === 'SCHEMA_ERROR' || message.fallbackReason === 'UNGROUNDED_CLAIM' ? 'The AI response could not be verified.' : 'The AI service could not return an answer.'} Showing a summary from your workspace records.</p>}{message.answer.evidenceRefs.length > 0 && <div className="workspace-brain-sources"><h4>Sources</h4><ul className="workspace-brain-evidence" aria-label="Referenced records">{message.answer.evidenceRefs.map((reference, i) => { const evidence = message.answer?.evidence?.find(item => item.reference === reference); return <li key={`${reference}:${i}`}>{evidence ? <Link key={`${evidence.recordType}:${evidence.recordId}:${i}`} className="workspace-brain-source-link" href={evidence.href}><span>{evidence.label}</span><Icon name="arrow" /></Link> : <Badge key={`${reference}:${i}`} variant="default">{reference}</Badge>}</li>; })}</ul></div>}</div>}
         {message.error && <div role="alert"><p>{message.error}</p><Button size="small" disabled={pending} onClick={() => void ask(message.question)}>Try again</Button></div>}
       </section>)}
       {pending && <div role="status" className="workspace-brain-loading"><Icon name="spark" /><span>Checking workspace records…</span></div>}<div ref={end} />

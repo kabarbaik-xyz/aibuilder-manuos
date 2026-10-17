@@ -5,6 +5,7 @@ export interface OrderDto {
   id: string;
   workspaceId: string;
   orderNumber: string;
+  facility?: { id: string; code: string; name: string } | null;
   customerId: string;
   orderTypeId: string;
   itemId: string;
@@ -30,7 +31,7 @@ export interface OrderDto {
     allocatedAtoms: string | number | bigint;
     shippedAtoms: string | number | bigint;
     item?: { id: string; code: string; name: string; baseUom?: { code: string; name: string } };
-    manufacturingOrders?: Array<{ id: string; moNumber: string; targetAtoms: string | number | bigint; status: string }>;
+    manufacturingOrders?: Array<{ id: string; moNumber: string; engineeringRevisionId?: string | null; targetAtoms: string | number | bigint; status: string }>;
   }>;
   questions?: Array<{
     id: string;
@@ -56,6 +57,7 @@ export interface OrderDto {
   }>;
   instances?: Array<{
     id: string;
+    engineeringRevisionId?: string;
     status: string;
     tasks?: any[];
   }>;

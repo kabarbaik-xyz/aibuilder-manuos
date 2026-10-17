@@ -4,39 +4,41 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { PageHeader } from '@/components/ui/page-header';
 import { Panel } from '@/components/ui/panel';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ErrorState } from '@/components/ui/error-state';
 import { LoadingState } from '@/components/ui/resource-state';
-import { Icon, type IconName } from '@/components/icons';
+import { Icon } from '@/components/icons';
 import { useWorkspaceNavigation } from '@/components/workspace-navigation-context';
-import { useGraphStore } from '@/store/graph-store';
 import { apiRequest } from '@/lib/api/client';
 import type { CoreAICapabilityRegistryDTO } from '@/server/modules/intelligence/capabilities';
 import type { DashboardOverviewDTO } from '@/server/modules/intelligence/dashboard';
 
-function stateLabel(state: string) {
-  switch (state) {
-    case 'AVAILABLE': return 'Available';
-    case 'DETERMINISTIC_READY': return 'Deterministic support';
-    case 'UNCONFIGURED_PROVIDER': return 'Provider setup needed';
-    case 'PILOT_GATED': return 'Pilot gated';
-    default: return 'Not connected yet';
-  }
-}
+type TaskEntry = { title: string; input: string; outcome: string; action: string; href?: string };
+const tasks: Record<string, TaskEntry> = {
+  'AII-01': { title: 'Ask about an order', input: 'An order, item, or production question.', outcome: 'An answer with links to the records behind it.', action: 'Ask AI', href: '/ai/assistant' },
+  'AII-02': { title: 'Find orders that need attention', input: 'Current orders and operational exceptions.', outcome: 'Review delivery risks, material shortages, and pending approvals.', action: 'Review risks', href: '/ai/risks' },
+  'AII-03': { title: 'Turn an RFQ into an order draft', input: 'Customer request text and specifications.', outcome: 'Review extracted fields before creating an order draft.', action: 'Import RFQ', href: '/orders/intake' },
+  'AII-04': { title: 'Check a delivery date', input: 'A released order, active job, full job quantity, and requested date.', outcome: 'See projected completion and missing evidence. Request a date change for review if feasible.', action: 'Check delivery date', href: '/ai/promise' },
+  'SCH-08': { title: 'Build a production schedule', input: 'A released order with routing, materials, and resource availability.', outcome: 'Review task times and assignments before applying the schedule.', action: 'Build schedule', href: '/ai/schedule' },
+  'AII-06': { title: 'Replan after a disruption', input: 'A released order with an active job.', outcome: 'Save a revised schedule, review it, then apply assignments after revalidation.', action: 'Review recovery', href: '/ai/recovery' },
+  'AII-05': { title: 'Learn from similar jobs', input: 'An item and recorded production history.', outcome: 'Compare measured work duration and inspection results.', action: 'Compare past jobs', href: '/ai/memory' },
+  'SCH-07': { title: 'Find a qualified technician', input: 'In Planning, select a task and open Assign resources.', outcome: 'Compare eligible technicians for the task time window.', action: 'Go to Planning', href: '/planning' },
+  'CST-03': { title: 'Understand cost differences', input: 'Select an order, then open Costing → Explain variance.', outcome: 'See standard versus actual costs and their source entries.', action: 'Choose an order', href: '/orders' },
+  'BLD-01': { title: 'Draft a workflow or form', input: 'Describe the process in Workflow Studio or Form Templates.', outcome: 'Review an AI-generated draft before publishing.', action: 'Go to Workflow Studio', href: '/workflows' },
+};
 
-function stateVariant(state: string): 'success' | 'warning' | 'default' {
-  if (state === 'AVAILABLE') return 'success';
-  if (state === 'UNCONFIGURED_PROVIDER' || state === 'PILOT_GATED') return 'warning';
-  return 'default';
-}
-
-function stateIcon(state: string): IconName {
-  if (state === 'AVAILABLE') return 'spark';
-  if (state === 'DETERMINISTIC_READY') return 'check';
-  if (state === 'UNCONFIGURED_PROVIDER' || state === 'PILOT_GATED') return 'lock';
-  return 'info';
-}
+const taskSteps: Record<string, string[]> = {
+  'AII-01': ['Ask a question about orders, inventory, or production. From an order detail, Ask AI carries that order into the conversation.', 'Read the answer and open its Sources to verify the underlying records.', 'Ask a follow-up when you need more detail. The assistant is read only; it does not change operational records.'],
+  'AII-02': ['Open the risk inbox and choose an exception.', 'Review the linked order and the evidence for the delay, shortage, or pending approval.', 'Follow the linked operational page to address the cause. Reviewing a risk does not resolve it automatically.'],
+  'AII-03': ['Enter the customer request text and run extraction.', 'Review the suggested fields and open questions; correct them before saving.', 'Save the reviewed draft and continue to new order intake. Review the order before creating it.'],
+  'AII-04': ['Select a released order and its active production job.', 'Enter the full released job quantity and the requested delivery date, then run the evaluation.', 'Review projected completion and missing inputs. If feasible, request a date change for authorized review; evaluation does not change the customer commitment.'],
+  'SCH-08': ['Select a released order, active job, and how many days to look ahead.', 'Preview the schedule and inspect proposed task times, technicians, machines, and any unscheduled tasks.', 'For a complete proposal, review and confirm Apply. Current evidence is checked again before assignments and bookings change; publishing the schedule is a separate action.'],
+  'AII-06': ['Select the affected released order and active job, then generate a schedule review.', 'Open the saved proposal to review its schedule and missing evidence. Incomplete schedules cannot be saved as an applicable review.', 'Apply a current schedule review after confirmation. Assignments and bookings are revalidated; overtime, subcontracting, and split-shipment alternatives are not modeled.'],
+  'AII-05': ['Open measured job history, or use Similar jobs on an order to carry its item into the view.', 'Review the comparable records, measured durations, inspection results, and missing data.', 'Use the evidence to inform planning. The view does not automatically change duration estimates or planning buffers.'],
+  'SCH-07': ['Open Planning and choose Assign resources for a task.', 'Set the task time window and review qualified technician suggestions.', 'Select a suggestion and confirm the assignment. Qualifications and bookings are checked again when assigning.'],
+  'CST-03': ['Choose an order and open its Costing tab.', 'Select Explain variance to compare standard and actual costs by category.', 'Open the source entries to investigate a difference. Revenue and margin are not calculated by this explanation.'],
+  'BLD-01': ['Open Workflow Studio or Form Templates and choose Draft with AI.', 'Describe the process or fields you need, then generate a draft.', 'Review the generated steps or fields and any validation findings. Save and publish through the normal review flow; generation alone does not publish it.'],
+};
 
 function severityVariant(severity: string): 'danger' | 'warning' | 'default' {
   if (severity === 'CRITICAL') return 'danger';
@@ -46,7 +48,6 @@ function severityVariant(severity: string): 'danger' | 'warning' | 'default' {
 
 export function CoreAIHub() {
   const { principal } = useWorkspaceNavigation();
-  const openModal = useGraphStore(state => state.openModal);
   const canReadDashboard = Boolean(principal && (
     principal.roles.includes('OWNER') ||
     ['order.read', 'planning.read', 'execution.read', 'customer_order.read_own'].some(permission => principal.permissions.includes(permission))
@@ -63,39 +64,38 @@ export function CoreAIHub() {
   });
 
   const capabilities = query.data?.data.capabilities ?? [];
-  const availableCount = capabilities.filter(c => c.state === 'AVAILABLE' || c.state === 'DETERMINISTIC_READY').length;
+  const ready = capabilities.filter(c => c.availablePage && ['AVAILABLE', 'DETERMINISTIC_READY'].includes(c.state));
+  const unavailable = capabilities.filter(c => !ready.includes(c));
   const exceptions = risks.data?.data.exceptions ?? [];
-  const criticalCount = exceptions.filter(e => e.severity === 'CRITICAL').length;
 
   return (
     <div className="page-stack">
       <PageHeader
         title="CoreAI"
-        description="AI tools for orders, engineering, planning, and quality. Answers use authorized records; people approve changes."
-        actions={<Button variant="primary" icon="spark" onClick={() => openModal('brain')}>Ask AI</Button>}
+        description="What would you like help with? Choose a task to see what you need and what happens next."
+        actions={ready.some(c => c.id === 'AII-01') ? <Link href="/ai/assistant" className="btn primary">Ask AI <Icon name="spark" /></Link> : undefined}
       />
 
-      {(query.data || (canReadDashboard && risks.data)) && (
-        <div className="coreai-strip">
-          <div className="coreai-strip-item">
-            <span className="coreai-strip-label">Tools ready</span>
-            <strong className="coreai-strip-value">{availableCount}<span> / {capabilities.length}</span></strong>
-          </div>
-          {canReadDashboard && (
-            <>
-              <div className="coreai-strip-item">
-                <span className="coreai-strip-label">Open exceptions</span>
-                <strong className="coreai-strip-value">{exceptions.length}</strong>
-              </div>
-              <div className="coreai-strip-item">
-                <span className="coreai-strip-label">Critical</span>
-                <strong className={`coreai-strip-value ${criticalCount > 0 ? 'danger-text' : ''}`}>{criticalCount}</strong>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
+      {query.isPending ? <LoadingState message="Loading available tasks…" /> : query.isError ? (
+        <ErrorState title="Could not load CoreAI tasks" error={query.error.message} onRetry={() => void query.refetch()} />
+      ) : <>
+        <section aria-labelledby="coreai-tasks" className="page-stack">
+          <div><h2 id="coreai-tasks">What would you like to do?</h2><p className="muted small">AI drafts and explains; planning tools calculate from your records. You review changes before applying them.</p></div>
+          {ready.length === 0 ? <Panel className="p-6"><h3>No tasks available for this role</h3><p className="muted">Access follows your workspace permissions.</p></Panel> : <Panel>
+            {ready.map(capability => {
+              const task = tasks[capability.id];
+              if (!task) return null;
+              return <article key={capability.id} className="coreai-task-row">
+                <div className="coreai-task-copy"><h3>{task.title}</h3><p>{task.outcome}</p><p className="small"><strong>Start with:</strong> {task.input}</p>
+                  <details><summary>How this works</summary><ol className="coreai-task-steps">{taskSteps[capability.id]?.map(step => <li key={step}>{step}</li>)}</ol>{capability.unavailableReason && <p className="coreai-task-limit"><strong>Limit:</strong> {capability.unavailableReason}</p>}</details>
+                </div>
+                <Link href={task.href ?? capability.href ?? '/ai'} className="btn soft">{task.action}<Icon name="arrow" /></Link>
+              </article>;
+            })}
+          </Panel>}
+        </section>
+        {unavailable.length > 0 && <Panel className="p-5"><details><summary className="font-semibold">Not available yet ({unavailable.length})</summary><p className="small muted mt-2">These tools need setup or further implementation before you can use them.</p><ul className="mt-3 space-y-4">{unavailable.map(capability => <li key={capability.id}><h3 className="text-sm font-semibold">{tasks[capability.id]?.title ?? capability.title}</h3><p className="small muted">{capability.unavailableReason ?? capability.statusLabel}</p></li>)}</ul></details></Panel>}
+      </>}
       {canReadDashboard && (
         <Panel>
           <div className="panel-head">
@@ -116,7 +116,7 @@ export function CoreAIHub() {
               {exceptions.slice(0, 4).map(exception => (
                 <li key={exception.id} className={`coreai-exception sev-${exception.severity.toLowerCase()}`}>
                   <span className="coreai-exception-dot" aria-hidden="true" />
-                  <span className="coreai-exception-title">{exception.title}</span>
+                  <Link href={`/ai/risks/${encodeURIComponent(exception.id)}`} className="coreai-exception-title text-primary hover:underline">{exception.title}</Link>
                   <Badge variant={severityVariant(exception.severity)}>{exception.severity}</Badge>
                 </li>
               ))}
@@ -128,49 +128,6 @@ export function CoreAIHub() {
         </Panel>
       )}
 
-      {query.isPending ? (
-        <LoadingState message="Loading available intelligence tools…" />
-      ) : query.isError ? (
-        <ErrorState
-          title="Could not load CoreAI tools"
-          error={query.error.message}
-          onRetry={() => void query.refetch()}
-        />
-      ) : capabilities.length === 0 ? (
-        <Panel className="p-6">
-          <h2 className="font-semibold">No AI tools are available for this role</h2>
-          <p className="muted mt-1">Access follows your workspace permissions.</p>
-        </Panel>
-      ) : (
-        <section aria-label="AI tools" className="coreai-grid">
-          {capabilities.map(capability => (
-            <article key={capability.id} className="coreai-card">
-              <header className="coreai-card-head">
-                <span className={`coreai-card-icon ${stateVariant(capability.state)}`}>
-                  <Icon name={stateIcon(capability.state)} />
-                </span>
-                <div className="coreai-card-title">
-                  <span className="coreai-card-code">{capability.code}</span>
-                  <h2>{capability.title}</h2>
-                </div>
-                <Badge variant={stateVariant(capability.state)}>{stateLabel(capability.state)}</Badge>
-              </header>
-              <p className="coreai-card-summary">{capability.summary}</p>
-              <div className="coreai-card-status">
-                <strong>{capability.statusLabel}</strong>
-                {capability.unavailableReason && <p>{capability.unavailableReason}</p>}
-                {capability.prerequisite && <p><b>Next:</b> {capability.prerequisite}</p>}
-              </div>
-              <footer className="coreai-card-foot">
-                <span className="coreai-card-where"><Icon name="location" /> {capability.contextualEntryLabel}</span>
-                {capability.href && capability.availablePage && (
-                  <Link href={capability.href} className="btn soft small-btn">Open <Icon name="arrow" /></Link>
-                )}
-              </footer>
-            </article>
-          ))}
-        </section>
-      )}
     </div>
   );
 }

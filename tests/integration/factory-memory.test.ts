@@ -196,6 +196,13 @@ describe('I06: Factory Memory from Measured Execution & QC Evidence', () => {
     expect(memAfter3.recommendation.suggestedBufferPct).toBeNull();
     expect(memAfter3.recommendation.title).toContain('20%');
 
+    const boundedService = new FactoryMemoryService(fixture.db, { maxCohortTasks: 2 });
+    await expect(boundedService.queryFactoryMemory(alpha.users.planner.principal, cohort))
+      .rejects.toThrow(/exceeds the 2-run analysis limit/i);
+    const boundedEvidenceService = new FactoryMemoryService(fixture.db, { maxEvidenceRecords: 2 });
+    await expect(boundedEvidenceService.queryFactoryMemory(alpha.users.planner.principal, cohort))
+      .rejects.toThrow(/exceeds the 2-record evidence limit/i);
+
     const firstPage = await memoryService.queryFactoryMemory(alpha.users.planner.principal, { ...cohort, page: 1, pageSize: 10 });
     expect(firstPage.pagination).toMatchObject({ page: 1, pageSize: 10, total: 3, totalPages: 1 });
     expect(firstPage.sampleCount).toBe(3);

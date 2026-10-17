@@ -294,6 +294,7 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       const evaluation = await promiseService.evaluatePromise(owner, {
         orderId: testOrderId,
         instanceId: testInstanceId,
+        requestedQuantity: '10',
         requestedDate: '2026-10-20',
       });
 
@@ -429,6 +430,66 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, status: 'CONFIRMED' } })).toBe(4);
       expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'SCHEDULE_PROPOSAL_APPLY' } })).toBe(2);
       expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'planning.schedule-proposal.apply' } })).toBe(1);
+
+      await fixture.db.resourceBooking.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] } } });
+      await fixture.db.workflowEvent.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, action: 'SCHEDULE_PROPOSAL_APPLY' } });
+      await fixture.db.task.updateMany({
+        where: { workspaceId: alpha.workspaceId, id: { in: [task1Id, task2Id] } },
+        data: { status: 'PENDING', assignedTechnicianId: null, assignedMachineId: null, version: { increment: 1 } },
+      });
+      const recoveryReview = await recoveryService.proposeScheduleReview(planner, {
+        orderId: testOrderId,
+        instanceId: testInstanceId,
+      }, 'phase10-recovery-apply-review');
+      expect(recoveryReview.state).toBe('SAVED');
+      if (recoveryReview.state !== 'SAVED') throw new Error('Expected a saved recovery schedule review.');
+
+      const recoveryRecord = await fixture.db.recoveryProposal.findFirstOrThrow({ where: { id: recoveryReview.id, workspaceId: alpha.workspaceId } });
+      const originalProposalJson = recoveryRecord.proposalJson;
+      await expect(recoveryService.applyScheduleReview({ ...planner, permissions: planner.permissions, facilityIds: [] }, recoveryRecord.id, 'phase10-recovery-apply-facility-denied')).rejects.toThrow(/not found/i);
+      await expect(recoveryService.applyScheduleReview({ ...fixture.beta.users.owner.principal, permissions: planner.permissions }, recoveryRecord.id, 'phase10-recovery-apply-tenant-denied')).rejects.toThrow(/not found/i);
+      const corruptedReview = JSON.parse(originalProposalJson) as { scheduleReview: { facilityId: string | null } };
+      corruptedReview.scheduleReview.facilityId = '00000000-0000-4000-8000-000000000000';
+      await fixture.db.recoveryProposal.update({ where: { id: recoveryRecord.id }, data: { proposalJson: JSON.stringify(corruptedReview) } });
+      await expect(recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-scope')).rejects.toMatchObject({ code: 'STALE_SCOPE' });
+      await fixture.db.recoveryProposal.update({ where: { id: recoveryRecord.id }, data: { proposalJson: originalProposalJson } });
+      expect((await fixture.db.recoveryProposal.findUniqueOrThrow({ where: { id: recoveryRecord.id } })).status).toBe('PROPOSED');
+
+      const beforeRecoveryBookings = await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } });
+      const originalRecoveryEvaluation = PlanningService.prototype.evaluateAssignmentInTransaction;
+      let recoveryEvaluationCount = 0;
+      const recoveryEvaluationSpy = vi.spyOn(PlanningService.prototype, 'evaluateAssignmentInTransaction').mockImplementation(async function (this: PlanningService, ...args: Parameters<PlanningService['evaluateAssignmentInTransaction']>) {
+        recoveryEvaluationCount += 1;
+        if (recoveryEvaluationCount === 2) throw new Error('Injected Recovery second-task revalidation failure');
+        return originalRecoveryEvaluation.apply(this, args);
+      });
+      try {
+        await expect(recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-rollback')).rejects.toThrow('Injected Recovery second-task revalidation failure');
+      } finally {
+        recoveryEvaluationSpy.mockRestore();
+      }
+      expect((await fixture.db.recoveryProposal.findUniqueOrThrow({ where: { id: recoveryRecord.id } })).status).toBe('PROPOSED');
+      expect(await fixture.db.task.count({ where: { workspaceId: alpha.workspaceId, id: { in: [task1Id, task2Id] }, status: { in: ['PENDING', 'READY'] } } })).toBe(2);
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeRecoveryBookings);
+      expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'RECOVERY_SCHEDULE_APPLY' } })).toBe(0);
+
+      const concurrentResults = await Promise.allSettled([
+        recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-race-a'),
+        recoveryService.applyScheduleReview(planner, recoveryRecord.id, 'phase10-recovery-apply-race-b'),
+      ]);
+      const successfulApply = concurrentResults.filter((result) => result.status === 'fulfilled');
+      const rejectedApply = concurrentResults.filter((result) => result.status === 'rejected');
+      expect(successfulApply).toHaveLength(1);
+      expect(rejectedApply).toHaveLength(1);
+      const successfulKey = successfulApply[0] === concurrentResults[0] ? 'phase10-recovery-apply-race-a' : 'phase10-recovery-apply-race-b';
+      const recoveryApplied = (successfulApply[0] as PromiseFulfilledResult<Awaited<ReturnType<RecoveryService['applyScheduleReview']>>>).value;
+      const recoveryReplay = await recoveryService.applyScheduleReview(planner, recoveryRecord.id, successfulKey);
+      expect(recoveryApplied.data.status).toBe('APPROVED');
+      expect(recoveryReplay.meta.replayed).toBe(true);
+      expect((await fixture.db.recoveryProposal.findUniqueOrThrow({ where: { id: recoveryRecord.id } })).status).toBe('APPROVED');
+      expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, status: 'CONFIRMED' } })).toBe(4);
+      expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'RECOVERY_SCHEDULE_APPLY' } })).toBe(2);
+      expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'recovery.schedule-review.apply' } })).toBe(1);
     });
   });
 });

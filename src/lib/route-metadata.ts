@@ -12,6 +12,8 @@ export function resolveRouteMetadata(pathname: string) {
   '/ai/risks': 'Risk inbox',
   '/ai/memory': 'Factory memory',
   '/ai/recovery': 'Recovery proposals',
+  '/ai/promise': 'Check a delivery date',
+  '/ai/schedule': 'Build a production schedule',
  };
  const title = newTitles[pathname] || (pathname.startsWith('/ai/risks/') ? 'Risk evidence' : pathname.startsWith('/ai/recovery/') ? 'Recovery proposal' : tail === '/new' ? `New ${base === 'Order Hub' ? 'order' : base.toLowerCase()}` : tail ? `${base} detail` : base);
  return { title, activeHref: item?.href, group: item && ADMIN_NAV_ITEMS.some(entry => entry.href === item.href) ? 'Admin' : item && MASTER_NAV_ITEMS.some(entry => entry.href === item.href) ? 'Master data' : 'Operations' };

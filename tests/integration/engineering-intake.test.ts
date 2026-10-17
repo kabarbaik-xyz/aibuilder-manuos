@@ -3,23 +3,68 @@ import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { EngineeringIntakeService, IntakeExtraction } from '@/server/modules/engineering/intake';
 import { BadRequestError, NotFoundError } from '@/domain/errors';
 import { OrderService } from '@/server/modules/orders/service';
+import { DocumentRepository } from '@/server/modules/documents/repository';
+import { DocumentService } from '@/server/modules/documents/service';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 const extraction: IntakeExtraction = {
   customer: 'Apex Dynamics Corp', partName: 'Precision Mounting Bracket', partNumber: 'BRK-1001', qty: 80, material: 'Titanium Ti-6Al-4V',
-  tolerances: ['Bore diameter ±0.012 mm'], ambiguities: ['Confirm anodize specification'], draftBOM: [], draftRouting: [], qcChecklist: [],
+  tolerances: ['Bore diameter ±0.012 mm'], ambiguities: ['Confirm anodize specification'], draftBOM: [], draftRouting: [], qcChecklist: [], citations: [],
 };
 
 describe('Engineering intake persisted review', () => {
   let fixture: FactoryFixture;
   let service: EngineeringIntakeService;
+  let documentService: DocumentService;
+  let storageRoot: string;
+  let originalStorageRoot: string | undefined;
 
   beforeAll(async () => {
     fixture = await createFactoryFixture();
+    originalStorageRoot = process.env.STORAGE_ROOT;
+    storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'manuos-rfq-intake-'));
+    process.env.STORAGE_ROOT = storageRoot;
+    documentService = new DocumentService(new DocumentRepository(fixture.db), fixture.db);
     const item = await fixture.db.item.findUniqueOrThrow({ where: { id: fixture.alpha.masters.fgItemId } });
-    service = new EngineeringIntakeService(fixture.db, async () => ({ aiResult: { ...extraction, partNumber: item.code } }));
+    service = new EngineeringIntakeService(fixture.db, async () => ({ aiResult: { ...extraction, partNumber: item.code, citations: [{ field: 'material', quote: 'Material: Titanium Ti-6Al-4V' }, { field: 'qty', quote: 'Quantity: 80 pcs' }, { field: 'qty', quote: 'Customer: Apex Dynamics Corp' }, { field: 'partName', quote: 'Invented supporting quote' }] } }), documentService);
   });
 
-  afterAll(async () => { await fixture.close(); });
+  afterAll(async () => { await fixture.close(); await fs.rm(storageRoot, { recursive: true, force: true }); if (originalStorageRoot === undefined) delete process.env.STORAGE_ROOT; else process.env.STORAGE_ROOT = originalStorageRoot; });
+
+  it('extracts from an authorized stored text document and keeps only exact source citations', async () => {
+    const principal = fixture.alpha.users.owner.principal;
+    const text = 'Customer: Apex Dynamics Corp\nPart: BRK-1001\nQuantity: 80 pcs\nMaterial: Titanium Ti-6Al-4V';
+    const document = await documentService.uploadDocument(principal, {
+      fileName: 'customer-rfq.txt', mimeType: 'text/plain', content: Buffer.from(text, 'utf8'), description: 'Customer RFQ',
+    });
+    const created = await service.extractDocumentAndSave(principal, document.id, 'rfq-document-intake-create');
+    expect(created.data?.sourceDocumentId).toBe(document.id);
+    expect(created.data?.sourceFileName).toBe('customer-rfq.txt');
+    expect(created.data?.rawText).toBe(text);
+    expect(created.data?.citations).toEqual([{ field: 'material', quote: 'Material: Titanium Ti-6Al-4V' }, { field: 'qty', quote: 'Quantity: 80 pcs' }]);
+    const reviewed = created.data && await service.getReview(principal, created.data.id);
+    expect(reviewed?.sourceDocumentId).toBe(document.id);
+    expect(reviewed?.citations.every((citation) => reviewed.rawText.includes(citation.quote))).toBe(true);
+    const persisted = await fixture.db.rfqDraft.findUniqueOrThrow({ where: { id: created.data!.id } });
+    expect(persisted.sourceType).toBe('DOCUMENT');
+    expect(JSON.parse(persisted.extractedFieldsJson).sourceDocumentId).toBe(document.id);
+    const sameContentDifferentDocument = await documentService.uploadDocument(principal, {
+      fileName: 'duplicate-content.csv', mimeType: 'text/csv', content: Buffer.from(text, 'utf8'),
+    });
+    await expect(service.extractDocumentAndSave(principal, sameContentDifferentDocument.id, 'rfq-document-intake-create')).rejects.toThrow(/Idempotency key.*different request payload/i);
+  });
+
+  it('rejects unsupported document formats and documents from another workspace', async () => {
+    const principal = fixture.alpha.users.owner.principal;
+    const pdf = await documentService.uploadDocument(principal, { fileName: 'unsupported.pdf', mimeType: 'application/pdf', content: Buffer.from('%PDF-1.4 fake') });
+    const foreign = await documentService.uploadDocument(fixture.beta.users.owner.principal, { fileName: 'foreign.txt', mimeType: 'text/plain', content: Buffer.from('secret') });
+    const beforeDrafts = await fixture.db.rfqDraft.count({ where: { workspaceId: fixture.alpha.workspaceId } });
+    await expect(service.extractDocumentAndSave(principal, pdf.id, 'rfq-document-pdf')).rejects.toThrow(/Only plain text and CSV RFQs/);
+    await expect(service.extractDocumentAndSave(principal, foreign.id, 'rfq-document-foreign')).rejects.toThrowError(NotFoundError);
+    expect(await fixture.db.rfqDraft.count({ where: { workspaceId: fixture.alpha.workspaceId } })).toBe(beforeDrafts);
+  });
 
   it('stores bounded source provenance, exposes only workspace-scoped records, and locks reviewer edits', async () => {
     const principal = fixture.alpha.users.owner.principal;

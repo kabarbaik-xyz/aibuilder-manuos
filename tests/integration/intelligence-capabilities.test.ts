@@ -22,8 +22,8 @@ describe('CoreAI capability readiness', () => {
     expect(schedule).toMatchObject({
       state: 'DETERMINISTIC_READY',
       availablePage: true,
-      href: '/planning',
-      statusLabel: 'Dry-run proposal available in Planning',
+      href: '/ai/schedule',
+      statusLabel: 'Schedule proposal available for review',
     });
     expect(schedule?.unavailableReason).toContain('work is not split across shifts');
   });
@@ -35,13 +35,13 @@ describe('CoreAI capability readiness', () => {
     expect(promise).toMatchObject({
       state: 'DETERMINISTIC_READY',
       availablePage: true,
-      href: '/planning',
-      statusLabel: 'Existing-job date evaluation available',
+      href: '/ai/promise',
+      statusLabel: 'Delivery-date review available',
     });
     expect(promise?.prerequisite).toContain('does not commit a customer promise');
   });
 
-  it('labels recovery schedule snapshots as review-only while Apply is gated', () => {
+  it('describes the connected Recovery Apply behavior without saying it is still gated', () => {
     const result = service.getCapabilities(fixture.alpha.users.planner.principal);
     const recovery = result.capabilities.find((capability) => capability.id === 'AII-06');
 
@@ -49,8 +49,16 @@ describe('CoreAI capability readiness', () => {
       state: 'DETERMINISTIC_READY',
       availablePage: true,
       href: '/ai/recovery',
-      statusLabel: 'Schedule review available; recovery alternatives and Apply disabled',
+      statusLabel: 'Schedule review and transactional Apply available; alternatives unavailable',
     });
-    expect(recovery?.prerequisite).toContain('Revalidate current bookings and versions');
+    expect(recovery?.prerequisite).toContain('Before applying, revalidate current bookings and versions');
+  });
+
+  it('describes supported RFQ file types and remaining citation limits', () => {
+    const result = service.getCapabilities(fixture.alpha.users.owner.principal);
+    const intake = result.capabilities.find((capability) => capability.id === 'AII-03');
+    expect(intake?.summary).toContain('TXT/CSV');
+    expect(intake?.prerequisite).toContain('PDF/image OCR');
+    expect(intake?.prerequisite).toContain('line-span citations');
   });
 });

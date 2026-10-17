@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { buildAuthorizedContext, resolveAuthorizedEvidenceReferences } from '@/server/ai/context';
 import { validateGroundedOutput, Explanation } from '@/server/ai/validation';
@@ -15,6 +15,7 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
   let brainService: ProductionBrainService;
 
   beforeAll(async () => {
+    vi.stubEnv('GEMINI_API_KEY', '');
     fixture = await createFactoryFixture();
     brainService = new ProductionBrainService(fixture.db);
     clearCache();
@@ -22,6 +23,7 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
 
   afterAll(async () => {
     await fixture.close();
+    vi.unstubAllEnvs();
   });
 
   it('builds strictly scoped authorized context and deterministic contextHash', async () => {
