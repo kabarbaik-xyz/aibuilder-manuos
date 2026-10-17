@@ -55,8 +55,8 @@ export function NotificationPreferencesDialog({ isOpen, onClose }: { isOpen: boo
     finally { setPending(false); }
   };
 
-  return <Dialog isOpen={isOpen} onClose={onClose} title="Preferensi notifikasi" size="sm" pending={pending} dirty={dirty}
-    subtitle="Pilih pembaruan yang masuk ke inbox akun Anda di workspace ini."
+  return <Dialog isOpen={isOpen} onClose={onClose} title="Notification preferences" size="sm" pending={pending} dirty={dirty}
+    subtitle="Updates reaching your inbox in this workspace."
     footer={<><Button data-dialog-dismiss disabled={pending}>Tutup</Button><Button variant="primary" disabled={!dirty || pending || loading} onClick={() => void save()}>{pending ? 'Menyimpan…' : 'Simpan preferensi'}</Button></>}>
     <div className="page-stack">
       {loading && <p className="muted" role="status">Memuat preferensi…</p>}

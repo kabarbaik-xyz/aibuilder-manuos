@@ -37,13 +37,13 @@ export function NotificationInbox() {
     setError(null);
     try {
       const response = await fetch('/api/notifications?limit=50', { cache: 'no-store' });
-      if (!response.ok) throw new Error('Notifikasi tidak dapat dimuat. Coba lagi.');
+      if (!response.ok) throw new Error('Notification tidak dapat dimuat. Coba lagi.');
       const payload = (await response.json()) as InboxResponse;
       setItems(payload.data);
       setUnreadCount(payload.meta.unreadCount);
       setSuppressedCount(payload.meta.delivery.suppressed);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Terjadi kesalahan saat memuat notifikasi.');
+      setError(cause instanceof Error ? cause.message : 'Terjadi kesalahan saat memuat notifications.');
     } finally {
       setLoading(false);
     }
@@ -70,10 +70,10 @@ export function NotificationInbox() {
           ? { action: 'MARK_READ', notificationId }
           : { action: 'MARK_ALL_READ' }),
       });
-      if (!response.ok) throw new Error('Status notifikasi gagal diperbarui. Coba lagi.');
+      if (!response.ok) throw new Error('Status notifications gagal diperbarui. Coba lagi.');
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Terjadi kesalahan saat memperbarui notifikasi.');
+      setError(cause instanceof Error ? cause.message : 'Terjadi kesalahan saat memperbarui notifications.');
     } finally {
       setPendingId(null);
     }
@@ -83,8 +83,8 @@ export function NotificationInbox() {
     <Button
       variant="icon"
       icon="bell"
-      aria-label={`Notifikasi${unreadCount ? `, ${unreadCount} belum dibaca` : ''}`}
-      title="Notifikasi"
+      aria-label={`Notification${unreadCount ? `, ${unreadCount} unread` : ''}`}
+      title="Notification"
       className="notification-trigger"
       onClick={() => setOpen(true)}
     >
@@ -93,8 +93,8 @@ export function NotificationInbox() {
     <Dialog
       isOpen={open}
       onClose={() => setOpen(false)}
-      title="Notifikasi"
-      subtitle={unreadCount ? `${unreadCount} notifikasi belum dibaca` : 'Pembaruan untuk akun Anda'}
+      title="Notification"
+      subtitle={unreadCount ? `${unreadCount} notifications unread` : 'Updates for your account'}
       size="md"
       className="notification-dialog"
       footer={<Button onClick={() => setOpen(false)}>Tutup</Button>}
@@ -105,10 +105,10 @@ export function NotificationInbox() {
           Tandai semua dibaca
         </Button>
       </div>
-      {suppressedCount > 0 && <p className="small muted">{suppressedCount} notifikasi dibisukan sesuai preferensi akun.</p>}
-      {error && <ErrorState title="Notifikasi tidak tersedia" message={error} onRetry={() => void refresh()} />}
-      {!error && loading && items.length === 0 && <p className="muted">Memuat notifikasi…</p>}
-      {!error && !loading && items.length === 0 && <EmptyState title="Belum ada notifikasi" description="Pembaruan yang dikirim ke akun Anda akan muncul di sini." />}
+      {suppressedCount > 0 && <p className="small muted">{suppressedCount} notifications filtered per account preference.</p>}
+      {error && <ErrorState title="Notification unavailable" message={error} onRetry={() => void refresh()} />}
+      {!error && loading && items.length === 0 && <p className="muted">Loading notifications……</p>}
+      {!error && !loading && items.length === 0 && <EmptyState title="No notifications yet" description="Updates sent to your account will appear here.." />}
       {!error && items.length > 0 && <ul className="notification-list">
         {items.map((item) => {
           const href = getNotificationHref(item);
@@ -130,7 +130,7 @@ export function NotificationInbox() {
           </li>;
         })}
       </ul>}
-      {pendingId && <span className="sr-only" role="status">Memperbarui notifikasi…</span>}
+      {pendingId && <span className="sr-only" role="status">Memperbarui notifications…</span>}
     </Dialog>
     <NotificationPreferencesDialog isOpen={preferencesOpen} onClose={() => { setPreferencesOpen(false); setOpen(true); }} />
   </>;
