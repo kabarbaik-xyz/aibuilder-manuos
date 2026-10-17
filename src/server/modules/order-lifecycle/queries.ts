@@ -44,7 +44,14 @@ export async function listLifecycleWorkItems(
       assignedMembership: { select: { id: true, user: { select: { name: true } } } },
       instance: {
         select: {
-          order: { select: { id: true, orderNumber: true, facilityId: true, customer: { select: { name: true } }, item: { select: { name: true } } } },
+          order: { select: {
+            id: true, orderNumber: true, facilityId: true,
+            customer: { select: { name: true } }, item: { select: { name: true } },
+            instances: { select: { tasks: { select: {
+              id: true, nodeKey: true, status: true,
+              resourceBookings: { where: { status: 'CONFIRMED' }, select: { id: true, resourceType: true, startAt: true, endAt: true } },
+            } } } },
+          } },
           workflowVersion: { select: { versionNumber: true, template: { select: { name: true } } } },
         },
       },
@@ -83,6 +90,17 @@ export async function listLifecycleWorkItems(
       dueAt: stage.dueAt?.toISOString() ?? null,
       schedule: JSON.parse(stage.scheduleJson),
       formPins: JSON.parse(stage.formPinsJson),
+      scheduledWork: stage.instance.order.instances.flatMap((instance) => instance.tasks.map((task) => ({
+        taskId: task.id,
+        operation: task.nodeKey,
+        status: task.status,
+        bookings: task.resourceBookings.map((booking) => ({
+          id: booking.id,
+          resourceType: booking.resourceType,
+          startAt: booking.startAt.toISOString(),
+          endAt: booking.endAt.toISOString(),
+        })),
+      }))),
       predecessorKeys: JSON.parse(stage.predecessorKeysJson),
       assignmentKind: assignment.kind,
       claimedByMe: stage.assignedMembershipId === principal.membershipId,
