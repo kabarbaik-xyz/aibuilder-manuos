@@ -106,6 +106,18 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
         const compatibleForms = applicableForms(stage.action);
         const compatibleFormIds = new Set(compatibleForms.map(form => form.publishedVersion?.id));
         const visibleForms = (forms.data?.data ?? []).filter(form => form.publishedVersion && (compatibleFormIds.has(form.publishedVersion.id) || stage.forms.some(pin => pin.formVersionId === form.publishedVersion?.id)));
+        const successors = definition.stages.filter(candidate => candidate.predecessors.includes(stage.key));
+        const assignedMembershipId = stage.assignment.kind === 'MEMBER' ? stage.assignment.membershipId : null;
+        const assignedMember = stage.assignment.kind === 'MEMBER'
+          ? members.data?.get(stage.departmentId)?.find(member => member.membershipId === assignedMembershipId)
+          : null;
+        const assignmentPreview = stage.assignment.kind === 'MEMBER'
+          ? assignedMember?.name ?? 'specific department member'
+          : `${departments.find(department => department.id === stage.departmentId)?.name ?? 'department queue'} · ${stage.assignment.eligibleRoleCodes.map(code => roles.data?.data.find(role => role.code === code)?.name ?? code).join(', ') || 'no eligible role selected'}`;
+        const formPreview = stage.forms.map(pin => {
+          const selectedForm = (forms.data?.data ?? []).find(form => form.publishedVersion?.id === pin.formVersionId);
+          return `${selectedForm?.name ?? 'Unavailable pinned form'} (${pin.required ? 'required' : 'optional'})`;
+        });
         return <article key={stage.key} className="rounded-xl border border-line bg-surface p-4 page-stack">
           <div className="flex items-start justify-between gap-3"><div><p className="small muted">Stage {index + 1} · {stage.key}</p><h3 className="text-base font-semibold">{stage.name}</h3></div>{!readOnly && <Button variant="ghost" onClick={() => setDefinition(current => ({ ...current, stages: current.stages.filter(item => item.key !== stage.key).map(item => ({ ...item, predecessors: item.predecessors.filter(key => key !== stage.key) })) }))}>Remove</Button>}</div>
           <div className="form-grid">
@@ -132,6 +144,14 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
               </div>}
             </div>;
           })}{visibleForms.length === 0 && <p className="field-help">No published compatible form is available for this action.</p>}</div></fieldset>
+          <aside className="rounded-lg border border-primary/20 bg-primary-soft p-3 text-sm" aria-label={`Execution preview for ${stage.name}`}>
+            <h4 className="font-semibold text-ink">Execution preview</h4>
+            <p className="mt-1 text-muted">When ready, <span className="font-medium text-ink">{assignmentPreview}</span> in <span className="font-medium text-ink">{departments.find(department => department.id === stage.departmentId)?.name ?? 'the selected department'}</span> handles “{stage.name}” ({actionLabels[stage.action]}).</p>
+            <p className="mt-1 text-muted">Evidence: {formPreview.length ? formPreview.join(' · ') : 'no form attached'}.</p>
+            <p className="mt-1 text-muted">Scheduling: {stage.schedule.kind === 'DEADLINE' ? `owner deadline ${stage.schedule.dueAfterMinutes} minutes after activation` : 'real production capacity through Planning after Engineering approval'}.</p>
+            <p className="mt-1 text-muted">Next: {successors.length ? successors.map(successor => successor.name).join(', ') : 'workflow ends after this stage'}{successors.length > 1 ? ' (parallel successors; each also waits for its other predecessors)' : ''}.</p>
+            {stage.schedule.kind === 'RESOURCE_CAPACITY' && <p className="mt-1 text-xs text-muted">Preview does not reserve capacity. Planning revalidates resources, skills, shifts, material and bookings.</p>}
+          </aside>
         </article>;
       })}
       {(saveMutation.error || actionMutation.error) && <p role="alert" className="text-sm text-danger">{(saveMutation.error || actionMutation.error)?.message}</p>}
