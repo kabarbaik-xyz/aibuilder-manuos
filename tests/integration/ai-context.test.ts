@@ -228,6 +228,58 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       startAt: bookingStart.toISOString(),
       endAt: bookingEnd.toISOString(),
     }));
+    const formTemplate = await fixture.db.formTemplate.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        code: 'AI-TASK-EVIDENCE',
+        name: 'Setup verification',
+        purpose: 'TASK_EVIDENCE',
+      },
+    });
+    const formVersion = await fixture.db.formVersion.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        templateId: formTemplate.id,
+        versionNumber: 1,
+        status: 'PUBLISHED',
+        schemaVersion: 1,
+        definitionJson: JSON.stringify({ schemaVersion: 1, purpose: 'TASK_EVIDENCE', fields: [
+          { key: 'setup_notes', label: 'Setup notes', kind: 'textarea', required: true },
+          { key: 'machine_ref', label: 'Machine reference', kind: 'reference', referenceType: 'machine', required: false },
+        ] }),
+        contentHash: 'ai-task-evidence-v1',
+        publishedAt: new Date('2026-12-19T00:00:00.000Z'),
+      },
+    });
+    const formInstance = await fixture.db.formInstance.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        formVersionId: formVersion.id,
+        subjectType: 'TASK',
+        subjectId: taskId,
+        required: true,
+        completionPoint: 'BEFORE_ACTION',
+        status: 'SUBMITTED',
+      },
+    });
+    await fixture.db.formSubmission.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        instanceId: formInstance.id,
+        sequenceNumber: 1,
+        status: 'FINAL',
+        answersJson: JSON.stringify({ setup_notes: 'Clamp inspected and secured.', machine_ref: alpha.masters.machineId }),
+        actorId: alpha.users.owner.userId,
+        finalizedAt: new Date('2026-12-19T00:15:00.000Z'),
+      },
+    });
+    const evidenceContext = await buildAuthorizedContext(alpha.users.owner.principal, fixture.db, { taskId });
+    expect(evidenceContext.submittedFormEvidence).toContainEqual(expect.objectContaining({
+      orderNumber: order.data.orderNumber,
+      subject: `${order.data.orderNumber} / operation OP-10`,
+      purpose: 'TASK_EVIDENCE',
+      answers: [{ field: 'Setup notes', value: 'Clamp inspected and secured.' }],
+    }));
     await expect(brainService.answerProductionQuestion(alpha.users.customerUser.principal, 'What is blocking this task?', { type: 'TASK', id: taskId })).rejects.toThrow(/not available/i);
   });
 

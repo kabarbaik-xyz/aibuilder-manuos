@@ -57,7 +57,7 @@ export class ProductionBrainService {
     }
 
     const model = process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest';
-    const promptVersion = 'brain-qa-v8-confirmed-bookings';
+    const promptVersion = 'brain-qa-v9-final-form-evidence';
     const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
     // 1. Check scoped cache
@@ -93,6 +93,9 @@ ${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.orderNumber} 
 - Confirmed Resource Bookings (${inventoryQuestion ? 'omitted: inventory-only question' : context.confirmedBookings.length}):
 ${(inventoryQuestion ? [] : context.confirmedBookings).map(booking => `  * ${booking.orderNumber} / operation ${booking.operation}: ${booking.resourceName ?? booking.resourceType.toLowerCase()} booked ${booking.startAt} to ${booking.endAt}`).join('\n')}
 
+- Finalized Form Evidence (${inventoryQuestion ? 'omitted: inventory-only question' : context.submittedFormEvidence.length}):
+${(inventoryQuestion ? [] : context.submittedFormEvidence).map(form => `  * ${form.orderNumber} / ${form.subject}, ${form.purpose} finalized ${form.finalizedAt}: ${form.answers.map(answer => `${answer.field}=${answer.value}`).join('; ')}`).join('\n')}
+
 User Question: "${question}"
 
 Rules:
@@ -103,6 +106,7 @@ Rules:
 - For inventory: group relevant records into short bullets with item name/code, on-hand amount, and reserved amount when relevant. Never add quantities across different items or infer shortage/sufficiency from stock alone. Never invent a unit when none is supplied.
 - For production overview: separate Orders, Work in progress, and Resources when evidence exists. Do not describe completed tasks as open work, or resource status as confirmed scheduling availability.
 - A confirmed booking is an actual reservation for its time window only; do not infer general availability, shift coverage, or a complete schedule from the bounded booking sample.
+- Form evidence contains only finalized answers from form instances the current user can read. Drafts, attachments and reference IDs are omitted; do not treat absent answers as evidence that a requirement was not submitted.
 - For workflow questions: use only the supplied current stage, department, owner, due date, and scheduling policy. A stage state is not proof that its domain action or evidence has completed; use task, QC, and delivery records for those outcomes.
 - Translate enum values into natural words: IN_PRODUCTION → In production, PARTIALLY_DELIVERED → Partially delivered. Do not print raw status codes, UUIDs, or internal field names.
 - If there is an evidenced issue, finish with one concrete next step. If none is evidenced, do not invent urgency or recommendations. Make missing evidence explicit.

@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { createHash } from 'crypto';
 import { canonicalJson } from '@/server/db/transaction';
+import { FormSubmissionService } from '@/server/modules/forms/submissions';
 
 export interface AuthorizedContextScope {
   orderId?: string;
@@ -57,6 +58,14 @@ export interface AuthorizedContextBooking {
   endAt: string;
 }
 
+export interface AuthorizedContextFormEvidence {
+  orderNumber: string;
+  subject: string;
+  purpose: string;
+  finalizedAt: string;
+  answers: Array<{ field: string; value: string }>;
+}
+
 export interface AuthorizedContextDisruption {
   materialId?: string;
   materialName?: string;
@@ -85,6 +94,7 @@ export interface AuthorizedContext {
   orders: AuthorizedContextOrder[];
   tasks: AuthorizedContextTask[];
   confirmedBookings: AuthorizedContextBooking[];
+  submittedFormEvidence: AuthorizedContextFormEvidence[];
   inventory: AuthorizedContextInventory[];
   resources: AuthorizedContextResource[];
   lifecycleStages: AuthorizedContextLifecycleStage[];
@@ -205,6 +215,40 @@ export async function buildAuthorizedContext(
     orderId: task.instance.order.id,
     orderNumber: task.instance.order.orderNumber,
   }));
+
+  const submittedFormEvidence: AuthorizedContextFormEvidence[] = [];
+  if (!effectiveCustomerId && principal.permissions.has('forms.read')) {
+    const formSubmissions = new FormSubmissionService(prisma);
+    const taskOrderById = new Map(dbTasks.map(task => [task.id, task.instance.order.orderNumber]));
+    const orderById = new Map(dbOrders.map(order => [order.id, order.orderNumber]));
+    const subjects = [
+      ...dbOrders.map(order => ({ subjectType: 'ORDER' as const, subjectId: order.id, subjectLabel: order.orderNumber })),
+      ...dbTasks.map(task => ({ subjectType: 'TASK' as const, subjectId: task.id, subjectLabel: `${taskOrderById.get(task.id)} / operation ${task.nodeKey}` })),
+    ];
+    for (const subject of subjects) {
+      const instances = await formSubmissions.listInstancesForSubject(principal, subject.subjectType, subject.subjectId);
+      for (const form of instances) {
+        const submission = form.latestSubmission;
+        if (submission?.status !== 'FINAL' || !submission.finalizedAt) continue;
+        const answers = Object.entries(submission.answers).flatMap(([key, value]) => {
+          const field = form.definition.fields.find(candidate => candidate.key === key);
+          if (!field || field.kind === 'reference' || field.kind === 'attachment' || value === null) return [];
+          const readableValue = Array.isArray(value) ? value.join(', ') : String(value);
+          return [{ field: field.label, value: readableValue.slice(0, 500) }];
+        }).slice(0, 12);
+        if (answers.length === 0) continue;
+        submittedFormEvidence.push({
+          orderNumber: subject.subjectType === 'ORDER' ? (orderById.get(subject.subjectId) ?? subject.subjectLabel) : (taskOrderById.get(subject.subjectId) ?? subject.subjectLabel),
+          subject: subject.subjectLabel,
+          purpose: form.definition.purpose,
+          finalizedAt: submission.finalizedAt,
+          answers,
+        });
+        if (submittedFormEvidence.length >= 20) break;
+      }
+      if (submittedFormEvidence.length >= 20) break;
+    }
+  }
 
   const dbBookings = !effectiveCustomerId && principal.permissions.has('planning.read') && orders.length > 0
     ? await prisma.resourceBooking.findMany({
@@ -371,6 +415,7 @@ export async function buildAuthorizedContext(
     orders,
     tasks,
     confirmedBookings,
+    submittedFormEvidence,
     inventory,
     resources,
     lifecycleStages,
@@ -387,6 +432,7 @@ export async function buildAuthorizedContext(
     orders,
     tasks,
     confirmedBookings,
+    submittedFormEvidence,
     inventory,
     resources,
     lifecycleStages,
