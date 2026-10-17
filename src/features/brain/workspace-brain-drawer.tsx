@@ -44,30 +44,29 @@ export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: Brai
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [pending, setPending] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState('');
+  const [historyRetry, setHistoryRetry] = useState(0);
   const request = useRef<AbortController | null>(null);
   const end = useRef<HTMLDivElement>(null);
-  const previousMembershipId = useRef<string | null | undefined>(principal?.membershipId);
-  const initializedMembership = useRef(false);
   useEffect(() => () => request.current?.abort(), []);
   useEffect(() => {
-    if (!initializedMembership.current) {
-      initializedMembership.current = true;
-      previousMembershipId.current = principal?.membershipId;
-      return;
-    }
-    if (previousMembershipId.current === principal?.membershipId) return;
-    previousMembershipId.current = principal?.membershipId;
     request.current?.abort();
-    setMessages([]);
-    setPending(false);
-    setQuestion('');
-    setSelectedContext(null);
-  }, [principal?.membershipId]);
+    const controller = new AbortController();
+    setMessages([]); setPending(false); setQuestion('');
+    setHistoryLoading(true); setHistoryError('');
+    if (!principal?.membershipId) return () => controller.abort();
+    apiRequest<{ data: Message[] }>('/api/ai/brain-qa', { signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setMessages(result.data); })
+      .catch(error => { if (!controller.signal.aborted) setHistoryError(error instanceof Error ? error.message : 'Could not load recent chats.'); })
+      .finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
+    return () => controller.abort();
+  }, [principal?.membershipId, principal?.workspaceId, historyRetry]);
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [messages, pending]);
 
   async function ask(value: string) {
     const text = value.trim();
-    if (!text || pending) return;
+    if (!text || pending || historyLoading || historyError) return;
     const controller = new AbortController();
     request.current = controller;
     setQuestion('');
@@ -79,9 +78,9 @@ export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: Brai
       });
       const answer = result.data;
       if (!answer?.answer) throw new Error('No answer was returned. Please try again.');
-      if (!controller.signal.aborted) setMessages(previous => [...previous.slice(0, -1), { question: text, answer: { ...answer, evidenceRefs: result.explanation.status === 'SUCCESS' ? result.explanation.evidenceRefs : answer.evidenceRefs }, status: result.explanation.status, fallbackReason: result.explanation.status === 'FALLBACK' ? result.explanation.reason : undefined }]);
+      if (!controller.signal.aborted) setMessages(previous => [...previous.slice(-20, -1), { question: text, context: selectedContext, answer: { ...answer, evidenceRefs: result.explanation.status === 'SUCCESS' ? result.explanation.evidenceRefs : answer.evidenceRefs }, status: result.explanation.status, fallbackReason: result.explanation.status === 'FALLBACK' ? result.explanation.reason : undefined }]);
     } catch (error) {
-      if (!controller.signal.aborted) setMessages(previous => [...previous.slice(0, -1), { question: text, error: error instanceof Error ? error.message : 'Unable to load an answer. Please try again.' }]);
+      if (!controller.signal.aborted) setMessages(previous => [...previous.slice(-20, -1), { question: text, error: error instanceof Error ? error.message : 'Unable to load an answer. Please try again.' }]);
     } finally {
       if (!controller.signal.aborted) setPending(false);
     }
@@ -90,7 +89,9 @@ export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: Brai
   return <div className="workspace-brain">
     <div className="workspace-brain-context"><span className="workspace-brain-workspace"><Icon name="inventory" />{principal?.workspaceName || 'Current workspace'}</span>{selectedContext && <span className="text-xs text-primary">Selected {selectedContext.type.toLowerCase()} · {selectedContext.id}<Button size="small" variant="soft" className="ml-2" onClick={() => setSelectedContext(null)}>Clear</Button></span>}<span className="workspace-brain-readonly"><Icon name="lock" />Read only</span></div>
     <div className={`workspace-brain-history${messages.length ? '' : ' is-empty'}`} role="log" aria-label="Production questions and answers" aria-live="polite">
-      {!messages.length && <div className="workspace-brain-welcome"><span className="workspace-brain-avatar workspace-brain-avatar-lg"><Icon name="spark" /></span><h3>Your workspace, in focus.</h3><p className="muted">Explore orders, inventory and production resources using your workspace records.</p><div className="workspace-brain-prompts">{prompts.map(prompt => <button type="button" key={prompt.text} className="workspace-brain-prompt" disabled={!principal || pending} onClick={() => void ask(prompt.text)}><span className="workspace-brain-prompt-icon"><Icon name={prompt.icon} /></span><span className="workspace-brain-prompt-hint">{prompt.hint}</span><span className="workspace-brain-prompt-text">{prompt.text}</span></button>)}</div></div>}
+      {historyLoading && <p className="small muted" role="status">Loading recent chats…</p>}
+      {historyError && <div role="alert"><p>{historyError}</p><Button onClick={() => setHistoryRetry(value => value + 1)}>Retry chat history</Button></div>}
+      {!historyLoading && !historyError && !messages.length && <div className="workspace-brain-welcome"><span className="workspace-brain-avatar workspace-brain-avatar-lg"><Icon name="spark" /></span><h3>Your workspace, in focus.</h3><p className="muted">Explore orders, inventory and production resources using your workspace records.</p><div className="workspace-brain-prompts">{prompts.map(prompt => <button type="button" key={prompt.text} className="workspace-brain-prompt" disabled={!principal || pending || historyLoading || Boolean(historyError)} onClick={() => void ask(prompt.text)}><span className="workspace-brain-prompt-icon"><Icon name={prompt.icon} /></span><span className="workspace-brain-prompt-hint">{prompt.hint}</span><span className="workspace-brain-prompt-text">{prompt.text}</span></button>)}</div></div>}
       {messages.map((message, index) => <section className="workspace-brain-exchange" key={index}>
         <div className="workspace-brain-user"><span className="workspace-brain-speaker">You</span><p className="workspace-brain-question">{message.question}</p></div>
         {message.context && <p className="small muted">Context used: {message.context.type.toLowerCase()} {message.context.id}</p>}
@@ -103,9 +104,9 @@ export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: Brai
       <div className="workspace-brain-input-wrap">
         <label className="sr-only" htmlFor="workspace-brain-question">Ask a production question</label>
         <Textarea id="workspace-brain-question" value={question} maxLength={2000} rows={2} placeholder="Ask a follow-up or explore your workspace…" onChange={event => setQuestion(event.target.value)} />
-        <div className="workspace-brain-actions"><span className="small muted">Orders, inventory & production</span><Button type="submit" variant="primary" icon="arrow" aria-label="Send question" disabled={!principal || pending || !question.trim()}>{pending ? 'Checking…' : 'Send'}</Button></div>
+        <div className="workspace-brain-actions"><span className="small muted">Orders, inventory & production</span><Button type="submit" variant="primary" icon="arrow" aria-label="Send question" disabled={!principal || pending || historyLoading || Boolean(historyError) || !question.trim()}>{pending ? 'Checking…' : 'Send'}</Button></div>
       </div>
-      <p className="workspace-brain-disclaimer">Answers use accessible records. Review details before making decisions.</p>
+      <p className="workspace-brain-disclaimer">Your last 20 exchanges are saved to this account and workspace. Past answers are snapshots; review current records before acting.</p>
     </form>
   </div>;
 }

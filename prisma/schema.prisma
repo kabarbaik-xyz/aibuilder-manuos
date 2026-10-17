@@ -2636,3 +2636,14 @@ model ShiftSwapRequest {
   @@index([workspaceId, status])
   @@map("shift_swap_requests")
 }
+
+model AssistantChatEntry {
+  id String @id @default(uuid())
+  workspaceId String @map("workspace_id")
+  membershipId String @map("membership_id")
+  scopeHash String @map("scope_hash")
+  messageJson String @map("message_json")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([workspaceId, membershipId, createdAt])
+  @@map("assistant_chat_entries")
+}

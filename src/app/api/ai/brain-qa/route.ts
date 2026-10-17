@@ -4,6 +4,9 @@ import { requirePrincipal } from '@/server/auth/auth';
 import { formatErrorResponse } from '@/server/http/errors';
 import { jsonResponse, parseJsonBody } from '@/server/http/route-handler';
 import { ProductionBrainService } from '@/server/ai/brain';
+import { saveChatMessage, readChatHistory } from '@/server/ai/chat-history';
+import { BadRequestError } from '@/domain/errors';
+import { randomUUID } from 'crypto';
 import { db } from '@/server/db/client';
 
 const brainService = new ProductionBrainService(db);
@@ -24,6 +27,9 @@ export async function POST(req: NextRequest) {
     // Return explanation with data for brain drawer compatibility
     const answerData = explanation.status === 'SUCCESS' ? explanation.data : explanation.fallbackData;
 
+    if (!answerData?.answer) throw new BadRequestError('No answer was returned. Please try again.');
+    const savedAnswer = explanation.status === 'SUCCESS' ? { ...answerData, evidenceRefs: explanation.evidenceRefs } : answerData;
+    await saveChatMessage(db, principal, { question, context, answer: savedAnswer, status: explanation.status, ...(explanation.status === 'FALLBACK' ? { fallbackReason: explanation.reason } : {}) }, req.headers.get('idempotency-key') || randomUUID());
     return jsonResponse(
       {
         data: answerData,
@@ -34,4 +40,11 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return formatErrorResponse(err);
   }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const principal = await requirePrincipal(req);
+    return jsonResponse({ data: await readChatHistory(db, principal) });
+  } catch (err) { return formatErrorResponse(err); }
 }

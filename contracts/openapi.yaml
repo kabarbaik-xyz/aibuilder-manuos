@@ -882,9 +882,19 @@ paths:
           $ref: '#/components/responses/Forbidden'
 
   /api/ai/brain-qa:
+    get:
+      summary: Restore the current member's last 20 assistant exchanges
+      description: Authenticated personal history, isolated by workspace and membership. Entries with a different current permission, role, facility, customer or technician scope are hidden. Answers are historical snapshots, not live operational state.
+      responses:
+        '200':
+          description: Data array of up to 20 saved questions and answers in chronological order
+        '401':
+          description: Valid authentication session required
+        '403':
+          description: Assistant read permission required
     post:
-      summary: Read-only factory operational brain Q&A
-      description: Accepts an optional server-resolved ORDER, ITEM or TASK context. Task records are visible only to planning-authorized users or the technician assigned to that task. Context is authorization-checked and limits the grounded workspace snapshot; record IDs alone never grant access. Verified evidence references are converted to typed internal record links by the server; model-provided URLs are never used as navigation.
+      summary: Factory operational Q&A with personal history
+      description: Saves the completed question and answer to personal workspace history; returns only after persistence. Retains the last 20 exchanges in the history projection. Operational records are never modified by chat. Accepts an optional server-resolved ORDER, ITEM or TASK context. Task records are visible only to planning-authorized users or the technician assigned to that task. Context is authorization-checked and limits the grounded workspace snapshot; record IDs alone never grant access. Verified evidence references are converted to typed internal record links by the server; model-provided URLs are never used as navigation.
       requestBody:
         required: true
         content:
