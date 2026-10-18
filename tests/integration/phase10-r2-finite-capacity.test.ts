@@ -139,6 +139,10 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
 
     const plannerMembershipId = alpha.users.planner.principal.membershipId;
     await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: alpha.masters.departmentId },
+    });
+    await fixture.db.membership.update({
       where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: plannerMembershipId } },
       data: { departmentId: alpha.masters.departmentId },
     });
@@ -152,13 +156,22 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       definition: {
         schemaVersion: 1,
         name: 'Planning lifecycle integration',
-        stages: [{
-          key: 'PLAN', name: 'Schedule released work', action: 'PLAN_PRODUCTION',
-          departmentId: alpha.masters.departmentId,
-          assignment: { kind: 'MEMBER', membershipId: plannerMembershipId, departmentId: alpha.masters.departmentId },
-          schedule: { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' },
-          predecessors: [], forms: [],
-        }],
+        stages: [
+          {
+            key: 'ENGINEERING', name: 'Approve engineering', action: 'ENGINEERING_APPROVE',
+            departmentId: alpha.masters.departmentId,
+            assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: alpha.masters.departmentId },
+            schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 },
+            predecessors: [], forms: [],
+          },
+          {
+            key: 'PLAN', name: 'Schedule released work', action: 'PLAN_PRODUCTION',
+            departmentId: alpha.masters.departmentId,
+            assignment: { kind: 'MEMBER', membershipId: plannerMembershipId, departmentId: alpha.masters.departmentId },
+            schedule: { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' },
+            predecessors: ['ENGINEERING'], forms: [],
+          },
+        ],
       },
     }, 'p10-lifecycle-draft');
     await workflowService.publishVersion(owner, lifecycleTemplate.data.initialVersionId!, 'p10-lifecycle-publish');
@@ -456,9 +469,18 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeBookings);
       expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'SCHEDULE_PROPOSAL_APPLY' } })).toBe(0);
 
-      const applied = await scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-ok');
-      const replay = await scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-ok');
-      expect(applied.data.state).toBe('APPLIED');
+      const concurrent = await Promise.allSettled([
+        scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-race-a'),
+        scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-race-b'),
+      ]);
+      const applied = concurrent.filter((result) => result.status === 'fulfilled');
+      const rejected = concurrent.filter((result) => result.status === 'rejected');
+      expect(applied).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toMatchObject({ code: 'STALE_VERSION' });
+      const winningKey = concurrent[0].status === 'fulfilled' ? 'phase10-schedule-apply-race-a' : 'phase10-schedule-apply-race-b';
+      const replay = await scheduleProposalService.applyReviewedProposal(planner, reviewed, winningKey);
+      expect(applied[0].status === 'fulfilled' && applied[0].value.data.state).toBe('APPLIED');
       expect(replay.meta.replayed).toBe(true);
       expect(await fixture.db.task.count({ where: { workspaceId: alpha.workspaceId, instanceId: testInstanceId, status: 'ASSIGNED' } })).toBe(2);
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, status: 'CONFIRMED' } })).toBe(4);
