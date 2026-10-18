@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="How ManuOS connects manufacturing operations with CoreAI assistance, planning checks, and human review.">
+  <title>ManuOS — CoreAI for manufacturing decisions</title>
+  <link rel="preload" href="/assets/plus-jakarta-sans-700.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="/presentation.css">
+  <script src="/presentation.js" defer></script>
+</head>
+<body>
+  <svg class="symbol-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="spark" viewBox="0 0 24 24"><path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4L12 3Z"/><path d="m20 2 .6 1.4L22 4l-1.4.6L20 6l-.6-1.4L18 4l1.4-.6L20 2Z"/></symbol>
+    <symbol id="arrow" viewBox="0 0 24 24"><path d="M4 12h16m-7-7 7 7-7 7"/></symbol>
+    <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="link" viewBox="0 0 24 24"><path d="m10 13 4-4M8 15l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 3 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" transform="translate(1 1)"/></symbol>
+    <symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+  </defs></svg>
+
+  <header class="masthead">
+    <a href="/" aria-label="ManuOS home"><img src="/manuos-logo.svg" width="140" height="36" alt="ManuOS"></a>
+    <span id="chapter-name">Disconnected work</span>
+    <span class="film-label">PRODUCT WALKTHROUGH</span>
+  </header>
+
+  <main id="film" aria-label="ManuOS product presentation">
+    <!-- Example visuals tell the story; no scene reads or changes workspace records. -->
+    <section class="scene active problem scene-revisions" data-title="Disconnected work" data-duration="7" data-story-duration="13" aria-labelledby="title-1">
+      <div class="scene-copy">
+        <h1 id="title-1">Requirements change.<br> <span>The floor needs<br> the same revision.</span></h1>
+        <p>When specifications, BOMs, and work instructions live apart, teams have to reconcile the handoff themselves.</p>
+        <div class="consequence" data-cue="5.5">Which version is this job actually using?</div>
+      </div>
+      <div class="visual revision-visual" data-camera="photo">
+        <figure class="factory-photo"><img src="/images/problem-1.jpg" alt="Illustrative manufacturing workstation with drawings and work instructions"><figcaption>Illustrative manufacturing scene</figcaption></figure>
+        <div class="revision-record old-record" data-cue="1.2"><span>Work instruction</span><strong>Revision A</strong><small>At the workstation</small></div>
+        <div class="revision-record new-record" data-cue="3"><span>Customer specification</span><strong>Revision B</strong><small>Engineering update</small></div>
+        <div class="handoff-question" data-cue="6.5"><svg><use href="#link"/></svg><span>A handoff needs a shared record.</span></div>
+      </div>
+      <p class="scene-caption" data-cue="8.5">The first problem: keeping requirements and execution connected.</p>
+    </section>
+
+    <section class="scene problem scene-quantities" data-title="Quantity clarity" data-duration="7" data-story-duration="14" aria-labelledby="title-2" hidden>
+      <div class="scene-copy"><h2 id="title-2">Completed isn’t<br> the same as<br> <span>ready to ship.</span></h2><p>Output, quality holds, and dispatchable stock answer different questions. Combining them hides the work that remains.</p></div>
+      <div class="visual quantity-visual" data-camera="quantity">
+        <div class="sample-heading"><span>Example order CO-1042</span><span>120 units ordered</span></div>
+        <div class="quantity-track"><div class="quantity-complete" data-cue="1"><strong>82</strong><span>Completed</span></div><div class="quantity-remaining" data-cue="2"><strong>38</strong><span>Not yet completed</span></div></div>
+        <div class="quantity-branch" data-cue="3.5"><span>Inspect the completed output</span><svg><use href="#arrow"/></svg></div>
+        <div class="quality-split"><div class="passed" data-cue="5"><strong>78</strong><span>QC passed</span></div><div class="held" data-cue="6.5"><strong>4</strong><span>Held for rework</span></div></div>
+        <p class="evidence-note" data-cue="9">82 completed = 78 passed + 4 rework.<br> QC-passed quantity is not proof of shipment.</p>
+        <span class="example-label">Illustrative quantities · not live inventory</span>
+      </div>
+      <p class="scene-caption" data-cue="10">The second problem: knowing what is finished, held, and deliverable.</p>
+    </section>
+
+    <section class="scene problem scene-disruption" data-title="Disruption & impact" data-duration="7" data-story-duration="14" aria-labelledby="title-3" hidden>
+      <div class="scene-copy"><h2 id="title-3">One disruption.<br> <span>More than one<br> decision.</span></h2><p>A delayed operation can affect downstream work and the delivery plan. Recovery needs current dependencies, materials, and qualified resources.</p><div class="consequence" data-cue="7">What can move — and what must be checked first?</div></div>
+      <div class="visual disruption-visual" data-camera="photo">
+        <figure class="factory-photo"><img src="/images/problem-3.jpg" alt="Illustrative machining cell"><figcaption>Illustrative manufacturing scene</figcaption></figure>
+        <div class="impact-chain"><div data-cue="1.5"><span class="status warning">Delay recorded</span><strong>Machining</strong></div><span class="chain-line" data-cue="3"></span><div data-cue="4"><span>Dependent work</span><strong>Assembly</strong></div><span class="chain-line" data-cue="5.5"></span><div data-cue="6.5"><span>Recheck the plan</span><strong>Delivery date</strong></div></div>
+        <div class="constraint-list" data-cue="9"><span>Machine availability</span><span>Technician qualifications</span><span>Material readiness</span></div>
+      </div>
+      <p class="scene-caption" data-cue="10.5">The third problem: turning disruption into a reviewable next step.</p>
+    </section>
+
+    <section class="scene scene-reveal" data-title="Why we built ManuOS" data-duration="6" data-story-duration="12" aria-labelledby="title-4" hidden>
+      <div class="reveal-thread"><span data-cue=".6">Requirements</span><i data-cue="1.2"></i><span data-cue="1.8">Production</span><i data-cue="2.4"></i><span data-cue="3">Delivery</span></div>
+      <img class="reveal-logo" src="/manuos-logo.svg" alt="ManuOS" width="430" height="110" data-cue="3.5">
+      <h2 id="title-4" data-cue="4.2">Connected operations.<br> <span>CoreAI by your side.</span></h2>
+      <p data-cue="6">Ask questions. Prepare drafts. Review the next move.<br> Your team stays in control.</p>
+      <div class="trust-line" data-cue="8"><svg><use href="#spark"/></svg><span>AI assistance + deterministic planning checks + human review</span></div>
+    </section>
+
+    <section class="scene scene-assistant" data-title="CoreAI · Ask & verify" data-duration="9" data-story-duration="18" aria-labelledby="title-5" hidden>
+      <div class="scene-copy"><h2 id="title-5">Ask the question.<br> <span>Follow the evidence.</span></h2><p>Ask AI helps you explore authorized orders, inventory, and production resources with links to the records behind its answer.</p><div class="feature-proof" data-cue="11"><svg><use href="#lock"/></svg><span>Read-only answers.<br> Access follows workspace permissions.</span></div></div>
+      <div class="visual product-window assistant-window" data-camera="assistant">
+        <div class="window-bar"><span><svg><use href="#spark"/></svg> Ask AI</span><span class="status">Illustrative walkthrough</span></div>
+        <div class="chat-body"><div class="user-message" data-cue="1">How far along is CO-1042?</div><div class="assistant-message" data-cue="3"><span class="assistant-label"><svg><use href="#spark"/></svg>CoreAI</span><div class="answer-line" data-cue="4">82 of 120 units are completed.</div><div class="answer-line" data-cue="5.5">78 have passed QC; 4 are held for rework.</div><div class="answer-line" data-cue="7">Check the inspection and shipment records before confirming delivery.</div><div class="source-row" data-cue="8.5"><span><svg><use href="#link"/></svg>CO-1042</span><span>Output record</span><span>Inspection record</span></div></div></div>
+        <div class="source-inspector" data-cue="11"><span class="detail-label">Linked order evidence</span><strong>CO-1042 <span>Manufacturing order</span></strong><div class="mini-metrics"><div><b>120</b>Ordered</div><div><b>82</b>Completed</div><div><b>78</b>QC passed</div></div><p>The answer stays connected to its source.</p></div>
+      </div>
+      <p class="scene-caption" data-cue="14">AI answers require a configured provider; record-summary fallback is available.</p>
+    </section>
+
+    <section class="scene scene-drafting" data-title="CoreAI · Prepare & review" data-duration="9" data-story-duration="17" aria-labelledby="title-6" hidden>
+      <div class="scene-copy"><h2 id="title-6">A useful first draft.<br> <span>A deliberate review.</span></h2><p>Turn RFQ text into structured suggestions. Draft workflows and forms with AI assistance, then review before saving or publishing.</p><div class="feature-proof" data-cue="10"><svg><use href="#check"/></svg><span>Generation creates a proposal.<br> It does not publish your process.</span></div></div>
+      <div class="visual drafting-visual" data-camera="draft">
+        <div class="rfq-paper" data-cue=".7"><span class="detail-label">Customer request · example text</span><p>“Please quote <mark>120 units</mark> of the <mark>control enclosure</mark>.<br> Finish and inspection requirements to be confirmed.”</p></div>
+        <div class="extraction-path" data-cue="3"><svg><use href="#spark"/></svg><span>CoreAI extracts a draft</span><svg><use href="#arrow"/></svg></div>
+        <div class="review-sheet" data-cue="5"><div class="sheet-heading"><strong>Review extracted fields</strong><span class="status warning">Draft</span></div><dl><div data-cue="5.5"><dt>Part</dt><dd>Control enclosure</dd></div><div data-cue="6.5"><dt>Quantity</dt><dd>120 units</dd></div><div data-cue="7.5"><dt>Open question</dt><dd>Confirm finish & inspection</dd></div></dl><div class="review-gate" data-cue="10"><svg><use href="#lock"/></svg> Review and correct before creating an order</div></div>
+        <p class="draft-extension" data-cue="12.5">Also available: workflow DAG drafts & operation form drafts.</p>
+      </div>
+      <p class="scene-caption" data-cue="13.5">Configured AI provider required · RFQ text / UTF-8 TXT or CSV · PDF/image OCR not connected.</p>
+    </section>
+
+    <section class="scene scene-recovery" data-title="CoreAI · Review recovery" data-duration="11" data-story-duration="21" aria-labelledby="title-7" hidden>
+      <div class="recovery-heading"><h2 id="title-7">A better next move.<br> <span>Checked before it changes the plan.</span></h2><p>CoreAI brings schedule reviews and supported recovery options into one decision flow.</p></div>
+      <div class="visual recovery-board" data-camera="recovery">
+        <div class="board-context"><span>Example · CO-1042</span><span class="status warning">Disruption review</span><span>Illustrative sequence</span></div>
+        <div class="recovery-stages"><div class="recovery-step" data-cue="1"><span class="step-index">1 / Assess</span><h3>Read the constraints</h3><ul><li>Dependencies & material reservations</li><li>Machine availability & bookings</li><li>Qualified technician coverage</li></ul></div><div class="recovery-step" data-cue="4.5"><span class="step-index">2 / Compare</span><h3>Review supported options</h3><ul><li>Revised finite-capacity schedule</li><li>Feasible alternate machines</li><li>Policy-bounded overtime</li></ul></div><div class="recovery-step approval-step" data-cue="9"><span class="step-index">3 / Authorize</span><h3>Supervisor approval</h3><p>Overtime requires the affected technician’s direct supervisor.</p><div class="approval-state"><span data-cue="11">Illustrative approval recorded</span><svg data-cue="11"><use href="#check"/></svg></div></div></div>
+        <div class="apply-sequence" data-cue="13"><svg><use href="#lock"/></svg><div><strong>Revalidate saved evidence</strong><span>Check current versions and constraints before applying assignments.</span></div><span class="status success" data-cue="16">Apply after validation</span></div>
+      </div>
+      <p class="scene-caption" data-cue="17">Deterministic planning · complete inputs required · no automatic customer-promise change.</p>
+    </section>
+
+    <section class="scene scene-trace" data-title="Execution & evidence" data-duration="9" data-story-duration="16" aria-labelledby="title-8" hidden>
+      <div class="scene-copy"><h2 id="title-8">The work leaves<br> <span>a record.</span></h2><p>Connect recorded production, inspection dispositions, and delivery evidence. Serialized product passports bring the available history together.</p><div class="feature-proof" data-cue="9"><svg><use href="#spark"/></svg><span>Factory Memory compares measured<br> work durations and inspection results.</span></div></div>
+      <div class="visual passport-window product-window" data-camera="passport"><div class="window-bar"><span>Product passport</span><span class="status">Illustrative record</span></div><div class="passport-title"><span class="detail-label">CO-1042 · Control enclosure</span><h3>Unit CE-1042-001</h3><span>Unit history with job / batch material inputs</span></div><ol class="evidence-timeline"><li data-cue="1"><span class="evidence-node"></span><div><strong>Material inputs</strong><p>Recorded items, lots, and consumed quantities</p></div></li><li data-cue="3.5"><span class="evidence-node"></span><div><strong>Operations</strong><p>Recorded machines, operators, and work times</p></div></li><li data-cue="6"><span class="evidence-node"></span><div><strong>Quality evidence</strong><p>Inspection checks, disposition, and rework history</p></div></li><li data-cue="8.5"><span class="evidence-node"></span><div><strong>Shipment evidence</strong><p>Dispatch and delivery details when recorded</p></div></li></ol><div class="passport-footer" data-cue="11"><svg><use href="#check"/></svg> Trace the recorded evidence behind the unit.</div></div>
+      <p class="scene-caption" data-cue="12.5">Exact quantity arithmetic and double-entry movements protect recorded stock consistency.</p>
+    </section>
+
+    <section class="scene scene-demo" data-title="Explore the product" data-duration="7" data-story-duration="14" aria-labelledby="title-9" hidden>
+      <div class="demo-intro"><h2 id="title-9">See the flow.<br> <span>Explore the product.</span></h2><p>Start with the public sample workspace,<br> or sign in to your configured manufacturing workspace.</p></div>
+      <div class="demo-route" data-cue="1.5"><span>Dashboard</span><svg><use href="#arrow"/></svg><span>CoreAI</span><svg><use href="#arrow"/></svg><span>Ask AI</span><svg><use href="#arrow"/></svg><span>Linked evidence</span></div>
+      <div class="demo-actions" data-cue="4"><a class="primary-button" href="/demo">Explore public demo <svg><use href="#arrow"/></svg></a><a class="secondary-button" href="/login">Sign in to workspace</a></div>
+      <p class="demo-boundary" data-cue="6.5">Public demo: sample records, deterministic Ask AI summaries, and simulated scenario changes.<br> Provider-based AI drafting and operational approval flows belong to the configured workspace.</p>
+      <p class="scene-caption" data-cue="9">This film uses illustrative product sequences. It does not execute workspace commands.</p>
+    </section>
+
+    <section class="scene scene-closing" data-title="ManuOS + CoreAI" data-duration="5" data-story-duration="8" aria-labelledby="title-10" hidden>
+      <img src="/manuos-logo.svg" width="350" height="90" alt="ManuOS" data-cue=".2">
+      <h2 id="title-10" data-cue="1">From operational questions<br> <span>to informed action.</span></h2>
+      <p data-cue="3">Connected manufacturing. CoreAI assistance. Your team’s decision.</p>
+      <a class="closing-link" href="/demo" data-cue="4.5">Explore ManuOS <svg><use href="#arrow"/></svg></a>
+    </section>
+  </main>
+
+  <footer class="film-footer"><span>Manufacturing Orchestration System</span><span id="scene-count">01 / 10</span></footer>
+  <div id="player" class="player" aria-label="Presentation playback controls">
+    <div class="player-top"><button id="replay" aria-label="Restart presentation" title="Restart (Home)">Restart</button><button id="previous" aria-label="Previous scene" title="Previous scene (Left arrow)">Previous</button><button id="play" class="play-button" aria-label="Play presentation" aria-pressed="false">Play film</button><button id="next" aria-label="Next scene" title="Next scene (Right arrow)">Next</button><span id="timecode" class="timecode">0:00 / 1:17</span><button id="record" aria-pressed="false" title="Hide controls for screen recording (R)">Clean frame</button><button id="fullscreen" aria-pressed="false" title="Fullscreen (F)">Fullscreen</button></div>
+    <label class="scrubber-label" for="seek">Film timeline <span id="playback-status" role="status">Loading assets…</span></label><input id="seek" type="range" min="0" max="77000" value="0" step="100" aria-label="Seek presentation timeline">
+    <nav id="chapters" class="chapters" aria-label="Presentation scenes"></nav>
+    <p class="keyboard-help">Space: play / pause · ← →: scenes · Home: restart · R: clean frame · F: fullscreen · Esc: show controls</p>
+  </div>
+  <noscript><p class="no-script">JavaScript is required for playback. <a href="/demo">Explore the public demo</a>.</p></noscript>
+</body>
+</html>

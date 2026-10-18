@@ -4,6 +4,14 @@ ManuOS is a **make-to-order manufacturing operations workspace**. It connects cu
 
 This documentation reflects the repository source as of **18 October 2026**. Source implementation, automated specifications, browser verification, live AI calls, and deployed behavior are separate evidence levels; implementation here does not establish that a hosted instance is running the same revision.
 
+## Demo and presentation
+
+- [Demo video](public/videos/manuos-demo.mp4) — watch or download the recorded walkthrough; served at `/videos/manuos-demo.mp4`.
+- [Product presentation](public/presentation.html) — open `/presentation.html` on the running ManuOS site for the interactive presentation.
+- Public application demo: open `/demo` on the same site.
+
+These routes use your current ManuOS origin, whether local or deployed. Presentation links to `/demo` and `/login` stay on that origin; no localhost URL is hardcoded. The file links above point to repository assets when reading this README on GitHub.
+
 ## Documentation
 
 | Document | What it covers | Intended readers |
