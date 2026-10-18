@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { queryKeys } from '@/lib/api/query-keys';
 import { apiRequest } from '@/lib/api/client';
+import { signOutRequest } from '@/lib/auth/sign-out';
 import { Icon } from './icons';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
@@ -31,6 +32,7 @@ export function AccountMenu() {
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [panel, setPanel] = useState<'profile' | 'settings' | 'logout' | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
 
   const { data: meResponse } = useQuery<{ data: PrincipalData }>({
     queryKey: queryKeys.me(),
@@ -78,18 +80,17 @@ export function AccountMenu() {
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
+    setLogoutError('');
     try {
-      await fetch('/api/auth/sign-out', {
-        method: 'POST',
-      });
+      await signOutRequest();
       queryClient.clear();
       closeNavMenu();
       closeModal();
       setPanel(null);
-      router.push('/login');
+      router.replace('/login');
       router.refresh();
     } catch {
-      router.push('/login');
+      setLogoutError('Sign out did not complete. Check your connection and try again.');
     } finally {
       setIsLoggingOut(false);
     }
@@ -194,6 +195,7 @@ export function AccountMenu() {
           <p className="text-sm text-ink">
             You will be signed out of this session. You can sign in again using your email and password.
           </p>
+          {logoutError && <p className="mt-3 text-sm text-danger" role="alert">{logoutError}</p>}
         </Dialog>
       )}
     </>

@@ -61,12 +61,12 @@ export function LandingFooter() {
           <div>
             &copy; {new Date().getFullYear()} ManuOS · Manufacturing Orchestrating System.
           </div>
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
             <span className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold">
               <span className="l-live-pulse-dot" />
               Zero-Drift Transactional Ledger
             </span>
-            <span>·</span>
+            <span className="hidden sm:inline">·</span>
             <span>End-to-End Lot Traceability</span>
           </div>
         </div>
