@@ -361,5 +361,12 @@ describe('order lifecycle intake', () => {
       ['CUSTOM', 'SKIPPED'], ['END', 'PENDING'],
       ['SALES', 'COMPLETED'], ['STANDARD', 'READY'],
     ]);
+    const standardStage = stages.find((candidate) => candidate.stageKey === 'STANDARD')!;
+    await completeEvidenceReviewStage(fixture.db, owner.principal, {
+      stageId: standardStage.id, expectedVersion: standardStage.version,
+    }, 'lifecycle-branch-standard-complete');
+    await expect(fixture.db.orderLifecycleStage.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id }, stageKey: 'END' },
+    })).resolves.toMatchObject({ state: 'READY' });
   });
 });
