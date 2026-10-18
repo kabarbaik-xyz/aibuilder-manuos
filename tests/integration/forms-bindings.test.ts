@@ -114,6 +114,75 @@ describe('published form workflow bindings', () => {
     expect(await fixture.db.formBinding.count({ where: { formVersionId: form.versionId } })).toBe(0);
   });
 
+  it('rejects malformed, duplicate, foreign and missing form binding targets before writing', async () => {
+    const owner = fixture.alpha.users.owner.principal;
+    const form = await forms.createTemplate(owner, {
+      code: `BIND_TARGET_${randomUUID().slice(0, 8)}`,
+      name: 'Binding target validation',
+      purpose: 'ORDER_SPEC',
+    });
+    await forms.publishFormVersion(owner, { templateId: form.templateId, versionId: form.versionId, expectedVersion: 1 });
+
+    await expect(forms.bindFormVersion(owner, {
+      formVersionId: form.versionId, context: 'ORDER_TYPE',
+    }, `bind-missing-target-${randomUUID()}`)).rejects.toThrow(/exactly the target fields/i);
+    await expect(forms.bindFormVersion(owner, {
+      formVersionId: form.versionId, context: 'ORDER_TYPE', orderTypeId: fixture.alpha.masters.orderTypeId,
+      workflowVersionId: randomUUID(), workflowNodeKey: 'OP-10',
+    }, `bind-extra-target-${randomUUID()}`)).rejects.toThrow(/exactly the target fields/i);
+
+    const foreignOrderType = await fixture.db.orderType.create({ data: {
+      workspaceId: fixture.beta.workspaceId, code: `FOREIGN_${randomUUID().slice(0, 8)}`, name: 'Foreign order type',
+    } });
+    await expect(forms.bindFormVersion(owner, {
+      formVersionId: form.versionId, context: 'ORDER_TYPE', orderTypeId: foreignOrderType.id,
+    }, `bind-foreign-target-${randomUUID()}`)).rejects.toThrow(/not found/i);
+
+    const valid = await forms.bindFormVersion(owner, {
+      formVersionId: form.versionId, context: 'ORDER_TYPE', orderTypeId: fixture.alpha.masters.orderTypeId,
+    }, `bind-valid-target-${randomUUID()}`);
+    await expect(forms.bindFormVersion(owner, {
+      formVersionId: form.versionId, context: 'ORDER_TYPE', orderTypeId: fixture.alpha.masters.orderTypeId,
+    }, `bind-duplicate-target-${randomUUID()}`)).rejects.toThrow(/already bound/i);
+
+    const qcForm = await forms.createTemplate(owner, {
+      code: `FOREIGN_QC_BIND_${randomUUID().slice(0, 8)}`, name: 'Foreign checklist binding', purpose: 'QC_EVIDENCE',
+    });
+    await forms.publishFormVersion(owner, { templateId: qcForm.templateId, versionId: qcForm.versionId, expectedVersion: 1 });
+    const foreignChecklist = await fixture.db.qcChecklist.create({ data: {
+      workspaceId: fixture.beta.workspaceId, code: `FOREIGN_QC_${randomUUID().slice(0, 8)}`, name: 'Foreign checklist', isPublished: true,
+    } });
+    await expect(forms.bindFormVersion(owner, {
+      formVersionId: qcForm.versionId, context: 'QC_CHECKLIST', qcChecklistId: foreignChecklist.id,
+    }, `bind-foreign-checklist-${randomUUID()}`)).rejects.toThrow(/not found/i);
+
+    const workflowService = new WorkflowService(fixture.db);
+    const workflow = await workflowService.createTemplate(owner, {
+      orderTypeId: fixture.alpha.masters.orderTypeId, code: `BIND_NODE_${randomUUID().slice(0, 8)}`, name: 'Binding node validation',
+    }, `bind-workflow-${randomUUID()}`);
+    const taskForm = await forms.createTemplate(owner, {
+      code: `BIND_NODE_FORM_${randomUUID().slice(0, 8)}`, name: 'Node evidence', purpose: 'TASK_EVIDENCE',
+    });
+    await forms.publishFormVersion(owner, { templateId: taskForm.templateId, versionId: taskForm.versionId, expectedVersion: 1 });
+    await expect(forms.bindFormVersion(owner, {
+      formVersionId: taskForm.versionId, context: 'WORKFLOW_NODE', workflowVersionId: workflow.data.initialVersionId,
+      workflowNodeKey: 'DOES-NOT-EXIST',
+    }, `bind-missing-node-${randomUUID()}`)).rejects.toThrow(/does not exist/i);
+    const betaOrderType = await fixture.db.orderType.create({ data: {
+      workspaceId: fixture.beta.workspaceId, code: `FOREIGN_WF_TYPE_${randomUUID().slice(0, 8)}`, name: 'Foreign workflow order type',
+    } });
+    const foreignWorkflow = await workflowService.createTemplate(fixture.beta.users.owner.principal, {
+      orderTypeId: betaOrderType.id, code: `FOREIGN_BIND_NODE_${randomUUID().slice(0, 8)}`, name: 'Foreign workflow',
+    }, `foreign-bind-workflow-${randomUUID()}`);
+    await expect(forms.bindFormVersion(owner, {
+      formVersionId: taskForm.versionId, context: 'WORKFLOW_NODE', workflowVersionId: foreignWorkflow.data.initialVersionId,
+      workflowNodeKey: 'OP-10',
+    }, `bind-foreign-workflow-${randomUUID()}`)).rejects.toThrow(/not found/i);
+
+    expect(await fixture.db.formBinding.count({ where: { formVersionId: { in: [form.versionId, qcForm.versionId, taskForm.versionId] } } })).toBe(1);
+    expect(await fixture.db.formBinding.findUniqueOrThrow({ where: { id: valid.bindingId } })).toMatchObject({ orderTypeId: fixture.alpha.masters.orderTypeId });
+  });
+
   it('freezes task form bindings when their workflow version is published', async () => {
     const owner = fixture.alpha.users.owner.principal;
     const workflowService = new WorkflowService(fixture.db);

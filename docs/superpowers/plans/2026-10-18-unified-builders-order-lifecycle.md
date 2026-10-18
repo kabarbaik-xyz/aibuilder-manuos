@@ -93,7 +93,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 
 **Interfaces:** `validateBindingTarget(tx, principal, input)` validates a discriminated context/target/purpose; `materializePinnedForms(tx, {workspaceId, subjectType, subjectId, pins})` is transaction-local and idempotent; `assertPinnedFormsFinalized(tx, subject)` reads instance pins, not today's mutable template bindings.
 
-- [ ] Test invalid context fields, missing target, foreign workflow/node/checklist, incompatible purpose and duplicate bindings; reject before write.
+- [x] Test invalid context fields, missing target, foreign order/workflow/checklist, missing workflow node, incompatible purpose and duplicate bindings; reject before write.
 - [ ] Persist immutable binding sets and requiredness/completion point per published workflow version and instantiated subject. Hash the full execution-relevant configuration.
 - [ ] Test that publishing/rebinding v2 neither changes the form rendered for existing v1 instances nor introduces a new required gate on them.
 - [ ] Materialize order specification forms on order/workflow initialization, before release. Ensure task and inspection evidence exist before their respective action gates.
