@@ -11,11 +11,10 @@ import { DemoModalManager } from './demo-modal-manager';
 import { FloatingCopilot } from '../floating-copilot';
 import { DemoSidebarNav, DemoSidebarControls } from './demo-sidebar-content';
 import { SCREENS } from '../../lib/navigation';
-import { CommandCenterView } from '../../features/command-center/command-center-view';
-import { OrchestratorView } from '../../features/orchestrator/orchestrator-view';
-import { WorkstationView } from '../../features/workstation/workstation-view';
-import { CustomerPortalView } from '../../features/customer-portal/customer-portal-view';
-import { NetworkView } from '../../features/network/network-view';
+import { DemoDashboard, DemoOrders, DemoInventory, DemoResources, DemoTasks, DemoCustomerPortal } from './demo-records';
+import { DemoCoreAI } from './demo-coreai';
+import { Badge } from '../ui/badge';
+import { Panel } from '../ui/panel';
 
 export interface DemoShellProps {
   children?: React.ReactNode;
@@ -84,23 +83,31 @@ export function DemoShell({ children, breadcrumb, activeTitle }: DemoShellProps 
           factoryName="Precision Works"
           showNotifications={false}
           sessionLabel="Demo session"
+          workspaceSessionEnabled={false}
+          accountControl={<Badge>Demo visitor</Badge>}
         />
-        <main id="main" tabIndex={-1}>
+        <main id="main" tabIndex={-1} className="workspace-main">
+          <div className="demo-session-banner"><span><strong>Interactive demo</strong> · Sample records, isolated from operational data.</span><a href="/login">Open operational workspace →</a></div>
           {children ? (
             children
           ) : (
             <>
-              {currentScreen === 'command' && <CommandCenterView />}
-              {currentScreen === 'orchestrator' && <OrchestratorView />}
-              {currentScreen === 'workstation' && <WorkstationView />}
-              {currentScreen === 'customer' && <CustomerPortalView />}
-              {currentScreen === 'network' && <NetworkView />}
+              {currentScreen === 'command' && <DemoDashboard />}
+              {currentScreen === 'coreai' && <DemoCoreAI />}
+              {currentScreen === 'orders' && <DemoOrders />}
+              {currentScreen === 'risks' && <DemoOrders risksOnly />}
+              {currentScreen === 'inventory' && <DemoInventory />}
+              {currentScreen === 'resources' && <DemoResources />}
+              {currentScreen === 'orchestrator' && <DemoTasks />}
+              {currentScreen === 'workstation' && <DemoTasks shopFloor />}
+              {currentScreen === 'customer' && <DemoCustomerPortal />}
+              {currentScreen === 'network' && <Panel className="p-6"><h1>Factory network</h1><p className="muted">The older network marketplace simulation is not part of the current operational feature set. Explore CoreAI for supported scheduling and subcontract workflows.</p><button className="btn soft" onClick={() => useGraphStore.getState().setScreen('coreai')}>Open CoreAI</button></Panel>}
             </>
           )}
         </main>
         <footer className="workspace-footer">
-          <span>ManuOS manufacturing prototype</span>
-          <span>Simulated data · 24 Nov 2026</span>
+          <span>ManuOS · Demo workspace</span>
+          <span>Session simulation · no production writes</span>
         </footer>
       </div>
 

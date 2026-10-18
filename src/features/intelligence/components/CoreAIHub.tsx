@@ -13,32 +13,7 @@ import { apiRequest } from '@/lib/api/client';
 import type { CoreAICapabilityRegistryDTO } from '@/server/modules/intelligence/capabilities';
 import type { DashboardOverviewDTO } from '@/server/modules/intelligence/dashboard';
 
-type TaskEntry = { title: string; input: string; outcome: string; action: string; href?: string };
-const tasks: Record<string, TaskEntry> = {
-  'AII-01': { title: 'Ask about an order', input: 'An order, item, or production question.', outcome: 'An answer with links to the records behind it.', action: 'Ask AI', href: '/ai/assistant' },
-  'AII-02': { title: 'Find orders that need attention', input: 'Current orders and operational exceptions.', outcome: 'Review delivery risks, material shortages, and pending approvals.', action: 'Review risks', href: '/ai/risks' },
-  'AII-03': { title: 'Turn an RFQ into an order draft', input: 'Customer request text and specifications.', outcome: 'Review extracted fields before creating an order draft.', action: 'Import RFQ', href: '/orders/intake' },
-  'AII-04': { title: 'Check a delivery date', input: 'A released order, active job, full job quantity, and requested date.', outcome: 'See projected completion and missing evidence. Request a date change for review if feasible.', action: 'Check delivery date', href: '/ai/promise' },
-  'SCH-08': { title: 'Build a production schedule', input: 'A released order with routing, materials, and resource availability.', outcome: 'Review task times and assignments before applying the schedule.', action: 'Build schedule', href: '/ai/schedule' },
-  'AII-06': { title: 'Replan after a disruption', input: 'A released order with an active job.', outcome: 'Save a revised schedule, review it, then apply assignments after revalidation.', action: 'Review recovery', href: '/ai/recovery' },
-  'AII-05': { title: 'Learn from similar jobs', input: 'An item and recorded production history.', outcome: 'Compare measured work duration and inspection results.', action: 'Compare past jobs', href: '/ai/memory' },
-  'SCH-07': { title: 'Find a qualified technician', input: 'In Planning, select a task and open Assign resources.', outcome: 'Compare eligible technicians for the task time window.', action: 'Go to Planning', href: '/planning' },
-  'CST-03': { title: 'Understand cost differences', input: 'Select an order, then open Costing → Explain variance.', outcome: 'See standard versus actual costs and their source entries.', action: 'Choose an order', href: '/orders' },
-  'BLD-01': { title: 'Draft a workflow or form', input: 'Describe the process in Workflow Studio or Form Templates.', outcome: 'Review an AI-generated draft before publishing.', action: 'Go to Workflow Studio', href: '/workflows' },
-};
-
-const taskSteps: Record<string, string[]> = {
-  'AII-01': ['Ask a question about orders, inventory, or production. From an order detail, Ask AI carries that order into the conversation.', 'Read the answer and open its Sources to verify the underlying records.', 'Ask a follow-up when you need more detail. The assistant is read only; it does not change operational records.'],
-  'AII-02': ['Open the risk inbox and choose an exception.', 'Review the linked order and the evidence for the delay, shortage, or pending approval.', 'Follow the linked operational page to address the cause. Reviewing a risk does not resolve it automatically.'],
-  'AII-03': ['Enter the customer request text and run extraction.', 'Review the suggested fields and open questions; correct them before saving.', 'Save the reviewed draft and continue to new order intake. Review the order before creating it.'],
-  'AII-04': ['Select a released order and its active production job.', 'Enter the full released job quantity and the requested delivery date, then run the evaluation.', 'Review projected completion and missing inputs. If feasible, request a date change for authorized review; evaluation does not change the customer commitment.'],
-  'SCH-08': ['Select a released order, active job, and how many days to look ahead.', 'Preview the schedule and inspect proposed task times, technicians, machines, and any unscheduled tasks.', 'For a complete proposal, review and confirm Apply. Current evidence is checked again before assignments and bookings change; publishing the schedule is a separate action.'],
-  'AII-06': ['Select the affected released order and active job, then generate a finite-capacity schedule review.', 'Compare the priority schedule with feasible alternate machines and overtime scenarios that satisfy current roster, machine, qualification, booking, and configured daily/weekly overtime limits.', 'Applying an overtime scenario requires approval from the affected technician direct supervisor and atomically publishes that interval with the reviewed assignments. For subcontracting, set the workspace batch limit, request approval, track vendor status and returned quantity, then resume internal work after the full target returns. Alternate routing and split shipment are not available.'],
-  'AII-05': ['Open measured job history, or use Similar jobs on an order to carry its item into the view.', 'Review the comparable records, measured durations, inspection results, and missing data.', 'Use the evidence to inform planning. The view does not automatically change duration estimates or planning buffers.'],
-  'SCH-07': ['Open Planning and choose Assign resources for a task.', 'Set the task time window and review qualified technician suggestions.', 'Select a suggestion and confirm the assignment. Qualifications and bookings are checked again when assigning.'],
-  'CST-03': ['Choose an order and open its Costing tab.', 'Select Explain variance to compare standard and actual costs by category.', 'Open the source entries to investigate a difference. Revenue and margin are not calculated by this explanation.'],
-  'BLD-01': ['Open Workflow Studio or Form Templates and choose Draft with AI.', 'Describe the process or fields you need, then generate a draft.', 'Review the generated steps or fields and any validation findings. Save and publish through the normal review flow; generation alone does not publish it.'],
-};
+import { tasks, taskSteps } from '../task-catalog';
 
 function severityVariant(severity: string): 'danger' | 'warning' | 'default' {
   if (severity === 'CRITICAL') return 'danger';

@@ -6,7 +6,7 @@ import { useUiStore } from '../../store/ui-store';
 import { SCREENS } from '../../lib/navigation';
 import { Icon } from '../icons';
 
-/** Demo sidebar navigation: persona screens plus factory memory / activity log. */
+/** Demo navigation uses explicit groups with consistent vertical rhythm. */
 export function DemoSidebarNav() {
   const currentScreen = useGraphStore((s) => s.currentScreen);
   const setScreen = useGraphStore((s) => s.setScreen);
@@ -15,23 +15,13 @@ export function DemoSidebarNav() {
 
   return (
     <>
-      <div className="nav-group-label">Demo workspace</div>
-      <nav className="nav-list" aria-label="Demo workspace">
-        {SCREENS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`nav-item ${currentScreen === item.id ? 'active' : ''}`}
-            onClick={() => {
-              setScreen(item.id);
-              closeNavMenu();
-            }}
-          >
-            <Icon name={item.icon} />
-            <span>{item.title}</span>
-          </button>
-        ))}
-      </nav>
+      {[
+        { title: 'Overview', ids: ['command', 'coreai', 'risks'] },
+        { title: 'Operations', ids: ['orders', 'orchestrator', 'workstation', 'inventory'] },
+        { title: 'Resources & delivery', ids: ['resources', 'customer'] },
+      ].map(group => <div key={group.title} className="demo-nav-group"><div className="nav-group-label">{group.title}</div><nav className="nav-list" aria-label={group.title}>
+        {group.ids.map(id => SCREENS.find(screen => screen.id === id)!).map(item => <button key={item.id} type="button" className={`nav-item ${currentScreen === item.id ? 'active' : ''}`} aria-current={currentScreen === item.id ? 'page' : undefined} onClick={() => { setScreen(item.id); closeNavMenu(); }}><Icon name={item.icon} /><span>{item.title}</span></button>)}
+      </nav></div>)}
       <div className="nav-divider" />
       <nav className="nav-list" aria-label="Demo knowledge">
         <button type="button" className="nav-item" onClick={() => openModal('memory')}>

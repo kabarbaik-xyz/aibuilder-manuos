@@ -9,6 +9,8 @@ import { AccountMenu } from './account-menu';
 import { NotificationInbox } from './notification-inbox';
 
 interface TopbarProps {
+  accountControl?: React.ReactNode;
+  workspaceSessionEnabled?: boolean;
   customBreadcrumb?: React.ReactNode;
   /** Overrides the route-metadata-derived title (used by the demo shell). */
   activeTitle?: string;
@@ -31,9 +33,11 @@ export function Topbar({
   factoryName,
   showNotifications = true,
   sessionLabel = 'Workspace',
+  accountControl,
+  workspaceSessionEnabled = true,
 }: TopbarProps = {}) {
   const { toggleSidebar, isSidebarCollapsed, isNavMenuOpen, openModal } = useUiStore();
-  const { metadata, principal } = useWorkspaceNavigation();
+  const { metadata, principal } = useWorkspaceNavigation(workspaceSessionEnabled);
 
   return (
     <header className="topbar" id="topbar">
@@ -86,7 +90,7 @@ export function Topbar({
         >
           <span>Ask AI</span>
         </Button>
-        <AccountMenu />
+        {accountControl ?? <AccountMenu />}
       </div>
     </header>
   );

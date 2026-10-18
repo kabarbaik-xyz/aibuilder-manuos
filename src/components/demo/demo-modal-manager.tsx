@@ -1,228 +1,30 @@
-'use client';
+ 'use client';
 
-import React from 'react';
-import { useUiStore } from '../../store/ui-store';
-import { useGraphStore } from '../../store/graph-store';
-import { Dialog } from '../ui/dialog';
-import { RecoveryStudio } from '../../features/recovery/recovery-studio';
-import { PromiseModal } from '../../features/promise/promise-modal';
-import { IntakeModal } from '../../features/intake/intake-modal';
-import { BrainDrawer } from '../../features/brain/brain-drawer';
-import { MemoryModal } from '../../features/memory/memory-modal';
-import { PassportModal } from '../../features/passport/passport-modal';
-import { DealModal } from '../../features/network/deal-modal';
-import { EventModal } from '../../features/orchestrator/event-modal';
-import { AuditModal } from '../../features/command-center/audit-modal';
-import { SearchDialog } from '../search-dialog';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
+import { useUiStore } from '@/store/ui-store';
+import { Dialog } from '@/components/ui/dialog';
+import { MemoryModal } from '@/features/memory/memory-modal';
+import { AuditModal } from '@/features/command-center/audit-modal';
+import { DemoWorkflowPreview, DemoPassport, DemoSourceEvidence } from './demo-workflow-preview';
+import { DemoAskAI } from './demo-ask-ai';
+import { DemoSearch } from './demo-search';
 
-/**
- * Demo-only modal registry for the simulated "Precision Works" workspace.
- * Mounted exclusively by `DemoShell`; production uses `ModalManager`.
- */
+/** Public demo dialogs use session records only; private workspace APIs are not mounted. */
 export function DemoModalManager() {
   const { activeModal, modalData, closeModal } = useUiStore();
-
   if (!activeModal) return null;
-
-  return (
-    <>
-      {activeModal === 'recovery' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Review recovery"
-          subtitle="Order #CO-2026-1042 · Terminal block delay"
-        >
-          <RecoveryStudio />
-        </Dialog>
-      )}
-
-      {activeModal === 'promise' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Can we promise this?"
-          subtitle="Check a requested delivery before committing."
-        >
-          <PromiseModal />
-        </Dialog>
-      )}
-
-      {activeModal === 'intake' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="New order intake"
-          subtitle="Paste the request. Review the draft before creating an order."
-        >
-          <IntakeModal />
-        </Dialog>
-      )}
-
-      {activeModal === 'brain' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Ask AI"
-          subtitle="A quick answer grounded in the active shop-floor state."
-          className="dialog-drawer-chat"
-        >
-          <BrainDrawer />
-        </Dialog>
-      )}
-
-      {activeModal === 'memory' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Factory memory"
-          subtitle="Bracket family · Press bending"
-        >
-          <MemoryModal />
-        </Dialog>
-      )}
-
-      {activeModal === 'passport' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Manufacturing passport"
-          subtitle={modalData?.serial || 'Select a recorded serial number'}
-        >
-          <PassportModal serial={modalData?.serial || ''} />
-        </Dialog>
-      )}
-
-      {activeModal === 'deal' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title={modalData?.capacity ? 'Review capacity match' : 'Review material proposal'}
-          subtitle={
-            modalData?.capacity
-              ? 'Batam CNC Hub · CNC machining'
-              : 'Nusantara Metalcraft · Terminal blocks'
-          }
-        >
-          <DealModal capacity={modalData?.capacity} />
-        </Dialog>
-      )}
-
-      {activeModal === 'event' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Simulate an event"
-          subtitle="Explore the material-delay scenario."
-        >
-          <EventModal />
-        </Dialog>
-      )}
-
-      {activeModal === 'audit' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Activity log"
-          subtitle="This demo session"
-        >
-          <AuditModal />
-        </Dialog>
-      )}
-
-      {activeModal === 'search' && (
-        <Dialog type="search" isOpen onClose={closeModal} title="Go to a workspace">
-          <SearchDialog />
-        </Dialog>
-      )}
-
-      {activeModal === 'factory-info' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Precision Works"
-          subtitle="Demo factory profile"
-        >
-          <div>
-            <div className="spec-row">
-              <span>Order type</span>
-              <strong>Custom make-to-order</strong>
-            </div>
-            <div className="spec-row">
-              <span>Network role</span>
-              <strong>Producer & buyer</strong>
-            </div>
-            <div className="spec-row">
-              <span>Capacity sharing</span>
-              <Badge variant="success">Opted in</Badge>
-            </div>
-            <div className="spec-row">
-              <span>Supply sharing</span>
-              <Badge variant="success">Opted in</Badge>
-            </div>
-            <p className="approval-note">
-              This is a fictional workspace for the ManuOS demo.
-            </p>
-          </div>
-        </Dialog>
-      )}
-
-      {activeModal === 'record-output' && (
-        <Dialog
-          type="drawer"
-          isOpen
-          onClose={closeModal}
-          title="Record output"
-          subtitle="T3 · CNC finish machining"
-        >
-          <div>
-            <div className="field">
-              <label htmlFor="record-units-input">Completed units to add</label>
-              <input
-                id="record-units-input"
-                type="number"
-                min={1}
-                max={38}
-                defaultValue={1}
-              />
-              <span className="hint">
-                38 units remain uncompleted. Recorded output still requires inspection by QC.
-              </span>
-            </div>
-            <div className="dialog-actions mt">
-              <Button variant="default" onClick={closeModal}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                icon="check"
-                onClick={() => {
-                  const el = document.getElementById(
-                    'record-units-input'
-                  ) as HTMLInputElement;
-                  const qty = Number(el?.value || 1);
-                  useGraphStore.getState().recordOutput('T3', qty);
-                  closeModal();
-                }}
-              >
-                Record units
-              </Button>
-            </div>
-          </div>
-        </Dialog>
-      )}
-    </>
-  );
+  const workflows: Record<string, { capability: string; title: string }> = {
+    recovery: { capability: 'AII-06', title: 'Recovery workflow' },
+    promise: { capability: 'AII-04', title: 'Delivery-date review workflow' },
+    intake: { capability: 'AII-03', title: 'RFQ intake workflow' },
+  };
+  const workflow = workflows[activeModal];
+  return <>
+    {activeModal === 'brain' && <Dialog type="drawer" isOpen onClose={closeModal} title="Ask AI" subtitle="Explore sample records with source-linked, read-only summaries." className="dialog-drawer-chat"><DemoAskAI /></Dialog>}
+    {activeModal === 'search' && <Dialog type="search" isOpen onClose={closeModal} title="Search demo workspace"><DemoSearch /></Dialog>}
+    {activeModal === 'demo-source' && <Dialog type="drawer" isOpen onClose={closeModal} title={modalData?.label ?? 'Demo evidence'} subtitle="Source record"><DemoSourceEvidence id={modalData?.id ?? ''} screen={modalData?.screen ?? ''} /></Dialog>}
+    {activeModal === 'passport' && <Dialog type="drawer" isOpen onClose={closeModal} title="Manufacturing passport" subtitle={modalData?.serial ?? 'Sample traceability evidence'}><DemoPassport serial={modalData?.serial ?? ''} /></Dialog>}
+    {activeModal === 'memory' && <Dialog type="drawer" isOpen onClose={closeModal} title="Factory memory" subtitle="Sample production history"><MemoryModal /></Dialog>}
+    {activeModal === 'audit' && <Dialog type="drawer" isOpen onClose={closeModal} title="Activity log" subtitle="This demo session"><AuditModal /></Dialog>}
+    {workflow && <Dialog type="modal" size="md" isOpen onClose={closeModal} title={workflow.title} subtitle="Operational workspace walkthrough"><DemoWorkflowPreview capability={workflow.capability} /></Dialog>}
+  </>;
 }

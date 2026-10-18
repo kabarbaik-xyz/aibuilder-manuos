@@ -1,6 +1,6 @@
 import type { IconName } from '@/components/icons';
 export type PersonaType = 'Owner' | 'Supervisor' | 'Technician' | 'Customer';
-export type ScreenType = 'command' | 'orchestrator' | 'workstation' | 'customer' | 'network';
+export type ScreenType = 'command' | 'orchestrator' | 'workstation' | 'customer' | 'network' | 'coreai' | 'orders' | 'risks' | 'inventory' | 'resources';
 
 export interface ScreenConfig {
   id: ScreenType;
@@ -11,23 +11,28 @@ export interface ScreenConfig {
 }
 
 export const SCREENS: ScreenConfig[] = [
+  { id: 'coreai', title: 'CoreAI', icon: 'brain', defaultPersona: 'Owner', allowedPersonas: ['Owner', 'Supervisor'] },
+  { id: 'orders', title: 'Order Hub', icon: 'order', defaultPersona: 'Owner', allowedPersonas: ['Owner', 'Supervisor'] },
+  { id: 'risks', title: 'Risk inbox', icon: 'alert', defaultPersona: 'Owner', allowedPersonas: ['Owner', 'Supervisor'] },
+  { id: 'inventory', title: 'Inventory', icon: 'box', defaultPersona: 'Owner', allowedPersonas: ['Owner', 'Supervisor'] },
+  { id: 'resources', title: 'Machines & technicians', icon: 'factory', defaultPersona: 'Owner', allowedPersonas: ['Owner', 'Supervisor'] },
   {
     id: 'command',
-    title: 'Command center',
+    title: 'Dashboard',
     icon: 'grid',
     defaultPersona: 'Owner',
     allowedPersonas: ['Owner', 'Supervisor'],
   },
   {
     id: 'orchestrator',
-    title: 'Orchestrator',
+    title: 'Production planning',
     icon: 'graph',
     defaultPersona: 'Supervisor',
     allowedPersonas: ['Owner', 'Supervisor'],
   },
   {
     id: 'workstation',
-    title: 'My workstation',
+    title: 'Shop floor',
     icon: 'work',
     defaultPersona: 'Technician',
     allowedPersonas: ['Owner', 'Supervisor', 'Technician'],
