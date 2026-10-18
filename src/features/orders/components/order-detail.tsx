@@ -369,8 +369,16 @@ export function OrderDetail({ order }: OrderDetailProps) {
             <ol className="divide-y divide-line">
               {lifecycle.events.map((event) => {
                 const stage = lifecycle.stages.find(candidate => candidate.id === event.stageId);
+                let detail: { action?: string; completionFact?: string } = {};
+                try { detail = JSON.parse(event.detailJson || '{}') as typeof detail; } catch { /* Historical event detail may predate structured lifecycle facts. */ }
+                const completionFactLabels: Record<string, string> = {
+                  ORDER_CONFIRMED: 'Order confirmed', ENGINEERING_APPROVED: 'Engineering approved',
+                  SCHEDULE_PROPOSAL_APPLIED: 'Planning schedule applied', ALL_PRODUCTION_TASKS_COMPLETED: 'Production completed',
+                  ALL_QC_INSPECTIONS_FINALIZED: 'Quality inspections finalized', ALL_SHIPMENT_QUANTITIES_DELIVERED: 'All quantities delivered',
+                  EVIDENCE_REVIEWED: 'Evidence reviewed',
+                };
                 return <li key={event.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                  <span className="font-medium text-ink">{stage?.name ?? 'Workflow started'} · {event.eventType.replaceAll('_', ' ').toLowerCase()}</span>
+                  <span className="font-medium text-ink">{stage?.name ?? 'Workflow started'} · {event.eventType.replaceAll('_', ' ').toLowerCase()}{detail.action && <span className="ml-2 font-normal text-muted">· {detail.action.replaceAll('_', ' ').toLowerCase()}</span>}{detail.completionFact && <span className="ml-2 font-normal text-muted">· {completionFactLabels[detail.completionFact] ?? detail.completionFact.replaceAll('_', ' ').toLowerCase()}</span>}</span>
                   <span className="muted">{event.fromState && event.toState ? `${event.fromState.replaceAll('_', ' ')} → ${event.toState.replaceAll('_', ' ')} · ` : ''}{formatDateTime(event.occurredAt)}</span>
                 </li>;
               })}

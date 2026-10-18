@@ -83,6 +83,7 @@ export interface OrderDto {
       eventType: string;
       fromState: string | null;
       toState: string | null;
+      detailJson: string;
       occurredAt: string;
     }>;
   }>;
