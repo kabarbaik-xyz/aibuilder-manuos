@@ -38,6 +38,7 @@ export class ProductionBrainService {
       'planning.read',
       'inventory.read',
       'resource.manage',
+      'quality.read',
       'customer_order.read_own',
       'task.assign',
     ]);

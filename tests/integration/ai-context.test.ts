@@ -351,6 +351,11 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     const qcAnswer = await brainService.answerProductionQuestion(alpha.users.owner.principal, 'What is the QC result?', { type: 'ORDER', id: order.data.id });
     const qcAnswerData = qcAnswer.status === 'SUCCESS' ? qcAnswer.data : qcAnswer.fallbackData;
     expect(qcAnswerData?.answer).toMatch(/QC|inspection|inspected/i);
+    const qcRoleContext = await buildAuthorizedContext(alpha.users.qc.principal, fixture.db, { orderId: order.data.id });
+    expect(qcRoleContext.qcSummaries).toEqual(qcContext.qcSummaries);
+    const qcRoleAnswer = await brainService.answerProductionQuestion(alpha.users.qc.principal, 'What is the QC result?', { type: 'ORDER', id: order.data.id });
+    expect(qcRoleAnswer.status).toBe('FALLBACK');
+    if (qcRoleAnswer.status === 'FALLBACK') expect(qcRoleAnswer.fallbackData?.answer).toContain('initial finalized QC inspection');
     const customerQcContext = await buildAuthorizedContext(alpha.users.customerUser.principal, fixture.db, { orderId: order.data.id });
     expect(customerQcContext.qcSummaries).toEqual([]);
     expect(customerQcContext.coverage.qcSummaries.status).toBe('RESTRICTED');

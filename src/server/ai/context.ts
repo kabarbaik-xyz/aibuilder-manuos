@@ -203,7 +203,7 @@ export async function buildAuthorizedContext(
 
   // 2. Fetch scoped orders (respect customer tenancy if customer user)
   const effectiveCustomerId = principal.customerId || undefined;
-  const canReadOrders = principal.permissions.has('order.read') || principal.permissions.has('planning.read') || (Boolean(effectiveCustomerId) && principal.permissions.has('customer_order.read_own'));
+  const canReadOrders = principal.permissions.has('order.read') || principal.permissions.has('planning.read') || principal.permissions.has('quality.read') || (Boolean(effectiveCustomerId) && principal.permissions.has('customer_order.read_own'));
   const dbOrders = canReadOrders ? await prisma.order.findMany({
     where: {
       workspaceId,
