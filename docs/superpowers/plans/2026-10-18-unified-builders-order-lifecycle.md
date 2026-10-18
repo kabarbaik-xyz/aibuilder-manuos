@@ -170,7 +170,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Show workflow name/version and Order type compatibility in intake. Prefilled defaults must be visible, overridable only with an authorized compatible published workflow, and explicit in the saved record.
 - [x] Create order + initial lifecycle + pinned first-stage forms in one transaction; the isolated intake spec proves the selected published version and first-stage assignment are pinned with the created order.
 - [x] Verify lifecycle-intake replay returns the same order and lifecycle instance for the same idempotency key.
-- [ ] Add a rollback assertion for failed initial form materialization.
+- [x] A retired pinned form blocks new intake and the isolated order count is unchanged, proving failed initial form materialization rolls the order back.
 - [x] Distinguish lifecycle version selected at intake from production-routing version selected at engineering. Show both links/versions and why each applies.
 - [x] Register completion facts for order confirmation, engineering approval, applied Planning proposal, production aggregation, QC finalization, full delivery, and evidence review. Existing typed domain commands invoke lifecycle completion in their transaction; lifecycle events retain the action and completion fact.
 - [ ] An already-recorded domain outcome must reconcile idempotently; stage buttons and existing module actions must not create contradictory progression or duplicate events.
