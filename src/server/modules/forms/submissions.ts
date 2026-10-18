@@ -5,6 +5,7 @@ import { executeCommand } from '@/server/db/transaction';
 import { FormPolicy } from './policy';
 import { validateAnswers } from '@/domain/forms/validation';
 import { FormDefinition, Answers } from '@/domain/forms/types';
+import { maybeCompleteOrderQualityLifecycle } from '@/server/modules/quality/service';
 import {
   NotFoundError,
   ForbiddenError,
@@ -436,7 +437,7 @@ export class FormSubmissionService {
       expectedVersion: input.expectedVersion,
       payload: input,
       prismaClient: this.prisma,
-      handler: async (tx) => {
+      handler: async (tx, { requestId }) => {
       const current = await tx.formInstance.findFirst({
         where: { id: instance.id, workspaceId: principal.workspaceId },
         include: { formVersion: true, submissions: { orderBy: { sequenceNumber: 'desc' }, take: 1 } },
@@ -507,6 +508,23 @@ export class FormSubmissionService {
               }
             }
           }
+        }
+      }
+
+      if (current.subjectType === 'INSPECTION') {
+        const inspection = await tx.inspection.findFirst({
+          where: { workspaceId: principal.workspaceId, id: current.subjectId },
+          select: {
+            productionOutput: {
+              select: {
+                task: { select: { instance: { select: { orderId: true } } } },
+              },
+            },
+          },
+        });
+        const orderId = inspection?.productionOutput?.task.instance.orderId;
+        if (orderId) {
+          await maybeCompleteOrderQualityLifecycle(tx, principal.workspaceId, orderId, principal.userId, requestId);
         }
       }
 
