@@ -10,7 +10,7 @@ import { OrderService } from '@/server/modules/orders/service';
 import { EngineeringService } from '@/server/modules/engineering/service';
 import { PlanningService } from '@/server/modules/planning/service';
 import { releaseOrder } from '@/server/modules/orders/release';
-import { availablePages, getLandingPage } from '@/lib/persona-navigation';
+import { availablePages, getLandingPage, getPostLoginPath } from '@/lib/persona-navigation';
 import { getFunctionalNavigation } from '@/lib/master-navigation';
 
 describe('Connected People & Access', () => {
@@ -18,6 +18,12 @@ describe('Connected People & Access', () => {
  beforeAll(async()=>{fixture=await createFactoryFixture();service=new AccessService(fixture.db);masters=new MastersService(fixture.db);});
  afterAll(async()=>{await fixture.close();});
  const key=()=>randomUUID(); const password='People-test-password-123';
+ it('defaults successful login to the role-aware home and accepts only internal return paths',()=>{
+  expect(getPostLoginPath(null)).toBe('/');
+  expect(getPostLoginPath('/orders/123')).toBe('/orders/123');
+  expect(getPostLoginPath('//attacker.example')).toBe('/');
+  expect(getPostLoginPath('https://attacker.example')).toBe('/');
+ });
  it('creates a technician login, department and resource as one idempotent command',async()=>{
   const input={name:'New operator',email:'new-operator@people.test',password,roleCodes:['TECHNICIAN'],departmentId:fixture.alpha.masters.departmentId,newTechnician:{code:'PEOPLE-OP',calendarId:fixture.alpha.masters.calendarId}};
   const attempt=key();const created=await service.createUser(fixture.alpha.users.admin.principal,input,attempt);

@@ -5,11 +5,12 @@ import { Icon } from '@/components/icons';
 import { ArrowRight, Eye, EyeOff, Mail } from 'lucide-react';
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { getPostLoginPath } from '@/lib/persona-navigation';
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnTo = searchParams.get('returnTo') || '/welcome';
+  const returnTo = searchParams.get('returnTo');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,8 +35,8 @@ function LoginForm() {
         throw new Error(errorData.message || errorData.error?.message || 'Invalid email or password');
       }
 
-      // Safe navigation: ensure returnTo is internal
-      const safeTarget = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
+      // The root route resolves the authenticated user's role-aware landing page.
+      const safeTarget = getPostLoginPath(returnTo);
       router.push(safeTarget);
       router.refresh();
     } catch (err) {

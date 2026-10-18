@@ -5,6 +5,9 @@ const destinations: Array<[string, string]> = [['OWNER', '/dashboard'], ['PLANNE
 export function availablePages(permissions: readonly string[], roles: readonly string[], customerId?: string | null) {
   return getFunctionalNavigation(permissions, roles, customerId).flatMap(group => group.items);
 }
+export function getPostLoginPath(returnTo?: string | null): string {
+  return returnTo?.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
+}
 export function getLandingPage(permissions: readonly string[], roles: readonly string[], customerId?: string | null, preferred?: string | null): string {
   const pages = availablePages(permissions, roles, customerId);
   const allowed = new Set(pages.map(page => page.href));

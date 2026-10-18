@@ -23,6 +23,8 @@ import { DeliveryService } from '../src/server/modules/delivery/service';
 import { AccessService } from '../src/server/modules/access/service';
 import { FormService } from '../src/server/modules/forms/service';
 import { parseQuantity } from '../src/domain/quantity';
+import type { OrderLifecycleDefinition } from '../src/domain/order-lifecycle-definition';
+import { syncDemoAccessAccount } from './demo-seed-accounts';
 
 const VERSION = 'demo-v1';
 export const SCENARIOS = ['draft', 'engineering', 'shortage', 'reserved', 'running', 'paused', 'waiting-qc', 'rework', 'scrap', 'allocated', 'in-transit', 'delivered'] as const;
@@ -39,7 +41,7 @@ const FAMILIES = [
 /** Service commands own every operational write. Receipts allow resuming even
  * commands whose domain preconditions no longer hold after successful execution.
  * A repeat preserves subsequent demo interaction; it never resets user work. */
-export async function seedDemo(db: PrismaClient, options: { workspaceCode?: string; anchor?: string; password: string }) {
+export async function seedDemo(db: PrismaClient, options: { workspaceCode?: string; anchor?: string; password: string; resetExistingPasswords?: boolean }) {
   const workspaceCode = options.workspaceCode || 'DEMO';
   if (options.password.length < 12) throw new Error('Demo password must have at least 12 characters');
   const foundWorkspace = await db.workspace.findUnique({ where: { code: workspaceCode } });
@@ -52,6 +54,9 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
   if (!actor) {
     newAccounts.push(operatorEmail);
     actor = (await provisionUser({ name: 'Demo Operations Lead', email: operatorEmail, password: options.password, workspaceId: workspace.id, roleCodes: ROLES }, db)).user;
+  } else if (options.resetExistingPasswords) {
+    await provisionUser({ name: 'Demo Operations Lead', email: operatorEmail, password: options.password, workspaceId: workspace.id, roleCodes: ROLES }, db);
+    await db.session.deleteMany({ where: { userId: actor.id } });
   }
   const membership = await db.membership.findUnique({ where: { workspaceId_userId: { workspaceId: workspace.id, userId: actor.id } }, include: { roles: { include: { role: { include: { permissions: true } } } } } });
   if (!membership || membership.status !== 'ACTIVE') throw new Error('Demo seed actor is not an active workspace member');
@@ -92,6 +97,35 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
   const skill = (await step('skill', k => masters.createSkill(principal, { code: 'DM-MACHINING', name: 'Precision manufacturing', scaleMax: 5 }, k))).data;
   const certification = (await step('cert', k => masters.createCertification(principal, { code: 'DM-SAFETY', name: 'Machine safety authorization', issuer: 'Demo Training Centre' }, k))).data;
   const checklist = (await step('checklist', k => masters.createQcChecklist(principal, { code: 'DM-FINAL', name: 'Final dimensional and surface inspection', checks: [{ code: 'DIM', description: 'Dimension within drawing tolerance', method: 'MEASUREMENT', unit: 'mm', limitsJson: '{"min":"24.95","max":"25.05"}', isRequired: true }, { code: 'SURFACE', description: 'No burrs, cracks or surface damage', method: 'VISUAL', isRequired: true }] }, k))).data;
+  const forms = new FormService(db);
+  async function ensurePublishedForm(code: string, name: string, purpose: 'ORDER_SPEC' | 'TASK_EVIDENCE' | 'QC_EVIDENCE') {
+    let template = await db.formTemplate.findUnique({ where: { workspaceId_code: { workspaceId: workspace.id, code } }, include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } } });
+    if (!template) {
+      const created = await forms.createTemplate(principal, { code, name, purpose, description: 'Published demo evidence form, version-pinned to its workflow binding.' });
+      template = await db.formTemplate.findUniqueOrThrow({ where: { id: created.templateId }, include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } } });
+    }
+    let version = template.versions[0];
+    if (!version) throw new Error(`Demo form ${code} has no version`);
+    if (version.status === 'DRAFT') {
+      const current = JSON.parse(version.definitionJson);
+      const definition = { schemaVersion: 1, purpose, fields: [
+        { key: 'reference', label: 'Record or drawing reference', kind: 'text', required: true },
+        { key: 'result', label: 'Review result', kind: 'select', required: true, options: [{ value: 'pass', label: 'Accepted' }, { value: 'review', label: 'Needs follow-up' }] },
+        { key: 'notes', label: 'Notes', kind: 'textarea', required: false },
+      ] };
+      await forms.updateDraftVersion(principal, template.id, version.id, { expectedVersion: version.version, definition: current.fields?.length === 1 && current.fields[0].key === 'notes' ? definition : current });
+      version = await db.formVersion.findUniqueOrThrow({ where: { id: version.id } });
+      await forms.publishFormVersion(principal, { templateId: template.id, versionId: version.id, expectedVersion: version.version });
+      version = await db.formVersion.findUniqueOrThrow({ where: { id: version.id } });
+    }
+    if (version.status !== 'PUBLISHED' || version.contentHash == null) throw new Error(`Demo form ${code} must have a published version`);
+    return { templateId: template.id, versionId: version.id, hash: version.contentHash };
+  }
+  const orderSpecForm = await ensurePublishedForm('DM-LIFECYCLE-ORDER', 'Order specification review', 'ORDER_SPEC');
+  const taskEvidenceForm = await ensurePublishedForm('DM-LIFECYCLE-TASK', 'Production task evidence', 'TASK_EVIDENCE');
+  const qcEvidenceForm = await ensurePublishedForm('DM-LIFECYCLE-QC', 'Quality inspection evidence', 'QC_EVIDENCE');
+  const existingQcBinding = await db.formBinding.findFirst({ where: { workspaceId: workspace.id, formVersionId: qcEvidenceForm.versionId, context: 'QC_CHECKLIST', qcChecklistId: checklist.id } });
+  if (!existingQcBinding) await forms.bindFormVersion(principal, { formVersionId: qcEvidenceForm.versionId, context: 'QC_CHECKLIST', qcChecklistId: checklist.id, required: false, completionPoint: 'BEFORE_ACTION' }, `${VERSION}:${workspace.code}:form-qc-binding`);
   // Workspace reason catalog. Shop-floor pause requires an active PAUSE reason
   // code rather than free text, and the QC issue/scrap flows resolve codes from
   // the same catalog.
@@ -106,7 +140,7 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
   for (const [category, code, label] of reasonCatalog) {
     await step(`reason-${category}-${code}`, k => masters.createIssueReason(principal, { category, code, label }, k));
   }
-  const catalog: Array<{ rawId: string; fgId: string; typeId: string; workflowId: string; techId: string; machineId: string }> = [];
+  const catalog: Array<{ rawId: string; fgId: string; typeId: string; workflowId: string; techId: string; machineId: string; departmentId: string }> = [];
   for (const [f, [code, name, operation]] of FAMILIES.entries()) {
     const department = (await step(`dept-${f}`, k => masters.createDepartment(principal, { code: `DM-${code}`, name: `${operation} cell` }, k))).data;
     const machineClass = (await step(`class-${f}`, k => masters.createMachineClass(principal, { code: `DM-${code}`, name: `${operation} equipment` }, k))).data;
@@ -118,10 +152,21 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     const raw = (await step(`raw-${f}`, k => masters.createItem(principal, { code: `DM-RAW-${code}`, name: `${name} blank`, itemType: 'RAW', baseUomId: pcs.id, tracking: 'LOT' }, k))).data;
     const fg = (await step(`fg-${f}`, k => masters.createItem(principal, { code: `DM-FG-${code}`, name, itemType: 'FINISHED', baseUomId: pcs.id, tracking: 'LOT' }, k))).data;
     const type = (await step(`type-${f}`, k => masters.createOrderType(principal, { code: `DM-${code}`, name: `${name} make to order` }, k))).data;
+    const orderBinding = await db.formBinding.findFirst({ where: { workspaceId: workspace.id, formVersionId: orderSpecForm.versionId, context: 'ORDER_TYPE', orderTypeId: type.id } });
+    if (!orderBinding) await forms.bindFormVersion(principal, { formVersionId: orderSpecForm.versionId, context: 'ORDER_TYPE', orderTypeId: type.id, required: false }, `${VERSION}:${workspace.code}:form-order-binding:${code}`);
     const template = (await step(`workflow-${f}`, k => workflows.createTemplate(principal, { code: `DM-WF-${code}`, name: `${operation} batch route`, orderTypeId: type.id }, k))).data;
-    await step(`workflow-save-${f}`, k => workflows.saveVersionDraft(principal, template.initialVersionId, { definition: { schemaVersion: 1, name: `${operation} batch route`, nodes: [{ key: 'OP-10', name: operation, type: 'OPERATION', departmentId: department.id, plannedDurationMinutes: 45 + f * 15, requirements: { machineClassId: machineClass.id, requiredSkills: [{ skillId: skill.id, minLevel: 3 }] } }], edges: [] } }, k));
-    await step(`workflow-publish-${f}`, k => workflows.publishVersion(principal, template.initialVersionId, k));
-    catalog.push({ rawId: raw.id, fgId: fg.id, typeId: type.id, workflowId: template.initialVersionId, techId: tech.id, machineId: machine.id });
+    let routingVersion = await db.workflowVersion.findFirstOrThrow({ where: { templateId: template.id }, orderBy: { versionNumber: 'desc' } });
+    let taskBinding = await db.formBinding.findFirst({ where: { workspaceId: workspace.id, formVersionId: taskEvidenceForm.versionId, context: 'WORKFLOW_NODE', workflowVersionId: routingVersion.id, workflowNodeKey: 'OP-10' } });
+    if (routingVersion.status === 'PUBLISHED' && !taskBinding) {
+      routingVersion = (await workflows.forkVersion(principal, routingVersion.id, `${prefix}workflow-fork:${code}:${routingVersion.id}`)).data;
+      taskBinding = null;
+    }
+    if (routingVersion.status === 'DRAFT') {
+      await step(`workflow-save-${f}-${routingVersion.id}`, k => workflows.saveVersionDraft(principal, routingVersion.id, { definition: { schemaVersion: 1, name: `${operation} batch route`, nodes: [{ key: 'OP-10', name: operation, type: 'OPERATION', departmentId: department.id, plannedDurationMinutes: 45 + f * 15, requirements: { machineClassId: machineClass.id, requiredSkills: [{ skillId: skill.id, minLevel: 3 }] } }], edges: [] } }, k));
+      if (!taskBinding) await forms.bindFormVersion(principal, { formVersionId: taskEvidenceForm.versionId, context: 'WORKFLOW_NODE', workflowVersionId: routingVersion.id, workflowNodeKey: 'OP-10', required: false, completionPoint: 'BEFORE_ACTION' }, `${VERSION}:${workspace.code}:form-task-binding:${code}:${routingVersion.id}`);
+      await step(`workflow-publish-${f}-${routingVersion.id}`, k => workflows.publishVersion(principal, routingVersion.id, k));
+    }
+    catalog.push({ rawId: raw.id, fgId: fg.id, typeId: type.id, workflowId: routingVersion.id, techId: tech.id, machineId: machine.id, departmentId: department.id });
     await step(`opening-${f}`, k => inventory.postOpeningBalance(principal, { itemId: raw.id, locationId: loc('RAW'), atoms: parseQuantity('5000'), lotNumber: `DM-OPEN-${f}`, notes: 'Demo opening stock; independent supplier lots below' }, k));
   }
   // Publish site availability for every demo work centre across the full
@@ -148,10 +193,62 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     await step(`po-approve-${i}`, k => supply.approveSupplyOrder(principal, po.id, k));
     if (i % 4 >= 2) await step(`po-receive-${i}`, k => supply.receiveSupply(principal, { supplyOrderId: po.id, notes: 'Demo supplier receipt', lines: [{ supplyOrderLineId: po.lines[0].id, locationId: loc('RAW'), receivedAtoms: parseQuantity(i % 4 === 2 ? '150' : '400').toString(), lotNumber: `DM-PO-LOT-${i}`, supplierLotNumber: `MILL-HEAT-${2000 + i}` }] }, k));
   }
+  const orgDepartments = new Map<string, string>();
+  for (const [key, code, name] of [
+    ['sales', 'DM-SALES', 'Sales'], ['engineering', 'DM-ENG', 'Engineering'], ['planning', 'DM-PPIC', 'Production Planning'],
+    ['quality', 'DM-QC', 'Quality Control'], ['warehouse', 'DM-WH', 'Warehouse & Delivery'], ['procurement', 'DM-PROC', 'Procurement'],
+  ] as const) {
+    orgDepartments.set(key, (await step(`org-department-${key}`, k => masters.createDepartment(principal, { code, name }, k))).data.id);
+  }
+  const access = new AccessService(db);
+  const demoUsers = [
+    { name: 'Demo Planner', code: 'planner', roleCodes: ['PLANNER'], departmentId: orgDepartments.get('planning'), jobTitle: 'Production Planner', landingPage: '/planning' },
+    { name: 'Demo Buyer', code: 'buyer', roleCodes: ['BUYER'], departmentId: orgDepartments.get('procurement'), jobTitle: 'Procurement Buyer', landingPage: '/supply-orders' },
+    { name: 'Demo Warehouse', code: 'warehouse', roleCodes: ['WAREHOUSE'], departmentId: orgDepartments.get('warehouse'), jobTitle: 'Warehouse Operator', landingPage: '/inventory' },
+    { name: 'Demo Quality Inspector', code: 'qc', roleCodes: ['QC'], departmentId: orgDepartments.get('quality'), jobTitle: 'Quality Inspector', landingPage: '/quality/inspections' },
+    { name: 'Demo Sales', code: 'sales', roleCodes: ['SALES'], departmentId: orgDepartments.get('sales'), jobTitle: 'Sales Representative', landingPage: '/orders' },
+    { name: 'Demo Engineer', code: 'engineer', roleCodes: ['ENGINEER'], departmentId: orgDepartments.get('engineering'), jobTitle: 'Manufacturing Engineer', landingPage: '/engineering' },
+    ...catalog.map((c, i) => ({ name: `Demo Operator ${i + 1}`, code: `operator${i + 1}`, roleCodes: ['TECHNICIAN'], departmentId: c.departmentId, jobTitle: 'Production Technician', landingPage: '/shop-floor', technicianId: c.techId })),
+    ...customers.slice(0, 3).map((c, i) => ({ name: `Demo Customer ${i + 1}`, code: `customer${i + 1}`, roleCodes: ['CUSTOMER'], jobTitle: 'Customer Portal User', landingPage: '/portal/orders', customerId: c.id })),
+  ];
+  const memberships = new Map<string, string>();
+  for (const account of demoUsers) {
+    const email = `${account.code}.${workspace.code.toLowerCase()}@manuos.test`;
+    const existed = await db.user.findUnique({ where: { email } });
+    if (existed && !await db.membership.findUnique({ where: { workspaceId_userId: { workspaceId: workspace.id, userId: existed.id } } })) throw new Error(`Demo account address already belongs to another workspace: ${email}`);
+    const result = await syncDemoAccessAccount(db, access, principal, { ...account, email }, { password: options.password, resetExistingPassword: Boolean(options.resetExistingPasswords), idempotencyKey: `${prefix}account:${account.code}` });
+    memberships.set(account.code, result.data.membershipId);
+    if (!existed) newAccounts.push(email);
+  }
+  // One order deliberately exercises the configured cross-department workflow.
+  // All stages are assigned to active demo memberships; planning/execution stages
+  // use the same finite-capacity schedule evidence as the operational route.
+  const lifecycleTemplate = await workflows.createTemplate(principal, { code: 'DM-ORDER-LIFECYCLE', name: 'Demo order to delivery', orderTypeId: catalog[0].typeId, kind: 'ORDER_LIFECYCLE' }, `${prefix}lifecycle-template`);
+  const lifecycleVersionId = lifecycleTemplate.data.initialVersionId!;
+  const lifecycleDefinition: OrderLifecycleDefinition = {
+    schemaVersion: 1 as const,
+    name: 'Demo order to delivery',
+    stages: [
+      { key: 'SALES-01', name: 'Confirm customer requirements', action: 'ORDER_CONFIRM', departmentId: orgDepartments.get('sales')!, assignment: { kind: 'MEMBER', membershipId: memberships.get('sales')!, departmentId: orgDepartments.get('sales')! }, schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 }, predecessors: [], forms: [{ formVersionId: orderSpecForm.versionId, contentHash: orderSpecForm.hash, required: false, completionPoint: 'BEFORE_ACTION' }] },
+      { key: 'ENG-01', name: 'Approve engineering and BOM', action: 'ENGINEERING_APPROVE', departmentId: orgDepartments.get('engineering')!, assignment: { kind: 'MEMBER', membershipId: memberships.get('engineer')!, departmentId: orgDepartments.get('engineering')! }, schedule: { kind: 'DEADLINE', dueAfterMinutes: 960 }, predecessors: ['SALES-01'], forms: [{ formVersionId: orderSpecForm.versionId, contentHash: orderSpecForm.hash, required: false, completionPoint: 'BEFORE_ACTION' }] },
+      { key: 'PPIC-01', name: 'Plan production capacity', action: 'PLAN_PRODUCTION', departmentId: orgDepartments.get('planning')!, assignment: { kind: 'MEMBER', membershipId: memberships.get('planner')!, departmentId: orgDepartments.get('planning')! }, schedule: { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' }, predecessors: ['ENG-01'], forms: [{ formVersionId: taskEvidenceForm.versionId, contentHash: taskEvidenceForm.hash, required: false, completionPoint: 'BEFORE_STAGE_COMPLETION' }] },
+      { key: 'PROD-01', name: 'Execute scheduled production', action: 'EXECUTE_PRODUCTION', departmentId: catalog[0].departmentId, assignment: { kind: 'MEMBER', membershipId: memberships.get('operator1')!, departmentId: catalog[0].departmentId }, schedule: { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' }, predecessors: ['PPIC-01'], forms: [{ formVersionId: taskEvidenceForm.versionId, contentHash: taskEvidenceForm.hash, required: false, completionPoint: 'BEFORE_STAGE_COMPLETION' }] },
+      { key: 'QC-01', name: 'Complete final inspection', action: 'FINALIZE_QC', departmentId: orgDepartments.get('quality')!, assignment: { kind: 'MEMBER', membershipId: memberships.get('qc')!, departmentId: orgDepartments.get('quality')! }, schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 }, predecessors: ['PROD-01'], forms: [{ formVersionId: qcEvidenceForm.versionId, contentHash: qcEvidenceForm.hash, required: false, completionPoint: 'BEFORE_ACTION' }] },
+      { key: 'SHIP-01', name: 'Confirm customer delivery', action: 'CONFIRM_DELIVERY', departmentId: orgDepartments.get('warehouse')!, assignment: { kind: 'MEMBER', membershipId: memberships.get('warehouse')!, departmentId: orgDepartments.get('warehouse')! }, schedule: { kind: 'DEADLINE', dueAfterMinutes: 1440 }, predecessors: ['QC-01'], forms: [{ formVersionId: orderSpecForm.versionId, contentHash: orderSpecForm.hash, required: false, completionPoint: 'BEFORE_ACTION' }] },
+    ],
+  };
+  await step('lifecycle-save', k => workflows.saveVersionDraft(principal, lifecycleVersionId, { definition: lifecycleDefinition }, k));
+  await step('lifecycle-publish', k => workflows.publishVersion(principal, lifecycleVersionId, k));
   const scenarioOrders: Array<{ scenario: string; orderNumber: string; orderId: string; quantity: number }> = [];
   for (let i = 0; i < 72; i++) {
     const scenario = SCENARIOS[i % SCENARIOS.length], family = Math.floor(i / SCENARIOS.length), c = catalog[family], quantity = 40 + family * 20;
-    const order = (await step(`order-${i}`, k => orders.createOrderDraft(principal, { customerId: customers[(i + family) % customers.length].id, orderTypeId: c.typeId, itemId: c.fgId, orderedQuantity: quantity, requestedDate: day(i % 3 === 0 ? -2 : 5 + i % 18), promisedDate: day(i % 3 === 0 ? -1 : 7 + i % 18), rfqText: `${VERSION} anchor=${anchor.toISOString()}\nScenario: ${scenario} | Family: ${FAMILIES[family][0]}\nManufacture ${quantity} units to approved drawing. Preserve lot traceability and final QC evidence.`, rfqSourceType: 'MANUAL' }, k))).data;
+    const order = (await step(`order-${i}`, k => orders.createOrderDraft(principal, { customerId: customers[(i + family) % customers.length].id, orderTypeId: c.typeId, itemId: c.fgId, orderedQuantity: quantity, requestedDate: day(i % 3 === 0 ? -2 : 5 + i % 18), promisedDate: day(i % 3 === 0 ? -1 : 7 + i % 18), ...(i === 0 ? { lifecycleWorkflowVersionId: lifecycleVersionId } : {}), rfqText: `${VERSION} anchor=${anchor.toISOString()}\nScenario: ${scenario} | Family: ${FAMILIES[family][0]}\nManufacture ${quantity} units to approved drawing. Preserve lot traceability and final QC evidence.`, rfqSourceType: 'MANUAL' }, k))).data;
+    if (i === 0) {
+      const persistedOrder = await db.order.findUniqueOrThrow({ where: { id: order.id }, select: { version: true, lifecycleWorkflowVersionId: true, status: true } });
+      if (!persistedOrder.lifecycleWorkflowVersionId && persistedOrder.status === 'DRAFT') {
+        await orders.attachLifecycle(principal, order.id, { expectedVersion: persistedOrder.version, workflowVersionId: lifecycleVersionId }, `${prefix}lifecycle-attach-order-0`);
+      }
+    }
     scenarioOrders.push({ scenario, orderId: order.id, orderNumber: order.orderNumber, quantity });
     const revId = order.engineeringRevisions[0].id;
     if (scenario === 'draft') continue;
@@ -184,38 +281,13 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     }
     if (scenario === 'scrap') continue;
     // Shipments trace to the customer order line created with the draft.
-    const shipmentOrderLineId = order.lines.find((line: { id: string; itemId: string }) => line.itemId === c.fgId)?.id ?? order.lines[0].id;
+    const shipmentOrderLineId = (await db.orderLine.findFirstOrThrow({ where: { workspaceId: workspace.id, orderId: order.id, itemId: c.fgId }, select: { id: true } })).id;
     const shipment = (await step(`shipment-${i}`, k => delivery.allocateShipment(principal, { orderId: order.id, carrierName: ['DHL Supply Chain', 'Ninja Logistics', 'Precision Transport'][family % 3], trackingNumber: `DM-TRACK-${i}`, lines: [{ orderLineId: shipmentOrderLineId, itemId: c.fgId, lotId: output.lotId || undefined, sourceLocationId: loc('FG'), allocatedAtoms: (scenario === 'in-transit' ? parseQuantity(String(quantity)) / 2n : parseQuantity(String(quantity))) }] }, k))).data;
     if (scenario === 'allocated') continue;
     await step(`dispatch-${i}`, k => delivery.dispatchShipment(principal, { shipmentId: shipment.id }, k));
     if (scenario === 'delivered') await step(`delivered-${i}`, k => delivery.confirmDelivery(principal, { shipmentId: shipment.id, receivedBy: 'Customer receiving team', proofOfDelivery: `DEMO-POD-${i}`, notes: 'Demo delivery confirmed in good condition' }, k));
     console.log(`${order.orderNumber}: ${scenario}`);
   }
-  // Role-specific demo accounts use the access domain, including customer and
-  // technician scoping. Existing accounts/passwords are never overwritten.
-  const access = new AccessService(db);
-  const demoUsers = [
-    { name: 'Demo Planner', code: 'planner', roles: ['PLANNER'] },
-    { name: 'Demo Buyer', code: 'buyer', roles: ['BUYER'] },
-    { name: 'Demo Warehouse', code: 'warehouse', roles: ['WAREHOUSE'] },
-    { name: 'Demo Quality Inspector', code: 'qc', roles: ['QC'] },
-    { name: 'Demo Sales', code: 'sales', roles: ['SALES'] },
-    { name: 'Demo Engineer', code: 'engineer', roles: ['ENGINEER'] },
-    ...catalog.map((c, i) => ({ name: `Demo Operator ${i + 1}`, code: `operator${i + 1}`, roles: ['TECHNICIAN'], technicianId: c.techId })),
-    ...customers.slice(0, 3).map((c, i) => ({ name: `Demo Customer ${i + 1}`, code: `customer${i + 1}`, roles: ['CUSTOMER'], customerId: c.id })),
-  ];
-  for (const account of demoUsers) {
-    const email = `${account.code}.${workspace.code.toLowerCase()}@manuos.test`;
-    const existingUser = await db.user.findUnique({ where: { email } });
-    if (existingUser) {
-      const link = await db.membership.findUnique({ where: { workspaceId_userId: { workspaceId: workspace.id, userId: existingUser.id } } });
-      if (!link) throw new Error(`Demo account address already belongs to another workspace: ${email}`);
-      continue;
-    }
-    await step(`account-${account.code}`, k => access.createUser(principal, { name: account.name, email, password: options.password, roleCodes: account.roles, customerId: 'customerId' in account ? account.customerId : null, technicianId: 'technicianId' in account ? account.technicianId : null }, k));
-    newAccounts.push(email);
-  }
-  const forms = new FormService(db);
   for (let i = 0; i < 6; i++) {
     const purpose = (['ORDER_SPEC', 'TASK_EVIDENCE', 'QC_EVIDENCE'] as const)[i % 3];
     const code = `DM-FORM-${i + 1}`;
@@ -242,7 +314,7 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
   if (!reconciliation.balanced) throw new Error(`Ledger reconciliation failed: ${JSON.stringify(reconciliation.mismatches)}`);
   const fkErrors = await db.$queryRawUnsafe<unknown[]>('PRAGMA foreign_key_check');
   if (fkErrors.length) throw new Error('Foreign key reconciliation failed');
-  return { version: VERSION, workspace: workspace.code, anchor: anchor.toISOString(), seedActor: operatorEmail, newAccounts, scenarioOrders, reconciliation: { balanced: true, foreignKeyErrors: 0 } };
+  return { version: VERSION, workspace: workspace.code, anchor: anchor.toISOString(), seedActor: operatorEmail, newAccounts, demoAccountEmails: demoUsers.map(account => `${account.code}.${workspace.code.toLowerCase()}@manuos.test`).concat(operatorEmail), scenarioOrders, lifecycle: { code: 'DM-ORDER-LIFECYCLE', versionId: lifecycleVersionId, orderNumber: scenarioOrders[0]?.orderNumber }, publishedOperationalForms: [orderSpecForm.versionId, taskEvidenceForm.versionId, qcEvidenceForm.versionId], reconciliation: { balanced: true, foreignKeyErrors: 0 } };
 }
 
 async function main() {
@@ -253,16 +325,17 @@ async function main() {
   try {
     await configurePrismaSqlite(db);
     const password = process.env.DEMO_SEED_PASSWORD || randomBytes(24).toString('base64url');
-    const report = await seedDemo(db, { workspaceCode: process.env.DEMO_SEED_WORKSPACE || 'DEMO', anchor: process.env.DEMO_SEED_ANCHOR, password });
-    if (report.newAccounts.length) {
+    const resetExistingPasswords = process.env.DEMO_SEED_RESET_PASSWORD === 'true';
+    const report = await seedDemo(db, { workspaceCode: process.env.DEMO_SEED_WORKSPACE || 'DEMO', anchor: process.env.DEMO_SEED_ANCHOR, password, resetExistingPasswords });
+    if (report.newAccounts.length || resetExistingPasswords) {
       const credentialsPath = path.join(tmpdir(), `manuos-demo-credentials-${Date.now()}.json`);
-      writeFileSync(credentialsPath, JSON.stringify({ workspace: report.workspace, password, accounts: report.newAccounts }, null, 2), { mode: 0o600 });
-      console.log(`New demo account credentials (local file, permissions 0600): ${credentialsPath}`);
+      writeFileSync(credentialsPath, JSON.stringify({ workspace: report.workspace, password, accounts: resetExistingPasswords ? report.demoAccountEmails : report.newAccounts }, null, 2), { mode: 0o600 });
+      console.log(`Demo account credentials (local file, permissions 0600): ${credentialsPath}`);
     }
     const reportPath = path.resolve('prisma/data/demo-seed-report.json');
     writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
     console.log(`Demo seed complete: ${report.scenarioOrders.length} orders across ${SCENARIOS.length} scenarios. Ledger balanced; foreign keys valid. Report: ${reportPath}`);
-    console.log('Existing logins remain unchanged. Set DEMO_SEED_PASSWORD before the first run to use the dedicated demo seed account.');
+    console.log(resetExistingPasswords ? 'Demo-managed account passwords were reset. Use the protected local credentials file.' : 'Existing login passwords remain unchanged. Set DEMO_SEED_RESET_PASSWORD=true with DEMO_SEED_PASSWORD to deliberately reset demo-managed accounts.');
   } finally { await db.$disconnect(); closeSync(lock); unlinkSync(lockPath); }
 }
 if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });

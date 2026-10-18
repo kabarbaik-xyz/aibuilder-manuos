@@ -132,7 +132,8 @@
     {
       "code": "engineering.approve",
       "roles": [
-        "OWNER"
+        "OWNER",
+        "ENGINEER"
       ]
     },
     {
