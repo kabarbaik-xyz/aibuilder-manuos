@@ -195,8 +195,13 @@ describe('order lifecycle intake', () => {
       expectedVersion: order.data.version,
       workflowVersionId: versionId,
     }, 'lifecycle-attach-command');
+    const replayed = await orderService.attachLifecycle(owner.principal, order.data.id, {
+      expectedVersion: order.data.version,
+      workflowVersionId: versionId,
+    }, 'lifecycle-attach-command');
 
     expect(result.data.lifecycleWorkflowVersionId).toBe(versionId);
+    expect(replayed.meta.replayed).toBe(true);
     const instance = await fixture.db.orderLifecycleInstance.findUnique({
       where: { workspaceId_orderId: { workspaceId: fixture.alpha.workspaceId, orderId: order.data.id } },
       include: { stages: true, events: true },
@@ -204,6 +209,7 @@ describe('order lifecycle intake', () => {
     expect(instance?.stages).toHaveLength(1);
     expect(instance?.stages[0]).toMatchObject({ stageKey: 'SALES-REVIEW', state: 'READY', assignedMembershipId: owner.membershipId });
     expect(instance?.events.map((event) => event.eventType)).toContain('LIFECYCLE_STARTED');
+    expect(await fixture.db.orderLifecycleInstance.count({ where: { orderId: order.data.id } })).toBe(1);
 
     await expect(orderService.attachLifecycle(owner.principal, order.data.id, {
       expectedVersion: order.data.version,
