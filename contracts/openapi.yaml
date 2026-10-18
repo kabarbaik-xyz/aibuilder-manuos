@@ -2233,7 +2233,7 @@ paths:
   /api/workflows/lifecycle-members:
     get:
       summary: List active members for a lifecycle stage department assignment
-      description: Requires workflow.author. The response is limited to active memberships in the caller's workspace and selected active department, with display names and active role names only.
+      description: Requires workflow.author or workspace.admin. The response is limited to active memberships in the caller's workspace and selected active department, with display names and active role names only; reassignment validates facility and action eligibility again on write.
       parameters:
         - { name: departmentId, in: query, required: true, schema: { type: string, format: uuid } }
       responses:
@@ -2244,11 +2244,11 @@ paths:
   /api/order-lifecycle/work-items:
     get:
       summary: List lifecycle stages assigned to the current membership or its eligible department queue
-      description: Requires an operational read capability. Personal results include direct membership assignments and department-queue stages whose configured role codes match the caller. Facility scope is enforced from the authenticated principal; callers cannot choose another department or workspace.
+      description: Requires an operational read capability. Personal results include direct membership assignments and department-queue stages whose configured role codes match the caller. Department results include eligible queue work; workflow authors and workspace admins can also review specific-member work in their own department for reassignment. Facility scope is enforced from the authenticated principal; callers cannot choose another department or workspace.
       parameters:
         - { name: scope, in: query, schema: { type: string, enum: [mine, department], default: mine } }
       responses:
-        '200': { description: Bounded lifecycle stage summaries with order, owner department, schedule, predecessor keys, and pinned form references }
+        '200': { description: Bounded lifecycle stage summaries with order, owner department, schedule, predecessor keys, pinned form references, and a caller-specific canReassign capability }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
