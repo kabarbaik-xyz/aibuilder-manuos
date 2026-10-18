@@ -287,6 +287,40 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       .toMatchObject({ status: 'PENDING', version: 1 });
   });
 
+  it('rejects machine references outside the order facility', async () => {
+    const facilityA = await fixture.db.facility.create({ data: { workspaceId: fixture.alpha.workspaceId, code: 'FORM-FAC-A', name: 'Form facility A' } });
+    const facilityB = await fixture.db.facility.create({ data: { workspaceId: fixture.alpha.workspaceId, code: 'FORM-FAC-B', name: 'Form facility B' } });
+    const order = await fixture.db.order.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      orderNumber: `FORM-${Date.now()}`,
+      customerId: fixture.alpha.masters.customerId,
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId,
+      orderedAtoms: 1n,
+      requestedDate: new Date('2026-12-20T00:00:00.000Z'),
+      facilityId: facilityA.id,
+    } });
+    const otherFacilityMachine = await fixture.db.machine.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      code: 'FORM-MACHINE-B',
+      name: 'Machine in facility B',
+      machineClassId: fixture.alpha.masters.machineClassId,
+      facilityId: facilityB.id,
+    } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'ORDER',
+      subjectId: order.id,
+    }));
+
+    await expect(submissionService.finalizeSubmission(fixture.alpha.users.owner.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: { finish: 'raw', dry_film_microns: '30.0', machine_reference: otherFacilityMachine.id },
+    })).rejects.toThrow(/Reference for 'Inspection machine' is unavailable in this workspace/i);
+  });
+
   it('rejects an attachment linked to a different operational subject', async () => {
     await fixture.db.inspection.createMany({ data: [
       { id: 'qc-insp-attachment-target', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId },

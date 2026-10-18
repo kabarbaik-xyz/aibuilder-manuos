@@ -183,6 +183,28 @@ export class FormSubmissionService {
     answers: Answers,
     subject: { subjectType: 'ORDER' | 'TASK' | 'INSPECTION'; subjectId: string }
   ): Promise<void> {
+    const subjectFacilityId = subject.subjectType === 'ORDER'
+      ? (await tx.order.findFirst({ where: { id: subject.subjectId, workspaceId: principal.workspaceId }, select: { facilityId: true } }))?.facilityId ?? null
+      : subject.subjectType === 'TASK'
+        ? (await tx.task.findFirst({
+            where: { id: subject.subjectId, workspaceId: principal.workspaceId },
+            select: { instance: { select: { order: { select: { facilityId: true } } } } },
+          }))?.instance.order.facilityId ?? null
+        : (await tx.inspection.findFirst({
+            where: { id: subject.subjectId, workspaceId: principal.workspaceId },
+            select: {
+              productionOutput: {
+                select: {
+                  task: {
+                    select: {
+                      instance: { select: { order: { select: { facilityId: true } } } },
+                    },
+                  },
+                },
+              },
+            },
+          }))?.productionOutput?.task.instance.order.facilityId ?? null;
+
     for (const field of definition.fields) {
       const value = answers[field.key];
       if (field.kind === 'reference' && typeof value === 'string') {
@@ -190,7 +212,13 @@ export class FormSubmissionService {
         const target = field.referenceType === 'customer'
           ? await tx.customer.findFirst({ where: { ...where, isActive: true }, select: { id: true } })
           : field.referenceType === 'machine'
-            ? await tx.machine.findFirst({ where, select: { id: true } })
+            ? await tx.machine.findFirst({
+                where: {
+                  ...where,
+                  OR: [{ facilityId: null }, ...(subjectFacilityId ? [{ facilityId: subjectFacilityId }] : [])],
+                },
+                select: { id: true },
+              })
             : field.referenceType === 'item'
               ? await tx.item.findFirst({ where: { ...where, isActive: true }, select: { id: true } })
               : null;

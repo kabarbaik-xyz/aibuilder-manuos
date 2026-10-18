@@ -111,7 +111,8 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [ ] Establish the browser harness against an isolated createFactoryFixture server, with its lifecycle cleanup. Existing `tests/e2e` specs and `test:e2e` use Vitest/API handlers; they are not browser proof. Reuse them for API coverage and put real UI specs in `tests/browser`.
 - [ ] Implement actual multiselect arrays; typed booleans; decimal strings without float arithmetic; DatePicker; authorized named master lookup; real document upload/download using existing document endpoints.
 - [x] Validate live references in the current workspace and reject invalid, foreign, inactive, missing or differently-scoped attachment documents. Attachments may be unlinked only when uploaded by the current actor; subject-linked evidence must match the form subject.
-- [ ] Apply facility/assignment-aware scoping to machine references and verify upload/download behavior through the browser renderer.
+- [x] Apply order/task/inspection facility scoping to machine references while retaining shared facility-neutral machines.
+- [ ] Verify upload/download behavior through the browser renderer (browser/E2E verification was explicitly waived by the user; API and renderer specs remain in scope).
 - [ ] Keep visibleWhen behavior identical in preview, runtime and server validation. Hidden fields do not silently satisfy required visible evidence.
 - [ ] Namespace control IDs by form instance/renderer instance; preview and multiple operational forms must not share IDs.
 - [x] Cover all 9 field kinds in API integration round trips through draft save → final submit → reload/read-only; verify linked attachment evidence, authorized reference lookup, decimal-as-string precision, typed boolean/multiselect/date values and conditional visibility.
