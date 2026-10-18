@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
+import { createFormInstancesIfMissing } from '@/server/db/form-instances';
 import { BadRequestError, ConflictError, NotFoundError } from '@/domain/errors';
 import { randomUUID } from 'crypto';
 import { postMovement } from '../inventory/ledger';
@@ -74,18 +75,15 @@ async function materializeLifecycleQcForms(tx: any, workspaceId: string, orderId
     if (!version || version.template.purpose !== 'QC_EVIDENCE') {
       throw new BadRequestError('A lifecycle QC form pin is unavailable or incompatible with this reinspection.');
     }
-    await tx.formInstance.createMany({
-      data: [{
-        workspaceId,
-        formVersionId: pin.formVersionId,
-        subjectType: 'INSPECTION',
-        subjectId: inspectionId,
-        required: pin.required,
-        completionPoint: pin.completionPoint,
-        status: 'PENDING',
-      }],
-      skipDuplicates: true,
-    });
+    await createFormInstancesIfMissing(tx, [{
+      workspaceId,
+      formVersionId: pin.formVersionId,
+      subjectType: 'INSPECTION',
+      subjectId: inspectionId,
+      required: pin.required,
+      completionPoint: pin.completionPoint,
+      status: 'PENDING',
+    }]);
   }
 }
 
@@ -453,19 +451,16 @@ export async function createInspection(
           select: { id: true, formVersionId: true, required: true },
         });
         if (checklistBindings.length) {
-          await tx.formInstance.createMany({
-            data: checklistBindings.map((binding: { id: string; formVersionId: string; required: boolean }) => ({
-              workspaceId,
-              formVersionId: binding.formVersionId,
-              formBindingId: binding.id,
-              subjectType: 'INSPECTION',
-              subjectId: inspection.id,
-              required: binding.required,
-              completionPoint: 'BEFORE_ACTION',
-              status: 'PENDING',
-            })),
-            skipDuplicates: true,
-          });
+          await createFormInstancesIfMissing(tx, checklistBindings.map((binding: { id: string; formVersionId: string; required: boolean }) => ({
+            workspaceId,
+            formVersionId: binding.formVersionId,
+            formBindingId: binding.id,
+            subjectType: 'INSPECTION',
+            subjectId: inspection.id,
+            required: binding.required,
+            completionPoint: 'BEFORE_ACTION',
+            status: 'PENDING',
+          })));
         }
       }
 
@@ -496,10 +491,7 @@ export async function createInspection(
             if (!pinnedVersion || pinnedVersion.template.purpose !== 'QC_EVIDENCE') {
               throw new BadRequestError('A lifecycle QC form pin is unpublished, changed, or incompatible.');
             }
-            await tx.formInstance.createMany({
-              data: [{ workspaceId, formVersionId: pin.formVersionId, subjectType: 'INSPECTION', subjectId: inspection.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' }],
-              skipDuplicates: true,
-            });
+            await createFormInstancesIfMissing(tx, [{ workspaceId, formVersionId: pin.formVersionId, subjectType: 'INSPECTION', subjectId: inspection.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' }]);
           }
         }
       }

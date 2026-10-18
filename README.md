@@ -89,7 +89,7 @@ npm run db:seed:demo
 
 The seeder uses the configured database and an existing demo workspace; it rejects `NODE_ENV=production`. It does not reset the database. Back up a populated database before deliberately modifying demo data.
 
-**Default password for newly created demo accounts: `Password123!`**. `DEMO_SEED_PASSWORD` overrides this default. Existing passwords remain unchanged unless an explicit demo-password reset is requested.
+**Default password for newly created demo accounts: `Password123!`**. Every account in the table below uses this password. `DEMO_SEED_PASSWORD` overrides this default **at seed time only** — the running application never reads it, because passwords are stored as hashes in the database. Changing the variable later does not change any existing account's password. Existing passwords remain unchanged unless an explicit demo-password reset is requested.
 
 | Account | Email in the default `DEMO` workspace | Purpose |
 | --- | --- | --- |
@@ -129,7 +129,7 @@ This revokes the affected demo account sessions. A normal seed rerun preserves s
 | `NEXT_PUBLIC_MANUOS_ORDER_LIFECYCLE_ENABLED` | Enables lifecycle selection/adoption on order drafts; the example sets `true`. |
 | `MANUOS_DIST_DIR` | Overrides the Next.js output directory. |
 | `DEMO_SEED_WORKSPACE`, `DEMO_SEED_ANCHOR` | Demo workspace code and scenario date anchor. |
-| `DEMO_SEED_PASSWORD`, `DEMO_SEED_RESET_PASSWORD` | Password for new demo accounts and explicit reset of existing seed-managed accounts. |
+| `DEMO_SEED_PASSWORD`, `DEMO_SEED_RESET_PASSWORD` | Seed-script-only inputs (not read at runtime): password for new demo accounts and explicit reset of existing seed-managed accounts. |
 
 Keep provider credentials server-side. Do not expose them through `NEXT_PUBLIC_` variables or commit `.env`.
 

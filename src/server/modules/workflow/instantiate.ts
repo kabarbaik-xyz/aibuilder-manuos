@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { BadRequestError, ConflictError } from '@/domain/errors';
+import { createFormInstancesIfMissing } from '@/server/db/form-instances';
 
 function ceilDivide(numerator: bigint, denominator: bigint): bigint {
   if (numerator < 0n || denominator <= 0n) {
@@ -242,10 +243,7 @@ export async function instantiateWorkflow(
       if (!pinnedVersion || pinnedVersion.template.purpose !== 'TASK_EVIDENCE') {
         throw new BadRequestError('A production lifecycle task form pin is unpublished, changed, or incompatible.');
       }
-      await tx.formInstance.createMany({
-        data: [{ workspaceId: principal.workspaceId, formVersionId: pin.formVersionId, subjectType: 'TASK', subjectId: task.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' }],
-        skipDuplicates: true,
-      });
+      await createFormInstancesIfMissing(tx, [{ workspaceId: principal.workspaceId, formVersionId: pin.formVersionId, subjectType: 'TASK', subjectId: task.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' }]);
     }
   }
 

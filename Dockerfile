@@ -62,6 +62,19 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --chown=nextjs:nodejs scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 
+# Runtime migrations: bake the Prisma CLI (with its schema engine) and the
+# migration history into the runner so the entrypoint can run
+# `prisma migrate deploy` against a baseline restored from the bucket that
+# predates this image. The CLI needs only @prisma/engines plus its helpers;
+# @prisma/client is already provided by the standalone output trace.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@prisma/debug ./node_modules/@prisma/debug
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@prisma/engines-version ./node_modules/@prisma/engines-version
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@prisma/fetch-engine ./node_modules/@prisma/fetch-engine
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@prisma/get-platform ./node_modules/@prisma/get-platform
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+
 # /app/data holds the live database (tmpfs); /app/storage is replaced by a
 # symlink to durable storage by the entrypoint. Both must be writable by nextjs.
 RUN chmod 755 ./docker-entrypoint.sh \
