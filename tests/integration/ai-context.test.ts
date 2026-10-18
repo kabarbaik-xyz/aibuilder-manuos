@@ -350,6 +350,10 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     await fixture.db.task.update({ where: { id: taskId }, data: { version: { increment: 1 } } });
     const staleRecoveryContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { orderId: order.data.id });
     expect(staleRecoveryContext.recoveryReviews).toEqual([]);
+    const staleRecoveryAnswer = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'What recovery options are validated?', { type: 'ORDER', id: order.data.id });
+    const staleRecoveryAnswerData = staleRecoveryAnswer.status === 'SUCCESS' ? staleRecoveryAnswer.data : staleRecoveryAnswer.fallbackData;
+    expect(staleRecoveryAnswerData?.answer).toMatch(/no current pending schedule review/i);
+    expect(staleRecoveryAnswerData?.answer).toMatch(/alternative recovery strategies are not connected/i);
     await expect(brainService.answerProductionQuestion(alpha.users.customerUser.principal, 'What is blocking this task?', { type: 'TASK', id: taskId })).rejects.toThrow(/not available/i);
   });
 
