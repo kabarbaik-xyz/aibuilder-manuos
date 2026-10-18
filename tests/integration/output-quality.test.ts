@@ -230,18 +230,27 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
     expect(partialRetry.data.output.id).toBe(partialOutputRes.data.output.id);
     expect(await fixture.db.productionOutput.count({ where: { workspaceId: alpha.workspaceId, taskId } })).toBe(1);
 
+    const finalOutputInput = {
+      taskId,
+      outputAtoms: parseQuantity('6'),
+      destinationLocationId: alpha.masters.quarantineLocationId,
+      lotNumber: 'LOT-FG-QC-001',
+      isFinal: true,
+    };
     const outputRes = await recordOutput(
       fixture.db,
       alpha.users.operator.principal,
-      {
-        taskId,
-        outputAtoms: parseQuantity('6'),
-        destinationLocationId: alpha.masters.quarantineLocationId,
-        lotNumber: 'LOT-FG-QC-001',
-        isFinal: true,
-      },
+      finalOutputInput,
       'key-output-final-6-units'
     );
+    const outputReplay = await recordOutput(
+      fixture.db,
+      alpha.users.operator.principal,
+      finalOutputInput,
+      'key-output-final-6-units'
+    );
+    expect(outputReplay.meta.replayed).toBe(true);
+    expect(outputReplay.data.output.id).toBe(outputRes.data.output.id);
 
     const output = outputRes.data.output;
     expect(output.outputAtoms).toBe(parseQuantity('6'));
@@ -437,34 +446,31 @@ describe('O06: Production Output, QC Inspection, Rework and Released FG', () => 
     inspectionId = inspection.id;
 
     // Finalize this output: 4 passed to FG, 2 rework. The earlier partial output passed 4.
+    const finalizeInput = {
+      inspectionId: inspection.id,
+      passedAtoms: parseQuantity('4'),
+      reworkAtoms: parseQuantity('2'),
+      scrappedAtoms: 0n,
+      disposition: 'PARTIAL' as const,
+      results: [
+        { checkCode: 'DIM-01', checkDescription: 'Length and width dimension check', checkMethod: 'CALIPER', measuredValue: '100.2mm', isPassed: true },
+        { checkCode: 'SURF-02', checkDescription: 'Surface roughness inspection', checkMethod: 'VISUAL', isPassed: false, defectReason: 'Minor burr on 2 units' },
+      ],
+    };
     const finalizeRes = await finalizeInspection(
       fixture.db,
       alpha.users.qc.principal,
-      {
-        inspectionId: inspection.id,
-        passedAtoms: parseQuantity('4'),
-        reworkAtoms: parseQuantity('2'),
-        scrappedAtoms: 0n,
-        disposition: 'PARTIAL',
-        results: [
-          {
-            checkCode: 'DIM-01',
-            checkDescription: 'Length and width dimension check',
-            checkMethod: 'CALIPER',
-            measuredValue: '100.2mm',
-            isPassed: true,
-          },
-          {
-            checkCode: 'SURF-02',
-            checkDescription: 'Surface roughness inspection',
-            checkMethod: 'VISUAL',
-            isPassed: false,
-            defectReason: 'Minor burr on 2 units',
-          },
-        ],
-      },
+      finalizeInput,
       'key-finalize-insp-10'
     );
+    const finalizeReplay = await finalizeInspection(
+      fixture.db,
+      alpha.users.qc.principal,
+      finalizeInput,
+      'key-finalize-insp-10'
+    );
+    expect(finalizeReplay.meta.replayed).toBe(true);
+    expect(finalizeReplay.data.id).toBe(finalizeRes.data.id);
 
     const finalized = finalizeRes.data;
     expect(finalized.status).toBe('FINALIZED');

@@ -487,6 +487,19 @@ describe('O09: Full Operational Loop & Double-Entry Ledger Reconciliation', () =
     );
     expect(delivered.data.status).toBe('DELIVERED');
     expect(delivered.data.receivedBy).toBe('Alice Warehouse Receiver');
+    const replayedDelivery = await deliveryService.confirmDelivery(
+      alpha.users.warehouse.principal,
+      {
+        shipmentId,
+        receivedBy: 'Alice Warehouse Receiver',
+        notes: 'Delivered in good order to loading dock',
+      },
+      'key-delivered-loop-01'
+    );
+    expect(replayedDelivery.meta.replayed).toBe(true);
+    expect(await fixture.db.orderLifecycleEvent.count({
+      where: { instance: { orderId: customerOrderId }, eventType: 'STAGE_COMPLETED', detailJson: { contains: 'ALL_SHIPMENT_QUANTITIES_DELIVERED' } },
+    })).toBeLessThanOrEqual(1);
   });
 
   it('Step 6: Customer Portal Traceability and Evidence Download', async () => {

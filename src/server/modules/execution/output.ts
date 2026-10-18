@@ -115,12 +115,6 @@ export async function recordOutput(
     );
   }
 
-  if (task.status !== 'RUNNING' && task.status !== 'READY' && task.status !== 'WAITING_QC') {
-    throw new BadRequestError(
-      `Cannot record output for task in status '${task.status}'. Task must be RUNNING or READY.`
-    );
-  }
-
   const order = task.instance.order;
   const targetItemId = task.targetItemId || order.itemId;
 

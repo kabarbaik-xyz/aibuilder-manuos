@@ -529,12 +529,6 @@ export async function finalizeInspection(
     throw new NotFoundError(`Inspection '${input.inspectionId}' not found`);
   }
 
-  if (inspection.status !== 'DRAFT') {
-    throw new BadRequestError(
-      `Cannot finalize inspection in status '${inspection.status}'. Only DRAFT inspections can be finalized.`
-    );
-  }
-
   // 1. Invariant: Conservation of quantity
   const totalAllocated = input.passedAtoms + input.reworkAtoms + input.scrappedAtoms;
   if (totalAllocated !== inspection.inspectedAtoms) {

@@ -564,12 +564,6 @@ export class DeliveryService {
       throw new NotFoundError(`Shipment '${input.shipmentId}' not found`);
     }
 
-    if (shipment.status !== ShipmentStatus.DISPATCHED) {
-      throw new BadRequestError(
-        `Cannot confirm delivery for shipment in status '${shipment.status}'. Shipment must be DISPATCHED.`
-      );
-    }
-
     return executeCommand<any, any>({
       principal,
       commandType: 'delivery.shipment.confirm',
