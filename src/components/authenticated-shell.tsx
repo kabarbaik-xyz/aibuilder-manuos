@@ -2,7 +2,8 @@
 
 import React, { useEffect } from 'react';
 import { useSidebarAccessibility } from './use-sidebar-accessibility';
-import { useGraphStore } from '../store/graph-store';
+import { useUiStore } from '../store/ui-store';
+import { useWorkspaceNavigation } from './workspace-navigation-context';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import { Toast } from './ui/toast';
@@ -21,6 +22,7 @@ export function AuthenticatedShell({
   activeTitle,
 }: AuthenticatedShellProps) {
   useSidebarAccessibility();
+  const { principal } = useWorkspaceNavigation();
   const {
     toastMessage,
     openModal,
@@ -28,7 +30,7 @@ export function AuthenticatedShell({
     isNavMenuOpen,
     toggleSidebar,
     closeNavMenu,
-  } = useGraphStore();
+  } = useUiStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -56,7 +58,10 @@ export function AuthenticatedShell({
 
   return (
     <div className={`app-shell ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      <Sidebar />
+      <Sidebar
+        factoryName={principal?.workspaceName || 'Workspace'}
+        factoryTagline="Manufacturing workspace"
+      />
       {isNavMenuOpen && (
         <div
           className="sidebar-backdrop"
@@ -70,7 +75,7 @@ export function AuthenticatedShell({
           {children}
         </main>
         <footer className="workspace-footer">
-          <span>ManuOS · Operasional manufaktur</span>
+          <span>ManuOS · Operational manufacturing</span>
           
         </footer>
       </div>

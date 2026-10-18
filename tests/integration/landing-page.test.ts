@@ -6,6 +6,10 @@ import WelcomePage from '@/app/(marketing)/welcome/page';
 
 // Mock next/headers
 let mockHeaders = new Headers();
+// Seeded principals reused across route tests: seeding a second membership for
+// the same customerId in a fresh workspace violates the composite FK.
+let ownerHeaders: Headers | null = null;
+let customerHeaders: Headers | null = null;
 vi.mock('next/headers', () => ({
   headers: async () => mockHeaders,
 }));
@@ -39,6 +43,7 @@ describe('Landing Page & Route Resolution', () => {
       roles: ['OWNER', 'ACCESS_ADMIN'],
     });
     mockHeaders = access.headers;
+    ownerHeaders = access.headers;
 
     await expect(Home()).rejects.toThrow();
     try {
@@ -55,6 +60,7 @@ describe('Landing Page & Route Resolution', () => {
       customerId: 'CUST-1',
     });
     mockHeaders = access.headers;
+    customerHeaders = access.headers;
 
     await expect(Home()).rejects.toThrow();
     try {
@@ -64,16 +70,32 @@ describe('Landing Page & Route Resolution', () => {
     }
   });
 
-  it('renders landing page via the dedicated /welcome route', () => {
-    const result = WelcomePage();
+  it('renders landing page via the dedicated /welcome route when signed out', async () => {
+    mockHeaders = new Headers();
+    const result = await WelcomePage();
     expect(result).toBeDefined();
     expect(typeof result).toBe('object');
   });
 
-  it('renders login page component without errors', async () => {
-    const { default: LoginPage } = await import('@/app/(auth)/login/page');
-    const result = LoginPage();
-    expect(result).toBeDefined();
-    expect(typeof result).toBe('object');
+  it('redirects an authenticated owner away from /welcome to /dashboard (login-loop regression)', async () => {
+    mockHeaders = ownerHeaders as Headers;
+
+    await expect(WelcomePage()).rejects.toThrow();
+    try {
+      await WelcomePage();
+    } catch (err: any) {
+      expect(err.digest).toBe('NEXT_REDIRECT;replace;/dashboard;307;');
+    }
+  });
+
+  it('redirects an authenticated customer away from /welcome to /portal/orders', async () => {
+    mockHeaders = customerHeaders as Headers;
+
+    await expect(WelcomePage()).rejects.toThrow();
+    try {
+      await WelcomePage();
+    } catch (err: any) {
+      expect(err.digest).toBe('NEXT_REDIRECT;replace;/portal/orders;307;');
+    }
   });
 });

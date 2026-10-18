@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -9,14 +10,8 @@ import { formatDateEn } from '../../engines/calendar';
 
 export function OrchestratorView() {
   const store = useGraphStore();
-  const {
-    tasks,
-    disruption,
-    activeRecovery,
-    openModal,
-    setScreen,
-    assignTechnician,
-  } = store;
+  const { tasks, disruption, activeRecovery, setScreen, assignTechnician } = store;
+  const openModal = useUiStore((s) => s.openModal);
 
   const [activeTab, setActiveTab] = useState<'graph' | 'gantt' | 'kanban'>('graph');
   const [assignedBudi, setAssignedBudi] = useState(false);

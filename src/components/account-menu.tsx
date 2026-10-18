@@ -10,7 +10,7 @@ import { Icon } from './icons';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { useGraphStore } from '../store/graph-store';
+import { useUiStore } from '../store/ui-store';
 
 interface PrincipalData {
   userId: string;
@@ -28,7 +28,7 @@ interface PrincipalData {
 export function AccountMenu() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { closeNavMenu, closeModal } = useGraphStore();
+  const { closeNavMenu, closeModal } = useUiStore();
   const menuRef = useRef<HTMLDetailsElement>(null);
   const [panel, setPanel] = useState<'profile' | 'settings' | 'logout' | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);

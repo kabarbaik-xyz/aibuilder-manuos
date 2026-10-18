@@ -6,7 +6,12 @@ import { BrandLogo } from '@/components/brand-logo';
 import { Icon } from '@/components/icons';
 import { ButtonLink } from '@/components/ui/button-link';
 
-export function LandingNav() {
+export interface LandingNavProps {
+  /** Signed-in visitors get "Open workspace" instead of the Sign In CTA. */
+  authenticated?: boolean;
+}
+
+export function LandingNav({ authenticated = false }: LandingNavProps = {}) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -24,7 +29,7 @@ export function LandingNav() {
       <div className="l-nav-inner">
         <Link href="/" className="l-brand" aria-label="ManuOS Homepage">
           <BrandLogo className="w-36 sm:w-40" />
-          </Link>
+        </Link>
 
         {/* Desktop Menu */}
         <nav aria-label="Main navigation">
@@ -63,12 +68,12 @@ export function LandingNav() {
             Explore CoreAI demo
           </ButtonLink>
           <ButtonLink
-            href="/login"
+            href={authenticated ? '/' : '/login'}
             variant="primary"
             size="small"
             id="nav-login-link"
           >
-            Sign In
+            {authenticated ? 'Open workspace' : 'Sign In'}
           </ButtonLink>
 
           <button

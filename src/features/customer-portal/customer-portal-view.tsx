@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import { selectRealProgress } from '../../store/selectors';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
@@ -10,12 +11,8 @@ import { ComputedValue } from '../../components/ui/computed-value';
 
 export function CustomerPortalView() {
   const store = useGraphStore();
-  const {
-    activeRecovery,
-    disruption,
-    acknowledgePromise,
-    openModal,
-  } = store;
+  const { activeRecovery, disruption, acknowledgePromise } = store;
+  const openModal = useUiStore((s) => s.openModal);
 
   const heroOrder = store.orders.find((o) => o.id === '1042')!;
   const progress = selectRealProgress(store, '1042');
@@ -32,7 +29,7 @@ export function CustomerPortalView() {
     a.download = filename;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    store.showToast('Document sample downloaded.');
+    useUiStore.getState().showToast('Document sample downloaded.');
   };
 
   return (

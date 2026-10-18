@@ -2,7 +2,12 @@ import React from 'react';
 import Link from 'next/link';
 import { BrandLogo } from '@/components/brand-logo';
 
-export function LandingFooter() {
+export interface LandingFooterProps {
+  /** Signed-in visitors get "Open workspace" instead of the Sign In link. */
+  authenticated?: boolean;
+}
+
+export function LandingFooter({ authenticated = false }: LandingFooterProps = {}) {
   return (
     <footer className="l-footer" aria-label="Site Footer">
       <div className="l-footer-inner">
@@ -45,7 +50,11 @@ export function LandingFooter() {
           <div className="l-footer-col">
             <h4>Access &amp; Portal</h4>
             <ul className="l-footer-links">
-              <li><Link href="/login">Sign In</Link></li>
+              <li>
+                <Link href={authenticated ? '/' : '/login'}>
+                  {authenticated ? 'Open Workspace' : 'Sign In'}
+                </Link>
+              </li>
               <li><Link href="/settings/roles">Role-Based Access</Link></li>
               <li><Link href="/portal/orders">Customer Portal</Link></li>
               <li><Link href="/settings/integrations">Integrations &amp; API</Link></li>

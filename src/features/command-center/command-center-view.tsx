@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import { selectRealProgress, selectFactoryMetrics } from '../../store/selectors';
 import { formatDateEn } from '../../engines/calendar';
 import { Icon } from '../../components/icons';
@@ -11,13 +12,8 @@ import { ComputedValue } from '../../components/ui/computed-value';
 
 export function CommandCenterView() {
   const store = useGraphStore();
-  const {
-    orders,
-    disruption,
-    activeRecovery,
-    openModal,
-    setScreen,
-  } = store;
+  const { orders, disruption, activeRecovery, setScreen } = store;
+  const openModal = useUiStore((s) => s.openModal);
 
   const [filter, setFilter] = useState<'all' | 'watch'>('all');
   const [searchQuery, setSearchQuery] = useState('');

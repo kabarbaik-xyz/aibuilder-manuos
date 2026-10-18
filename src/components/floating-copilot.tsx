@@ -1,11 +1,11 @@
 'use client';
 
 import React from 'react';
-import { useGraphStore } from '../store/graph-store';
+import { useUiStore } from '../store/ui-store';
 import { Icon } from './icons';
 
 export function FloatingCopilot() {
-  const { openModal } = useGraphStore();
+  const { openModal } = useUiStore();
 
   return (
     <button

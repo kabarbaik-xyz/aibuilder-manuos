@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { getFunctionalNavigation, isMasterNavActive, type MasterNavItem } from '@/lib/master-navigation';
 import { paginatedListQueryOptions } from '@/lib/api/use-paginated-list';
-import { useGraphStore } from '@/store/graph-store';
+import { useUiStore } from '@/store/ui-store';
 import { useWorkspaceNavigation } from './workspace-navigation-context';
 import { Icon } from './icons';
 
@@ -102,7 +102,7 @@ function NavigationGroup({
 }) {
   const active = items.some(item => item.href === activeHref);
   const [open, setOpen] = useState(true);
-  const close = useGraphStore(state => state.closeNavMenu);
+  const close = useUiStore(state => state.closeNavMenu);
 
   useEffect(() => {
     try {
@@ -153,7 +153,7 @@ function NavigationGroup({
 
 export function MasterNavigation() {
   const { principal, pathname, error, isPending, refetch } = useWorkspaceNavigation();
-  const close = useGraphStore(state => state.closeNavMenu);
+  const close = useUiStore(state => state.closeNavMenu);
   const queryClient = useQueryClient();
 
   const prefetchList = useCallback((href: string) => {

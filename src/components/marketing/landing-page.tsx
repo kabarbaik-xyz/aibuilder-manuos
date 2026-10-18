@@ -9,22 +9,32 @@ import { LandingAI } from './landing-ai';
 import { LandingCTA } from './landing-cta';
 import { LandingFooter } from './landing-footer';
 
-export function LandingPage() {
+export interface LandingPageProps {
+  /**
+   * True when the visitor already holds a signed-in session. Marketing CTAs
+   * then point at the workspace ("Open workspace") instead of `/login`, which
+   * prevents a Sign In → /welcome → Sign In loop for authenticated visitors
+   * who land on the marketing page.
+   */
+  authenticated?: boolean;
+}
+
+export function LandingPage({ authenticated = false }: LandingPageProps = {}) {
   return (
     <div className="landing-container">
       <a href="#main-content" className="landing-skip">
         Skip to main content
       </a>
-      <LandingNav />
+      <LandingNav authenticated={authenticated} />
       <main id="main-content" className="l-main" tabIndex={-1}>
-        <LandingHero />
+        <LandingHero authenticated={authenticated} />
         <LandingAI />
         <LandingFlow />
         <LandingPersonas />
         <LandingIntegrity />
-        <LandingCTA />
+        <LandingCTA authenticated={authenticated} />
       </main>
-      <LandingFooter />
+      <LandingFooter authenticated={authenticated} />
       <LandingScrollEffects />
     </div>
   );

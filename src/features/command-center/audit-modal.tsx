@@ -2,11 +2,13 @@
 
 import React from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 
 export function AuditModal() {
-  const { audit, closeModal } = useGraphStore();
+  const audit = useGraphStore((s) => s.audit);
+  const closeModal = useUiStore((s) => s.closeModal);
 
   return (
     <div>
