@@ -53,6 +53,8 @@ export class OrderService {
 
   async getOrder(principal: Principal, id: string) {
     requireAnyPermission(principal, ['order.read', 'customer_order.read_own']);
+    const canViewProductionSchedule = ['planning.read', 'planning.write', 'task.assign', 'task.execute_assigned']
+      .some(permission => principal.permissions.has(permission));
 
     const order = await this.prisma.order.findFirst({
       where: { id, workspaceId: principal.workspaceId },
@@ -88,10 +90,10 @@ export class OrderService {
               include: {
                 assignedTechnician: true,
                 assignedMachine: true,
-                resourceBookings: {
+                ...(canViewProductionSchedule ? { resourceBookings: {
                   where: { status: 'CONFIRMED' },
                   orderBy: { startAt: 'asc' },
-                },
+                } } : {}),
               },
             },
           },

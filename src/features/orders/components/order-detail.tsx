@@ -355,7 +355,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
               {stage.dueAt && <p className="small muted mt-1">Due {formatDateTime(stage.dueAt)}</p>}
             </li>)}
           </ol>
-          {lifecycle.stages.some(stage => ['PLAN_PRODUCTION', 'EXECUTE_PRODUCTION'].includes(stage.action)) && <section className="page-stack border-t border-line pt-4" aria-label="Production schedule linked to this lifecycle">
+          {lifecycle.stages.some(stage => ['PLAN_PRODUCTION', 'EXECUTE_PRODUCTION'].includes(stage.action)) && order.instances?.some(instance => instance.tasks?.some((task: any) => Array.isArray(task.resourceBookings))) && <section className="page-stack border-t border-line pt-4" aria-label="Production schedule linked to this lifecycle">
             <div><h3 className="text-sm font-semibold text-ink">Production schedule</h3><p className="field-help">Live tasks and confirmed bookings from Planning; this lifecycle does not keep a separate schedule.</p></div>
             {order.instances?.flatMap(instance => instance.tasks ?? []).length ? <ul className="divide-y divide-line">
               {order.instances?.flatMap(instance => instance.tasks ?? []).map((task: any) => <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
