@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { jobLabel } from '@/features/orders/job-label';
 import { Icon } from '@/components/icons';
 import { getPromiseDateDeltaLabel } from '@/features/promise/promise-presentation';
+import { getSchedulePredecessorLabels, getSchedulePromiseImpact } from '@/features/planning/schedule-proposal-presentation';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface ProposalTask {
@@ -318,6 +319,15 @@ export function ScheduleProposalWorkbench({ initialOpen = false }: { initialOpen
 
         {error && <p role="alert" className="small text-danger">{error}</p>}
         {proposal && <div className="space-y-3">
+          {(() => {
+            const impact = getSchedulePromiseImpact(proposal.projectedEndAt, selectedOrder?.promisedDate ?? null);
+            return impact && <Panel className="grid gap-3 p-3 sm:grid-cols-3">
+              <div><p className="small muted">Projected job completion</p><p className="mt-1 text-sm font-semibold text-ink">{impact.projectedDate}</p></div>
+              <div><p className="small muted">Contractual promised date</p><p className="mt-1 text-sm font-semibold text-ink">{impact.promisedDate}</p></div>
+              <div><p className="small muted">Schedule impact</p><p className="mt-1 text-sm font-semibold text-ink">{getPromiseDateDeltaLabel(impact.deltaDays)}</p></div>
+              <p className="small muted sm:col-span-3">This is a schedule estimate. Applying it does not change the customer commitment.</p>
+            </Panel>;
+          })()}
           <Panel className="flex flex-wrap items-start justify-between gap-3 p-3">
             <div><p className="font-semibold">{proposal.scope.orderNumber} · {instances.find(instance => instance.id === proposal.scope.instanceId) ? jobLabel(selectedOrder, instances.find(instance => instance.id === proposal.scope.instanceId)!, instances.findIndex(instance => instance.id === proposal.scope.instanceId)) : 'Production job'}</p><p className="small muted">{selectedOrder?.facility?.name ?? 'Facility not specified'} · {new Date(proposal.scope.horizonStart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – {new Date(proposal.scope.horizonEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div>
             <Badge variant={proposal.state === 'COMPLETE' ? 'success' : proposal.state === 'PARTIAL' || proposal.state === 'NO_OPEN_TASKS' ? 'warning' : 'danger'}>{proposal.state.replaceAll('_', ' ')}</Badge>
@@ -327,7 +337,7 @@ export function ScheduleProposalWorkbench({ initialOpen = false }: { initialOpen
             {proposal.tasks.map((task) => <article key={task.taskId} className="rounded-lg border border-line bg-surface p-3">
               <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{task.nodeKey} · v{task.version}</strong><Badge variant={task.status === 'SCHEDULED' ? 'success' : 'warning'}>{task.status}</Badge></div>
               <p className="small muted mt-1">{task.startAt ? new Date(task.startAt).toLocaleString() : 'No time'} – {task.endAt ? new Date(task.endAt).toLocaleString() : 'No time'}</p>
-              {task.predecessorTaskIds.length > 0 && <p className="small muted mt-1">After: {task.predecessorTaskIds.map((id) => id.slice(0, 8)).join(', ')}</p>}
+              {task.predecessorTaskIds.length > 0 && <p className="small muted mt-1">After: {getSchedulePredecessorLabels(task.predecessorTaskIds, proposal.tasks).join(', ')}</p>}
               {(task.technicianId || task.machineId) && <p className="small muted mt-1">Technician {task.technicianName ?? '—'} · Machine {task.machineName ?? '—'}</p>}
               {task.reasons.map((reason) => <p key={reason} className="small text-danger mt-1">{reason}</p>)}
             </article>)}
