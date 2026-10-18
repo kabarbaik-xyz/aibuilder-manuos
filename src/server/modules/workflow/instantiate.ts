@@ -147,6 +147,16 @@ export async function instantiateWorkflow(
         },
       });
 
+  // An implicit release allocates the full order-line quantity to its new job.
+  // Persist the allocation with the job so a later release retry can reconcile
+  // the line total instead of seeing jobs whose atoms are absent from the line.
+  if (!manufacturingOrder && orderLine) {
+    await tx.orderLine.update({
+      where: { workspaceId_id: { workspaceId: principal.workspaceId, id: orderLine.id } },
+      data: { allocatedAtoms: { increment: mo.targetAtoms } },
+    });
+  }
+
   // 5. Create Jobsheet
   const jobsheet = await tx.jobsheet.create({
     data: {

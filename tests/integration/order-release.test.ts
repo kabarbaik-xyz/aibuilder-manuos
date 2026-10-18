@@ -362,7 +362,23 @@ describe('W03: Release and Process Instantiation Transaction', () => {
       10_000_000n,
       20_000_000n,
     ]);
+    expect(jobs.map((job) => job.orderLine?.allocatedAtoms)).toEqual(jobs.map((job) => job.targetAtoms));
     expect(jobs.every((job) => job.jobsheets.length === 1 && job.jobsheets[0].tasks.length === 3)).toBe(true);
     expect(released.data.jobs).toHaveLength(2);
+
+    const before = {
+      jobs: await testDb.db.manufacturingOrder.count({ where: { orderId: orderRes.data.id } }),
+      instances: await testDb.db.workflowInstance.count({ where: { orderId: orderRes.data.id } }),
+      tasks: await testDb.db.task.count({ where: { instance: { orderId: orderRes.data.id } } }),
+      demands: await testDb.db.materialDemand.count({ where: { orderId: orderRes.data.id } }),
+    };
+    const retry = await releaseOrder(owner.principal, orderRes.data.id, 'cmd-release-multi-line-new-key', testDb.db);
+    expect(retry.data.jobs.map((job) => job.instanceId).sort()).toEqual(released.data.jobs.map((job) => job.instanceId).sort());
+    expect({
+      jobs: await testDb.db.manufacturingOrder.count({ where: { orderId: orderRes.data.id } }),
+      instances: await testDb.db.workflowInstance.count({ where: { orderId: orderRes.data.id } }),
+      tasks: await testDb.db.task.count({ where: { instance: { orderId: orderRes.data.id } } }),
+      demands: await testDb.db.materialDemand.count({ where: { orderId: orderRes.data.id } }),
+    }).toEqual(before);
   });
 });
