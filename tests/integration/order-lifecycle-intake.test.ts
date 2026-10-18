@@ -305,6 +305,8 @@ describe('order lifecycle intake', () => {
 
     await orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-deadline-confirm');
     await orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-deadline-confirm');
+    await expect(orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-deadline-confirm-new-key'))
+      .rejects.toThrow(/only an unconfirmed/i);
     const review = await fixture.db.orderLifecycleStage.findFirstOrThrow({
       where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id }, stageKey: 'REVIEW' },
     });
