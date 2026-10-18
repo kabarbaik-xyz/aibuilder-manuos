@@ -76,6 +76,13 @@ export interface OrderDto {
       department: { name: string };
       assignedMembership?: { user: { name: string } } | null;
       formPinsJson: string;
+      pinnedForms?: Array<{
+        name: string;
+        version: number | null;
+        contentHash: string;
+        required: boolean;
+        completionPoint: string;
+      }>;
     }>;
     events: Array<{
       id: string;

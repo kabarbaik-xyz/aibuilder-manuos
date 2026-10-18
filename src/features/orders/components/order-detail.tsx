@@ -353,6 +353,14 @@ export function OrderDetail({ order }: OrderDetailProps) {
               <p className="small muted mt-1">{stage.department.name} · {stage.action.replaceAll('_', ' ').toLowerCase()}</p>
               <p className="small mt-2 text-ink">{stage.assignedMembership?.user.name ?? 'Department queue'}</p>
               {stage.dueAt && <p className="small muted mt-1">Due {formatDateTime(stage.dueAt)}</p>}
+              {!!stage.pinnedForms?.length && <div className="mt-3 border-t border-line pt-2">
+                <p className="small muted">Pinned evidence forms</p>
+                <ul className="mt-1 space-y-1">
+                  {stage.pinnedForms.map((form, index) => <li key={`${form.contentHash}-${index}`} className="small text-ink">
+                    {form.name}{form.version ? ` · v${form.version}` : ''} · {form.required ? 'required' : 'optional'} · {form.completionPoint.replaceAll('_', ' ').toLowerCase()}
+                  </li>)}
+                </ul>
+              </div>}
             </li>)}
           </ol>
           {lifecycle.stages.some(stage => ['PLAN_PRODUCTION', 'EXECUTE_PRODUCTION'].includes(stage.action)) && order.instances?.some(instance => instance.tasks?.some((task: any) => Array.isArray(task.resourceBookings))) && <section className="page-stack border-t border-line pt-4" aria-label="Production schedule linked to this lifecycle">

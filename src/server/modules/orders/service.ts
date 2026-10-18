@@ -138,8 +138,37 @@ export class OrderService {
       const actorIds = [...new Set(order.lifecycleInstances.flatMap(instance => instance.events.map(event => event.actorUserId)))];
       const actors = actorIds.length ? await this.prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
       const actorNames = new Map(actors.map(actor => [actor.id, actor.name]));
+      const pins = order.lifecycleInstances.flatMap(instance => instance.stages.flatMap(stage => {
+        try {
+          return (JSON.parse(stage.formPinsJson) as Array<{ formVersionId: string; contentHash: string }>).map(pin => pin);
+        } catch {
+          return [];
+        }
+      }));
+      const formVersions = pins.length ? await this.prisma.formVersion.findMany({
+        where: { workspaceId: principal.workspaceId, id: { in: [...new Set(pins.map(pin => pin.formVersionId))] } },
+        select: { id: true, versionNumber: true, contentHash: true, template: { select: { name: true } } },
+      }) : [];
+      const formVersionByPin = new Map(formVersions.map(version => [`${version.id}:${version.contentHash}`, version]));
       order.lifecycleInstances = order.lifecycleInstances.map(instance => ({
         ...instance,
+        stages: instance.stages.map(stage => {
+          let stagePins: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: string }> = [];
+          try { stagePins = JSON.parse(stage.formPinsJson) as typeof stagePins; } catch { /* Ignore malformed historical pins and retain the source JSON for audit. */ }
+          return {
+            ...stage,
+            pinnedForms: stagePins.map(pin => {
+              const version = formVersionByPin.get(`${pin.formVersionId}:${pin.contentHash}`);
+              return {
+                name: version?.template.name ?? 'Unavailable pinned form',
+                version: version?.versionNumber ?? null,
+                contentHash: pin.contentHash,
+                required: pin.required,
+                completionPoint: pin.completionPoint,
+              };
+            }),
+          };
+        }),
         events: instance.events.map(event => ({ ...event, actorName: actorNames.get(event.actorUserId) ?? 'Former user' })),
       }));
     }

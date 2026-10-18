@@ -202,6 +202,10 @@ describe('order lifecycle intake', () => {
 
     await expect(orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-confirm-with-retired-pin'))
       .resolves.toMatchObject({ data: { id: order.data.id } });
+    const orderDetail = await orderService.getOrder(owner.principal, order.data.id);
+    expect(orderDetail.lifecycleInstances[0].stages[0]).toMatchObject({
+      pinnedForms: [{ name: 'Order specification', version: 1, required: true, completionPoint: 'BEFORE_ACTION' }],
+    });
   });
 
   it('lets the assigned reviewer complete an evidence-review stage with a version check', async () => {
