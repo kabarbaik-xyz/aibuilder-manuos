@@ -90,6 +90,14 @@ export interface AuthorizedContextLifecycleStage {
   dueAt: string | null;
   scheduleKind: string;
   blockers: string[];
+  formPins: Array<{
+    name: string | null;
+    version: number | null;
+    purpose: string | null;
+    required: boolean;
+    completionPoint: string;
+    status: 'AVAILABLE' | 'UNAVAILABLE' | 'RESTRICTED';
+  }>;
 }
 
 export interface AuthorizedContextRecoveryReview {
@@ -330,6 +338,25 @@ export async function buildAuthorizedContext(
         take: 60,
       })
     : [];
+  const stageFormPins = dbLifecycleStages.flatMap(stage => {
+    const pins = JSON.parse(stage.formPinsJson) as Array<{
+      formVersionId: string;
+      contentHash: string;
+      required: boolean;
+      completionPoint?: string;
+    }>;
+    return pins.map(pin => ({ stageId: stage.id, ...pin }));
+  });
+  const readableFormVersions = principal.permissions.has('forms.read') && stageFormPins.length > 0
+    ? await prisma.formVersion.findMany({
+        where: {
+          workspaceId,
+          OR: stageFormPins.map(pin => ({ id: pin.formVersionId, contentHash: pin.contentHash })),
+        },
+        select: { id: true, contentHash: true, versionNumber: true, template: { select: { name: true, purpose: true } } },
+      })
+    : [];
+  const formVersionByPin = new Map(readableFormVersions.map(version => [`${version.id}:${version.contentHash}`, version]));
   const lifecycleByKey = new Map(dbLifecycleStages.map(stage => [`${stage.instanceId}:${stage.stageKey}`, stage]));
   const lifecycleStages: AuthorizedContextLifecycleStage[] = dbLifecycleStages.map(stage => ({
     orderId: stage.instance.order.id,
@@ -348,6 +375,23 @@ export async function buildAuthorizedContext(
       return predecessor && !['COMPLETED', 'SKIPPED'].includes(predecessor.state)
         ? [`Waiting for ${predecessor.name} (${predecessor.state.toLowerCase()})`]
         : [];
+    }),
+    formPins: (JSON.parse(stage.formPinsJson) as Array<{
+      formVersionId: string;
+      contentHash: string;
+      required: boolean;
+      completionPoint?: string;
+    }>).map(pin => {
+      const version = formVersionByPin.get(`${pin.formVersionId}:${pin.contentHash}`);
+      const restricted = !principal.permissions.has('forms.read');
+      return {
+        name: version?.template.name ?? null,
+        version: version?.versionNumber ?? null,
+        purpose: version?.template.purpose ?? null,
+        required: pin.required,
+        completionPoint: pin.completionPoint ?? 'UNKNOWN',
+        status: restricted ? 'RESTRICTED' as const : version ? 'AVAILABLE' as const : 'UNAVAILABLE' as const,
+      };
     }),
   }));
 

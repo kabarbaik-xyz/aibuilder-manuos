@@ -57,7 +57,7 @@ export class ProductionBrainService {
     }
 
     const model = process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest';
-    const promptVersion = 'brain-qa-v10-pending-recovery-review';
+    const promptVersion = 'brain-qa-v11-pinned-lifecycle-forms';
     const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
     // 1. Check scoped cache
@@ -88,7 +88,7 @@ ${context.inventory.map((i) => `  * ${i.itemCode} (${i.itemName}): On Hand: ${i.
 ${(inventoryQuestion ? [] : context.resources).map((r) => `  * ${r.code} (${r.name}, ${r.type}): Status: ${r.status}`).join('\n')}
 
 - Current Order Workflow Stages (${inventoryQuestion ? 'omitted: inventory-only question' : context.lifecycleStages.length}):
-${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.orderNumber}: ${stage.workflowName} v${stage.workflowVersion}, ${stage.name} (${stage.action.replaceAll('_', ' ')}) is ${stage.state.replaceAll('_', ' ').toLowerCase()} in ${stage.department}; owner ${stage.assignedTo ?? 'eligible department queue'}, due ${stage.dueAt ?? 'not set'}, scheduling ${stage.scheduleKind.toLowerCase()}${stage.blockers.length ? `; waiting on ${stage.blockers.join(', ')}` : ''}`).join('\n')}
+${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.orderNumber}: ${stage.workflowName} v${stage.workflowVersion}, ${stage.name} (${stage.action.replaceAll('_', ' ')}) is ${stage.state.replaceAll('_', ' ').toLowerCase()} in ${stage.department}; owner ${stage.assignedTo ?? 'eligible department queue'}, due ${stage.dueAt ?? 'not set'}, scheduling ${stage.scheduleKind.toLowerCase()}${stage.blockers.length ? `; waiting on ${stage.blockers.join(', ')}` : ''}${stage.formPins.length ? `; pinned forms: ${stage.formPins.map(form => form.status === 'AVAILABLE' ? `${form.name} v${form.version} (${form.purpose}, ${form.required ? 'required' : 'optional'}, ${form.completionPoint.replaceAll('_', ' ').toLowerCase()})` : `form details ${form.status.toLowerCase()} (${form.required ? 'required' : 'optional'})`).join(', ')}` : ''}`).join('\n')}
 
 - Pending Recovery Reviews (${inventoryQuestion ? 'omitted: inventory-only question' : context.recoveryReviews.length}):
 ${(inventoryQuestion ? [] : context.recoveryReviews).map(review => `  * ${review.orderNumber}: saved finite-capacity schedule review projects completion ${review.projectedEndAt}; evaluated ${review.evaluatedAt}; ${review.taskCount} task(s); pending human approval. Its saved snapshot matches current order/job/task versions, but capacity, materials and qualifications must be revalidated before apply.`).join('\n')}

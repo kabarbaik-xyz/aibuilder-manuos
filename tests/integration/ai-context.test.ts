@@ -7,6 +7,7 @@ import { getCached, setCached, clearCache } from '@/server/ai/cache';
 import { OrderService } from '@/server/modules/orders/service';
 import { WorkflowService } from '@/server/modules/workflow/service';
 import { EngineeringService } from '@/server/modules/engineering/service';
+import { FormService } from '@/server/modules/forms/service';
 import { releaseOrder } from '@/server/modules/orders/release';
 import { z } from 'zod';
 
@@ -102,6 +103,17 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: owner.membershipId } },
       data: { departmentId: alpha.masters.departmentId },
     });
+    const forms = new FormService(fixture.db);
+    const form = await forms.createTemplate(owner.principal, {
+      code: 'AI-LIFECYCLE-PINNED-FORM', name: 'Customer specification', purpose: 'ORDER_SPEC',
+    }, 'ai-lifecycle-form-create');
+    await forms.updateDraftVersion(owner.principal, form.templateId, form.versionId, {
+      expectedVersion: 1,
+      definition: { schemaVersion: 1, purpose: 'ORDER_SPEC', fields: [{ key: 'finish', label: 'Surface finish', kind: 'text', required: true }] },
+    }, 'ai-lifecycle-form-draft');
+    const publishedForm = await forms.publishFormVersion(owner.principal, {
+      templateId: form.templateId, versionId: form.versionId, expectedVersion: 2,
+    }, 'ai-lifecycle-form-publish');
     const workflows = new WorkflowService(fixture.db);
     const orders = new OrderService(fixture.db);
     const template = await workflows.createTemplate(owner.principal, {
@@ -114,7 +126,8 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
           key: 'SALES-REVIEW', name: 'Review customer request', action: 'REVIEW_EVIDENCE',
           departmentId: alpha.masters.departmentId,
           assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: alpha.masters.departmentId },
-          schedule: { kind: 'DEADLINE', dueAfterMinutes: 240 }, predecessors: [], forms: [],
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 240 }, predecessors: [],
+          forms: [{ formVersionId: publishedForm.versionId, contentHash: publishedForm.hash, required: true, completionPoint: 'BEFORE_ACTION' }],
         },
         {
           key: 'ENGINEERING-REVIEW', name: 'Review engineering package', action: 'ENGINEERING_APPROVE',
@@ -135,7 +148,7 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     expect(plannerContext.lifecycleStages).toContainEqual(expect.objectContaining({
       orderNumber: order.data.orderNumber, workflowName: 'Customer order workflow',
       name: 'Review customer request', department: expect.any(String), assignedTo: expect.any(String),
-      state: 'READY', scheduleKind: 'DEADLINE',
+      state: 'READY', scheduleKind: 'DEADLINE', formPins: [{ name: 'Customer specification', version: 1, purpose: 'ORDER_SPEC', required: true, completionPoint: 'BEFORE_ACTION', status: 'AVAILABLE' }],
     }));
     expect(plannerContext.lifecycleStages).toContainEqual(expect.objectContaining({
       name: 'Review engineering package',
