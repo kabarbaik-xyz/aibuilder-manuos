@@ -14,6 +14,8 @@ import { validateWorkflowDefinition, WorkflowDefinition } from '@/domain/workflo
 import { validateDefinition } from '@/domain/forms/schema';
 import { FormDefinition } from '@/domain/forms/types';
 import { callGeminiStructured } from '@/server/ai/gemini-client';
+import { WorkflowService } from '@/server/modules/workflow/service';
+import { FormService } from '@/server/modules/forms/service';
 
 import fs from 'fs';
 import path from 'path';
@@ -235,48 +237,33 @@ export class BuilderProposalService {
       throw new BadRequestError('Cannot apply proposal with unresolved blocking validation findings');
     }
 
+    if (!proposal.targetDraftId) {
+      throw new BadRequestError('Select an existing draft in Workflow Studio or Form Builder before applying this proposal.');
+    }
+    if (proposal.baseRevision !== undefined && proposal.baseRevision !== input.expectedTargetRevision) {
+      throw new ConflictError('Reviewed target revision does not match the revision used to generate this proposal.');
+    }
+
     // Apply atomically to target draft
     let appliedDraftReference = '';
 
     if (proposal.target === 'WORKFLOW') {
-      if (proposal.targetDraftId) {
-        // Save to existing workflow version draft
-        await this.prisma.workflowVersion.update({
-          where: {
-            workspaceId_id: {
-              workspaceId: principal.workspaceId,
-              id: proposal.targetDraftId,
-            },
-          },
-          data: {
-            definitionJson: proposal.candidateJson,
-            versionNumber: { increment: 1 },
-          },
-        });
-        appliedDraftReference = proposal.targetDraftId;
-      } else {
-        appliedDraftReference = `WORKFLOW_DRAFT_${randomUUID()}`;
-      }
+      await new WorkflowService(this.prisma).saveVersionDraft(principal, proposal.targetDraftId, {
+        expectedVersion: input.expectedTargetRevision,
+        definition: JSON.parse(proposal.candidateJson),
+      }, input.idempotencyKey);
+      appliedDraftReference = proposal.targetDraftId;
     } else {
-      if (proposal.targetDraftId) {
-        // Update FormVersion draft
-        await this.prisma.formVersion.update({
-          where: {
-            workspaceId_id: {
-              workspaceId: principal.workspaceId,
-              id: proposal.targetDraftId,
-            },
-          },
-          data: {
-            definitionJson: proposal.candidateJson,
-            contentHash: proposal.candidateHash,
-            version: { increment: 1 },
-          },
-        });
-        appliedDraftReference = proposal.targetDraftId;
-      } else {
-        appliedDraftReference = `FORM_DRAFT_${randomUUID()}`;
-      }
+      const target = await this.prisma.formVersion.findFirst({
+        where: { id: proposal.targetDraftId, workspaceId: principal.workspaceId },
+        select: { templateId: true },
+      });
+      if (!target) throw new NotFoundError(`Form draft '${proposal.targetDraftId}' not found`);
+      await new FormService(this.prisma).updateDraftVersion(principal, target.templateId, proposal.targetDraftId, {
+        expectedVersion: input.expectedTargetRevision,
+        definition: JSON.parse(proposal.candidateJson) as FormDefinition,
+      }, input.idempotencyKey);
+      appliedDraftReference = proposal.targetDraftId;
     }
 
     proposal.status = 'APPLIED';
