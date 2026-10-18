@@ -280,6 +280,8 @@ describe('order lifecycle intake', () => {
     expect(completions.filter(result => result.status === 'rejected')).toHaveLength(1);
     await expect(fixture.db.orderLifecycleEvent.findFirst({ where: { stageId: stage.id, eventType: 'STAGE_COMPLETED' } }))
       .resolves.toMatchObject({ actorUserId: planner.userId, toState: 'COMPLETED' });
+    await expect(fixture.db.orderLifecycleInstance.findFirst({ where: { orderId: order.data.id } }))
+      .resolves.toMatchObject({ status: 'COMPLETED' });
     expect(await fixture.db.orderLifecycleEvent.count({ where: { stageId: stage.id, eventType: 'STAGE_COMPLETED' } })).toBe(1);
     await expect(completeEvidenceReviewStage(fixture.db, planner.principal, { stageId: stage.id, expectedVersion: stage.version + 1 }, 'lifecycle-review-new-key-after-success'))
       .rejects.toThrow(/not found|ready or active/i);

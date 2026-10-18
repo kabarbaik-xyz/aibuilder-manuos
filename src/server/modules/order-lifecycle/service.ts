@@ -181,13 +181,27 @@ export async function completeLifecycleAction(
     });
   }
 
-  const projectedStates = new Map(instance.stages.map((candidate: any) => [candidate.stageKey, candidate.state]));
-  for (const change of decision.changes) projectedStates.set(change.stageKey, change.state);
-  const unfinished = instance.stages.filter((candidate: any) => !['COMPLETED', 'SKIPPED'].includes(projectedStates.get(candidate.stageKey) ?? candidate.state));
-  if (unfinished.length === 0) {
-    await tx.orderLifecycleInstance.updateMany({
-      where: { workspaceId: input.workspaceId, id: instance.id, version: instance.version, status: 'ACTIVE' },
-      data: { status: 'COMPLETED', completedAt: new Date(), version: { increment: 1 } },
+  const persistedStages = await tx.orderLifecycleStage.findMany({
+    where: { workspaceId: input.workspaceId, instanceId: instance.id },
+    select: { state: true },
+  });
+  if (persistedStages.length > 0 && persistedStages.every((candidate: { state: string }) => ['COMPLETED', 'SKIPPED'].includes(candidate.state))) {
+    const currentInstance = await tx.orderLifecycleInstance.findFirst({
+      where: { workspaceId: input.workspaceId, id: instance.id, status: 'ACTIVE' },
+      select: { id: true, version: true },
     });
+    if (currentInstance) {
+      const completed = await tx.orderLifecycleInstance.updateMany({
+        where: { workspaceId: input.workspaceId, id: instance.id, version: currentInstance.version, status: 'ACTIVE' },
+        data: { status: 'COMPLETED', completedAt: new Date(), version: { increment: 1 } },
+      });
+      if (completed.count !== 1) {
+        const latest = await tx.orderLifecycleInstance.findFirst({
+          where: { workspaceId: input.workspaceId, id: instance.id },
+          select: { status: true },
+        });
+        if (latest?.status === 'ACTIVE') throw new ConflictError('Lifecycle instance changed concurrently; refresh the order and retry.');
+      }
+    }
   }
 }
