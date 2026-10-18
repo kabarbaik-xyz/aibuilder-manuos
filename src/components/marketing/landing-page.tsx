@@ -18,10 +18,10 @@ export function LandingPage() {
       <LandingNav />
       <main id="main-content" className="l-main" tabIndex={-1}>
         <LandingHero />
+        <LandingAI />
         <LandingFlow />
         <LandingPersonas />
         <LandingIntegrity />
-        <LandingAI />
         <LandingCTA />
       </main>
       <LandingFooter />

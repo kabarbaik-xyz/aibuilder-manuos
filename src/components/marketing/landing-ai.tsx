@@ -16,7 +16,7 @@ interface AIScenario {
   recommendedAction: string;
   metrics: {
     promiseImpact: string;
-    marginImpact: string;
+    reviewContext: string;
     gateStatus: string;
   };
   approverRole: string;
@@ -25,59 +25,39 @@ interface AIScenario {
 
 const AI_SCENARIOS: AIScenario[] = [
   {
-    id: 'bottleneck',
-    label: 'Machine Bottleneck Recovery',
-    badge: 'SCHEDULE DRIFT',
-    icon: 'clock',
-    orderRef: 'MO-2026-8812 · Servo Mount',
-    customer: 'AeroDynamics Corp',
-    triggerTitle: 'OP-20 5-Axis Milling delayed 45m — Friday delivery at risk.',
-    cpmSummary: 'Parallel station CNC-02 has 3.5h open capacity on Shift B with 2 certified Level-3 operators.',
-    recommendedAction: 'Split 40 units to parallel station CNC-02 to preserve Friday 16:00 delivery (+1.4h buffer).',
-    metrics: {
-      promiseImpact: '+1.4h Slack Saved',
-      marginImpact: '99.4% Margin Kept',
-      gateStatus: 'Cert L3 Verified',
-    },
-    approverRole: 'Production Planner',
-    workspaceHref: '/planning',
+    id: 'machine', label: 'Alternative machine', badge: 'SCHEDULE REVIEW', icon: 'calendar',
+    orderRef: 'Example · Milling operation', customer: 'Illustrative factory',
+    triggerTitle: 'A booked machine is delaying a released job.',
+    cpmSummary: 'Review compatible machines, current bookings, and the operation requirements.',
+    recommendedAction: 'Compare an eligible alternative machine and submit the selected schedule for supervisor review.',
+    metrics: { promiseImpact: 'Projected finish', reviewContext: 'Supervisor review', gateStatus: 'Recheck on approval' },
+    approverRole: 'Assigned supervisor', workspaceHref: '/ai/recovery',
   },
   {
-    id: 'material',
-    label: 'Authorized Alloy Substitution',
-    badge: 'MATERIAL HOLD',
-    icon: 'box',
-    orderRef: 'MO-2026-8840 · Valve Body',
-    customer: 'Pacific Marine',
-    triggerTitle: 'Primary bar stock Lot #AL-904 quarantined at receiving.',
-    cpmSummary: '85 kg of ECO-authorized substitute alloy Lot #AL-911 is available in Bay A-04.',
-    recommendedAction: 'Allocate 30 kg from approved substitute Lot #AL-911 under ECO-104 and release OP-10.',
-    metrics: {
-      promiseImpact: '0 Days Slip',
-      marginImpact: '−$42 Variance',
-      gateStatus: 'ECO-104 Approved',
-    },
-    approverRole: 'Lead Engineer',
-    workspaceHref: '/engineering',
+    id: 'overtime', label: 'Overtime proposal', badge: 'CAPACITY REVIEW', icon: 'clock',
+    orderRef: 'Example · Capacity constraint', customer: 'Illustrative factory',
+    triggerTitle: 'Available working hours may not cover the planned operation.',
+    cpmSummary: 'Check the technician availability, existing bookings, and workspace overtime limits.',
+    recommendedAction: 'Review a proposed overtime interval before the affected technician’s supervisor approves the schedule.',
+    metrics: { promiseImpact: 'Schedule estimate', reviewContext: 'Direct supervisor', gateStatus: 'Availability checks' },
+    approverRole: 'Technician’s direct supervisor', workspaceHref: '/ai/recovery',
   },
   {
-    id: 'quality',
-    label: 'QC Containment & Rework',
-    badge: 'QC CONTAINMENT',
-    icon: 'checklist',
-    orderRef: 'MO-2026-8855 · Optical Housing',
-    customer: 'Vanguard Photonics',
-    triggerTitle: '6 of 50 units flagged for +0.02mm bore deviation at QC-30.',
-    cpmSummary: '44 passed units cleared for staging; Station HONE-01 available for immediate rework.',
-    recommendedAction: 'Route 6 held units to HONE-01 for sleeve rework; release 44 passed units to packing.',
-    metrics: {
-      promiseImpact: 'Full 50 Units Met',
-      marginImpact: '$1,420 Scrap Saved',
-      gateStatus: 'QC Gate Armed',
-    },
-    approverRole: 'Quality Manager',
-    workspaceHref: '/quality/inspections',
+    id: 'date', label: 'Delivery-date review', badge: 'PROMISE REVIEW', icon: 'delivery',
+    orderRef: 'Example · Released job', customer: 'Illustrative factory',
+    triggerTitle: 'A requested delivery date needs a capacity check.',
+    cpmSummary: 'Review open tasks, reserved materials, resource availability, and current bookings.',
+    recommendedAction: 'Evaluate the requested date for the selected released job. Resolve missing evidence before using the result as a commitment.',
+    metrics: { promiseImpact: 'Feasibility review', reviewContext: 'Planner decision', gateStatus: 'Complete evidence needed' },
+    approverRole: 'Planner review; no promise is committed', workspaceHref: '/ai/promise',
   },
+];
+
+const COREAI_USES: { title: string; description: string; icon: IconName }[] = [
+  { title: 'Ask your operations', description: 'Find answers about orders, inventory, and resources with links to the records behind them.', icon: 'spark' },
+  { title: 'See what needs attention', description: 'Review delivery risks and operational exceptions, then open the affected records.', icon: 'alert' },
+  { title: 'Review recovery options', description: 'Compare supported machine and overtime proposals before requesting approval.', icon: 'calendar' },
+  { title: 'Start with a useful draft', description: 'Turn RFQ text into reviewed order inputs, or draft workflows and forms with AI assistance.', icon: 'engineering' },
 ];
 
 export function LandingAI() {
@@ -85,174 +65,58 @@ export function LandingAI() {
   const scenario = AI_SCENARIOS.find((s) => s.id === activeId) ?? AI_SCENARIOS[0];
 
   return (
-    <section id="ai-governance" className="l-section" aria-labelledby="ai-heading">
+    <section id="ai-governance" className="l-section coreai-section" aria-labelledby="ai-heading">
       <div className="l-section-inner">
-        <div className="l-section-header">
-          <span className="l-section-tag">Human-Governed Operational Intelligence</span>
-          <h2 id="ai-heading" className="l-section-title">
-            Deterministic engines calculate. CoreAI proposes. Humans decide.
-          </h2>
-          <p className="l-section-desc">
-            Exact math computes capacity and critical paths. CoreAI drafts recovery options. Supervisors approve every change.
-          </p>
+        <div className="coreai-heading">
+          <h2 id="ai-heading">A clearer view.<br /><span>A better next move.</span></h2>
+          <p>Bring your operational questions to CoreAI. Find the context, see what needs attention, and move forward with a plan your team can review.</p>
         </div>
 
-        {/* 3 Concise Governance Steps */}
-        <div className="l-ai-pillars-row">
-          <div className="l-ai-pillar-card">
-            <div className="l-ai-pillar-top">
-              <span className="l-ai-pillar-num">01 · CALCULATE</span>
-              <h3 className="l-ai-pillar-title">Deterministic Math First</h3>
-            </div>
-            <p className="l-ai-pillar-desc">
-              CPM critical paths, machine calendars, and stock balances are computed with exact math—never guessed.
-            </p>
-          </div>
-          <div className="l-ai-pillar-card">
-            <div className="l-ai-pillar-top">
-              <span className="l-ai-pillar-num">02 · PROPOSE</span>
-              <h3 className="l-ai-pillar-title">Explainable AI Options</h3>
-            </div>
-            <p className="l-ai-pillar-desc">
-              CoreAI simulates valid recovery paths and quantifies delivery, cost, and resource trade-offs.
-            </p>
-          </div>
-          <div className="l-ai-pillar-card">
-            <div className="l-ai-pillar-top">
-              <span className="l-ai-pillar-num">03 · DECIDE</span>
-              <h3 className="l-ai-pillar-title">Human Supervisor Gate</h3>
-            </div>
-            <p className="l-ai-pillar-desc">
-              Zero silent auto-commits. Every schedule shift or substitution requires explicit human approval.
-            </p>
-          </div>
-        </div>
-
-        {/* Interactive AI Recovery Showcase */}
-        <div className="l-ai-showcase">
-          <div className="l-ai-showcase-left">
-            <div className="l-ai-badge">
-              <span className="l-live-pulse-dot blue" aria-hidden="true" />
-              <span>Interactive Recovery Playbooks</span>
-            </div>
-
-            <h3 className="l-ai-showcase-heading">
-              Turn floor disruptions into 1-click recovery decisions.
-            </h3>
-            <p className="l-ai-showcase-sub">
-              Click a live disruption scenario to inspect how CoreAI prepares a verified recovery plan:
-            </p>
-
-            <div className="l-ai-scenario-tabs" role="tablist" aria-label="Disruption Recovery Scenarios">
-              {AI_SCENARIOS.map((item) => {
-                const isActive = item.id === activeId;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setActiveId(item.id)}
-                    className={`l-ai-scenario-btn ${isActive ? 'active' : ''}`}
-                  >
-                    <div className="l-ai-scenario-btn-icon">
-                      <Icon name={item.icon} className="w-4 h-4" />
-                    </div>
-                    <div className="l-ai-scenario-btn-copy">
-                      <span className="l-ai-scenario-btn-tag">{item.badge}</span>
-                      <strong>{item.label}</strong>
-                    </div>
-                    <Icon name="chevron" className="w-4 h-4 ml-auto text-muted" />
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="l-stage-tags">
-              <span className="l-stage-tag-pill">Read-Only AI Context</span>
-              <span className="l-stage-tag-pill">Pre-Validated Constraints</span>
-              <span className="l-stage-tag-pill">Signed Audit Trail</span>
-            </div>
+        <div className="coreai-layout">
+          <div className="coreai-capabilities">
+            {COREAI_USES.map((use) => (
+              <article key={use.title} className="coreai-capability">
+                <span className="coreai-capability-icon"><Icon name={use.icon} /></span>
+                <div><h3>{use.title}</h3><p>{use.description}</p></div>
+              </article>
+            ))}
+            <Link href="/demo" className="coreai-text-link">Explore the demo workspace <Icon name="arrow" /></Link>
           </div>
 
-          {/* Right: Animated Decision Console */}
-          <div key={scenario.id} className="l-ai-console l-anim-fade-in" aria-live="polite">
-            <div className="l-ai-console-topbar">
-              <div className="flex items-center gap-2">
-                <span className="l-live-pulse-dot amber" aria-hidden="true" />
-                <span className="text-xs font-bold text-ink">CoreAI Recovery Copilot</span>
-              </div>
-              <span className="l-ai-console-pill">{scenario.badge}</span>
+          <div className="coreai-preview">
+            <div className="coreai-preview-header">
+              <div><span className="coreai-assistant-mark"><Icon name="spark" /></span><strong>CoreAI</strong><span className="coreai-preview-caption">Decision workspace</span></div>
+              <span className="coreai-example-label">Illustrative example</span>
             </div>
-
-            <div className="l-ai-console-body">
-              <div className="l-ai-console-order-bar">
-                <div>
-                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted block">Active Order</span>
-                  <strong className="text-sm text-ink">{scenario.orderRef}</strong>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted block">Customer</span>
-                  <span className="text-xs font-semibold text-primary">{scenario.customer}</span>
-                </div>
-              </div>
-
-              <div className="l-ai-console-block alert">
-                <div className="l-ai-console-block-head">
-                  <Icon name="alert" className="w-4 h-4 text-amber-700" />
-                  <span>Exception Detected</span>
-                </div>
-                <p>{scenario.triggerTitle}</p>
-              </div>
-
-              <div className="l-ai-console-block neutral">
-                <div className="l-ai-console-block-head">
-                  <Icon name="network" className="w-4 h-4 text-primary" />
-                  <span>Deterministic Constraint Check</span>
-                </div>
+            <div className="coreai-example-options" role="group" aria-label="Recovery examples">
+              {AI_SCENARIOS.map((item) => (
+                <button key={item.id} type="button" aria-pressed={scenario.id === item.id} onClick={() => setActiveId(item.id)}>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className="coreai-conversation" aria-live="polite" aria-atomic="true">
+              <div className="coreai-question"><Icon name={scenario.icon} /><p>{scenario.triggerTitle}</p></div>
+              <div className="coreai-response">
+                <div className="coreai-response-label"><Icon name="spark" /><strong>Here’s what to review</strong></div>
                 <p>{scenario.cpmSummary}</p>
+                <div className="coreai-evidence"><Icon name="network" /><span>Requirements</span><span>Availability</span><span>Bookings</span></div>
+                <div className="coreai-next-step"><span>Suggested next step</span><p>{scenario.recommendedAction}</p></div>
               </div>
-
-              <div className="l-ai-console-block proposal">
-                <div className="l-ai-console-block-head">
-                  <Icon name="spark" className="w-4 h-4 text-emerald-700" />
-                  <span>Recommended Recovery Action</span>
-                </div>
-                <p className="font-semibold text-ink">{scenario.recommendedAction}</p>
-              </div>
-
-              <div className="l-ai-console-metrics">
-                <div className="l-ai-metric-chip">
-                  <span>Delivery Impact</span>
-                  <strong className="text-emerald-700">{scenario.metrics.promiseImpact}</strong>
-                </div>
-                <div className="l-ai-metric-chip">
-                  <span>Margin Impact</span>
-                  <strong>{scenario.metrics.marginImpact}</strong>
-                </div>
-                <div className="l-ai-metric-chip">
-                  <span>Validation</span>
-                  <strong className="text-primary">{scenario.metrics.gateStatus}</strong>
-                </div>
-              </div>
+              <div className="coreai-review-note"><Icon name="shield" /><span>{scenario.approverRole} · {scenario.metrics.gateStatus}</span></div>
             </div>
-
-            <div className="l-ai-console-footer">
-              <div className="text-xs text-muted">
-                Requires: <strong className="text-ink">{scenario.approverRole}</strong>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link href={scenario.workspaceHref} className="btn small-btn">
-                  Inspect View
-                </Link>
-                <Link href="/demo" className="btn primary small-btn">
-                  <span>Try in Demo</span>
-                  <Icon name="arrow" className="w-3.5 h-3.5" />
-                </Link>
-              </div>
-            </div>
+            <div className="coreai-preview-footer"><span>Preview only · no workspace changes</span><Link href={scenario.workspaceHref}>Open workspace <Icon name="arrow" /></Link></div>
           </div>
         </div>
+
+        <div className="coreai-control-strip" aria-label="How CoreAI supports decisions">
+          <div><Icon name="network" /><span>Connected records</span></div>
+          <Icon name="arrow" className="coreai-strip-arrow" />
+          <div><Icon name="spark" /><span>Reviewable suggestions</span></div>
+          <Icon name="arrow" className="coreai-strip-arrow" />
+          <div><Icon name="shield" /><span>Your team decides</span></div>
+        </div>
+        <details className="coreai-availability"><summary>About availability</summary><p>AI answers and drafting require an enabled AI provider. Tools follow your workspace permissions. Planning checks use recorded requirements, availability, and bookings.</p></details>
       </div>
     </section>
   );

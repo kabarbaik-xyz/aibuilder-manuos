@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { BrandLogo } from '@/components/brand-logo';
 import { Icon } from '@/components/icons';
 import { ButtonLink } from '@/components/ui/button-link';
 
@@ -22,39 +23,33 @@ export function LandingNav() {
     <header className={`l-header ${scrolled ? 'scrolled' : ''}`}>
       <div className="l-nav-inner">
         <Link href="/" className="l-brand" aria-label="ManuOS Homepage">
-          <div className="l-brand-badge" aria-hidden="true">
-            <Icon name="network" className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <span className="l-brand-title">ManuOS</span>
-            <span className="l-brand-tagline">Manufacturing Orchestrating System</span>
-          </div>
-        </Link>
+          <BrandLogo className="w-36 sm:w-40" />
+          </Link>
 
         {/* Desktop Menu */}
         <nav aria-label="Main navigation">
           <ul className="l-nav-menu">
-            <li>
-              <a href="#flow" className="l-nav-link">
-                Operational Flow
-              </a>
-            </li>
-            <li>
-              <a href="#personas" className="l-nav-link">
-                Roles
-              </a>
-            </li>
-            <li>
-              <a href="#architecture" className="l-nav-link">
-                System Invariants
-              </a>
-            </li>
-            <li>
+<li>
               <a href="#ai-governance" className="l-nav-link">
-                AI Governance
+                CoreAI
               </a>
             </li>
-          </ul>
+<li>
+              <a href="#flow" className="l-nav-link">
+                How it works
+              </a>
+            </li>
+<li>
+              <a href="#personas" className="l-nav-link">
+                Workspaces
+              </a>
+            </li>
+<li>
+              <a href="#architecture" className="l-nav-link">
+                Trust & control
+              </a>
+            </li>
+</ul>
         </nav>
 
         {/* Action Buttons */}
@@ -65,7 +60,7 @@ export function LandingNav() {
             size="small"
             id="nav-demo-link"
           >
-            Explore Demo
+            Explore CoreAI demo
           </ButtonLink>
           <ButtonLink
             href="/login"
@@ -96,61 +91,43 @@ export function LandingNav() {
           className="border-b border-line bg-surface px-6 py-4 lg:hidden"
         >
           <ul className="flex flex-col gap-3 list-none p-0 m-0">
-            <li>
-              <a
-                href="#flow"
-                className="block py-2 text-sm font-semibold text-muted hover:text-primary"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Operational Flow
-              </a>
-            </li>
-            <li>
-              <a
-                href="#personas"
-                className="block py-2 text-sm font-semibold text-muted hover:text-primary"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Roles
-              </a>
-            </li>
-            <li>
-              <a
-                href="#architecture"
-                className="block py-2 text-sm font-semibold text-muted hover:text-primary"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                System Invariants
-              </a>
-            </li>
-            <li>
+<li>
               <a
                 href="#ai-governance"
                 className="block py-2 text-sm font-semibold text-muted hover:text-primary"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                AI Governance
+                CoreAI
               </a>
             </li>
-            <li className="pt-2 border-t border-line flex flex-col gap-2">
-              <ButtonLink
-                href="/demo"
-                variant="soft"
-                className="w-full justify-center"
+<li>
+              <a
+                href="#flow"
+                className="block py-2 text-sm font-semibold text-muted hover:text-primary"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Explore Interactive Demo
-              </ButtonLink>
-              <ButtonLink
-                href="/login"
-                variant="primary"
-                className="w-full justify-center"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Sign In to Workspace
-              </ButtonLink>
+                How it works
+              </a>
             </li>
-          </ul>
+<li>
+              <a
+                href="#personas"
+                className="block py-2 text-sm font-semibold text-muted hover:text-primary"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Workspaces
+              </a>
+            </li>
+<li>
+              <a
+                href="#architecture"
+                className="block py-2 text-sm font-semibold text-muted hover:text-primary"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Trust & control
+              </a>
+            </li>
+</ul>
         </div>
       )}
     </header>

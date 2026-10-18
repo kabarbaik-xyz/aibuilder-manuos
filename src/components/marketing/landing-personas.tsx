@@ -16,14 +16,14 @@ interface Persona {
 const PERSONAS: Persona[] = [
   {
     role: 'Factory Executive',
-    subtitle: 'Command & Margin Oversight',
+    subtitle: 'Risks & Priorities',
     route: '/dashboard',
     icon: 'chart',
-    summary: 'Real-time visibility into delivery risk, work-center bottlenecks, and inventory health.',
+    summary: 'Use operational snapshots and CoreAI risk reviews to focus the team on orders that need attention.',
     highlights: [
-      'Live On-Time Delivery SLA tracker',
-      'Critical-path bottleneck alerts',
-      '1-click AI recovery approval',
+      'Delivery-risk overview',
+      'Exception drilldown',
+      'Reviewable recovery proposals',
     ],
   },
   {
@@ -35,7 +35,7 @@ const PERSONAS: Persona[] = [
     highlights: [
       'Visual multi-order DAG timeline',
       'Operator certification gates',
-      'Automated WIP lot reservation',
+      'Material reservation visibility',
     ],
   },
   {
@@ -52,13 +52,13 @@ const PERSONAS: Persona[] = [
   },
   {
     role: 'Customer & Buyer',
-    subtitle: 'Live Portal & Passports',
+    subtitle: 'Order Progress & Passports',
     route: '/portal/orders',
     icon: 'shield',
-    summary: 'Self-service order milestone tracking, ECO sign-offs, and serialized quality certificates.',
+    summary: 'Access authorized order progress, change requests, and available shipment and passport records.',
     highlights: [
-      'Live production stage tracking',
-      'Online ECO review & approval',
+      'Recorded production progress',
+      'Customer change-request tracking',
       'Digital Product Passports',
     ],
   },
@@ -74,7 +74,7 @@ export function LandingPersonas() {
             Purpose-built workspaces for every role.
           </h2>
           <p className="l-section-desc">
-            Every user lands directly in a focused operational cockpit matched to their responsibilities.
+            Connected views support each role. Internal teams use CoreAI within their permissions; customers see their authorized order records.
           </p>
         </div>
 

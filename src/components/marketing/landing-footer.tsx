@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { Icon } from '@/components/icons';
+import { BrandLogo } from '@/components/brand-logo';
 
 export function LandingFooter() {
   return (
@@ -9,17 +9,13 @@ export function LandingFooter() {
         <div className="l-footer-top">
           <div className="l-footer-brand-col">
             <Link href="/" className="l-brand" aria-label="ManuOS">
-              <div className="l-brand-badge" aria-hidden="true">
-                <Icon name="network" className="w-5 h-5 text-white" />
-              </div>
               <div>
-                <span className="l-brand-title">ManuOS</span>
-                <span className="l-brand-tagline">Manufacturing Orchestrating System</span>
-              </div>
-            </Link>
+              <BrandLogo className="w-40" />
+              <span className="l-brand-tagline">Manufacturing Orchestrating System</span>
+            </div>
+          </Link>
             <p>
-              Unified make-to-order orchestration connecting orders, engineering DAGs, double-entry inventory,
-              shop-floor execution, and digital product passports.
+              CoreAI connects operational questions to manufacturing records, risk reviews, and practical next steps—from order intake to delivery.
             </p>
           </div>
 
@@ -28,7 +24,7 @@ export function LandingFooter() {
             <ul className="l-footer-links">
               <li><a href="#flow">8-Stage Lifecycle</a></li>
               <li><a href="#personas">Role Cockpits</a></li>
-              <li><a href="#architecture">System Guarantees</a></li>
+              <li><a href="#architecture">Trust & control</a></li>
               <li><a href="#ai-governance">CoreAI Copilot</a></li>
               <li><Link href="/demo">Interactive Demo</Link></li>
             </ul>
@@ -64,7 +60,7 @@ export function LandingFooter() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
             <span className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold">
               <span className="l-live-pulse-dot" />
-              Zero-Drift Transactional Ledger
+              Traceable Operational Records
             </span>
             <span className="hidden sm:inline">·</span>
             <span>End-to-End Lot Traceability</span>

@@ -25,10 +25,10 @@ const FLOW_STAGES: FlowStage[] = [
     tagline: 'Quote-to-Order Without Spec Drift',
     icon: 'order',
     route: '/orders/intake',
-    summary: 'Lock customer specs, promise dates, and exact quantities before releasing to engineering.',
+    summary: 'Review customer specifications, quantities, and requested dates before the engineering handoff.',
     chips: ['RFQ & Drawing Capture', 'Feasibility Check', 'Tenant Isolation'],
-    impact: 'Zero quoting handoff errors',
-    metric: '100% Spec Locked',
+    impact: 'Review specifications before handoff',
+    metric: 'Reviewed Inputs',
   },
   {
     step: '02',
@@ -39,20 +39,20 @@ const FLOW_STAGES: FlowStage[] = [
     route: '/engineering',
     summary: 'Build visual routing graphs and govern Engineering Change Orders (ECOs) with version control.',
     chips: ['Visual DAG Routing', 'Controlled ECO Diffs', 'Draft Isolation'],
-    impact: 'Zero builds on obsolete drawings',
+    impact: 'Keep released work linked to its revision',
     metric: 'Pinned Revisions',
   },
   {
     step: '03',
     phase: 'Release',
     title: 'Order Release & Dispatch',
-    tagline: 'One-Click Shop Floor Instantiation',
+    tagline: 'Approved Orders Become Production Work',
     icon: 'route',
     route: '/orders',
-    summary: 'Convert approved orders into station jobsheets and reserve raw material lots in one click.',
-    chips: ['Auto Lot Reservation', 'Station Jobsheets', 'Atomic Dispatch'],
-    impact: 'Release prep cut from hours to seconds',
-    metric: '< 2s Instantiation',
+    summary: 'Release approved orders into production tasks and review material reservations.',
+    chips: ['Material Reservations', 'Station Jobsheets', 'Atomic Dispatch'],
+    impact: 'Connect approved orders to production tasks',
+    metric: 'Controlled Release',
   },
   {
     step: '04',
@@ -62,9 +62,9 @@ const FLOW_STAGES: FlowStage[] = [
     icon: 'calendar',
     route: '/planning',
     summary: 'Schedule against real machine calendars and verified technician certifications.',
-    chips: ['CPM Bottleneck Solver', 'Skill & Cert Gate', 'Shift Swap Control'],
-    impact: 'No machine double-booking',
-    metric: '100% Cert Verified',
+    chips: ['Capacity Checks', 'Skill & Cert Gate', 'Shift Swap Control'],
+    impact: 'Validate bookings before assignment',
+    metric: 'Qualification Checks',
   },
   {
     step: '05',
@@ -73,9 +73,9 @@ const FLOW_STAGES: FlowStage[] = [
     tagline: 'Touch-First Operator Cockpit',
     icon: 'work',
     route: '/shop-floor',
-    summary: 'Live station queues with pinned instructions and strict mass-conserved output logging.',
+    summary: 'Review station queues, pinned instructions, and recorded production quantities.',
     chips: ['Touch Station Queue', 'Pass / Rework / Scrap', 'Overproduction Guard'],
-    impact: 'Zero unaccounted WIP loss',
+    impact: 'Record output and quality dispositions',
     metric: 'Mass Conserved',
   },
   {
@@ -87,7 +87,7 @@ const FLOW_STAGES: FlowStage[] = [
     route: '/quality/inspections',
     summary: 'Mandatory inspection sign-offs and closed-loop containment for non-conforming lots.',
     chips: ['Hard Sign-Off Gate', 'NCR Quarantine', 'Reinspection Loop'],
-    impact: 'Defective lots never reach shipping',
+    impact: 'Keep held stock separate from passed stock',
     metric: 'Gated Release',
   },
   {
@@ -97,22 +97,22 @@ const FLOW_STAGES: FlowStage[] = [
     tagline: 'Verified Packing & Ledger Deduction',
     icon: 'delivery',
     route: '/delivery/shipments',
-    summary: 'Allocate strictly from QC-passed lots, generate manifests, and deduct double-entry stock.',
+    summary: 'Allocate from eligible QC-passed stock and post dispatch movements to the inventory ledger.',
     chips: ['QC-Passed Lot Pick', 'Manifest Generation', 'Auto Ledger Post'],
-    impact: '100% shipment & inventory accuracy',
-    metric: '0 Stock Drift',
+    impact: 'Link dispatched quantities to stock movements',
+    metric: 'Ledger-Linked Dispatch',
   },
   {
     step: '08',
     phase: 'Passport',
     title: 'Digital Product Passport',
-    tagline: 'Tamper-Evident Unit Genealogy',
+    tagline: 'Recorded Production Genealogy',
     icon: 'shield',
     route: '/portal/orders',
-    summary: 'Every shipped serial unit carries full material lot history and signed QC certificates.',
-    chips: ['Lot-to-Serial Genealogy', 'Signed QC Certificates', 'Buyer Self-Service'],
-    impact: 'Instant customer & audit verification',
-    metric: '< 10s Traceability',
+    summary: 'Review recorded lot and serial genealogy alongside available quality evidence and passport records.',
+    chips: ['Lot-to-Serial Genealogy', 'Quality Evidence', 'Buyer Self-Service'],
+    impact: 'Give customers access to available traceability records',
+    metric: 'Linked Evidence',
   },
 ];
 
@@ -146,23 +146,22 @@ export function LandingFlow() {
         <div className="l-section-header">
           <span className="l-section-tag">End-to-End Orchestration</span>
           <h2 id="flow-heading" className="l-section-title">
-            Eight connected stages. Zero blind handoffs.
+            Connected operations give CoreAI useful context.
           </h2>
           <p className="l-section-desc">
-            From first RFQ to serialized Digital Product Passport—every stage shares one live operational state.
+            Orders, engineering, planning, execution, and delivery share records your team can inspect and act on.
           </p>
         </div>
 
         {/* Auto-Advancing Pipeline Stepper */}
-        <div className="l-flow-pipeline-bar" role="tablist" aria-label="Manufacturing Lifecycle Stages">
+        <div className="l-flow-pipeline-bar" role="group" aria-label="Manufacturing Lifecycle Stages">
           {FLOW_STAGES.map((stage, idx) => {
             const isActive = stage.step === activeStep;
             return (
               <React.Fragment key={stage.step}>
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={isActive}
+                  aria-pressed={isActive}
                   onClick={() => setActiveStep(stage.step)}
                   className={`l-flow-pill ${isActive ? 'active' : ''}`}
                 >

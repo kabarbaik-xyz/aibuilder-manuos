@@ -2,10 +2,10 @@
 
 import { Input } from '@/components/ui/input';
 import { Icon } from '@/components/icons';
-import { ButtonLink } from '@/components/ui/button-link';
 import { ArrowLeft, ArrowRight, Eye, EyeOff, Mail } from 'lucide-react';
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
+import { BrandLogo } from '@/components/brand-logo';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getPostLoginPath } from '@/lib/persona-navigation';
 
@@ -49,104 +49,39 @@ function LoginForm() {
   };
 
   return (
-    <main className="login-container grid min-h-dvh grid-cols-1 overflow-hidden bg-white text-ink lg:grid-cols-[58.5fr_41.5fr]">
-      <section aria-label="About ManuOS" className="relative flex min-h-[600px] flex-col overflow-hidden bg-[#0c1020] px-6 py-7 text-white sm:px-10 sm:py-9 lg:min-h-dvh lg:px-12 lg:py-10 xl:px-16">
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-35 [background-image:radial-gradient(rgba(151,169,255,0.32)_0.7px,transparent_0.7px)] [background-size:22px_22px]" />
-        <div aria-hidden="true" className="pointer-events-none absolute -right-24 top-1/4 h-80 w-80 rounded-full bg-primary/15 blur-3xl" />
-
-        <div className="relative flex items-center justify-between gap-4">
-          <Link
-            href="/"
-            className="group flex items-center gap-3 rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            aria-label="ManuOS home"
-          >
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-indigo-500 text-white transition group-hover:scale-105" aria-hidden="true">
-              <Icon name="network" className="h-6 w-6" />
-            </span>
-            <div>
-              <span className="block text-xl font-bold tracking-tight text-white">ManuOS</span>
-              <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Manufacturing Orchestrating System</span>
-            </div>
-          </Link>
-          <ButtonLink
-            href="/"
-            variant="ghost"
-            size="small"
-            className="inline-flex shrink-0 items-center gap-1.5 border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white"
-            id="login-header-back-link"
-          >
-            <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Back to landing page</span>
-            <span className="sm:hidden">Landing</span>
-          </ButtonLink>
+    <main className="login-container grid min-h-dvh grid-cols-1 overflow-hidden bg-white text-ink lg:grid-cols-[1.1fr_1fr]">
+      <section aria-label="About ManuOS" className="login-intro">
+        <div className="login-brand-row">
+          <Link href="/" aria-label="ManuOS home"><BrandLogo className="w-36 sm:w-40" /></Link>
+          <Link href="/" className="login-back-link" id="login-header-back-link"><ArrowLeft aria-hidden="true" className="h-4 w-4" /><span>Back to website</span></Link>
         </div>
 
-        <div className="login-story relative my-auto max-w-3xl py-12 lg:py-16">
-          <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-300">
-            <Icon name="settings" className="h-4 w-4" />
-            Manufacturing Orchestrating System
-          </p>
-          <h1 className="login-headline mt-7 max-w-2xl font-bold tracking-tight text-white">
-            From customer orders
-            <span className="mt-1 block text-blue-400">to serialized delivery.</span>
-          </h1>
-          <p className="login-description mt-5 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
-            Coordinate engineering DAGs, finite schedules, double-entry inventory, shop-floor execution, and digital product passports—with CoreAI assisting your team.
-          </p>
-
-          <div className="login-workflow" aria-label="Manufacturing workflow">
-            <div className="login-workflow-heading">
-              <span>One continuous workflow</span>
-              <span>Intake to serialized delivery</span>
-            </div>
-            <ol className="login-workflow-stages">
-              {[
-                { icon: 'order' as const, title: 'Order Hub', detail: 'Order intake and commitments' },
-                { icon: 'engineering' as const, title: 'Engineering', detail: 'BOM revisions and DAG routing' },
-                { icon: 'work' as const, title: 'Production', detail: 'Finite planning and shop floor execution' },
-                { icon: 'shield' as const, title: 'Quality & Passports', detail: 'Inspections, lot genealogy, and delivery' },
-              ].map((item, index) => (
-                <li key={item.title}>
-                  <div className="login-stage-node"><Icon name={item.icon} /></div>
-                  <span className="login-stage-number">0{index + 1}</span>
-                  <h3>{item.title}</h3>
-                  <p>{item.detail}</p>
-                </li>
-              ))}
-            </ol>
-            <div className="login-workflow-assistant">
-              <Icon name="spark" />
-              <p><strong>CoreAI Copilot</strong><span>Deterministic math calculates, CoreAI proposes recovery options, your team decides.</span></p>
-            </div>
+        <div className="login-coreai-story">
+          <h1>Get a clearer view.<br /><span>Move forward with CoreAI.</span></h1>
+          <p className="login-coreai-description">Your orders, production, and delivery records in one workspace—with CoreAI to help you find answers and review what comes next.</p>
+          <div className="login-coreai-benefits">
+            {[
+              { icon: 'spark' as const, title: 'Ask about your operations', detail: 'Find answers with links to the records behind them.' },
+              { icon: 'alert' as const, title: 'Focus on what needs attention', detail: 'Review delivery risks and open the affected orders.' },
+              { icon: 'calendar' as const, title: 'Review your next move', detail: 'Explore schedule and recovery proposals before approval.' },
+            ].map((item) => (
+              <div className="login-coreai-benefit" key={item.title}>
+                <span><Icon name={item.icon} /></span>
+                <div><h2>{item.title}</h2><p>{item.detail}</p></div>
+              </div>
+            ))}
           </div>
+          <div className="login-coreai-assurance"><Icon name="shield" /><span>Grounded in your records. Reviewed by your team.</span></div>
         </div>
-
-        <p className="relative text-xs text-slate-500">ManuOS · Manufacturing Orchestrating System</p>
+        <p className="login-intro-footer">ManuOS · Connected manufacturing with CoreAI</p>
       </section>
 
-      <section aria-labelledby="login-title" className="flex min-h-[620px] flex-col items-center justify-center bg-[#f8f9fc] px-5 py-12 sm:px-10 lg:min-h-dvh lg:px-12 xl:px-16">
+      <section aria-labelledby="login-title" className="flex min-h-0 flex-col items-center justify-center bg-surface px-5 py-8 sm:px-10 lg:min-h-dvh lg:px-12 xl:px-16">
         <div className="w-full max-w-md">
-          <div className="mb-4">
-            <ButtonLink
-              href="/"
-              variant="ghost"
-              size="small"
-              className="-ml-2 inline-flex items-center gap-2 text-xs font-semibold text-muted transition hover:bg-white hover:text-ink hover:shadow-xs"
-              id="back-to-landing-button"
-            >
-              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-              <span>Back to landing page</span>
-            </ButtonLink>
-          </div>
-
-          <div className="login-form-card rounded-2xl border border-line bg-white p-6 sm:p-9">
+          <div className="login-form-card">
             <div className="mb-8">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface-muted px-3 py-1.5 text-xs font-medium text-muted">
-                <Icon name="lock" className="h-4 w-4 text-primary" />
-                Secure workspace access
-              </div>
               <h2 id="login-title" className="text-2xl font-bold tracking-tight text-ink">Sign in to ManuOS</h2>
-              <p className="mt-2 text-sm leading-6 text-muted">Sign in to continue to your manufacturing workspace.</p>
+              <p className="mt-2 text-sm leading-6 text-muted">Access your workspace and pick up where your team left off.</p>
             </div>
 
           {errorMessage && (
@@ -161,7 +96,7 @@ function LoginForm() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label htmlFor="email" className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted">
+              <label htmlFor="email" className="mb-2 block text-xs font-semibold text-ink">
                 Email address
               </label>
               <div className="relative">
@@ -181,7 +116,7 @@ function LoginForm() {
             </div>
 
             <div>
-              <label htmlFor="password" className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted">
+              <label htmlFor="password" className="mb-2 block text-xs font-semibold text-ink">
                 Password
               </label>
               <div className="relative">
@@ -218,10 +153,10 @@ function LoginForm() {
             </button>
           </form>
 
-          <div className="mt-7 border-t border-line pt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs leading-5 text-muted">
-            <span>Public registration is disabled.</span>
+          <div className="mt-7 border-t border-line pt-5 flex flex-col gap-3 text-xs leading-5 text-muted">
+            <span>Need workspace access? Contact your administrator.</span>
             <Link href="/demo" className="font-semibold text-primary hover:underline inline-flex items-center gap-1">
-              <span>Explore Demo Sandbox</span>
+              <span>Explore the demo</span>
               <span aria-hidden="true">→</span>
             </Link>
           </div>

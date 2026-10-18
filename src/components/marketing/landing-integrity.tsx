@@ -18,55 +18,55 @@ interface IntegrityPillar {
 const INTEGRITY_PILLARS: IntegrityPillar[] = [
   {
     badge: 'MASS CONSERVATION',
-    title: 'Zero Material & Scrap Leakage',
+    title: 'Track Output, Rework & Scrap',
     icon: 'ruler',
-    metricValue: '100%',
-    metricLabel: 'WIP Accounted',
-    equation: 'Output = Passed + Rework + Scrap',
-    summary: 'Every unit issued to the shop floor must be accounted for before an operation can close.',
+    metricValue: 'Tracked',
+    metricLabel: 'Production Quantities',
+    equation: 'Inspected = Passed + Rework + Scrap',
+    summary: 'Inspection dispositions account for passed, rework, and scrapped quantities; reinspection reclassifies existing held stock.',
     tags: ['10⁶ Integer Precision', 'No Double-Counted Rework', 'Overproduction Guard'],
-    outcome: 'Eliminates hidden scrap & surprise write-offs',
+    outcome: 'Keep recorded dispositions traceable',
   },
   {
     badge: 'DOUBLE-ENTRY LEDGER',
-    title: 'Financial-Grade Stock Accounting',
+    title: 'Balanced Inventory Movements',
     icon: 'box',
-    metricValue: '0',
-    metricLabel: 'Phantom Stock',
-    equation: 'Available = Receipts − WIP − Shipped',
+    metricValue: 'Balanced',
+    metricLabel: 'Ledger Entries',
+    equation: 'Source → Movement → Destination',
     summary: 'Every physical transfer posts balanced debit and credit entries with non-negative stock guards.',
     tags: ['Dual Debit/Credit Ledger', 'Zero Negative Balances', 'Quarantine Ring-Fencing'],
-    outcome: 'Perpetual stock accuracy in real time',
+    outcome: 'Trace stock changes to their movements',
   },
   {
     badge: 'FAULT TOLERANCE',
     title: 'Replay-Safe Floor Execution',
     icon: 'lock',
-    metricValue: '0%',
-    metricLabel: 'Duplicate Commits',
+    metricValue: 'Retry-safe',
+    metricLabel: 'Commands',
     equation: 'Network Retry → Single State Commit',
-    summary: 'Idempotent command protection ensures unstable factory Wi-Fi or double-taps never duplicate work.',
-    tags: ['Idempotent Commands', 'Atomic Rollback', 'Offline Mutation Guard'],
-    outcome: 'Reliable data capture in harsh floor environments',
+    summary: 'Idempotency protection covers supported commands against repeated requests with the same idempotency key.',
+    tags: ['Idempotent Commands', 'Atomic Rollback', 'Command Validation'],
+    outcome: 'Review command outcomes and recorded changes',
   },
   {
-    badge: 'TAMPER-EVIDENT AUDIT',
-    title: 'Write-Once Genealogy Ledger',
+    badge: 'TRACEABLE RECORDS',
+    title: 'Protected Audit History',
     icon: 'shield',
-    metricValue: '100%',
-    metricLabel: 'Immutable History',
-    equation: 'Audit Events = Append-Only & Locked',
-    summary: 'Write-once event logs lock every engineering change, operator sign-off, and material lot movement.',
-    tags: ['Write-Once Event Store', 'Lot-to-Serial Genealogy', 'Digital CoC Export'],
-    outcome: 'Instant end-to-end production traceability',
+    metricValue: 'Tracked',
+    metricLabel: 'Audit Events',
+    equation: 'Commands → Audit Events',
+    summary: 'Append-only audit events record supported domain commands; passport snapshots preserve captured traceability evidence.',
+    tags: ['Write-Once Event Store', 'Lot-to-Serial Genealogy', 'Passport Snapshots'],
+    outcome: 'Inspect available production evidence',
   },
 ];
 
 const LEDGER_FLOW_NODES = [
-  { label: 'Raw Lot Receipt', status: '+500.00 kg Verified', tone: 'blue' },
-  { label: 'WIP Reservation', status: '−120.00 kg Allocated', tone: 'blue' },
-  { label: 'Floor & QC Gate', status: '114 Pass · 4 Rework · 2 Scrap', tone: 'amber' },
-  { label: 'Verified Dispatch', status: '118 Shipped + Passport', tone: 'emerald' },
+  { label: 'Raw Lot Receipt', status: 'Receipt recorded', tone: 'blue' },
+  { label: 'WIP Reservation', status: 'Material reserved', tone: 'blue' },
+  { label: 'Floor & QC Gate', status: 'Dispositions recorded', tone: 'amber' },
+  { label: 'Verified Dispatch', status: 'Dispatch linked to stock', tone: 'emerald' },
 ];
 
 export function LandingIntegrity() {
@@ -74,23 +74,23 @@ export function LandingIntegrity() {
     <section id="architecture" className="l-section l-section-alt" aria-labelledby="integrity-heading">
       <div className="l-section-inner">
         <div className="l-section-header">
-          <span className="l-section-tag">Zero-Leakage Operational Control</span>
+          <span className="l-section-tag">The foundation behind CoreAI</span>
           <h2 id="integrity-heading" className="l-section-title">
-            Financial-grade accounting for physical manufacturing.
+            Useful intelligence starts with traceable records.
           </h2>
           <p className="l-section-desc">
-            Every gram of raw material, rework loop, and customer shipment is reconciled automatically.
+            Recorded quantities, balanced stock movements, and protected audit events give your team a foundation for operational review.
           </p>
         </div>
 
         {/* Animated Continuous Ledger Ribbon */}
-        <div className="l-ledger-ribbon" aria-label="Continuous Material & Mass Reconciliation Flow">
+        <div className="l-ledger-ribbon" aria-label="Illustrative inventory movement flow">
           <div className="l-ledger-ribbon-head">
             <div className="l-ledger-ribbon-title">
               <span className="l-live-pulse-dot" aria-hidden="true" />
-              <span>Live Mass &amp; Inventory Reconciliation Stream</span>
+              <span>Illustrative inventory movement flow</span>
             </div>
-            <span className="l-ledger-ribbon-badge">0 Unexplained Discrepancies</span>
+            <span className="l-ledger-ribbon-badge">Example records</span>
           </div>
           <div className="l-ledger-ribbon-steps">
             {LEDGER_FLOW_NODES.map((node, idx) => (

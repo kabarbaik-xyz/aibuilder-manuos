@@ -20,13 +20,13 @@ const LAUNCH_PATHS: LaunchPath[] = [
     title: 'Interactive Role-Switching Demo',
     desc: 'Switch between Executive, Planner, Technician, and Customer views with pre-loaded factory orders.',
     href: '/demo',
-    cta: 'Launch Live Sandbox',
+    cta: 'Explore demo workspace',
     icon: 'spark',
   },
   {
     badge: 'COMMAND CENTER',
     title: 'Sign In to Operational Workspace',
-    desc: 'Manage live RFQs, revision-locked BOMs, finite schedules, and double-entry inventory.',
+    desc: 'Manage RFQs, revision-locked BOMs, finite schedules, and double-entry inventory.',
     href: '/login',
     cta: 'Sign In to Workspace',
     icon: 'factory',
@@ -34,9 +34,9 @@ const LAUNCH_PATHS: LaunchPath[] = [
   {
     badge: 'BUYER PORTAL',
     title: 'Customer Portal & Passports',
-    desc: 'Inspect live order milestones, ECO approvals, and serialized Digital Product Passports.',
+    desc: 'Sign in to view authorized order progress, change requests, and available product passports.',
     href: '/portal/orders',
-    cta: 'Preview Buyer Portal',
+    cta: 'Open customer portal',
     icon: 'shield',
   },
 ];
@@ -53,11 +53,11 @@ export function LandingCTA() {
             </span>
 
             <h2 id="cta-heading" className="l-cta-title">
-              Ready to run custom manufacturing with mathematical certainty?
+              Put CoreAI to work alongside your team.
             </h2>
 
             <p className="l-cta-desc">
-              Experience how ManuOS orchestrates every order from first RFQ to serialized delivery.
+              Explore how connected operations support clearer answers, focused risk reviews, and practical next steps.
             </p>
 
             <div className="l-cta-buttons">
@@ -67,7 +67,7 @@ export function LandingCTA() {
                 id="cta-demo-button"
                 className="flex items-center gap-2 l-btn-glow"
               >
-                <span>Launch Interactive Demo</span>
+                <span>Explore CoreAI demo</span>
                 <Icon name="arrow" className="w-4 h-4" />
               </ButtonLink>
               <ButtonLink
@@ -102,15 +102,15 @@ export function LandingCTA() {
           <div className="l-cta-proof-bar">
             <div className="l-cta-proof-item">
               <Icon name="check" className="w-4 h-4 text-emerald-600" />
-              <span><strong>1-Click Demo Reset</strong></span>
+              <span><strong>Illustrative Demo Workspace</strong></span>
             </div>
             <div className="l-cta-proof-item">
               <Icon name="check" className="w-4 h-4 text-emerald-600" />
-              <span><strong>4 Tailored Role Cockpits</strong></span>
+              <span><strong>Permission-Aware Views</strong></span>
             </div>
             <div className="l-cta-proof-item">
               <Icon name="check" className="w-4 h-4 text-emerald-600" />
-              <span><strong>Full Lot-to-Serial Traceability</strong></span>
+              <span><strong>Connected Operational Records</strong></span>
             </div>
           </div>
         </div>
