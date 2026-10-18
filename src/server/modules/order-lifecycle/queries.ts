@@ -9,6 +9,16 @@ const lifecycleReadPermissions = [
   'delivery.read', 'delivery.dispatch', 'workflow.author', 'workspace.admin',
 ];
 
+/** Returns only active, human-readable role choices used to route lifecycle stages. */
+export async function listLifecycleAssignableRoles(db: PrismaClient, principal: Principal) {
+  requireAnyPermission(principal, ['workflow.author', 'workflow.publish', 'access.manage']);
+  return db.role.findMany({
+    where: { workspaceId: principal.workspaceId, isActive: true },
+    select: { code: true, name: true, isActive: true },
+    orderBy: [{ name: 'asc' }, { code: 'asc' }],
+  });
+}
+
 /** Lists only lifecycle work assigned to this membership or its eligible department queue. */
 export async function listLifecycleWorkItems(
   db: PrismaClient,

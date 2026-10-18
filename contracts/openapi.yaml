@@ -2241,6 +2241,30 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+  /api/workflows/lifecycle-roles:
+    get:
+      summary: List safe active role choices for lifecycle stage assignments
+      description: Requires workflow.author, workflow.publish, or access.manage. Returns only active roles in the caller's workspace as code, display name, and active state; it does not expose role IDs, membership counts, or permission grants. Stage publication revalidates that every configured role can perform its action.
+      responses:
+        '200':
+          description: Workspace-scoped active lifecycle role choices
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, name, isActive]
+                      properties:
+                        code: { type: string }
+                        name: { type: string }
+                        isActive: { type: boolean, const: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/order-lifecycle/work-items:
     get:
       summary: List lifecycle stages assigned to the current membership or its eligible department queue

@@ -11,10 +11,11 @@ import { Badge } from '@/components/ui/badge';
 import { FormField } from '@/components/ui/form-field';
 import { useSaveWorkflowVersionDraft, useWorkflowVersionAction } from '../hooks';
 import { WorkflowTemplateDto, WorkflowVersionDto } from '../api';
+import { lifecycleVersionActions } from '../lifecycle-version-actions';
 import { LIFECYCLE_ACTIONS, QC_LIFECYCLE_OUTCOMES, OrderLifecycleDefinition, LifecycleAction, FormAnswerBranchCondition, validateLifecycleDefinition } from '@/domain/order-lifecycle-definition';
 
 interface DepartmentOption { id: string; name: string }
-interface RoleOption { id: string; code: string; name: string; isActive: boolean }
+interface RoleOption { code: string; name: string; isActive: boolean }
 interface MemberOption { membershipId: string; name: string; roles: Array<{ code: string; name: string }> }
 interface FormOption { id: string; code: string; name: string; purpose: string; publishedVersion?: { id: string; versionNumber: number; contentHash: string } }
 interface FormFieldOption { key: string; label: string; kind: string; options?: Array<{ value: string; label: string }> }
@@ -36,8 +37,9 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
   });
   const saveMutation = useSaveWorkflowVersionDraft(template.id, version.id);
   const actionMutation = useWorkflowVersionAction(template.id, version.id);
-  const readOnly = version.status === 'PUBLISHED' || version.status === 'RETIRED';
-  const roles = useQuery({ queryKey: ['workflow-lifecycle-roles'], queryFn: () => apiRequest<{ data: RoleOption[] }>('/api/roles') });
+  const versionActions = lifecycleVersionActions(version.status);
+  const readOnly = !versionActions.canEdit;
+  const roles = useQuery({ queryKey: ['workflow-lifecycle-roles'], queryFn: () => apiRequest<{ data: RoleOption[] }>('/api/workflows/lifecycle-roles') });
   const forms = useQuery({ queryKey: ['workflow-lifecycle-forms'], queryFn: () => apiRequest<{ data: FormOption[] }>('/api/forms') });
   const formDefinitions = useQuery({
     queryKey: ['workflow-lifecycle-form-definitions', forms.data?.data.map(form => form.publishedVersion?.id ?? '').join('|')],
@@ -118,8 +120,17 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
     <header className="page-header"><div><h1>{template.name}</h1><p className="muted">Order lifecycle · {template.orderType?.name ?? 'Order type'} · version {version.versionNumber}</p></div><Badge variant={version.status === 'PUBLISHED' ? 'success' : 'default'}>{version.status}</Badge></header>
     <section className="form-section page-stack">
       <div className="flex flex-wrap items-end justify-between gap-3"><div><h2>Cross-department stages</h2><p className="field-help">Define the owner queue, handoff, schedule policy and published forms for each stage.</p></div>
-        {!readOnly ? <div className="flex gap-2"><Button onClick={addStage} disabled={!departments.length || roles.isPending}>Add stage</Button><Button variant="primary" onClick={() => saveMutation.mutate({ expectedVersion: version.version, definition })} disabled={saveMutation.isPending || !validation.isValid}>{saveMutation.isPending ? 'Saving…' : 'Save draft'}</Button><Button variant="soft" onClick={() => runAction('publish')} disabled={actionMutation.isPending || !validation.isValid}>Publish</Button></div>
-          : <div className="flex gap-2"><Button onClick={() => runAction('fork')}>Fork new version</Button><Button variant="ghost" onClick={() => runAction('retire')}>Retire</Button></div>}
+        <div className="flex flex-wrap gap-2">
+          {versionActions.canEdit && <>
+            <Button onClick={addStage} disabled={!departments.length || roles.isPending}>Add stage</Button>
+            <Button variant="primary" onClick={() => saveMutation.mutate({ expectedVersion: version.version, definition })} disabled={saveMutation.isPending || !validation.isValid}>{saveMutation.isPending ? 'Saving…' : 'Save draft'}</Button>
+            {versionActions.canSubmitReview && <Button variant="soft" onClick={() => runAction('submit_review')} disabled={actionMutation.isPending || !validation.isValid}>Submit for review</Button>}
+            {versionActions.canPublish && <Button variant="soft" onClick={() => runAction('publish')} disabled={actionMutation.isPending || !validation.isValid}>Publish</Button>}
+          </>}
+          {!versionActions.canEdit && versionActions.canPublish && <Button variant="primary" onClick={() => runAction('publish')} disabled={actionMutation.isPending || !validation.isValid}>{actionMutation.isPending ? 'Publishing…' : 'Approve & publish'}</Button>}
+          {versionActions.canFork && <Button onClick={() => runAction('fork')}>Fork new version</Button>}
+          {versionActions.canRetire && <Button variant="ghost" onClick={() => runAction('retire')}>Retire</Button>}
+        </div>
       </div>
       <FormField id="lifecycle-name" label="Workflow name" required><Input value={definition.name} onChange={event => setDefinition(current => ({ ...current, name: event.target.value }))} disabled={readOnly} /></FormField>
       {!validation.isValid && <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm"><strong>Fix these before publish</strong><ul className="mt-2 list-disc pl-5">{validation.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.stageKey ? `${error.stageKey}${error.fieldKey ? ` › ${error.fieldKey}` : ''}: ` : ''}{error.message}</li>)}</ul></div>}
@@ -153,7 +164,7 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
             <FormField id={`${stage.key}-department`} label="Owning department" required><Select value={stage.departmentId} onChange={event => updateStage(stage.key, current => ({ ...current, departmentId: event.target.value, assignment: { kind: 'DEPARTMENT_QUEUE', departmentId: event.target.value, eligibleRoleCodes: current.assignment.kind === 'DEPARTMENT_QUEUE' ? current.assignment.eligibleRoleCodes : [] } }))} disabled={readOnly}><option value="">Choose department</option>{departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}</Select></FormField>
             <div className="page-stack"><FormField id={`${stage.key}-assignment-kind`} label="Assignment" required><Select value={stage.assignment.kind} onChange={event => updateStage(stage.key, current => ({ ...current, assignment: event.target.value === 'MEMBER' ? { kind: 'MEMBER', membershipId: '', departmentId: current.departmentId } : { kind: 'DEPARTMENT_QUEUE', departmentId: current.departmentId, eligibleRoleCodes: [] } }))} disabled={readOnly}><option value="DEPARTMENT_QUEUE">Eligible department queue</option><option value="MEMBER">Specific person</option></Select></FormField>
               {stage.assignment.kind === 'MEMBER' ? <FormField id={`${stage.key}-member`} label="Assigned person" required><div><Select value={stage.assignment.membershipId} onChange={event => updateStage(stage.key, current => current.assignment.kind === 'MEMBER' ? { ...current, assignment: { ...current.assignment, membershipId: event.target.value } } : current)} disabled={readOnly || members.isPending}><option value="">Choose active department member</option>{(members.data?.get(stage.departmentId) ?? []).map(member => <option key={member.membershipId} value={member.membershipId}>{member.name}{member.roles.length ? ` · ${member.roles.map(role => role.name).join(', ')}` : ''}</option>)}</Select>{members.error && <p role="alert" className="text-xs text-danger">Department members could not be loaded.</p>}</div></FormField>
-                : <fieldset><legend className="form-label">Eligible role queue</legend><div className="grid gap-2 sm:grid-cols-2">{(roles.data?.data ?? []).filter(role => role.isActive).map(role => <label key={role.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stage.assignment.kind === 'DEPARTMENT_QUEUE' && stage.assignment.eligibleRoleCodes.includes(role.code)} onChange={() => toggleRole(stage.key, role.code)} disabled={readOnly} />{role.name}</label>)}</div></fieldset>}</div>
+                : <fieldset><legend className="form-label">Eligible role queue</legend><div className="grid gap-2 sm:grid-cols-2">{(roles.data?.data ?? []).filter(role => role.isActive).map(role => <label key={role.code} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stage.assignment.kind === 'DEPARTMENT_QUEUE' && stage.assignment.eligibleRoleCodes.includes(role.code)} onChange={() => toggleRole(stage.key, role.code)} disabled={readOnly} />{role.name}</label>)}</div></fieldset>}</div>
           </div>
           <div className="form-grid">
             <div className="page-stack"><FormField id={`${stage.key}-schedule`} label="Scheduling policy"><Select value={stage.schedule.kind} onChange={event => updateStage(stage.key, current => ({ ...current, schedule: event.target.value === 'RESOURCE_CAPACITY' ? { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' } : { kind: 'DEADLINE', dueAfterMinutes: 480 } }))} disabled={readOnly || stage.action === 'PLAN_PRODUCTION' || stage.action === 'EXECUTE_PRODUCTION'}><option value="DEADLINE">Owner deadline</option><option value="RESOURCE_CAPACITY">Production capacity from approved routing</option></Select></FormField>{stage.schedule.kind === 'DEADLINE' && <FormField id={`${stage.key}-deadline`} label="Deadline (minutes)"><Input type="number" min={1} value={stage.schedule.dueAfterMinutes} onChange={event => updateStage(stage.key, current => ({ ...current, schedule: { kind: 'DEADLINE', dueAfterMinutes: Number(event.target.value) } }))} disabled={readOnly} /></FormField>}</div>

@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { NextRequest } from 'next/server';
 import { createFactoryFixture, type FactoryFixture } from '../fixtures/factory';
+import { seedTestAccess } from '../fixtures/access';
+import { GET as getLifecycleRoleOptions } from '@/app/api/workflows/lifecycle-roles/route';
 import { WorkflowService } from '@/server/modules/workflow/service';
 import { OrderService } from '@/server/modules/orders/service';
-import { listLifecycleDepartmentMembers, listLifecycleWorkItems } from '@/server/modules/order-lifecycle/queries';
+import { listLifecycleAssignableRoles, listLifecycleDepartmentMembers, listLifecycleWorkItems } from '@/server/modules/order-lifecycle/queries';
 import { claimLifecycleStage, completeEvidenceReviewStage, reassignLifecycleStage } from '@/server/modules/order-lifecycle/assignments';
 import { FormService } from '@/server/modules/forms/service';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
@@ -21,6 +24,26 @@ describe('order lifecycle intake', () => {
 
   afterAll(async () => {
     if (fixture) await fixture.close();
+  });
+
+  it('lets workflow authors load only the readable active role options for stage routing', async () => {
+    const engineer = await seedTestAccess(fixture.db, {
+      workspaceCode: 'WS-ALPHA',
+      email: 'lifecycle-author@alpha.test',
+      name: 'Lifecycle Author',
+      roles: ['ENGINEER'],
+    });
+
+    const roles = await listLifecycleAssignableRoles(fixture.db, engineer.principal);
+    expect(roles).toContainEqual({ code: 'ENGINEER', name: 'ENGINEER', isActive: true });
+    expect(roles.every((role) => !('id' in role) && !('permissions' in role))).toBe(true);
+    const response = await getLifecycleRoleOptions(new NextRequest('http://localhost/api/workflows/lifecycle-roles', { headers: engineer.headers }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: roles });
+    await expect(listLifecycleAssignableRoles(fixture.db, fixture.alpha.users.qc.principal))
+      .rejects.toThrow(/permission/i);
+    const denied = await getLifecycleRoleOptions(new NextRequest('http://localhost/api/workflows/lifecycle-roles', { headers: fixture.alpha.users.qc.headers }));
+    expect(denied.status).toBe(403);
   });
 
   it('pins the published lifecycle and creates its initial assigned stage with the order', async () => {
