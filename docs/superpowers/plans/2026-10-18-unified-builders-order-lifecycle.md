@@ -155,6 +155,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Preview who receives work, what forms are shown, what blocks completion and which stage/branch activates next. Preview remains non-mutating and is not proof of actual scheduling capacity.
 - [x] Publish validation reports errors at the exact stage/field; published view is read-only with fork action.
 - Lifecycle authoring now reads workspace role choices through a narrow `workflow.author`-authorized catalog (code/name/active only); an HTTP integration spec proves an Engineer can load it while QC is denied. The lifecycle editor now exposes Submit for review on drafts, locks REVIEW versions, and offers approve/publish and retire actions only in their valid statuses. OpenAPI documents the role catalog. The user waived browser/E2E proof, so the full no-raw-ID authoring journey remains unverified and this GateB checkbox stays open.
+- Schedule proposal apply is now covered under two concurrent command keys against the same reviewed evidence: one applies, the loser receives `STALE_VERSION`, and existing assertions prove only one booking/event set and lifecycle completion are persisted. The finite-capacity fixture now includes its required engineering-approval stage before planning.
 - [ ] Prove an author configures and publishes an example without API tools/raw IDs; unsupported configuration cannot publish.
 
 **GateB:** A complete cross-department example is configurable, valid and inspectable in Studio; execution previews match deterministic engine results. No lifecycle rollout before GateA and GateB.
@@ -215,7 +216,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [ ] Preview schedule/reschedule impact on successor jobs and expected completion. Keep contractual promised date separate; changing customer commitment requires its existing approval path.
 - [x] Apply only reviewed, current proposals through the existing approval/CAS transaction; record booking changes and lifecycle impact atomically. Unsupported policy paths must be rejected, not silently approximated.
 - [ ] Test resource conflict, expired skill, leave/shift swap, material shortage, overdue administrative prerequisite, stale approval and partial multi-job scheduling. One failure rolls back changes; no duplicated capacity or orphan bookings.
-- [ ] Ensure concurrent lifecycle actions and scheduling cannot start work from stale stage/assignment evidence.
+- [x] Ensure concurrent lifecycle actions and scheduling cannot start work from stale stage/assignment evidence. Lifecycle stage CAS is covered by the intake spec; finite-capacity proposal application now also proves a competing apply is rejected as stale without duplicate bookings/events.
 
 ## Phase5 — Connect AI and traceability to the same records
 
