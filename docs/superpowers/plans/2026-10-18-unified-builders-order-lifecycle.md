@@ -154,6 +154,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Make order-form and QC outcome routing configurable through typed controls, not free JSON or raw condition codes.
 - [x] Preview who receives work, what forms are shown, what blocks completion and which stage/branch activates next. Preview remains non-mutating and is not proof of actual scheduling capacity.
 - [x] Publish validation reports errors at the exact stage/field; published view is read-only with fork action.
+- Lifecycle authoring now reads workspace role choices through a narrow `workflow.author`-authorized catalog (code/name/active only); an HTTP integration spec proves an Engineer can load it while QC is denied. The lifecycle editor now exposes Submit for review on drafts, locks REVIEW versions, and offers approve/publish and retire actions only in their valid statuses. OpenAPI documents the role catalog. The user waived browser/E2E proof, so the full no-raw-ID authoring journey remains unverified and this GateB checkbox stays open.
 - [ ] Prove an author configures and publishes an example without API tools/raw IDs; unsupported configuration cannot publish.
 
 **GateB:** A complete cross-department example is configurable, valid and inspectable in Studio; execution previews match deterministic engine results. No lifecycle rollout before GateA and GateB.
