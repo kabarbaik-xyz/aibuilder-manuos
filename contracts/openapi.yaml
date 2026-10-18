@@ -2300,6 +2300,32 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /api/order-lifecycle/stages/{id}/reassign:
+    post:
+      summary: Reassign an active lifecycle stage to an eligible member
+      description: Requires workflow author or workspace administration permission, facility scope, an active same-department membership with the lifecycle action permission, and an expected stage version. A reason and reassignment audit event are mandatory.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, membershipId, reason]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                membershipId: { type: string, format: uuid }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+              additionalProperties: false
+      responses:
+        '200': { description: Stage reassigned to the active eligible membership }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/orders:
     post:
       summary: Create an order draft with one or more item lines

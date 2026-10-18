@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@/domain/errors';
 import { Principal } from '@/server/auth/principal';
+import { requireAnyPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
 import { completeLifecycleAction } from './service';
 
@@ -13,6 +14,86 @@ const permissionByAction: Record<string, string> = {
   CONFIRM_DELIVERY: 'delivery.dispatch',
   REVIEW_EVIDENCE: 'order.read',
 };
+
+export async function reassignLifecycleStage(
+  db: PrismaClient,
+  principal: Principal,
+  input: { stageId: string; expectedVersion: number; membershipId: string; reason: string },
+  idempotencyKey: string,
+) {
+  requireAnyPermission(principal, ['workflow.author', 'workspace.admin']);
+  const reason = input.reason.trim();
+  if (reason.length < 3 || reason.length > 500) throw new BadRequestError('Provide a reassignment reason between 3 and 500 characters.');
+  return executeCommand({
+    principal,
+    commandType: 'order_lifecycle.stage.reassign',
+    idempotencyKey,
+    expectedVersion: input.expectedVersion,
+    payload: { ...input, reason },
+    prismaClient: db,
+    handler: async (tx) => {
+      const stage = await tx.orderLifecycleStage.findFirst({
+        where: { id: input.stageId, workspaceId: principal.workspaceId },
+        include: { instance: { select: { id: true, status: true, order: { select: { facilityId: true } } } } },
+      });
+      if (!stage || stage.instance.status !== 'ACTIVE') throw new NotFoundError('Lifecycle stage not found.');
+      if (['COMPLETED', 'SKIPPED', 'CANCELLED'].includes(stage.state)) throw new ConflictError('Completed lifecycle work cannot be reassigned.');
+      const facilityIds = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
+      const facilityId = stage.instance.order.facilityId;
+      if (!principal.roles.includes('OWNER') && (!facilityId || !facilityIds.includes(facilityId))) {
+        throw new ForbiddenError('This stage is outside your facility scope.');
+      }
+      if (!facilityId) throw new BadRequestError('Assign a facility to this order before reassigning its lifecycle stage.');
+
+      const candidate = await tx.membership.findFirst({
+        where: { id: input.membershipId, workspaceId: principal.workspaceId, status: 'ACTIVE', departmentId: stage.departmentId },
+        include: {
+          user: { select: { name: true } },
+          facilityGrants: { select: { facilityId: true } },
+          roles: { where: { role: { isActive: true } }, select: { role: { select: { code: true, permissions: { select: { permissionCode: true } } } } } },
+        },
+      });
+      if (!candidate) throw new BadRequestError('Choose an active member of this stage department.');
+      const candidateFacilities = new Set([...(candidate.facilityId ? [candidate.facilityId] : []), ...candidate.facilityGrants.map((grant: { facilityId: string }) => grant.facilityId)]);
+      if (!candidateFacilities.has(facilityId)) throw new BadRequestError('The selected member does not have access to this order facility.');
+      const assignment = JSON.parse(stage.assignmentJson) as
+        | { kind: 'MEMBER'; membershipId: string; departmentId?: string }
+        | { kind: 'DEPARTMENT_QUEUE'; departmentId: string; eligibleRoleCodes: string[] };
+      const candidateRoles = candidate.roles.map((grant: { role: { code: string; permissions: Array<{ permissionCode: string }> } }) => grant.role);
+      const actionPermission = permissionByAction[stage.action];
+      const hasActionPermission = candidateRoles.some((role: { permissions: Array<{ permissionCode: string }> }) => role.permissions.some(permission => permission.permissionCode === actionPermission));
+      const roleEligible = assignment.kind === 'MEMBER' || assignment.eligibleRoleCodes.some((roleCode: string) => candidateRoles.some((role: { code: string }) => role.code === roleCode));
+      if (!hasActionPermission || !roleEligible) throw new BadRequestError('The selected member is not eligible for this lifecycle action.');
+
+      const oldMembershipId = stage.assignedMembershipId ?? (assignment.kind === 'MEMBER' ? assignment.membershipId : null);
+      const nextAssignment = assignment.kind === 'MEMBER' ? { ...assignment, membershipId: candidate.id } : assignment;
+      const updated = await tx.orderLifecycleStage.updateMany({
+        where: { id: stage.id, workspaceId: principal.workspaceId, version: input.expectedVersion, state: stage.state },
+        data: {
+          assignedMembershipId: candidate.id,
+          ...(assignment.kind === 'MEMBER' ? { assignmentJson: JSON.stringify(nextAssignment) } : {}),
+          version: { increment: 1 },
+        },
+      });
+      if (updated.count !== 1) throw new ConflictError('Lifecycle stage changed; refresh before reassigning.');
+      await tx.orderLifecycleEvent.create({
+        data: {
+          workspaceId: principal.workspaceId,
+          instanceId: stage.instance.id,
+          stageId: stage.id,
+          eventType: 'STAGE_REASSIGNED',
+          fromState: stage.state,
+          toState: stage.state,
+          actorUserId: principal.userId,
+          commandId: idempotencyKey,
+          detailJson: JSON.stringify({ fromMembershipId: oldMembershipId, toMembershipId: candidate.id, reason }),
+        },
+      });
+      const data = { stageId: stage.id, assignedMembershipId: candidate.id, assignedTo: candidate.user.name, version: stage.version + 1 };
+      return { data, aggregateType: 'OrderLifecycleStage', aggregateId: stage.id, previousVersion: stage.version, resourceVersion: data.version, auditDetails: { action: 'reassign', instanceId: stage.instance.id, reason } };
+    },
+  });
+}
 
 export async function claimLifecycleStage(
   db: PrismaClient,

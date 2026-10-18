@@ -177,11 +177,12 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Tests:** `tests/integration/lifecycle-assignment.test.ts`, `tests/browser/lifecycle-personas.spec.ts`.
 
 - [ ] Expose department queue and personal assignments for Sales, Engineering, PPIC, Technician, QC and Delivery using actual permission/assignment scope. Do not add a universal read permission to make the UI work.
-- [ ] Specific-member assignments require active eligible membership; queue claim is atomic. Ineligible/disabled recipient blocks with an explicit reassignment path; no silent fallback to administrator.
+- [x] Specific-member assignments require active eligible membership; ineligible or disabled recipients block and can be reassigned explicitly, with no silent fallback to administrator. Queue claim remains atomic.
 - [ ] General ownership uses membership IDs. Capacity scheduling resolves linked technician IDs; users cannot self-assert technician identity.
 - [ ] Show stage action, due date/schedule, predecessor blockers, pinned forms and required evidence. Mount SubmissionPanel in the real order/task/inspection contexts.
 - [ ] Clarify task/stage completion vs form submission; once all gates pass, execute the domain action with explicit consequences and applicable approval.
-- [ ] Record reassignment/claim, actor/reason and notifications transactionally. External email/Slack delivery is outside this plan; use existing in-app notifications.
+- [x] Record reassignment actor/reason and claim actor transactionally in the lifecycle event stream.
+- [ ] Notify affected users transactionally through in-app notifications. External email/Slack delivery is outside this plan.
 - [ ] Log in through the normal flow per persona in isolated E2E; verify menus, landing destination, queue, form access and handoff to the next actor, including multi-role behavior.
 
 ## Phase4 — Use scheduling as the authoritative capacity path

@@ -3,7 +3,7 @@ import { createFactoryFixture, type FactoryFixture } from '../fixtures/factory';
 import { WorkflowService } from '@/server/modules/workflow/service';
 import { OrderService } from '@/server/modules/orders/service';
 import { listLifecycleDepartmentMembers, listLifecycleWorkItems } from '@/server/modules/order-lifecycle/queries';
-import { claimLifecycleStage, completeEvidenceReviewStage } from '@/server/modules/order-lifecycle/assignments';
+import { claimLifecycleStage, completeEvidenceReviewStage, reassignLifecycleStage } from '@/server/modules/order-lifecycle/assignments';
 import { FormService } from '@/server/modules/forms/service';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
 
@@ -182,8 +182,13 @@ describe('order lifecycle intake', () => {
 
   it('lets the assigned reviewer complete an evidence-review stage with a version check', async () => {
     const owner = fixture.alpha.users.owner;
+    const planner = fixture.alpha.users.planner;
     await fixture.db.membership.update({
       where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: fixture.alpha.masters.departmentId },
+    });
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: planner.membershipId } },
       data: { departmentId: fixture.alpha.masters.departmentId },
     });
     const template = await workflowService.createTemplate(owner.principal, {
@@ -210,10 +215,21 @@ describe('order lifecycle intake', () => {
       where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id } },
     });
 
-    const result = await completeEvidenceReviewStage(fixture.db, owner.principal, { stageId: stage.id, expectedVersion: stage.version }, 'lifecycle-review-complete');
+    const reassigned = await reassignLifecycleStage(fixture.db, owner.principal, {
+      stageId: stage.id, expectedVersion: stage.version, membershipId: planner.membershipId, reason: 'Coverage handoff',
+    }, 'lifecycle-review-reassign');
+    expect(reassigned.data).toMatchObject({ assignedMembershipId: planner.membershipId, assignedTo: planner.principal.name, version: stage.version + 1 });
+    const managerQueue = await listLifecycleWorkItems(fixture.db, { ...owner.principal, departmentId: fixture.alpha.masters.departmentId }, 'department');
+    expect(managerQueue.find(row => row.id === stage.id)).toMatchObject({ assignedTo: planner.principal.name, canReassign: true });
+    const plannerQueue = await listLifecycleWorkItems(fixture.db, { ...planner.principal, departmentId: fixture.alpha.masters.departmentId }, 'mine');
+    expect(plannerQueue.find(row => row.id === stage.id)).toMatchObject({ assignedTo: planner.principal.name, canReassign: false });
+    await expect(fixture.db.orderLifecycleEvent.findFirst({ where: { stageId: stage.id, eventType: 'STAGE_REASSIGNED' } }))
+      .resolves.toMatchObject({ actorUserId: owner.userId, detailJson: expect.stringContaining('Coverage handoff') });
+
+    const result = await completeEvidenceReviewStage(fixture.db, planner.principal, { stageId: stage.id, expectedVersion: stage.version + 1 }, 'lifecycle-review-complete');
     expect(result.data).toMatchObject({ stageId: stage.id, state: 'COMPLETED' });
     await expect(fixture.db.orderLifecycleEvent.findFirst({ where: { stageId: stage.id, eventType: 'STAGE_COMPLETED' } }))
-      .resolves.toMatchObject({ actorUserId: owner.userId, toState: 'COMPLETED' });
+      .resolves.toMatchObject({ actorUserId: planner.userId, toState: 'COMPLETED' });
     await expect(completeEvidenceReviewStage(fixture.db, owner.principal, { stageId: stage.id, expectedVersion: stage.version }, 'lifecycle-review-stale'))
       .rejects.toThrow(/not found|changed|ready or active/i);
   });
