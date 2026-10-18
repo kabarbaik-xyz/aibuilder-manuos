@@ -88,6 +88,10 @@ export class OrderService {
               include: {
                 assignedTechnician: true,
                 assignedMachine: true,
+                resourceBookings: {
+                  where: { status: 'CONFIRMED' },
+                  orderBy: { startAt: 'asc' },
+                },
               },
             },
           },

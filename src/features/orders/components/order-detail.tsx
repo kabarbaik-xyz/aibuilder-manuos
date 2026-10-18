@@ -355,6 +355,15 @@ export function OrderDetail({ order }: OrderDetailProps) {
               {stage.dueAt && <p className="small muted mt-1">Due {formatDateTime(stage.dueAt)}</p>}
             </li>)}
           </ol>
+          {lifecycle.stages.some(stage => ['PLAN_PRODUCTION', 'EXECUTE_PRODUCTION'].includes(stage.action)) && <section className="page-stack border-t border-line pt-4" aria-label="Production schedule linked to this lifecycle">
+            <div><h3 className="text-sm font-semibold text-ink">Production schedule</h3><p className="field-help">Live tasks and confirmed bookings from Planning; this lifecycle does not keep a separate schedule.</p></div>
+            {order.instances?.flatMap(instance => instance.tasks ?? []).length ? <ul className="divide-y divide-line">
+              {order.instances?.flatMap(instance => instance.tasks ?? []).map((task: any) => <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                <div><Link href={`/planning/tasks/${encodeURIComponent(task.id)}`} className="font-medium text-primary underline">{task.nodeKey}</Link><span className="ml-2 muted">{task.status.replaceAll('_', ' ').toLowerCase()}</span>{task.assignedTechnician?.name && <span className="ml-2 muted">· {task.assignedTechnician.name}</span>}{task.assignedMachine?.name && <span className="ml-2 muted">· {task.assignedMachine.name}</span>}</div>
+                <div className="text-right small muted">{task.resourceBookings?.length ? task.resourceBookings.map((booking: any) => <div key={booking.id}>{booking.resourceType === 'MACHINE' ? task.assignedMachine?.name ?? 'Machine' : task.assignedTechnician?.name ?? 'Technician'} · {formatDateTime(booking.startAt)} – {formatDateTime(booking.endAt)}</div>) : 'No confirmed booking'}</div>
+              </li>)}
+            </ul> : <p className="rounded-lg border border-line bg-surface-muted p-3 text-sm muted">Production tasks appear here after engineering releases the order. Planning creates and revalidates their bookings.</p>}
+          </section>}
           {lifecycle.events.length > 0 && <div className="page-stack border-t border-line pt-4">
             <div><h3 className="text-sm font-semibold text-ink">Workflow handoff history</h3><p className="field-help">Recorded stage changes from the lifecycle event log.</p></div>
             <ol className="divide-y divide-line">
