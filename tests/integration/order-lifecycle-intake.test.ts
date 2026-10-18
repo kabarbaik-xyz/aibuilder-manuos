@@ -172,6 +172,10 @@ describe('order lifecycle intake', () => {
     await forms.retireFormVersion(owner.principal, {
       templateId: form.templateId, versionId: published.versionId, expectedVersion: 3,
     }, 'lifecycle-retire-pinned-form');
+    await expect(orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-confirm-with-missing-pin'))
+      .rejects.toThrow(/Required form.*must be submitted/i);
+    await expect(fixture.db.order.findUniqueOrThrow({ where: { id: order.data.id } }))
+      .resolves.toMatchObject({ status: 'DRAFT' });
     await submissions.finalizeSubmission(owner.principal, {
       instanceId: instance.id, expectedVersion: 1, answers: { finish: 'matte' },
     }, 'lifecycle-finalize-retired-pin');
