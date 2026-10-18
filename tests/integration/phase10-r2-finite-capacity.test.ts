@@ -206,7 +206,16 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       },
       'idemp-eng-p10-rev1'
     );
-    await engineeringService.approveEngineeringRevision(owner, testRevId, 'idemp-eng-p10-appr');
+    const approvedRevision = await engineeringService.approveEngineeringRevision(owner, testRevId, 'idemp-eng-p10-appr');
+    const replayedApproval = await engineeringService.approveEngineeringRevision(owner, testRevId, 'idemp-eng-p10-appr');
+    expect(replayedApproval.meta.replayed).toBe(true);
+    // A fresh key after success must observe the recorded outcome without
+    // emitting another lifecycle transition or approval notification.
+    await engineeringService.approveEngineeringRevision(owner, testRevId, 'idemp-eng-p10-appr-retry');
+    expect(approvedRevision.data.status).toBe('APPROVED');
+    expect(await fixture.db.orderLifecycleEvent.count({
+      where: { instance: { orderId: testOrderId }, eventType: 'STAGE_COMPLETED' },
+    })).toBe(1);
 
     const releaseRes = await releaseOrder(owner, testOrderId, 'idemp-order-p10-rel', fixture.db);
     testInstanceId = releaseRes.data.instanceId;
