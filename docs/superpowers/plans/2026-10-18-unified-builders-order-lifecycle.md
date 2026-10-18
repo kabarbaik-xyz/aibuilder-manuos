@@ -82,7 +82,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Add two competing saves/finalizations/publishes against one version; exactly one wins. Replay the same idempotency key; no extra submission/event is created. Changed payload with same key conflicts.
 - [x] Resolve subject access inside the write transaction, using existing domain permission conventions. Do not grant generic form-author permission access to every operational form.
 - [x] Move authoring/binding/submission mutations under executeCommand, with transaction-aware helpers and conditional version/status updates. Do not allow saveDraft to reopen an already-finalized instance.
-- [ ] Preserve actor/time, correction reason and supersedes links; attach correction documents using the same validated mechanism as original finalization.
+- [x] Preserve actor/time, correction reason and supersedes links; attach correction documents using the same validated mechanism as original finalization.
 - [x] Run `rtk proxy npx vitest run tests/integration/forms-access.test.ts tests/integration/forms-submissions.test.ts tests/integration/forms-versioning.test.ts`; concurrency cases live in the access and submissions specs. Update OpenAPI idempotency/version/auth examples in this task.
 
 ### Task2: Typed binding validation, immutable pins and early materialization

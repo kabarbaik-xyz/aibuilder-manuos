@@ -60,6 +60,12 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
           required: false,
           referenceType: 'machine',
         },
+        {
+          key: 'evidence_files',
+          label: 'Evidence files',
+          kind: 'attachment',
+          required: false,
+        },
       ],
     };
 
@@ -309,6 +315,21 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       });
     });
 
+    const createDocument = (workspaceId: string, uploadedById: string, key: string) => fixture.db.document.create({
+      data: {
+        workspaceId,
+        storageKey: `forms/${key}-${Date.now()}`,
+        fileName: `${key}.pdf`,
+        mimeType: 'application/pdf',
+        sizeBytes: 20,
+        checksumSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        uploadedById,
+      },
+    });
+    const initialDocument = await createDocument(fixture.alpha.workspaceId, fixture.alpha.users.qc.userId, 'initial-evidence');
+    const correctionDocument = await createDocument(fixture.alpha.workspaceId, fixture.alpha.users.qc.userId, 'corrected-evidence');
+    const foreignDocument = await createDocument(fixture.beta.workspaceId, fixture.beta.users.owner.userId, 'foreign-evidence');
+
     // Initial finalization
     const initialFinal = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
       instanceId: instance.instanceId,
@@ -316,6 +337,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       answers: {
         finish: 'raw',
         dry_film_microns: '30.0',
+        evidence_files: [initialDocument.id],
       },
     });
 
@@ -329,12 +351,19 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       })
     ).rejects.toThrow(/Correction reason is mandatory/);
 
+    await expect(submissionService.createCorrection(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 2,
+      reason: 'Attach an inaccessible document',
+      answers: { finish: 'raw', dry_film_microns: '35.0', evidence_files: [foreignDocument.id] },
+    })).rejects.toThrow(/Attachment .* unavailable in this workspace/i);
+
     // Valid correction succeeds and links supersedesId
     const correctionRes = await submissionService.createCorrection(fixture.alpha.users.qc.principal, {
       instanceId: instance.instanceId,
       expectedVersion: 2,
       reason: 'Recalibrated gauge measurement after second pass',
-      answers: { finish: 'raw', dry_film_microns: '35.0' },
+      answers: { finish: 'raw', dry_film_microns: '35.0', evidence_files: [correctionDocument.id] },
     });
 
     expect(correctionRes.submissionId).toBeDefined();
@@ -347,5 +376,11 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
     expect(reloaded.latestSubmission?.correctionReason).toBe(
       'Recalibrated gauge measurement after second pass'
     );
+    await expect(fixture.db.formSubmissionDocument.findMany({
+      where: { submissionId: { in: [initialFinal.submissionId, correctionRes.submissionId] } },
+    })).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ submissionId: initialFinal.submissionId, documentId: initialDocument.id, fieldKey: 'evidence_files' }),
+      expect.objectContaining({ submissionId: correctionRes.submissionId, documentId: correctionDocument.id, fieldKey: 'evidence_files' }),
+    ]));
   });
 });
