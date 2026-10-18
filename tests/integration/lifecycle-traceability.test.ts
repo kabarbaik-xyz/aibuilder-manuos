@@ -146,6 +146,11 @@ describe('Order evidence timeline', () => {
       sequenceNumber: 1, status: 'FINAL', answersJson: '{}',
       actorId: alpha.users.owner.principal.userId, finalizedAt: new Date('2026-12-20T10:00:00.000Z'),
     } });
+    const privateShipment = await fixture.db.shipment.create({ data: {
+      workspaceId: alpha.workspaceId, shipmentNumber: 'SHP-TIMELINE-PRIVATE', orderId: order.data.id,
+      customerId: alpha.masters.customerId, status: 'ALLOCATED', allocatedAt: new Date('2026-12-20T11:00:00.000Z'),
+      destinationAddress: 'Private delivery address', trackingNumber: 'PRIVATE-TRACKING-1',
+    } });
     const ownerTimeline = await getOrderEvidenceTimeline(fixture.db, alpha.users.owner.principal, order.data.id);
     expect(ownerTimeline.events.some(event => event.reference === `FORM_SUBMISSION:${submission.id}`)).toBe(true);
 
@@ -167,5 +172,7 @@ describe('Order evidence timeline', () => {
 
     const timeline = await getOrderEvidenceTimeline(fixture.db, restrictedReader, order.data.id);
     expect(timeline.events.some(event => event.reference === `FORM_SUBMISSION:${submission.id}`)).toBe(false);
+    expect(timeline.events.some(event => event.reference.startsWith('ENGINEERING_REVISION:'))).toBe(false);
+    expect(timeline.events.some(event => event.reference.startsWith(`SHIPMENT:${privateShipment.id}:`))).toBe(false);
   });
 });

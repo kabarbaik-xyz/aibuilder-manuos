@@ -48,6 +48,9 @@ export async function getOrderEvidenceTimeline(
   if (principal.customerId) throw new NotFoundError('Order evidence is not available.');
   const search = options.search?.trim().slice(0, 120) ?? '';
   const limit = Math.max(1, Math.min(200, Math.floor(options.limit ?? 100)));
+  const canReadEngineering = principal.permissions.has('engineering.read') || principal.permissions.has('admin.access');
+  const canReadDelivery = ['delivery.read', 'delivery.dispatch', 'delivery.confirm', 'admin.access']
+    .some(permission => principal.permissions.has(permission));
   const facilityIds = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
   const order = await db.order.findFirst({
     where: {
@@ -65,16 +68,16 @@ export async function getOrderEvidenceTimeline(
       include: { stage: { select: { id: true, name: true, department: { select: { name: true } } } } },
       orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: limit + 1,
     }),
-    db.engineeringRevision.findMany({
+    canReadEngineering ? db.engineeringRevision.findMany({
       where: { workspaceId: principal.workspaceId, orderId },
       select: { id: true, revisionNumber: true, status: true, approvedById: true, approvedAt: true, workflowVersionId: true, createdAt: true, updatedAt: true, orderLine: { select: { id: true, lineNumber: true } } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }], take: 50,
-    }),
-    db.shipment.findMany({
+    }) : Promise.resolve([]),
+    canReadDelivery ? db.shipment.findMany({
       where: { workspaceId: principal.workspaceId, orderId },
       include: { lines: { include: { item: { select: { code: true, name: true } }, lot: { select: { lotNumber: true } } } } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }], take: 50,
-    }),
+    }) : Promise.resolve([]),
     db.workflowInstance.findMany({
       where: { workspaceId: principal.workspaceId, orderId },
       select: {
