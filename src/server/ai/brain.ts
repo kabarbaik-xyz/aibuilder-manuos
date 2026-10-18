@@ -67,12 +67,15 @@ export class ProductionBrainService {
     }
 
     const inventoryQuestion = /stock|inventory|material|stok|persediaan/i.test(question) && !/order|production|produksi/i.test(question);
+    const coverageSummary = Object.entries(context.coverage)
+      .map(([category, coverage]) => `${category}: ${coverage.status.toLowerCase()} (${coverage.includedCount}/${coverage.limit}${coverage.sampled ? ', sample may be truncated' : ''})`)
+      .join('; ');
 
     // 2. Build structured grounded prompt
     const prompt = `
 You are the ManuOS Operational Brain assistant for ${principal.workspaceId}.
 Answer the question below STRICTLY using the authorized factory operational context.
-The context is a bounded sample, not workspace totals. Missing categories may be restricted by access. Say when the requested facts are unavailable. NEVER invent fake orders, machines, or parts. Use real order numbers, item names, and operation names from the context. Never print database UUIDs. The order sample includes historical and draft orders; do not call every sampled order active.
+This authorized snapshot was captured at ${context.snapshotCapturedAt}. Coverage by source: ${coverageSummary}. A RESTRICTED category is hidden by permission; an EMPTY category had no accessible matching records. A sampled category may be truncated. Never turn sample counts into workspace totals. NEVER invent fake orders, machines, or parts. Use real order numbers, item names, and operation names from the context. Never print database UUIDs. Orders include historical and draft records; do not call every sampled order active. Finalized form submissions are historical evidence and must retain their recorded finalization time.
 
 Operational Context:
 - Sampled Orders (${inventoryQuestion ? 'omitted: inventory-only question' : context.orders.length}):

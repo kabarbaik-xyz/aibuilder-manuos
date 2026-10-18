@@ -35,6 +35,9 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     expect(context.workspaceId).toBe(alpha.workspaceId);
     expect(context.contextHash).toMatch(/^[a-f0-9]{64}$/);
     expect(context.evidenceIndex.length).toBeGreaterThan(0);
+    expect(new Date(context.snapshotCapturedAt).toISOString()).toBe(context.snapshotCapturedAt);
+    expect(context.coverage.orders).toMatchObject({ status: 'EMPTY', includedCount: 0, limit: 20, sampled: false });
+    expect(context.coverage.inventory.limit).toBe(30);
 
     // Scoped context hash must change when workspace revision increments
     const initialHash = context.contextHash;

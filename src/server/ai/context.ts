@@ -90,6 +90,13 @@ export interface AuthorizedContextLifecycleStage {
 }
 
 export interface AuthorizedContext {
+  snapshotCapturedAt: string;
+  coverage: Record<'orders' | 'tasks' | 'confirmedBookings' | 'submittedFormEvidence' | 'inventory' | 'resources' | 'lifecycleStages', {
+    status: 'AVAILABLE' | 'EMPTY' | 'RESTRICTED';
+    includedCount: number;
+    limit: number;
+    sampled: boolean;
+  }>;
   workspaceId: string;
   workspaceRevision: number;
   orders: AuthorizedContextOrder[];
@@ -149,6 +156,7 @@ export async function buildAuthorizedContext(
   prisma: PrismaClient,
   scope?: AuthorizedContextScope
 ): Promise<AuthorizedContext> {
+  const snapshotCapturedAt = new Date().toISOString();
   const workspaceId = principal.workspaceId;
 
   // 1. Fetch workspace revision
@@ -413,6 +421,15 @@ export async function buildAuthorizedContext(
   }
 
   const disruptions: AuthorizedContextDisruption[] = [];
+  const coverage = {
+    orders: { status: !canReadOrders ? 'RESTRICTED' as const : dbOrders.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbOrders.length, limit: 20, sampled: dbOrders.length === 20 },
+    tasks: { status: !(canReadAllTasks || canReadAssignedTasks) ? 'RESTRICTED' as const : dbTasks.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbTasks.length, limit: scope?.taskId ? 1 : 10, sampled: dbTasks.length === (scope?.taskId ? 1 : 10) },
+    confirmedBookings: { status: effectiveCustomerId || !principal.permissions.has('planning.read') ? 'RESTRICTED' as const : dbBookings.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbBookings.length, limit: 30, sampled: dbBookings.length === 30 },
+    submittedFormEvidence: { status: effectiveCustomerId || !principal.permissions.has('forms.read') ? 'RESTRICTED' as const : submittedFormEvidence.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: submittedFormEvidence.length, limit: 20, sampled: submittedFormEvidence.length === 20 },
+    inventory: { status: effectiveCustomerId || !principal.permissions.has('inventory.read') ? 'RESTRICTED' as const : balances.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: balances.length, limit: 30, sampled: balances.length === 30 },
+    resources: { status: !canReadResources ? 'RESTRICTED' as const : resources.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: resources.length, limit: 20, sampled: machines.length === 10 || technicians.length === 10 },
+    lifecycleStages: { status: effectiveCustomerId || !canReadOrders ? 'RESTRICTED' as const : dbLifecycleStages.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbLifecycleStages.length, limit: 60, sampled: dbLifecycleStages.length === 60 },
+  };
 
   // Deterministic context hash
   const contextPayload = {
@@ -428,6 +445,7 @@ export async function buildAuthorizedContext(
     inventory,
     resources,
     lifecycleStages,
+    coverage,
     evidenceIndex: [...evidenceSet].sort(),
   };
 
@@ -436,6 +454,8 @@ export async function buildAuthorizedContext(
     .digest('hex');
 
   return {
+    snapshotCapturedAt,
+    coverage,
     workspaceId,
     workspaceRevision,
     orders,
