@@ -2551,6 +2551,31 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/orders/{id}/lifecycle:
+    post:
+      summary: Attach a published lifecycle to an order draft
+      description: Pins the compatible published order lifecycle and creates its initial stages atomically. Only unconfirmed DRAFT orders without a lifecycle can be updated; expectedVersion prevents stale edits.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, workflowVersionId]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                workflowVersionId: { type: string, minLength: 1 }
+      responses:
+        '200': { description: Updated order with pinned lifecycle }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /api/orders/{id}/evidence:
     get:
       summary: Read the authorized order evidence timeline

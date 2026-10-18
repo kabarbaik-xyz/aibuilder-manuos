@@ -53,6 +53,11 @@ export const updateOrderDraftSchema = z.object({
   status: z.enum(['DRAFT', 'REVIEW', 'READY', 'CANCELLED']).optional(),
 });
 
+export const attachOrderLifecycleSchema = z.object({
+  expectedVersion: z.number().int().min(1),
+  workflowVersionId: z.string().min(1),
+});
+
 export const addOrderLineSchema = z.object({
   itemId: z.string().min(1),
   uomId: z.string().optional(),
@@ -88,6 +93,7 @@ export const resolveCustomerQuestionSchema = z.object({
 export type CreateOrderLineInput = z.input<typeof createOrderLineSchema>;
 export type CreateOrderDraftInput = z.input<typeof createOrderDraftSchema>;
 export type UpdateOrderDraftInput = z.input<typeof updateOrderDraftSchema>;
+export type AttachOrderLifecycleInput = z.input<typeof attachOrderLifecycleSchema>;
 export type AddOrderLineInput = z.input<typeof addOrderLineSchema>;
 export type ConfirmOrderInput = z.input<typeof confirmOrderSchema>;
 export type AllocateJobInput = z.input<typeof allocateJobSchema>;

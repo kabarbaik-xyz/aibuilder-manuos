@@ -567,6 +567,179 @@ export class OrderService {
     });
   }
 
+  async attachLifecycle(
+    principal: Principal,
+    orderId: string,
+    input: contracts.AttachOrderLifecycleInput,
+    idempotencyKey: string,
+  ) {
+    requirePermission(principal, 'order.create');
+
+    return executeCommand({
+      principal,
+      commandType: 'order.lifecycle.attach',
+      idempotencyKey,
+      expectedVersion: input.expectedVersion,
+      payload: { orderId, ...input },
+      prismaClient: this.prisma,
+      handler: async (tx) => {
+        const order = await tx.order.findFirst({
+          where: { id: orderId, workspaceId: principal.workspaceId },
+        });
+        if (!order) throw new NotFoundError(`Order '${orderId}' not found`);
+        if (order.version !== input.expectedVersion) {
+          throw new ConflictError(`Order version mismatch: expected ${input.expectedVersion}, but found ${order.version}`, 'STALE_VERSION', true);
+        }
+        if (order.status !== 'DRAFT' || order.confirmedAt) {
+          throw new BadRequestError('A lifecycle can only be attached before an order is confirmed.');
+        }
+        if (order.lifecycleWorkflowVersionId) {
+          throw new ConflictError('This order already has a pinned lifecycle workflow.', 'LIFECYCLE_ALREADY_ATTACHED', false);
+        }
+
+        const lifecycleVersion = await tx.workflowVersion.findFirst({
+          where: {
+            id: input.workflowVersionId,
+            workspaceId: principal.workspaceId,
+            status: 'PUBLISHED',
+            template: { kind: 'ORDER_LIFECYCLE', orderTypeId: order.orderTypeId, isArchived: false },
+          },
+        });
+        if (!lifecycleVersion) {
+          throw new BadRequestError('Selected order lifecycle must be published and compatible with this order type.');
+        }
+
+        let definition: OrderLifecycleDefinition;
+        try {
+          definition = orderLifecycleDefinitionSchema.parse(JSON.parse(lifecycleVersion.definitionJson)) as OrderLifecycleDefinition;
+        } catch {
+          throw new BadRequestError('Selected order lifecycle definition is invalid. Publish a corrected version.');
+        }
+        if (!validateLifecycleDefinition(definition).isValid) {
+          throw new BadRequestError('Selected order lifecycle definition is no longer valid. Create a new published version.');
+        }
+
+        const assignedMembershipIds = [...new Set(definition.stages.flatMap((stage) =>
+          stage.assignment.kind === 'MEMBER' ? [stage.assignment.membershipId] : []))];
+        if (assignedMembershipIds.length) {
+          const activeMemberships = await tx.membership.findMany({
+            where: { workspaceId: principal.workspaceId, id: { in: assignedMembershipIds }, status: 'ACTIVE' },
+            select: { id: true },
+          });
+          if (activeMemberships.length !== assignedMembershipIds.length) {
+            throw new BadRequestError('The published lifecycle assigns a stage to an inactive or unavailable member. Publish a corrected version.');
+          }
+        }
+
+        const pinnedFormIds = [...new Set(definition.stages.flatMap((stage) => stage.forms.map((form) => form.formVersionId)))];
+        const formVersions = pinnedFormIds.length ? await tx.formVersion.findMany({
+          where: { workspaceId: principal.workspaceId, id: { in: pinnedFormIds }, status: 'PUBLISHED' },
+          include: { template: { select: { purpose: true } } },
+        }) : [];
+        const formVersionById = new Map<string, (typeof formVersions)[number]>(formVersions.map((version: (typeof formVersions)[number]) => [version.id, version]));
+        for (const pin of definition.stages.flatMap((stage) => stage.forms)) {
+          const version = formVersionById.get(pin.formVersionId);
+          if (!version || version.contentHash !== pin.contentHash) {
+            throw new BadRequestError('A pinned lifecycle form is no longer published at the expected version. Publish a corrected lifecycle.');
+          }
+        }
+
+        const updated = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            workspaceId: principal.workspaceId,
+            status: 'DRAFT',
+            version: input.expectedVersion,
+            lifecycleWorkflowVersionId: null,
+          },
+          data: { lifecycleWorkflowVersionId: lifecycleVersion.id, version: { increment: 1 } },
+        });
+        if (updated.count !== 1) {
+          throw new ConflictError('Order changed while the lifecycle was being attached. Reload the draft and try again.', 'STALE_VERSION', true);
+        }
+
+        const lifecycle = await tx.orderLifecycleInstance.create({
+          data: { workspaceId: principal.workspaceId, orderId: order.id, workflowVersionId: lifecycleVersion.id, status: 'ACTIVE' },
+        });
+        await tx.orderLifecycleStage.createMany({
+          data: definition.stages.map((stage) => ({
+            workspaceId: principal.workspaceId,
+            instanceId: lifecycle.id,
+            stageKey: stage.key,
+            name: stage.name,
+            action: stage.action,
+            departmentId: stage.departmentId,
+            assignedMembershipId: stage.assignment.kind === 'MEMBER' ? stage.assignment.membershipId : null,
+            assignmentJson: JSON.stringify(stage.assignment),
+            scheduleJson: JSON.stringify(stage.schedule),
+            formPinsJson: JSON.stringify(stage.forms),
+            predecessorKeysJson: JSON.stringify(stage.predecessors),
+            activationConditionJson: JSON.stringify(stage.activationCondition ?? null),
+            state: stage.predecessors.length === 0 ? 'READY' : 'PENDING',
+            dueAt: stage.predecessors.length === 0 && stage.schedule.kind === 'DEADLINE'
+              ? new Date(Date.now() + stage.schedule.dueAfterMinutes * 60_000)
+              : null,
+          })),
+        });
+
+        const orderSpecPins = new Map<string, { required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }>();
+        for (const pin of definition.stages.flatMap((stage) => stage.forms)) {
+          if (formVersionById.get(pin.formVersionId)?.template.purpose !== 'ORDER_SPEC') continue;
+          const previous = orderSpecPins.get(pin.formVersionId);
+          orderSpecPins.set(pin.formVersionId, {
+            required: Boolean(previous?.required || pin.required),
+            completionPoint: previous?.completionPoint === 'BEFORE_ACTION' || pin.completionPoint === 'BEFORE_ACTION'
+              ? 'BEFORE_ACTION'
+              : 'BEFORE_STAGE_COMPLETION',
+          });
+        }
+        for (const [formVersionId, pin] of orderSpecPins) {
+          await tx.formInstance.upsert({
+            where: { workspaceId_subjectType_subjectId_formVersionId: {
+              workspaceId: principal.workspaceId,
+              subjectType: 'ORDER',
+              subjectId: order.id,
+              formVersionId,
+            } },
+            create: {
+              workspaceId: principal.workspaceId,
+              formVersionId,
+              subjectType: 'ORDER',
+              subjectId: order.id,
+              required: pin.required,
+              completionPoint: pin.completionPoint,
+              status: 'PENDING',
+            },
+            update: pin.required ? { required: true, completionPoint: pin.completionPoint } : {},
+          });
+        }
+
+        await tx.orderLifecycleEvent.create({
+          data: {
+            workspaceId: principal.workspaceId,
+            instanceId: lifecycle.id,
+            eventType: 'LIFECYCLE_STARTED',
+            actorUserId: principal.userId,
+            detailJson: JSON.stringify({ workflowVersionId: lifecycleVersion.id, definitionHash: lifecycleVersion.definitionHash, attachedToDraft: true }),
+          },
+        });
+        const result = await tx.order.findFirst({
+          where: { id: order.id, workspaceId: principal.workspaceId },
+          include: { customer: true, orderType: true, item: true },
+        });
+        if (!result) throw new NotFoundError(`Order '${orderId}' not found`);
+        return {
+          data: result,
+          aggregateType: 'ORDER',
+          aggregateId: order.id,
+          previousVersion: order.version,
+          resourceVersion: result.version,
+          auditDetails: { workflowVersionId: lifecycleVersion.id, definitionHash: lifecycleVersion.definitionHash },
+        };
+      },
+    });
+  }
+
   // -----------------------------------------------------------
   // Add Order Line
   // -----------------------------------------------------------

@@ -130,6 +130,64 @@ describe('order lifecycle intake', () => {
       .resolves.toContainEqual(expect.objectContaining({ membershipId: owner.membershipId }));
   });
 
+  it('attaches a published lifecycle to an existing draft with a version-checked audit event', async () => {
+    const owner = fixture.alpha.users.owner;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: fixture.alpha.masters.departmentId },
+    });
+    const template = await workflowService.createTemplate(owner.principal, {
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      code: 'ORDER-LIFECYCLE-ATTACH',
+      name: 'Attached customer journey',
+      kind: 'ORDER_LIFECYCLE',
+    }, 'lifecycle-attach-template');
+    const versionId = template.data.initialVersionId!;
+    await workflowService.saveVersionDraft(owner.principal, versionId, {
+      definition: {
+        schemaVersion: 1,
+        name: 'Attached customer journey',
+        stages: [{
+          key: 'SALES-REVIEW',
+          name: 'Review customer order',
+          action: 'ORDER_CONFIRM',
+          departmentId: fixture.alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: fixture.alpha.masters.departmentId },
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 },
+          predecessors: [],
+          forms: [],
+        }],
+      },
+    }, 'lifecycle-attach-draft');
+    await workflowService.publishVersion(owner.principal, versionId, 'lifecycle-attach-publish');
+
+    const order = await orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId,
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId,
+      orderedQuantity: '2',
+      requestedDate: '2026-11-01T00:00:00.000Z',
+    }, 'lifecycle-attach-order');
+    const result = await orderService.attachLifecycle(owner.principal, order.data.id, {
+      expectedVersion: order.data.version,
+      workflowVersionId: versionId,
+    }, 'lifecycle-attach-command');
+
+    expect(result.data.lifecycleWorkflowVersionId).toBe(versionId);
+    const instance = await fixture.db.orderLifecycleInstance.findUnique({
+      where: { workspaceId_orderId: { workspaceId: fixture.alpha.workspaceId, orderId: order.data.id } },
+      include: { stages: true, events: true },
+    });
+    expect(instance?.stages).toHaveLength(1);
+    expect(instance?.stages[0]).toMatchObject({ stageKey: 'SALES-REVIEW', state: 'READY', assignedMembershipId: owner.membershipId });
+    expect(instance?.events.map((event) => event.eventType)).toContain('LIFECYCLE_STARTED');
+
+    await expect(orderService.attachLifecycle(owner.principal, order.data.id, {
+      expectedVersion: order.data.version,
+      workflowVersionId: versionId,
+    }, 'lifecycle-attach-stale')).rejects.toThrow(/version|lifecycle/i);
+  });
+
   it('does not let a workflow that omits engineering bypass approved release prerequisites', async () => {
     const owner = fixture.alpha.users.owner;
     await fixture.db.membership.update({
