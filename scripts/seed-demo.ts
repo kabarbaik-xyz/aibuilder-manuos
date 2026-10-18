@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { randomBytes, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { openSync, closeSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -24,7 +24,7 @@ import { AccessService } from '../src/server/modules/access/service';
 import { FormService } from '../src/server/modules/forms/service';
 import { parseQuantity } from '../src/domain/quantity';
 import type { OrderLifecycleDefinition } from '../src/domain/order-lifecycle-definition';
-import { syncDemoAccessAccount } from './demo-seed-accounts';
+import { buildDemoSuperadminAccount, resolveDemoSeedPassword, syncDemoAccessAccount, type DemoSeedAccount } from './demo-seed-accounts';
 
 const VERSION = 'demo-v1';
 export const SCENARIOS = ['draft', 'engineering', 'shortage', 'reserved', 'running', 'paused', 'waiting-qc', 'rework', 'scrap', 'allocated', 'in-transit', 'delivered'] as const;
@@ -201,7 +201,8 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
     orgDepartments.set(key, (await step(`org-department-${key}`, k => masters.createDepartment(principal, { code, name }, k))).data.id);
   }
   const access = new AccessService(db);
-  const demoUsers = [
+  const demoUsers: DemoSeedAccount[] = [
+    buildDemoSuperadminAccount(workspace.code),
     { name: 'Demo Planner', code: 'planner', roleCodes: ['PLANNER'], departmentId: orgDepartments.get('planning'), jobTitle: 'Production Planner', landingPage: '/planning' },
     { name: 'Demo Buyer', code: 'buyer', roleCodes: ['BUYER'], departmentId: orgDepartments.get('procurement'), jobTitle: 'Procurement Buyer', landingPage: '/supply-orders' },
     { name: 'Demo Warehouse', code: 'warehouse', roleCodes: ['WAREHOUSE'], departmentId: orgDepartments.get('warehouse'), jobTitle: 'Warehouse Operator', landingPage: '/inventory' },
@@ -213,7 +214,7 @@ export async function seedDemo(db: PrismaClient, options: { workspaceCode?: stri
   ];
   const memberships = new Map<string, string>();
   for (const account of demoUsers) {
-    const email = `${account.code}.${workspace.code.toLowerCase()}@manuos.test`;
+    const email = account.email || `${account.code}.${workspace.code.toLowerCase()}@manuos.test`;
     const existed = await db.user.findUnique({ where: { email } });
     if (existed && !await db.membership.findUnique({ where: { workspaceId_userId: { workspaceId: workspace.id, userId: existed.id } } })) throw new Error(`Demo account address already belongs to another workspace: ${email}`);
     const result = await syncDemoAccessAccount(db, access, principal, { ...account, email }, { password: options.password, resetExistingPassword: Boolean(options.resetExistingPasswords), idempotencyKey: `${prefix}account:${account.code}` });
@@ -324,7 +325,7 @@ async function main() {
   const lock = openSync(lockPath, 'wx');
   try {
     await configurePrismaSqlite(db);
-    const password = process.env.DEMO_SEED_PASSWORD || randomBytes(24).toString('base64url');
+    const password = resolveDemoSeedPassword(process.env.DEMO_SEED_PASSWORD);
     const resetExistingPasswords = process.env.DEMO_SEED_RESET_PASSWORD === 'true';
     const report = await seedDemo(db, { workspaceCode: process.env.DEMO_SEED_WORKSPACE || 'DEMO', anchor: process.env.DEMO_SEED_ANCHOR, password, resetExistingPasswords });
     if (report.newAccounts.length || resetExistingPasswords) {

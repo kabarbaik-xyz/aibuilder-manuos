@@ -63,7 +63,7 @@ Six orders exist per case, one per product family. Exact order numbers and IDs a
 
 Supply cases: six draft, six overdue approved, six partly received and six fully received. Six additional form-builder examples retain draft, review and published states with conditional review notes.
 
-Demo logins cover planner, buyer, warehouse, quality, sales, engineer, six assigned operators and three customer-scoped portal users. Each internal account has an explicit department, job title and role-appropriate starting page; operators are linked to technician profiles. Account names are `<role>.demo@manuos.test` (operators `operator1`–`operator6`, customers `customer1`–`customer3`); custom workspace codes replace `demo`. Existing admin logins continue working. The seed actor is `seed.demo@manuos.test`.
+Demo logins cover a Superadmin, planner, buyer, warehouse, quality, sales, engineer, six assigned operators and three customer-scoped portal users. The Superadmin has cross-functional administrative and operational roles and lands on the dashboard; use `superadmin.demo@manuos.test` for the default demo workspace (custom workspace codes replace `demo`). Each other internal account has an explicit department, job title and role-appropriate starting page; operators are linked to technician profiles. Account names are `<role>.demo@manuos.test` (operators `operator1`–`operator6`, customers `customer1`–`customer3`). New demo accounts use `Password123!` by default; set `DEMO_SEED_PASSWORD` to override it. The password is also written to a protected local credentials file when accounts are created. Seed reruns do not reset existing passwords unless explicitly configured. The seed actor is `seed.demo@manuos.test`.
 
 ## Verification from the initial local run
 

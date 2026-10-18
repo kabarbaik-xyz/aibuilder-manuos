@@ -99,8 +99,166 @@ export async function getOrderEvidenceTimeline(
   const taskRows = instances.flatMap(instance => instance.tasks.map(task => ({ ...task, instanceId: instance.id })));
   const taskIds = taskRows.map(task => task.id);
   const taskById = new Map(taskRows.map(task => [task.id, task]));
-  const actorIds = [...new Set([...lifecycleEvents.map(event => event.actorUserId), ...engineeringRevisions.flatMap(revision => revision.approvedById ? [revision.approvedById] : [])])];
-  const actors = actorIds.length ? await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
+
+  const stageFormPins = lifecycleInstance
+    ? lifecycleInstance.stages.flatMap(stage => {
+        try {
+          return (JSON.parse(stage.formPinsJson) as Array<{ formVersionId: string; contentHash: string; required: boolean }>).map(pin => ({ ...pin, stage }));
+        } catch {
+          return [];
+        }
+      })
+    : [];
+  const pinnedFormIds = [...new Set(stageFormPins.map(pin => pin.formVersionId))];
+  const routingVersionIds = [...new Set(engineeringRevisions.flatMap(revision => (revision.workflowVersionId ? [revision.workflowVersionId] : [])))];
+
+  const canReadPlanning = principal.permissions.has('planning.read');
+  const canReadForms = principal.permissions.has('forms.read');
+  const canReadQuality = principal.permissions.has('quality.read');
+  const canReadInventory = principal.permissions.has('inventory.read');
+  const canReadPassports =
+    principal.permissions.has('traceability.read') ||
+    principal.permissions.has('quality.read') ||
+    principal.permissions.has('admin.access');
+
+  const [
+    pinnedFormVersions,
+    routingVersions,
+    workflowEvents,
+    bookings,
+    proposals,
+    qcInspections,
+    formOnlyInspections,
+    passports,
+  ] = await Promise.all([
+    pinnedFormIds.length
+      ? db.formVersion.findMany({
+          where: { workspaceId: principal.workspaceId, id: { in: pinnedFormIds } },
+          select: { id: true, contentHash: true, versionNumber: true, template: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
+    routingVersionIds.length
+      ? db.workflowVersion.findMany({
+          where: { workspaceId: principal.workspaceId, id: { in: routingVersionIds } },
+          select: { id: true, versionNumber: true, template: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
+    canReadPlanning && taskIds.length
+      ? db.workflowEvent.findMany({
+          where: { workspaceId: principal.workspaceId, taskId: { in: taskIds } },
+          select: { id: true, taskId: true, action: true, fromStatus: true, toStatus: true, reason: true, actorUserId: true, occurredAt: true },
+          orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+          take: 200,
+        })
+      : Promise.resolve([]),
+    canReadPlanning && taskIds.length
+      ? db.resourceBooking.findMany({
+          where: { workspaceId: principal.workspaceId, taskId: { in: taskIds } },
+          select: { id: true, taskId: true, resourceType: true, resourceId: true, startAt: true, endAt: true, status: true, createdAt: true, updatedAt: true },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+          take: 200,
+        })
+      : Promise.resolve([]),
+    canReadPlanning
+      ? db.recoveryProposal.findMany({
+          where: { workspaceId: principal.workspaceId, orderId },
+          select: { id: true, status: true, proposedById: true, resolvedById: true, resolutionNote: true, resolvedAt: true, createdAt: true, proposalJson: true },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+          take: 50,
+        })
+      : Promise.resolve([]),
+    canReadQuality && taskIds.length
+      ? db.inspection.findMany({
+          where: { workspaceId: principal.workspaceId, productionOutput: { taskId: { in: taskIds } } },
+          include: {
+            inspectorUser: { select: { name: true } },
+            productionOutput: { include: { task: { include: { jobsheet: { include: { manufacturingOrder: true } } } }, lot: true, item: true } },
+            reinspectionOf: { select: { id: true } },
+            reinspections: { select: { id: true, status: true } },
+            reworkAttempts: { select: { id: true, attemptNumber: true, status: true, targetAtoms: true } },
+          },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+          take: 200,
+        })
+      : Promise.resolve([]),
+    canReadForms && !canReadQuality && taskIds.length
+      ? db.inspection.findMany({
+          where: { workspaceId: principal.workspaceId, productionOutput: { taskId: { in: taskIds } } },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    canReadPassports
+      ? db.passport.findMany({
+          where: { workspaceId: principal.workspaceId, orderId, status: 'RELEASED', snapshotJson: { not: null } },
+          select: { id: true, serialNumber: true, publicationVersion: true, publishedAt: true, sharedCustomerId: true, shareRevokedAt: true },
+          orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+          take: 100,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const combinedActorIds = [
+    ...new Set([
+      ...lifecycleEvents.map(event => event.actorUserId),
+      ...engineeringRevisions.flatMap(revision => (revision.approvedById ? [revision.approvedById] : [])),
+      ...workflowEvents.map(event => event.actorUserId),
+      ...proposals.flatMap(proposal => [proposal.proposedById, proposal.resolvedById].filter((id): id is string => Boolean(id))),
+    ]),
+  ];
+  const resourceIds = [...new Set(bookings.map(booking => booking.resourceId))];
+  const inspectionIdsForForms = canReadQuality ? qcInspections.map(i => i.id) : formOnlyInspections.map(i => i.id);
+  const shipmentIds = shipments.map(shipment => shipment.id);
+  const qcInspectionIds = qcInspections.map(inspection => inspection.id);
+
+  const [actors, machines, technicians, formInstances, movements] = await Promise.all([
+    combinedActorIds.length
+      ? db.user.findMany({ where: { id: { in: combinedActorIds } }, select: { id: true, name: true } })
+      : Promise.resolve([]),
+    canReadPlanning && resourceIds.length
+      ? db.machine.findMany({ where: { workspaceId: principal.workspaceId, id: { in: resourceIds } }, select: { id: true, name: true, code: true } })
+      : Promise.resolve([]),
+    canReadPlanning && resourceIds.length
+      ? db.technician.findMany({ where: { workspaceId: principal.workspaceId, id: { in: resourceIds } }, select: { id: true, name: true, code: true } })
+      : Promise.resolve([]),
+    canReadForms
+      ? db.formInstance.findMany({
+          where: {
+            workspaceId: principal.workspaceId,
+            OR: [
+              { subjectType: 'ORDER', subjectId: orderId },
+              ...(taskIds.length ? [{ subjectType: 'TASK', subjectId: { in: taskIds } }] : []),
+              ...(inspectionIdsForForms.length ? [{ subjectType: 'INSPECTION', subjectId: { in: inspectionIdsForForms } }] : []),
+            ],
+          },
+          select: { id: true, subjectType: true, subjectId: true },
+          take: 100,
+        })
+      : Promise.resolve([]),
+    canReadInventory
+      ? db.stockMovement.findMany({
+          where: {
+            workspaceId: principal.workspaceId,
+            OR: [
+              { referenceType: 'ORDER', referenceId: orderId },
+              ...(taskIds.length ? [{ referenceType: 'TASK', referenceId: { in: taskIds } }] : []),
+              ...(shipmentIds.length ? [{ referenceType: 'SHIPMENT', referenceId: { in: shipmentIds } }] : []),
+              ...(qcInspectionIds.length ? [{ referenceType: 'QC_INSPECTION', referenceId: { in: qcInspectionIds } }] : []),
+            ],
+          },
+          include: {
+            actorUser: { select: { name: true } },
+            item: { select: { code: true, name: true } },
+            sourceLocation: { select: { name: true } },
+            destinationLocation: { select: { name: true } },
+            sourceLot: { select: { lotNumber: true } },
+            destinationLot: { select: { lotNumber: true } },
+          },
+          orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+          take: 200,
+        })
+      : Promise.resolve([]),
+  ]);
+
   const actorById = new Map(actors.map(actor => [actor.id, actor.name]));
 
   const events: OrderEvidenceEvent[] = lifecycleEvents.map((event) => {
@@ -120,15 +278,6 @@ export async function getOrderEvidenceTimeline(
   let sourceWasSampled = lifecycleEvents.length > limit || engineeringRevisions.length === 50 || shipments.length === 50 || instances.length === 50;
   if (lifecycleInstance) {
     const versionLabel = `${lifecycleInstance.workflowVersion.template.name} · v${lifecycleInstance.workflowVersion.versionNumber}`;
-    const stageFormPins = lifecycleInstance.stages.flatMap(stage => {
-      try { return (JSON.parse(stage.formPinsJson) as Array<{ formVersionId: string; contentHash: string; required: boolean }>).map(pin => ({ ...pin, stage })); }
-      catch { return []; }
-    });
-    const pinnedFormIds = [...new Set(stageFormPins.map(pin => pin.formVersionId))];
-    const pinnedFormVersions = pinnedFormIds.length ? await db.formVersion.findMany({
-      where: { workspaceId: principal.workspaceId, id: { in: pinnedFormIds } },
-      select: { id: true, contentHash: true, versionNumber: true, template: { select: { name: true } } },
-    }) : [];
     const pinnedFormById = new Map(pinnedFormVersions.map(form => [form.id, form]));
     events.push({
       reference: `LIFECYCLE_PIN:${lifecycleInstance.id}`, category: 'WORKFLOW', title: 'Order workflow pinned',
@@ -152,11 +301,6 @@ export async function getOrderEvidenceTimeline(
       });
     }
   }
-  const routingVersionIds = [...new Set(engineeringRevisions.flatMap(revision => revision.workflowVersionId ? [revision.workflowVersionId] : []))];
-  const routingVersions = routingVersionIds.length ? await db.workflowVersion.findMany({
-    where: { workspaceId: principal.workspaceId, id: { in: routingVersionIds } },
-    select: { id: true, versionNumber: true, template: { select: { name: true } } },
-  }) : [];
   const routingVersionById = new Map(routingVersions.map(version => [version.id, `${version.template.name} · v${version.versionNumber}`]));
   for (const revision of engineeringRevisions) {
     const approved = revision.status === 'APPROVED' && revision.approvedAt;
@@ -191,28 +335,8 @@ export async function getOrderEvidenceTimeline(
     }
   }
 
-  if (principal.permissions.has('planning.read') && taskIds.length) {
-    const [workflowEvents, bookings] = await Promise.all([
-      db.workflowEvent.findMany({
-        where: { workspaceId: principal.workspaceId, taskId: { in: taskIds } },
-        select: { id: true, taskId: true, action: true, fromStatus: true, toStatus: true, reason: true, actorUserId: true, occurredAt: true },
-        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: 200,
-      }),
-      db.resourceBooking.findMany({
-        where: { workspaceId: principal.workspaceId, taskId: { in: taskIds } },
-        select: { id: true, taskId: true, resourceType: true, resourceId: true, startAt: true, endAt: true, status: true, createdAt: true, updatedAt: true },
-        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }], take: 200,
-      }),
-    ]);
+  if (canReadPlanning && taskIds.length) {
     sourceWasSampled ||= workflowEvents.length === 200 || bookings.length === 200;
-    const workflowActorIds = [...new Set(workflowEvents.map(event => event.actorUserId))];
-    const workflowActors = workflowActorIds.length ? await db.user.findMany({ where: { id: { in: workflowActorIds } }, select: { id: true, name: true } }) : [];
-    const workflowActorById = new Map(workflowActors.map(actor => [actor.id, actor.name]));
-    const resourceIds = [...new Set(bookings.map(booking => booking.resourceId))];
-    const [machines, technicians] = await Promise.all([
-      principal.permissions.has('planning.read') ? db.machine.findMany({ where: { workspaceId: principal.workspaceId, id: { in: resourceIds } }, select: { id: true, name: true, code: true } }) : [],
-      principal.permissions.has('planning.read') ? db.technician.findMany({ where: { workspaceId: principal.workspaceId, id: { in: resourceIds } }, select: { id: true, name: true, code: true } }) : [],
-    ]);
     const resources = new Map([...machines, ...technicians].map(resource => [resource.id, `${resource.name} (${resource.code})`]));
     for (const event of workflowEvents) {
       const task = taskById.get(event.taskId!);
@@ -222,7 +346,7 @@ export async function getOrderEvidenceTimeline(
         reference: `WORKFLOW_EVENT:${event.id}`, category: 'WORKFLOW', title: event.action.replaceAll('_', ' ').toLowerCase(),
         label: `${task.nodeKey} · attempt ${task.attemptNumber}`, summary: [event.fromStatus && `${event.fromStatus.toLowerCase()} → ${event.toStatus.toLowerCase()}`, event.reason].filter(Boolean).join(' · '),
         occurredAt: event.occurredAt.toISOString(), orderId, taskId: task.id, jobId: mo?.id,
-        lineId: mo?.orderLineId ?? undefined, actorName: workflowActorById.get(event.actorUserId) ?? 'Former user',
+        lineId: mo?.orderLineId ?? undefined, actorName: actorById.get(event.actorUserId) ?? 'Former user',
         href: `/planning/tasks/${encodeURIComponent(task.id)}`, references: [order.orderNumber, task.nodeKey, ...(mo ? [mo.moNumber] : [])],
       });
     }
@@ -243,16 +367,8 @@ export async function getOrderEvidenceTimeline(
     }
   }
 
-  if (principal.permissions.has('planning.read')) {
-    const proposals = await db.recoveryProposal.findMany({
-      where: { workspaceId: principal.workspaceId, orderId },
-      select: { id: true, status: true, proposedById: true, resolvedById: true, resolutionNote: true, resolvedAt: true, createdAt: true, proposalJson: true },
-      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }], take: 50,
-    });
+  if (canReadPlanning) {
     sourceWasSampled ||= proposals.length === 50;
-    const proposalActorIds = [...new Set(proposals.flatMap(proposal => [proposal.proposedById, proposal.resolvedById].filter((id): id is string => Boolean(id))))];
-    const proposalActors = proposalActorIds.length ? await db.user.findMany({ where: { id: { in: proposalActorIds } }, select: { id: true, name: true } }) : [];
-    const proposalActorById = new Map(proposalActors.map(actor => [actor.id, actor.name]));
     for (const proposal of proposals) {
       let mode = 'Recovery review';
       try {
@@ -266,26 +382,14 @@ export async function getOrderEvidenceTimeline(
         label: mode,
         summary: proposal.resolutionNote ?? 'Proposal is a review only; no schedule change is recorded until the apply command succeeds.',
         occurredAt: (resolved ? proposal.resolvedAt! : proposal.createdAt).toISOString(), orderId,
-        actorName: proposal.resolvedById ? proposalActorById.get(proposal.resolvedById) ?? 'Former user' : proposalActorById.get(proposal.proposedById ?? '') ?? undefined,
+        actorName: proposal.resolvedById ? actorById.get(proposal.resolvedById) ?? 'Former user' : actorById.get(proposal.proposedById ?? '') ?? undefined,
         href: `/ai/recovery/${encodeURIComponent(proposal.id)}`,
         references: [order.orderNumber, mode, proposal.status.toLowerCase()],
       });
     }
   }
 
-  if (principal.permissions.has('forms.read')) {
-    const inspections = taskIds.length
-      ? await db.inspection.findMany({ where: { workspaceId: principal.workspaceId, productionOutput: { taskId: { in: taskIds } } }, select: { id: true } })
-      : [];
-    const formInstances = await db.formInstance.findMany({
-      where: { workspaceId: principal.workspaceId, OR: [
-        { subjectType: 'ORDER', subjectId: orderId },
-        ...(taskIds.length ? [{ subjectType: 'TASK', subjectId: { in: taskIds } }] : []),
-        ...(inspections.length ? [{ subjectType: 'INSPECTION', subjectId: { in: inspections.map(inspection => inspection.id) } }] : []),
-      ] },
-      select: { id: true, subjectType: true, subjectId: true },
-      take: 100,
-    });
+  if (canReadForms && formInstances.length > 0) {
     sourceWasSampled ||= formInstances.length === 100;
     // A workspace-level forms.read grant is not enough to expose every task or
     // inspection submission. Reuse the form domain's subject authorization.
@@ -304,9 +408,9 @@ export async function getOrderEvidenceTimeline(
       orderBy: [{ finalizedAt: 'desc' }, { id: 'desc' }], take: 500,
     }) : [];
     sourceWasSampled ||= submissions.length === 500;
-    const submissionActorIds = [...new Set(submissions.map(submission => submission.actorId))];
-    const submissionActors = submissionActorIds.length ? await db.user.findMany({ where: { id: { in: submissionActorIds } }, select: { id: true, name: true } }) : [];
-    const submissionActorById = new Map(submissionActors.map(actor => [actor.id, actor.name]));
+    const missingSubmissionActorIds = [...new Set(submissions.map(submission => submission.actorId).filter(id => !actorById.has(id)))];
+    const submissionActors = missingSubmissionActorIds.length ? await db.user.findMany({ where: { id: { in: missingSubmissionActorIds } }, select: { id: true, name: true } }) : [];
+    for (const actor of submissionActors) actorById.set(actor.id, actor.name);
     for (const submission of submissions) {
       const instance = readableInstanceById.get(submission.instanceId);
       if (!instance) continue;
@@ -319,19 +423,12 @@ export async function getOrderEvidenceTimeline(
         summary: submission.correctionReason ?? `Finalized ${submission.finalizedAt?.toISOString() ?? 'time unavailable'}`,
         occurredAt: (submission.finalizedAt ?? new Date(0)).toISOString(), orderId, taskId: task?.id, jobId: mo?.id,
         lineId: mo?.orderLineId ?? undefined, submissionId: submission.id,
-        actorName: submissionActorById.get(submission.actorId) ?? 'Former user', href: instance.subjectType === 'TASK' && task ? `/planning/tasks/${encodeURIComponent(task.id)}` : `/orders/${encodeURIComponent(orderId)}#lifecycle`,
+        actorName: actorById.get(submission.actorId) ?? 'Former user', href: instance.subjectType === 'TASK' && task ? `/planning/tasks/${encodeURIComponent(task.id)}` : `/orders/${encodeURIComponent(orderId)}#lifecycle`,
         references: [order.orderNumber, `${submission.instance.formVersion.template.name} v${submission.instance.formVersion.versionNumber}`, submission.instance.formVersion.contentHash.slice(0, 12), ...(task ? [task.nodeKey] : []), ...(mo ? [mo.moNumber] : [])],
       });
     }
   }
 
-  const qcInspections = principal.permissions.has('quality.read') && taskIds.length
-    ? await db.inspection.findMany({
-        where: { workspaceId: principal.workspaceId, productionOutput: { taskId: { in: taskIds } } },
-        include: { inspectorUser: { select: { name: true } }, productionOutput: { include: { task: { include: { jobsheet: { include: { manufacturingOrder: true } } } }, lot: true, item: true } }, reinspectionOf: { select: { id: true } }, reinspections: { select: { id: true, status: true } }, reworkAttempts: { select: { id: true, attemptNumber: true, status: true, targetAtoms: true } } },
-        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }], take: 200,
-      })
-    : [];
   sourceWasSampled ||= qcInspections.length === 200;
   for (const inspection of qcInspections) {
     const task = inspection.productionOutput?.task;
@@ -350,20 +447,7 @@ export async function getOrderEvidenceTimeline(
     });
   }
 
-  if (principal.permissions.has('inventory.read')) {
-    const shipmentIds = shipments.map(shipment => shipment.id);
-    const inspectionIds = qcInspections.map(inspection => inspection.id);
-    const referenceFilters = [
-      { referenceType: 'ORDER', referenceId: orderId },
-      ...(taskIds.length ? [{ referenceType: 'TASK', referenceId: { in: taskIds } }] : []),
-      ...(shipmentIds.length ? [{ referenceType: 'SHIPMENT', referenceId: { in: shipmentIds } }] : []),
-      ...(inspectionIds.length ? [{ referenceType: 'QC_INSPECTION', referenceId: { in: inspectionIds } }] : []),
-    ];
-    const movements = await db.stockMovement.findMany({
-      where: { workspaceId: principal.workspaceId, OR: referenceFilters },
-      include: { actorUser: { select: { name: true } }, item: { select: { code: true, name: true } }, sourceLocation: { select: { name: true } }, destinationLocation: { select: { name: true } }, sourceLot: { select: { lotNumber: true } }, destinationLot: { select: { lotNumber: true } } },
-      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: 200,
-    });
+  if (canReadInventory) {
     sourceWasSampled ||= movements.length === 200;
     for (const movement of movements) {
       const task = movement.referenceType === 'TASK' ? taskById.get(movement.referenceId ?? '') : undefined;
@@ -382,12 +466,7 @@ export async function getOrderEvidenceTimeline(
       });
     }
   }
-  if (principal.permissions.has('traceability.read') || principal.permissions.has('quality.read') || principal.permissions.has('admin.access')) {
-    const passports = await db.passport.findMany({
-      where: { workspaceId: principal.workspaceId, orderId, status: 'RELEASED', snapshotJson: { not: null } },
-      select: { id: true, serialNumber: true, publicationVersion: true, publishedAt: true, sharedCustomerId: true, shareRevokedAt: true },
-      orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }], take: 100,
-    });
+  if (canReadPassports) {
     sourceWasSampled ||= passports.length === 100;
     for (const passport of passports) {
       events.push({

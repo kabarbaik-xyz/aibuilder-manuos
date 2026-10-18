@@ -38,7 +38,7 @@ function AnswerText({ text }: { text: string }) {
   })}</div>;
 }
 
-export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: BrainQuestionContext | null }) {
+export function WorkspaceBrainDrawer({ initialContext, initialContextLabel }: { initialContext?: BrainQuestionContext | null; initialContextLabel?: string }) {
   const { principal } = useWorkspaceNavigation();
   const [selectedContext, setSelectedContext] = useState<BrainQuestionContext | null>(initialContext ?? null);
   const [question, setQuestion] = useState('');
@@ -87,7 +87,7 @@ export function WorkspaceBrainDrawer({ initialContext }: { initialContext?: Brai
   }
 
   return <div className="workspace-brain">
-    <div className="workspace-brain-context"><span className="workspace-brain-workspace"><Icon name="inventory" />{principal?.workspaceName || 'Current workspace'}</span>{selectedContext && <span className="text-xs text-primary">Selected {selectedContext.type.toLowerCase()} · {selectedContext.id}<Button size="small" variant="soft" className="ml-2" onClick={() => setSelectedContext(null)}>Clear</Button></span>}<span className="workspace-brain-readonly"><Icon name="lock" />Read only</span></div>
+    <div className="workspace-brain-context"><span className="workspace-brain-workspace"><Icon name="inventory" />{principal?.workspaceName || 'Current workspace'}</span>{selectedContext && <span className="text-xs text-primary">Selected {selectedContext.type.toLowerCase()} · {selectedContext === initialContext ? initialContextLabel || selectedContext.id : selectedContext.id}<Button size="small" variant="soft" className="ml-2" onClick={() => setSelectedContext(null)}>Clear</Button></span>}<span className="workspace-brain-readonly"><Icon name="lock" />Read only</span></div>
     <div className={`workspace-brain-history${messages.length ? '' : ' is-empty'}`} role="log" aria-label="Production questions and answers" aria-live="polite">
       {historyLoading && <p className="small muted" role="status">Loading recent chats…</p>}
       {historyError && <div role="alert"><p>{historyError}</p><Button onClick={() => setHistoryRetry(value => value + 1)}>Retry chat history</Button></div>}

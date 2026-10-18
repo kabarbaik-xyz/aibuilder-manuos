@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/resource-state';
+import { PermissionGate } from '@/components/ui/permission-gate';
 
 export default function WorkflowsPage() {
   const { search, setSearch, query } = useListSearch();
@@ -22,7 +23,7 @@ export default function WorkflowsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Workflow Studio" description="Define process DAG routings, operation dependencies, skill requirements, and inspection gates." actions={<><Link href="/workflows/new" className="btn primary ">Create New Workflow</Link></>} />
+      <PageHeader title="Workflow Studio" description="Define process DAG routings, operation dependencies, skill requirements, and inspection gates." actions={<PermissionGate permission="workflow.author"><Link href="/workflows/new" className="btn primary">Create New Workflow</Link></PermissionGate>} />
 
       <ListSearch value={search} onChange={setSearch} placeholder="Search workflow code or name…" label="Search workflows" />
 
@@ -30,8 +31,7 @@ export default function WorkflowsPage() {
         <EmptyState
           title="No workflow templates found"
           description="Create your first workflow routing to standardize production operations."
-          actionLabel="Create Workflow"
-          onAction={() => window.location.assign('/workflows/new')}
+          action={<PermissionGate permission="workflow.author"><Link href="/workflows/new" className="btn primary">Create Workflow</Link></PermissionGate>}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -61,9 +61,11 @@ export default function WorkflowsPage() {
 
                 {latestVersion && (
                   <div className="pt-2">
-                    <Link href={`/workflows/${tpl.id}/versions/${latestVersion.id}`} className="btn  w-full">
+                    <PermissionGate permission="workflow.author">
+                      <Link href={`/workflows/${tpl.id}/versions/${latestVersion.id}`} className="btn w-full">
                         Open Routing Editor
                       </Link>
+                    </PermissionGate>
                   </div>
                 )}
               </div>

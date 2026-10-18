@@ -29,7 +29,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState, LoadingState } from '@/components/ui/resource-state';
 import { ButtonLink } from '@/components/ui/button-link';
 import { toPublishedScheduleRange } from '../schedule-date-range';
-import { OvertimeControls } from './OvertimeControls';
 
 const slotFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 const formatSlot = (value: string) => slotFormatter.format(new Date(value));
@@ -200,7 +199,6 @@ export function PlanningScheduleView() {
           </PermissionGate>
         </div>
       } />
-      <OvertimeControls />
       {/* Top Metric Cards */}
       {publishedSchedules && publishedSchedules.length > 0 && (
         <div className="p-3 bg-surface border border-line rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs">

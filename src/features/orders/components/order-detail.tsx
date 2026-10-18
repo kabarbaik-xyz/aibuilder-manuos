@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
@@ -94,8 +94,20 @@ function formatDateTime(dateStr?: string | null) {
 
 export function OrderDetail({ order }: OrderDetailProps) {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'engineering' | 'production' | 'materials' | 'costing' | 'fulfillment'
+    'overview' | 'engineering' | 'production' | 'materials' | 'costing' | 'fulfillment' | 'traceability'
   >('overview');
+
+  useEffect(() => {
+    const syncHashToTab = () => {
+      if (typeof window !== 'undefined' && window.location.hash === '#evidence') {
+        setActiveTab('traceability');
+      }
+    };
+    syncHashToTab();
+    window.addEventListener('hashchange', syncHashToTab);
+    return () => window.removeEventListener('hashchange', syncHashToTab);
+  }, []);
+
   const [newQuestion, setNewQuestion] = useState('');
   const queryClient = useQueryClient();
   const [customerDocument, setCustomerDocument] = useState<File | null>(null);
@@ -106,7 +118,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
   const releaseMutation = useReleaseOrder(order.id);
   const confirmMutation = useConfirmOrder(order.id);
   const addQuestionMutation = useAddCustomerQuestion(order.id);
-  const costingQuery = useOrderCosting(order.id);
+  const costingQuery = useOrderCosting(order.id, activeTab === 'costing');
   const recordCostMutation = useRecordOrderCost(order.id);
   const changeRequestMutation = useCreateOrderChangeRequest(order.id);
 
@@ -234,6 +246,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
   const isShipped =
     order.status === 'DELIVERED' || order.status === 'PARTIALLY_DELIVERED';
   const latestShipment = order.shipments?.[0];
+  const lifecycle = order.lifecycleInstances?.[0];
 
   const getStatusVariant = (
     status: string
@@ -271,6 +284,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
             <div><dt>Customer</dt><dd>{order.customer?.name || '—'} <span>({order.customer?.code || '—'})</span></dd></div>
             <div><dt>Type</dt><dd>{order.orderType?.name || 'Standard'}</dd></div>
             <div><dt>Created</dt><dd>{formatDate(order.createdAt)}</dd></div>
+            {order.confirmedAt && <div><dt>Confirmed</dt><dd>{formatDate(order.confirmedAt)}</dd></div>}
           </dl>
         </div>
         <div className="od-actions">
@@ -280,7 +294,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
               <span className="inline-flex items-center gap-1.5"><Play className="w-3.5 h-3.5" />{releaseMutation.isPending ? 'Releasing…' : 'Release to production'}</span>
             </Button>
           )}
-          <ButtonLink href={`/ai/assistant?orderId=${encodeURIComponent(order.id)}`}>
+          <ButtonLink href={`/ai/assistant?orderId=${encodeURIComponent(order.id)}&orderNumber=${encodeURIComponent(order.orderNumber)}`}>
             <span className="inline-flex items-center gap-1.5"><Icon name="spark" /> Ask AI</span>
           </ButtonLink>
           {['RELEASED', 'IN_PRODUCTION', 'PARTIALLY_DELIVERED'].includes(order.status) && <PermissionGate permission={['planning.read', 'task.assign']}><ButtonLink href={`/ai/promise?orderId=${encodeURIComponent(order.id)}`}>Check delivery date</ButtonLink></PermissionGate>}
@@ -330,89 +344,23 @@ export function OrderDetail({ order }: OrderDetailProps) {
           <span className="od-banner-icon"><CheckCircle2 className="w-4 h-4" /></span>
           <div className="od-banner-copy">
             <strong>Engineering approved · ready for release</strong>
-            <p>BOM and routings are locked. Release to schedule operations and register supply demand.</p>
+            <p>
+              {order.confirmedAt
+                ? `Order confirmed ${formatDateTime(order.confirmedAt)}. BOM and routings are locked — release to schedule operations and register supply demand.`
+                : 'BOM and routings are locked. Confirm and release to schedule operations and register supply demand.'}
+            </p>
           </div>
-          {canConfirm ? <Button variant="primary" onClick={() => setShowConfirmModal(true)}>Confirm order</Button> : canRelease && <Button variant="primary" onClick={handleRelease} disabled={releaseMutation.isPending}>Release to production</Button>}
+          {canConfirm ? <Button variant="primary" onClick={() => setShowConfirmModal(true)}>Confirm order</Button> : canRelease && <Button variant="primary" onClick={handleRelease} disabled={releaseMutation.isPending}>{releaseMutation.isPending ? 'Releasing…' : 'Release to production'}</Button>}
         </div>
       )}
-
-      {order.confirmedAt && <Panel className="p-4 flex flex-wrap items-center justify-between gap-3">
-        <div><strong className="text-sm text-ink">Order confirmed</strong><p className="small muted">Confirmed {formatDateTime(order.confirmedAt)}. Engineering release can now create the manufacturing jobs.</p></div>
-        {canRelease && <Button variant="primary" onClick={handleRelease} disabled={releaseMutation.isPending}>{releaseMutation.isPending ? 'Releasing…' : 'Release to production'}</Button>}
-      </Panel>}
-
-      {order.lifecycleInstances?.[0] && (() => {
-        const lifecycle = order.lifecycleInstances[0];
-        return <Panel className="p-5 page-stack">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h2 className="text-base font-semibold text-ink">{lifecycle.workflowVersion.template.name}</h2><p className="field-help">Order lifecycle · version {lifecycle.workflowVersion.versionNumber} · stage ownership and handoffs</p></div>
-            <Badge variant={lifecycle.status === 'COMPLETED' ? 'success' : lifecycle.status === 'BLOCKED' ? 'warning' : 'blue'}>{lifecycle.status.replaceAll('_', ' ').toLowerCase()}</Badge>
-          </div>
-          <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {lifecycle.stages.map((stage) => <li key={stage.id} className="rounded-lg border border-line bg-surface-muted p-3">
-              <div className="flex items-start justify-between gap-2"><strong className="text-sm text-ink">{stage.name}</strong><Badge variant={stage.state === 'COMPLETED' ? 'success' : stage.state === 'BLOCKED' ? 'warning' : stage.state === 'READY' || stage.state === 'ACTIVE' ? 'blue' : 'default'}>{stage.state.replaceAll('_', ' ').toLowerCase()}</Badge></div>
-              <p className="small muted mt-1">{stage.department.name} · {stage.action.replaceAll('_', ' ').toLowerCase()}</p>
-              <p className="small mt-2 text-ink">{stage.assignedMembership?.user.name ?? 'Department queue'}</p>
-              {stage.dueAt && <p className="small muted mt-1">Due {formatDateTime(stage.dueAt)}</p>}
-              {!!stage.pinnedForms?.length && <div className="mt-3 border-t border-line pt-2">
-                <p className="small muted">Pinned evidence forms</p>
-                <ul className="mt-1 space-y-1">
-                  {stage.pinnedForms.map((form, index) => <li key={`${form.contentHash}-${index}`} className="small text-ink">
-                    {form.name}{form.version ? ` · v${form.version}` : ''} · {form.required ? 'required' : 'optional'} · {form.completionPoint.replaceAll('_', ' ').toLowerCase()}
-                  </li>)}
-                </ul>
-              </div>}
-            </li>)}
-          </ol>
-          {lifecycle.stages.some(stage => ['PLAN_PRODUCTION', 'EXECUTE_PRODUCTION'].includes(stage.action)) && order.instances?.some(instance => instance.tasks?.some((task: any) => Array.isArray(task.resourceBookings))) && <section className="page-stack border-t border-line pt-4" aria-label="Production schedule linked to this lifecycle">
-            <div><h3 className="text-sm font-semibold text-ink">Production schedule</h3><p className="field-help">Live tasks and confirmed bookings from Planning; this lifecycle does not keep a separate schedule.</p></div>
-            {order.instances?.flatMap(instance => instance.tasks ?? []).length ? <ul className="divide-y divide-line">
-              {order.instances?.flatMap(instance => instance.tasks ?? []).map((task: any) => <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-                <div><Link href={`/planning/tasks/${encodeURIComponent(task.id)}`} className="font-medium text-primary underline">{task.nodeKey}</Link><span className="ml-2 muted">{task.status.replaceAll('_', ' ').toLowerCase()}</span>{task.assignedTechnician?.name && <span className="ml-2 muted">· {task.assignedTechnician.name}</span>}{task.assignedMachine?.name && <span className="ml-2 muted">· {task.assignedMachine.name}</span>}</div>
-                <div className="text-right small muted">{task.resourceBookings?.length ? task.resourceBookings.map((booking: any) => <div key={booking.id}>{booking.resourceType === 'MACHINE' ? task.assignedMachine?.name ?? 'Machine' : task.assignedTechnician?.name ?? 'Technician'} · {formatDateTime(booking.startAt)} – {formatDateTime(booking.endAt)}</div>) : 'No confirmed booking'}</div>
-              </li>)}
-            </ul> : <p className="rounded-lg border border-line bg-surface-muted p-3 text-sm muted">Production tasks appear here after engineering releases the order. Planning creates and revalidates their bookings.</p>}
-          </section>}
-          {lifecycle.events.length > 0 && <div className="page-stack border-t border-line pt-4">
-            <div><h3 className="text-sm font-semibold text-ink">Workflow handoff history</h3><p className="field-help">Recorded stage changes from the lifecycle event log.</p></div>
-            <ol className="divide-y divide-line">
-              {lifecycle.events.map((event) => {
-                const stage = lifecycle.stages.find(candidate => candidate.id === event.stageId);
-                let detail: { action?: string; completionFact?: string } = {};
-                try { detail = JSON.parse(event.detailJson || '{}') as typeof detail; } catch { /* Historical event detail may predate structured lifecycle facts. */ }
-                const completionFactLabels: Record<string, string> = {
-                  ORDER_CONFIRMED: 'Order confirmed', ENGINEERING_APPROVED: 'Engineering approved',
-                  SCHEDULE_PROPOSAL_APPLIED: 'Planning schedule applied', ALL_PRODUCTION_TASKS_COMPLETED: 'Production completed',
-                  ALL_QC_INSPECTIONS_FINALIZED: 'Quality inspections finalized', ALL_SHIPMENT_QUANTITIES_DELIVERED: 'All quantities delivered',
-                  EVIDENCE_REVIEWED: 'Evidence reviewed',
-                };
-                return <li key={event.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                  <span className="font-medium text-ink">{stage?.name ?? 'Workflow started'} · {event.eventType.replaceAll('_', ' ').toLowerCase()}{detail.action && <span className="ml-2 font-normal text-muted">· {detail.action.replaceAll('_', ' ').toLowerCase()}</span>}{detail.completionFact && <span className="ml-2 font-normal text-muted">· {completionFactLabels[detail.completionFact] ?? detail.completionFact.replaceAll('_', ' ').toLowerCase()}</span>}</span>
-                  <span className="muted">{event.actorName ? `${event.actorName} · ` : ''}{event.fromState && event.toState ? `${event.fromState.replaceAll('_', ' ')} → ${event.toState.replaceAll('_', ' ')} · ` : ''}{formatDateTime(event.occurredAt)}</span>
-                </li>;
-              })}
-            </ol>
-          </div>}
-        </Panel>;
-      })()}
-
-      <PermissionGate permission={['order.read', 'traceability.read', 'admin.access']}>
-        <OrderEvidenceTimeline orderId={order.id} />
-      </PermissionGate>
+      {order.confirmedAt && order.status !== 'READY' && canRelease && (
+        <Panel className="p-4 flex flex-wrap items-center justify-between gap-3">
+          <div><strong className="text-sm text-ink">Order confirmed</strong><p className="small muted">Confirmed {formatDateTime(order.confirmedAt)}. Engineering release can now create the manufacturing jobs.</p></div>
+          <Button variant="primary" onClick={handleRelease} disabled={releaseMutation.isPending}>{releaseMutation.isPending ? 'Releasing…' : 'Release to production'}</Button>
+        </Panel>
+      )}
 
       {/* 4 Harmonized Metric Tiles */}
-      {order.lines && order.lines.length > 1 && <Panel className="p-5 page-stack">
-        <div><h2 className="text-sm font-semibold text-ink">Order lines</h2><p className="field-help">Each line has its own engineering revision and manufacturing jobs.</p></div>
-        <div className="page-stack">
-          {order.lines.map(line => <div key={line.id} className="order-detail-line">
-            <div><strong>{line.item?.code || line.itemId} · {line.item?.name || 'Item'}</strong>{(() => { const revision = order.engineeringRevisions?.find(candidate => candidate.orderLineId === line.id); return revision ? <Link className="small text-primary underline" href={`/engineering/orders/${order.id}?revisionId=${revision.id}`}>Line {line.lineNumber} · Engineering {revision.status}</Link> : <span className="small muted">Line {line.lineNumber} · Engineering pending</span>; })()}<PermissionGate permission={['planning.read', 'execution.read']}><Link className="small ml-2 text-primary underline" href={memoryHrefForItem(line.itemId, order.id) ?? '/ai/memory'}>Similar jobs</Link></PermissionGate></div>
-            <div><span className="small muted">Ordered</span><strong>{formatQuantity(BigInt(line.orderedAtoms))} {line.item?.baseUom?.code || ''}</strong></div>
-            <div><span className="small muted">Allocated</span><strong>{formatQuantity(BigInt(line.allocatedAtoms))}</strong></div>
-            <div><span className="small muted">Jobs</span><strong>{line.manufacturingOrders?.length ?? 0}</strong></div>
-          </div>)}
-        </div>
-      </Panel>}
-      {/* Order summary facts */}
       <section className="od-facts" aria-label="Order summary">
         <div className="od-fact">
           <span className="od-fact-label"><Package className="w-3.5 h-3.5" /> Target item</span>
@@ -482,92 +430,197 @@ export function OrderDetail({ order }: OrderDetailProps) {
             icon: 'delivery',
             count: order.shipments?.length,
           },
+          {
+            id: 'traceability',
+            label: 'Traceability & Audit',
+            icon: 'shield',
+            badge: lifecycle
+              ? `${lifecycle.stages.filter((s) => s.state === 'COMPLETED').length}/${lifecycle.stages.length}`
+              : undefined,
+            badgeVariant:
+              lifecycle?.status === 'COMPLETED' ? ('success' as const) : ('default' as const),
+          },
         ]}
       />
 
       {/* TAB 1: Overview */}
       {activeTab === 'overview' && (
         <div className="page-stack">
+          {/* Compact Lifecycle Progress Bar in Overview */}
+          {lifecycle && (
+            <Panel className="p-4 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3 min-w-0">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <strong className="text-sm text-ink">{lifecycle.workflowVersion.template.name}</strong>
+                    <Badge
+                      variant={
+                        lifecycle.status === 'COMPLETED'
+                          ? 'success'
+                          : lifecycle.status === 'BLOCKED'
+                          ? 'warning'
+                          : 'blue'
+                      }
+                    >
+                      {lifecycle.status.replaceAll('_', ' ').toLowerCase()}
+                    </Badge>
+                  </div>
+                  <p className="small muted">
+                    {lifecycle.stages.filter((s) => s.state === 'COMPLETED').length} of {lifecycle.stages.length} lifecycle stages completed
+                  </p>
+                </div>
+                <div className="hidden lg:flex items-center gap-1.5 flex-wrap">
+                  {lifecycle.stages.map((stage) => (
+                    <span
+                      key={stage.id}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${
+                        stage.state === 'COMPLETED'
+                          ? 'bg-success-soft text-success border-success/20'
+                          : stage.state === 'ACTIVE' || stage.state === 'READY'
+                          ? 'bg-primary-soft text-primary border-primary/20'
+                          : 'bg-surface-muted text-muted border-line'
+                      }`}
+                    >
+                      {stage.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <Button variant="soft" onClick={() => setActiveTab('traceability')}>
+                <span className="inline-flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  View traceability &amp; handoffs
+                </span>
+              </Button>
+            </Panel>
+          )}
+
+          {order.lines && order.lines.length > 1 && (
+            <Panel className="p-5 page-stack">
+              <div>
+                <h2 className="text-sm font-semibold text-ink">Order lines</h2>
+                <p className="field-help">Each line has its own engineering revision and manufacturing jobs.</p>
+              </div>
+              <div className="page-stack">
+                {order.lines.map((line) => (
+                  <div key={line.id} className="order-detail-line">
+                    <div>
+                      <strong>{line.item?.code || line.itemId} · {line.item?.name || 'Item'}</strong>
+                      {(() => {
+                        const revision = order.engineeringRevisions?.find((candidate) => candidate.orderLineId === line.id);
+                        return revision ? (
+                          <Link className="small text-primary underline" href={`/engineering/orders/${order.id}?revisionId=${revision.id}`}>
+                            Line {line.lineNumber} · Engineering {revision.status}
+                          </Link>
+                        ) : (
+                          <span className="small muted">Line {line.lineNumber} · Engineering pending</span>
+                        );
+                      })()}
+                      <PermissionGate permission={['planning.read', 'execution.read']}>
+                        <Link className="small ml-2 text-primary underline" href={memoryHrefForItem(line.itemId, order.id) ?? '/ai/memory'}>
+                          Similar jobs
+                        </Link>
+                      </PermissionGate>
+                    </div>
+                    <div>
+                      <span className="small muted">Ordered</span>
+                      <strong>{formatQuantity(BigInt(line.orderedAtoms))} {line.item?.baseUom?.code || ''}</strong>
+                    </div>
+                    <div>
+                      <span className="small muted">Allocated</span>
+                      <strong>{formatQuantity(BigInt(line.allocatedAtoms))}</strong>
+                    </div>
+                    <div>
+                      <span className="small muted">Jobs</span>
+                      <strong>{line.manufacturingOrders?.length ?? 0}</strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          <div className="od-grid">
+            <section className="od-card" aria-labelledby="od-rfq-title">
+              <header className="od-card-head">
+                <h2 id="od-rfq-title"><FileText className="w-4 h-4" /> RFQ intake &amp; commercial notes</h2>
+                {order.rfqDrafts?.[0] && <Badge>Source: {order.rfqDrafts[0].sourceType}</Badge>}
+              </header>
+              {order.rfqDrafts && order.rfqDrafts.length > 0 ? (
+                <div className="od-stack">
+                  {order.rfqDrafts.map((rfq) => (
+                    <pre key={rfq.id} className="od-note">{rfq.rawText}</pre>
+                  ))}
+                </div>
+              ) : (
+                <p className="od-empty">No raw RFQ source text attached.</p>
+              )}
+              <footer className="od-card-foot">
+                <span>Created {formatDateTime(order.createdAt)}</span>
+                <span>Revision v{order.version}</span>
+              </footer>
+            </section>
+
+            <section className="od-card" aria-labelledby="od-q-title">
+              <header className="od-card-head">
+                <h2 id="od-q-title"><Building2 className="w-4 h-4" /> Customer questions</h2>
+                <Badge variant={order.questions?.some((q) => q.status === 'OPEN') ? 'danger' : 'default'}>
+                  {order.questions?.filter((q) => q.status === 'OPEN').length || 0} open
+                </Badge>
+              </header>
+              {order.questions && order.questions.length > 0 ? (
+                <ul className="od-questions">
+                  {order.questions.map((q) => (
+                    <li key={q.id} className="od-question">
+                      <div className="od-question-head">
+                        <strong>{q.question}</strong>
+                        <Badge variant={q.status === 'OPEN' ? 'warning' : 'success'}>{q.status}</Badge>
+                      </div>
+                      {q.answer ? <p className="od-answer">{q.answer}</p> : <p className="od-empty">Awaiting response from team.</p>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="od-empty">No customer questions or clarifications logged for this order.</p>
+              )}
+              <form onSubmit={handleAddQuestion} className="od-inline-form">
+                <label className="sr-only" htmlFor="od-new-question">Log question or customer note</label>
+                <Input id="od-new-question" type="text" value={newQuestion} onChange={(e) => setNewQuestion(e.target.value)} placeholder="Log question or customer note…" />
+                <Button type="submit" variant="primary" icon="plus" disabled={addQuestionMutation.isPending || !newQuestion.trim()}>
+                  {addQuestionMutation.isPending ? 'Adding…' : 'Add'}
+                </Button>
+              </form>
+            </section>
+
+            <PermissionGate permission="order.release">
+              <section className="od-card od-span" aria-labelledby="od-doc-title">
+                <header className="od-card-head">
+                  <div>
+                    <h2 id="od-doc-title"><FileText className="w-4 h-4" /> Customer documents</h2>
+                    <p className="od-sub">Files stay private unless you publish them to this order's customer portal.</p>
+                  </div>
+                </header>
+                <div className="od-upload">
+                  <Input type="file" accept="application/pdf,image/png,image/jpeg,text/csv,text/plain" onChange={(event) => setCustomerDocument(event.target.files?.[0] ?? null)} aria-label="Choose order document" />
+                  <label className="od-check">
+                    <input type="checkbox" checked={publishDocumentToCustomer} onChange={(event) => setPublishDocumentToCustomer(event.target.checked)} />
+                    <span>Publish to customer</span>
+                  </label>
+                  <Button variant="primary" icon="download" disabled={!customerDocument || documentUploadPending} onClick={handleOrderDocumentUpload}>
+                    {documentUploadPending ? 'Uploading…' : 'Upload document'}
+                  </Button>
+                </div>
+                {documentUploadMessage && <p role="status" className="od-sub">{documentUploadMessage}</p>}
+              </section>
+            </PermissionGate>
+          </div>
+
           <SubjectFormEvidence
             subjectType="ORDER"
             subjectId={order.id}
             title="Order specification forms"
             description="Review and submit required customer specifications before the order is released."
           />
-          <div className="od-grid">
-          <section className="od-card" aria-labelledby="od-rfq-title">
-            <header className="od-card-head">
-              <h2 id="od-rfq-title"><FileText className="w-4 h-4" /> RFQ intake &amp; commercial notes</h2>
-              {order.rfqDrafts?.[0] && <Badge>Source: {order.rfqDrafts[0].sourceType}</Badge>}
-            </header>
-            {order.rfqDrafts && order.rfqDrafts.length > 0 ? (
-              <div className="od-stack">
-                {order.rfqDrafts.map((rfq) => (
-                  <pre key={rfq.id} className="od-note">{rfq.rawText}</pre>
-                ))}
-              </div>
-            ) : (
-              <p className="od-empty">No raw RFQ source text attached.</p>
-            )}
-            <footer className="od-card-foot">
-              <span>Created {formatDateTime(order.createdAt)}</span>
-              <span>Revision v{order.version}</span>
-            </footer>
-          </section>
-
-          <section className="od-card" aria-labelledby="od-q-title">
-            <header className="od-card-head">
-              <h2 id="od-q-title"><Building2 className="w-4 h-4" /> Customer questions</h2>
-              <Badge variant={order.questions?.some((q) => q.status === 'OPEN') ? 'danger' : 'default'}>
-                {order.questions?.filter((q) => q.status === 'OPEN').length || 0} open
-              </Badge>
-            </header>
-            {order.questions && order.questions.length > 0 ? (
-              <ul className="od-questions">
-                {order.questions.map((q) => (
-                  <li key={q.id} className="od-question">
-                    <div className="od-question-head">
-                      <strong>{q.question}</strong>
-                      <Badge variant={q.status === 'OPEN' ? 'warning' : 'success'}>{q.status}</Badge>
-                    </div>
-                    {q.answer ? <p className="od-answer">{q.answer}</p> : <p className="od-empty">Awaiting response from team.</p>}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="od-empty">No customer questions or clarifications logged for this order.</p>
-            )}
-            <form onSubmit={handleAddQuestion} className="od-inline-form">
-              <label className="sr-only" htmlFor="od-new-question">Log question or customer note</label>
-              <Input id="od-new-question" type="text" value={newQuestion} onChange={(e) => setNewQuestion(e.target.value)} placeholder="Log question or customer note…" />
-              <Button type="submit" variant="primary" icon="plus" disabled={addQuestionMutation.isPending || !newQuestion.trim()}>
-                {addQuestionMutation.isPending ? 'Adding…' : 'Add'}
-              </Button>
-            </form>
-          </section>
-
-          <PermissionGate permission="order.release">
-            <section className="od-card od-span" aria-labelledby="od-doc-title">
-              <header className="od-card-head">
-                <div>
-                  <h2 id="od-doc-title"><FileText className="w-4 h-4" /> Customer documents</h2>
-                  <p className="od-sub">Files stay private unless you publish them to this order's customer portal.</p>
-                </div>
-              </header>
-              <div className="od-upload">
-                <Input type="file" accept="application/pdf,image/png,image/jpeg,text/csv,text/plain" onChange={(event) => setCustomerDocument(event.target.files?.[0] ?? null)} aria-label="Choose order document" />
-                <label className="od-check">
-                  <input type="checkbox" checked={publishDocumentToCustomer} onChange={(event) => setPublishDocumentToCustomer(event.target.checked)} />
-                  <span>Publish to customer</span>
-                </label>
-                <Button variant="primary" icon="download" disabled={!customerDocument || documentUploadPending} onClick={handleOrderDocumentUpload}>
-                  {documentUploadPending ? 'Uploading…' : 'Upload document'}
-                </Button>
-              </div>
-              {documentUploadMessage && <p role="status" className="od-sub">{documentUploadMessage}</p>}
-            </section>
-          </PermissionGate>
-          </div>
         </div>
       )}
 
@@ -896,7 +949,19 @@ export function OrderDetail({ order }: OrderDetailProps) {
                         <ol className="mt-3 list-decimal space-y-1 pl-5">
                           {costExplanation.contributors.map(category => (
                               <li key={category.category}>
-                                <span className="font-medium text-ink">{category.category}</span>: {formatCents(category.varianceCents, costExplanation.currency)} variance from {category.sourceEntryCount} recorded source {category.sourceEntryCount === 1 ? 'entry' : 'entries'}. <Link href={category.evidenceHref} className="text-primary underline">Review cost evidence</Link>
+                                <span className="font-medium text-ink">{category.category}</span>: {formatCents(category.varianceCents, costExplanation.currency)} variance from {category.sourceEntryCount} recorded source {category.sourceEntryCount === 1 ? 'entry' : 'entries'}.{' '}
+                                <Link
+                                  href={category.evidenceHref}
+                                  onClick={(event) => {
+                                    if (category.evidenceHref.endsWith('#evidence')) {
+                                      event.preventDefault();
+                                      setActiveTab('traceability');
+                                    }
+                                  }}
+                                  className="text-primary underline"
+                                >
+                                  Review cost evidence
+                                </Link>
                               </li>
                             ))}
                         </ol>
@@ -956,6 +1021,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
         </div>
       )}
 
+      {/* TAB 6: Fulfillment & Shipments */}
       {activeTab === 'fulfillment' && (
         <div className="od-panel rounded-xl border bg-white p-6 border-line shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b pb-3 border-line">
@@ -1045,6 +1111,174 @@ export function OrderDetail({ order }: OrderDetailProps) {
                 Finished stock will be reserved and allocated for shipment once production completes.
               </p>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 7: Traceability & Audit */}
+      {activeTab === 'traceability' && (
+        <div className="page-stack">
+          <PermissionGate permission={['order.read', 'traceability.read', 'admin.access']}>
+            <OrderEvidenceTimeline orderId={order.id} />
+          </PermissionGate>
+
+          {lifecycle && (
+            <Panel className="od-panel p-6 page-stack">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
+                <div>
+                  <h2 className="text-base font-semibold text-ink">{lifecycle.workflowVersion.template.name}</h2>
+                  <p className="field-help">
+                    Order lifecycle · version {lifecycle.workflowVersion.versionNumber} · stage ownership and handoffs
+                  </p>
+                </div>
+                <Badge
+                  variant={
+                    lifecycle.status === 'COMPLETED'
+                      ? 'success'
+                      : lifecycle.status === 'BLOCKED'
+                      ? 'warning'
+                      : 'blue'
+                  }
+                >
+                  {lifecycle.status.replaceAll('_', ' ').toLowerCase()}
+                </Badge>
+              </div>
+
+              <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {lifecycle.stages.map((stage) => (
+                  <li key={stage.id} className="rounded-xl border border-line bg-surface-muted p-4 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <strong className="text-sm text-ink">{stage.name}</strong>
+                      <Badge
+                        variant={
+                          stage.state === 'COMPLETED'
+                            ? 'success'
+                            : stage.state === 'BLOCKED'
+                            ? 'warning'
+                            : stage.state === 'READY' || stage.state === 'ACTIVE'
+                            ? 'blue'
+                            : 'default'
+                        }
+                      >
+                        {stage.state.replaceAll('_', ' ').toLowerCase()}
+                      </Badge>
+                    </div>
+                    <p className="small muted">
+                      {stage.department.name} · {stage.action.replaceAll('_', ' ').toLowerCase()}
+                    </p>
+                    <p className="small text-ink font-medium">
+                      {stage.assignedMembership?.user.name ?? 'Department queue'}
+                    </p>
+                    {stage.dueAt && <p className="small muted">Due {formatDateTime(stage.dueAt)}</p>}
+                    {!!stage.pinnedForms?.length && (
+                      <div className="mt-2 border-t border-line pt-2">
+                        <p className="small muted">Pinned evidence forms</p>
+                        <ul className="mt-1 space-y-1">
+                          {stage.pinnedForms.map((form, index) => (
+                            <li key={`${form.contentHash}-${index}`} className="small text-ink">
+                              {form.name}
+                              {form.version ? ` · v${form.version}` : ''} · {form.required ? 'required' : 'optional'} ·{' '}
+                              {form.completionPoint.replaceAll('_', ' ').toLowerCase()}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+
+              {lifecycle.stages.some((stage) => ['PLAN_PRODUCTION', 'EXECUTE_PRODUCTION'].includes(stage.action)) &&
+                order.instances?.some((inst) => inst.tasks?.some((task: any) => Array.isArray(task.resourceBookings))) && (
+                  <section className="page-stack border-t border-line pt-4" aria-label="Production schedule linked to this lifecycle">
+                    <div>
+                      <h3 className="text-sm font-semibold text-ink">Production schedule</h3>
+                      <p className="field-help">
+                        Live tasks and confirmed bookings from Planning; this lifecycle does not keep a separate schedule.
+                      </p>
+                    </div>
+                    {order.instances?.flatMap((inst) => inst.tasks ?? []).length ? (
+                      <ul className="divide-y divide-line">
+                        {order.instances?.flatMap((inst) => inst.tasks ?? []).map((task: any) => (
+                          <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                            <div>
+                              <Link href={`/planning/tasks/${encodeURIComponent(task.id)}`} className="font-medium text-primary underline">
+                                {task.nodeKey}
+                              </Link>
+                              <span className="ml-2 muted">{task.status.replaceAll('_', ' ').toLowerCase()}</span>
+                              {task.assignedTechnician?.name && <span className="ml-2 muted">· {task.assignedTechnician.name}</span>}
+                              {task.assignedMachine?.name && <span className="ml-2 muted">· {task.assignedMachine.name}</span>}
+                            </div>
+                            <div className="text-right small muted">
+                              {task.resourceBookings?.length
+                                ? task.resourceBookings.map((booking: any) => (
+                                    <div key={booking.id}>
+                                      {booking.resourceType === 'MACHINE'
+                                        ? task.assignedMachine?.name ?? 'Machine'
+                                        : task.assignedTechnician?.name ?? 'Technician'}{' '}
+                                      · {formatDateTime(booking.startAt)} – {formatDateTime(booking.endAt)}
+                                    </div>
+                                  ))
+                                : 'No confirmed booking'}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="rounded-lg border border-line bg-surface-muted p-3 text-sm muted">
+                        Production tasks appear here after engineering releases the order. Planning creates and revalidates their bookings.
+                      </p>
+                    )}
+                  </section>
+                )}
+
+              {lifecycle.events.length > 0 && (
+                <div className="page-stack border-t border-line pt-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-ink">Workflow handoff history</h3>
+                    <p className="field-help">Recorded stage changes from the lifecycle event log.</p>
+                  </div>
+                  <ol className="divide-y divide-line">
+                    {lifecycle.events.map((event) => {
+                      const stage = lifecycle.stages.find((candidate) => candidate.id === event.stageId);
+                      let detail: { action?: string; completionFact?: string } = {};
+                      try {
+                        detail = JSON.parse(event.detailJson || '{}') as typeof detail;
+                      } catch {
+                        /* Historical event detail may predate structured lifecycle facts. */
+                      }
+                      const completionFactLabels: Record<string, string> = {
+                        ORDER_CONFIRMED: 'Order confirmed',
+                        ENGINEERING_APPROVED: 'Engineering approved',
+                        SCHEDULE_PROPOSAL_APPLIED: 'Planning schedule applied',
+                        ALL_PRODUCTION_TASKS_COMPLETED: 'Production completed',
+                        ALL_QC_INSPECTIONS_FINALIZED: 'Quality inspections finalized',
+                        ALL_SHIPMENT_QUANTITIES_DELIVERED: 'All quantities delivered',
+                        EVIDENCE_REVIEWED: 'Evidence reviewed',
+                      };
+                      return (
+                        <li key={event.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                          <span className="font-medium text-ink">
+                            {stage?.name ?? 'Workflow started'} · {event.eventType.replaceAll('_', ' ').toLowerCase()}
+                            {detail.action && <span className="ml-2 font-normal text-muted">· {detail.action.replaceAll('_', ' ').toLowerCase()}</span>}
+                            {detail.completionFact && (
+                              <span className="ml-2 font-normal text-muted">
+                                · {completionFactLabels[detail.completionFact] ?? detail.completionFact.replaceAll('_', ' ').toLowerCase()}
+                              </span>
+                            )}
+                          </span>
+                          <span className="muted">
+                            {event.actorName ? `${event.actorName} · ` : ''}
+                            {event.fromState && event.toState ? `${event.fromState.replaceAll('_', ' ')} → ${event.toState.replaceAll('_', ' ')} · ` : ''}
+                            {formatDateTime(event.occurredAt)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+            </Panel>
           )}
         </div>
       )}

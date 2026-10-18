@@ -18,6 +18,8 @@ import { GenerationPanel } from '@/features/builder-proposals/components/generat
 import { ProposalReview } from '@/features/builder-proposals/components/proposal-review';
 import { BuilderProposalDto } from '@/server/modules/builder-proposals/contracts';
 import { WorkflowFormBindingPanel } from './workflow-form-binding-panel';
+import { PermissionGate } from '@/components/ui/permission-gate';
+import { useWorkspaceNavigation } from '@/components/workspace-navigation-context';
 
 export interface FormDefinitionEditorProps {
   template: FormTemplateDTO;
@@ -26,6 +28,7 @@ export interface FormDefinitionEditorProps {
 
 export function FormDefinitionEditor({ template, version }: FormDefinitionEditorProps) {
   const router = useRouter();
+  const { principal } = useWorkspaceNavigation();
   const [definition, setDefinition] = useState<FormDefinition>(version.definition);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [previewAnswers, setPreviewAnswers] = useState<Answers>({});
@@ -36,7 +39,8 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
   const actionMutation = useFormVersionAction(template.id, version.id);
   const forkMutation = useForkFormVersion(template.id);
 
-  const isReadOnly = version.status === 'PUBLISHED' || version.status === 'RETIRED';
+  const canEditDraft = principal?.permissions.includes('forms.edit_draft') ?? false;
+  const isReadOnly = version.status !== 'DRAFT' || !canEditDraft;
 
   // Live client validation of definition
   let validationError: string | null = null;
@@ -129,56 +133,40 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
         description={<span className="form-builder-meta"><Badge variant={version.status === 'PUBLISHED' ? 'success' : version.status === 'REVIEW' ? 'warning' : 'default'}>{version.status.toLowerCase()}</Badge><span>Version {version.versionNumber}</span><span>{template.purpose.toLowerCase().replace(/_/g, ' ')}</span></span>}
         actions={
         <div className="flex items-center gap-2">
-          {!isReadOnly && (
-            <>
-              <Button
-                variant="default"
-                onClick={handleSaveDraft}
-                disabled={Boolean(validationError) || updateDraftMutation.isPending}
-              >
-                Save draft
-              </Button>
+          {version.status === 'DRAFT' && <PermissionGate permission="forms.edit_draft">
+            <Button variant="default" onClick={handleSaveDraft} disabled={Boolean(validationError) || updateDraftMutation.isPending}>Save draft</Button>
+          </PermissionGate>}
 
-              {version.status === 'DRAFT' && (
-                <Button
-                  variant="primary"
-                  onClick={() => handleAction('submit_review')}
-                  disabled={Boolean(validationError) || actionMutation.isPending}
-                >
-                  Submit for review
-                </Button>
-              )}
+          {version.status === 'DRAFT' && <PermissionGate permission="forms.submit_review">
+            <Button variant="primary" onClick={() => handleAction('submit_review')} disabled={Boolean(validationError) || actionMutation.isPending}>Submit for review</Button>
+          </PermissionGate>}
 
-              {version.status === 'REVIEW' && (
-                <Button
-                  variant="primary"
-                  onClick={() => handleAction('publish')}
-                  disabled={Boolean(validationError) || actionMutation.isPending}
-                >
-                  Approve & publish
-                </Button>
-              )}
-            </>
-          )}
+          {version.status === 'REVIEW' && <PermissionGate permission="forms.publish">
+            <Button variant="primary" onClick={() => handleAction('publish')} disabled={Boolean(validationError) || actionMutation.isPending}>Approve & publish</Button>
+          </PermissionGate>}
 
           {version.status === 'PUBLISHED' && (
             <>
-              <Button variant="primary" onClick={handleFork} disabled={forkMutation.isPending}>
-                Fork new version
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => handleAction('retire')}
-                disabled={actionMutation.isPending}
-              >
-                Retire version
-              </Button>
+              <PermissionGate permission="forms.create">
+                <Button variant="primary" onClick={handleFork} disabled={forkMutation.isPending}>
+                  Fork new version
+                </Button>
+              </PermissionGate>
+              <PermissionGate permission="forms.retire">
+                <Button
+                  variant="ghost"
+                  onClick={() => handleAction('retire')}
+                  disabled={actionMutation.isPending}
+                >
+                  Retire version
+                </Button>
+              </PermissionGate>
             </>
           )}
         </div>
         }
       />
-      {version.status === 'PUBLISHED' && template.purpose === 'TASK_EVIDENCE' && <WorkflowFormBindingPanel formVersionId={version.id} />}
+      {version.status === 'PUBLISHED' && template.purpose === 'TASK_EVIDENCE' && <PermissionGate permission="forms.bind"><WorkflowFormBindingPanel formVersionId={version.id} /></PermissionGate>}
       <FormErrorSummary error={updateDraftMutation.error || actionMutation.error || forkMutation.error} />
 
       {/* Validation Issue Banner */}
@@ -189,7 +177,7 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
       )}
 
       {isReadOnly && (
-        <div className="form-builder-notice"><Icon name="shield" /><div><strong>{version.status === 'PUBLISHED' ? 'Published version' : 'Retired version'} · Read only</strong><p>{version.status === 'PUBLISHED' ? 'Explore the fields and test the preview. Fork a new version to make changes.' : 'This version is retained for reference. Its field definition cannot be changed.'}</p></div></div>
+        <div className="form-builder-notice"><Icon name="shield" /><div><strong>{version.status === 'PUBLISHED' ? 'Published version' : version.status === 'RETIRED' ? 'Retired version' : 'Under review'} · Read only</strong><p>{version.status === 'PUBLISHED' ? 'Explore the fields and test the preview. Fork a new version to make changes.' : version.status === 'RETIRED' ? 'This version is retained for reference. Its field definition cannot be changed.' : 'This version is in review and its field definition cannot be changed.'}</p></div></div>
       )}
 
       {/* AI Form Assistant */}

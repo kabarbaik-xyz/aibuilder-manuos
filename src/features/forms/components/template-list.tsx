@@ -19,6 +19,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { PermissionGate } from '@/components/ui/permission-gate';
 
 export function TemplateList() {
   const createMutation = useCreateFormTemplate();
@@ -65,9 +66,11 @@ export function TemplateList() {
         title="Form Templates"
         description="Versioned schema-driven form templates for orders, work evidence, and quality inspections."
         actions={
-          <Button variant="primary" icon="plus" onClick={() => setIsModalOpen(true)}>
-            Create template
-          </Button>
+          <PermissionGate permission="forms.create">
+            <Button variant="primary" icon="plus" onClick={() => setIsModalOpen(true)}>
+              Create template
+            </Button>
+          </PermissionGate>
         }
       />
 
@@ -83,7 +86,7 @@ export function TemplateList() {
           <Link className="ft-template-name" href={`/settings/forms/${tpl.id}`}>{tpl.name}</Link>
           <span className="ft-template-code">{tpl.code}</span>
           <p className="ft-description">{tpl.description || 'No description added.'}</p>
-          <div className="ft-template-footer"><span>{tpl.purpose === 'ORDER_SPEC' ? 'Order specification' : tpl.purpose === 'QC_EVIDENCE' ? 'Quality evidence' : 'Work evidence'}<small>{tpl.versionsCount} {tpl.versionsCount === 1 ? 'version' : 'versions'}</small></span><Link href={`/settings/forms/${tpl.id}`} className="btn small-btn">Open editor<Icon name="arrow" /></Link></div>
+          <div className="ft-template-footer"><span>{tpl.purpose === 'ORDER_SPEC' ? 'Order specification' : tpl.purpose === 'QC_EVIDENCE' ? 'Quality evidence' : 'Work evidence'}<small>{tpl.versionsCount} {tpl.versionsCount === 1 ? 'version' : 'versions'}</small></span><Link href={`/settings/forms/${tpl.id}`} className="btn small-btn">Open template<Icon name="arrow" /></Link></div>
         </Panel>)}
       </div>}
 

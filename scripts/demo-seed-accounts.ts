@@ -4,16 +4,35 @@ import type { Principal } from '../src/server/auth/principal';
 import { provisionUser } from '../src/server/auth/provisioning';
 import { AccessService } from '../src/server/modules/access/service';
 
+export const DEFAULT_DEMO_SEED_PASSWORD = 'Password123!';
+
+export function resolveDemoSeedPassword(configured?: string): string {
+  return configured || DEFAULT_DEMO_SEED_PASSWORD;
+}
+
 export interface DemoSeedAccount {
   code: string;
   name: string;
-  email: string;
+  email?: string;
   roleCodes: string[];
   departmentId?: string | null;
   jobTitle?: string | null;
   landingPage?: string | null;
   customerId?: string | null;
   technicianId?: string | null;
+}
+
+/** Cross-functional administrator login for local workspace administration and review. */
+export function buildDemoSuperadminAccount(workspaceCode: string): DemoSeedAccount {
+  const workspace = workspaceCode.trim().toLowerCase();
+  return {
+    code: 'superadmin',
+    name: 'Demo Superadmin',
+    email: `superadmin.${workspace}@manuos.test`,
+    roleCodes: ['ACCESS_ADMIN', 'OWNER', 'ENGINEER', 'PLANNER', 'WAREHOUSE', 'QC', 'SALES', 'BUYER'],
+    jobTitle: 'System Administrator',
+    landingPage: '/dashboard',
+  };
 }
 
 export async function syncDemoAccessAccount(
@@ -23,7 +42,8 @@ export async function syncDemoAccessAccount(
   account: DemoSeedAccount,
   options: { password: string; resetExistingPassword: boolean; idempotencyKey: string },
 ) {
-  const email = account.email.trim().toLowerCase();
+  const email = account.email?.trim().toLowerCase();
+  if (!email) throw new Error(`Demo seed account '${account.code}' must have an email`);
   let user = await db.user.findUnique({ where: { email } });
   if (!user) {
     return access.createUser(principal, {

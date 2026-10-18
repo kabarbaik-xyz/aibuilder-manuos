@@ -3,7 +3,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { createFactoryFixture, type FactoryFixture } from '../fixtures/factory';
 import { AccessService } from '@/server/modules/access/service';
 import { createBetterAuth } from '@/server/auth/auth';
-import { syncDemoAccessAccount } from '../../scripts/demo-seed-accounts';
+import { buildDemoSuperadminAccount, resolveDemoSeedPassword, syncDemoAccessAccount } from '../../scripts/demo-seed-accounts';
 import { seedTestAccess } from '../fixtures/access';
 
 describe('demo seed People & Access', () => {
@@ -88,5 +88,30 @@ describe('demo seed People & Access', () => {
       roles: ['ENGINEER'],
     });
     expect(engineer.principal.permissions.has('engineering.approve')).toBe(true);
+  });
+
+  it('provisions the documented Superadmin demo login with full workspace roles', async () => {
+    const owner = fixture.alpha.users.admin;
+    const account = buildDemoSuperadminAccount('DEMO');
+    await syncDemoAccessAccount(fixture.db, new AccessService(fixture.db), owner.principal, account, {
+      password: 'Demo-superadmin-password-123',
+      resetExistingPassword: false,
+      idempotencyKey: 'demo-superadmin-create',
+    });
+
+    const user = await fixture.db.user.findUniqueOrThrow({ where: { email: account.email } });
+    const membership = await fixture.db.membership.findUniqueOrThrow({
+      where: { workspaceId_userId: { workspaceId: fixture.alpha.workspaceId, userId: user.id } },
+      include: { roles: { include: { role: true } } },
+    });
+    expect(account.email).toBe('superadmin.demo@manuos.test');
+    expect(membership.roles.map((grant) => grant.role.code).sort()).toEqual([...account.roleCodes].sort());
+    expect(membership.roles.map((grant) => grant.role.code)).toContain('ACCESS_ADMIN');
+    expect(membership.roles.map((grant) => grant.role.code)).toContain('OWNER');
+  });
+
+  it('uses the documented default demo password unless explicitly overridden', () => {
+    expect(resolveDemoSeedPassword()).toBe('Password123!');
+    expect(resolveDemoSeedPassword('Workspace-specific-123!')).toBe('Workspace-specific-123!');
   });
 });

@@ -61,11 +61,11 @@ export function useConfirmOrder(orderId: string) {
 
 import { orderCostingApi, OrderCostSummary } from "./api";
 
-export function useOrderCosting(orderId: string) {
+export function useOrderCosting(orderId: string, enabled = true) {
   return useQuery({
     queryKey: ["orders", orderId, "costing"],
     queryFn: () => orderCostingApi.getCostSummary(orderId),
-    enabled: Boolean(orderId),
+    enabled: Boolean(orderId) && enabled,
   });
 }
 
