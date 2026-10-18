@@ -120,6 +120,34 @@ export interface OrderDto {
   }>;
 }
 
+export interface OrderEvidenceEventDto {
+  reference: string;
+  category: 'WORKFLOW' | 'ENGINEERING' | 'FORM' | 'SCHEDULING' | 'MATERIAL' | 'PRODUCTION' | 'QUALITY' | 'DELIVERY' | 'PASSPORT';
+  title: string;
+  label: string;
+  summary: string;
+  occurredAt: string;
+  orderId: string;
+  lineId?: string;
+  jobId?: string;
+  taskId?: string;
+  stageId?: string;
+  submissionId?: string;
+  lotId?: string;
+  shipmentId?: string;
+  actorName?: string;
+  href: string;
+  references: string[];
+}
+
+export interface OrderEvidenceTimelineDto {
+  orderId: string;
+  orderNumber: string;
+  events: OrderEvidenceEventDto[];
+  sampled: boolean;
+  appliedSearch: string | null;
+}
+
 export const ordersApi = {
   listOrders: async (filters?: { customerId?: string; status?: string }) => {
     const params = new URLSearchParams();
@@ -132,6 +160,13 @@ export const ordersApi = {
 
   getOrder: async (id: string) => {
     const res = await apiRequest<{ data: OrderDto }>(`/api/orders/${id}`);
+    return res.data;
+  },
+
+  getEvidenceTimeline: async (id: string, search?: string) => {
+    const params = new URLSearchParams({ limit: '100' });
+    if (search?.trim()) params.set('search', search.trim());
+    const res = await apiRequest<{ data: OrderEvidenceTimelineDto }>(`/api/orders/${encodeURIComponent(id)}/evidence?${params}`);
     return res.data;
   },
 

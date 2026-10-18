@@ -42,6 +42,7 @@ import { apiRequest } from '@/lib/api/client';
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { memoryHrefForItem } from '@/features/intelligence/memory-navigation';
 import { SubjectFormEvidence } from '@/features/forms/components/subject-form-evidence';
+import { OrderEvidenceTimeline } from './order-evidence-timeline';
 
 interface OrderDetailProps {
   order: OrderDto;
@@ -394,6 +395,10 @@ export function OrderDetail({ order }: OrderDetailProps) {
           </div>}
         </Panel>;
       })()}
+
+      <PermissionGate permission={['order.read', 'traceability.read', 'admin.access']}>
+        <OrderEvidenceTimeline orderId={order.id} />
+      </PermissionGate>
 
       {/* 4 Harmonized Metric Tiles */}
       {order.lines && order.lines.length > 1 && <Panel className="p-5 page-stack">
