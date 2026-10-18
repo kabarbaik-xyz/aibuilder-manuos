@@ -10,14 +10,14 @@ import { Icon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { LoadingState, ErrorState } from "@/components/ui/resource-state";
 import { apiRequest } from "@/lib/api/client";
-import { useGraphStore } from "@/store/graph-store";
+import { useUiStore } from "@/store/ui-store";
 import type { DashboardOverviewDTO } from "@/server/modules/intelligence/dashboard";
 import { parseQuantity } from "@/domain/quantity";
 import { DashboardCharts } from "@/features/command-center/dashboard-charts";
 import "@/features/command-center/command-center.css";
 
 export default function DashboardPage() {
-  const openModal = useGraphStore((s) => s.openModal);
+  const openModal = useUiStore((s) => s.openModal);
   const [showAllExceptions, setShowAllExceptions] = React.useState(false);
 
   const {

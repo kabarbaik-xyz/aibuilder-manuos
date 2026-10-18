@@ -5,7 +5,12 @@ import Link from 'next/link';
 import { Icon } from '@/components/icons';
 import { ButtonLink } from '@/components/ui/button-link';
 
-export function LandingNav() {
+export interface LandingNavProps {
+  /** Signed-in visitors get "Open workspace" instead of the Sign In CTA. */
+  authenticated?: boolean;
+}
+
+export function LandingNav({ authenticated = false }: LandingNavProps = {}) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -68,12 +73,12 @@ export function LandingNav() {
             Explore Demo
           </ButtonLink>
           <ButtonLink
-            href="/login"
+            href={authenticated ? '/' : '/login'}
             variant="primary"
             size="small"
             id="nav-login-link"
           >
-            Sign In
+            {authenticated ? 'Open workspace' : 'Sign In'}
           </ButtonLink>
 
           <button
@@ -142,12 +147,12 @@ export function LandingNav() {
                 Explore Interactive Demo
               </ButtonLink>
               <ButtonLink
-                href="/login"
+                href={authenticated ? '/' : '/login'}
                 variant="primary"
                 className="w-full justify-center"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Sign In to Workspace
+                {authenticated ? 'Open Workspace' : 'Sign In to Workspace'}
               </ButtonLink>
             </li>
           </ul>

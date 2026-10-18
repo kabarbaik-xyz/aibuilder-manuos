@@ -7,7 +7,12 @@ import { ButtonLink } from '@/components/ui/button-link';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const ROWS = ['Laser', 'CNC-01', 'CNC-02', 'Inspect'];
 
-export function LandingHero() {
+export interface LandingHeroProps {
+  /** Signed-in visitors get "Open workspace" instead of the Sign in CTA. */
+  authenticated?: boolean;
+}
+
+export function LandingHero({ authenticated = false }: LandingHeroProps = {}) {
   const [rerouted, setRerouted] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -39,8 +44,12 @@ export function LandingHero() {
               <span>Launch demo</span>
               <Icon name="arrow" className="w-4 h-4" />
             </ButtonLink>
-            <ButtonLink href="/login" variant="default" id="hero-signin-button">
-              Sign In
+            <ButtonLink
+              href={authenticated ? '/' : '/login'}
+              variant="default"
+              id="hero-signin-button"
+            >
+              {authenticated ? 'Open workspace' : 'Sign in'}
             </ButtonLink>
           </div>
         </div>

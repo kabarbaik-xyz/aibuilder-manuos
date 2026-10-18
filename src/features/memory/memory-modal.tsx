@@ -2,11 +2,13 @@
 
 import React from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 
 export function MemoryModal() {
-  const { history, closeModal } = useGraphStore();
+  const history = useGraphStore((s) => s.history);
+  const closeModal = useUiStore((s) => s.closeModal);
 
   return (
     <div>

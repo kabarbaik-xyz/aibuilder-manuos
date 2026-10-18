@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import {
   validateWorkflowDAG,
   WorkflowNode,
@@ -28,8 +28,7 @@ const PRESETS = {
 };
 
 export function IntakeModal() {
-  const store = useGraphStore();
-  const { closeModal } = store;
+  const closeModal = useUiStore((s) => s.closeModal);
 
   const [rfqText, setRfqText] = useState(PRESETS.panel.text);
   const [extractedDraft, setExtractedDraft] = useState<any | null>(null);
@@ -118,9 +117,9 @@ export function IntakeModal() {
   };
 
   const handleConfirmDraftOrder = () => {
-    store.showToast(
-      'Draft preview closed. No order was created.'
-    );
+    useUiStore
+      .getState()
+      .showToast('Draft preview closed. No order was created.');
     closeModal();
   };
 

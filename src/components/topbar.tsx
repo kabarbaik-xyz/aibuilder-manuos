@@ -1,8 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useGraphStore } from '../store/graph-store';
-import { SCREENS } from '../lib/navigation';
+import { useUiStore } from '../store/ui-store';
 import { Icon } from './icons';
 import { Button } from './ui/button';
 import { useWorkspaceNavigation } from './workspace-navigation-context';
@@ -11,13 +10,30 @@ import { NotificationInbox } from './notification-inbox';
 
 interface TopbarProps {
   customBreadcrumb?: React.ReactNode;
+  /** Overrides the route-metadata-derived title (used by the demo shell). */
   activeTitle?: string;
+  /** Overrides the workspace name segment of the breadcrumb. */
+  factoryName?: string;
+  /** Hides the notification inbox (used by the demo shell). */
+  showNotifications?: boolean;
+  /** Live-indicator label; defaults to "Workspace". */
+  sessionLabel?: string;
 }
 
-export function Topbar({ customBreadcrumb, activeTitle }: TopbarProps = {}) {
-  const { currentScreen, toggleSidebar, isSidebarCollapsed, isNavMenuOpen, openModal } = useGraphStore();
-  const { metadata, principal, isDemo } = useWorkspaceNavigation();
-  const screen = SCREENS.find((s) => s.id === currentScreen) || SCREENS[0];
+/**
+ * Shared topbar shell. Production derives identity from the authenticated
+ * workspace session; the demo shell passes explicit overrides instead of this
+ * component detecting the demo route.
+ */
+export function Topbar({
+  customBreadcrumb,
+  activeTitle,
+  factoryName,
+  showNotifications = true,
+  sessionLabel = 'Workspace',
+}: TopbarProps = {}) {
+  const { toggleSidebar, isSidebarCollapsed, isNavMenuOpen, openModal } = useUiStore();
+  const { metadata, principal } = useWorkspaceNavigation();
 
   return (
     <header className="topbar" id="topbar">
@@ -34,12 +50,12 @@ export function Topbar({ customBreadcrumb, activeTitle }: TopbarProps = {}) {
           <Icon name="menu" />
         </button>
         <div className="breadcrumb">
-          <span className="breadcrumb-factory">{isDemo ? 'Precision Works' : principal?.workspaceName || 'Workspace'}</span>
+          <span className="breadcrumb-factory">{factoryName || principal?.workspaceName || 'Workspace'}</span>
           <span className="breadcrumb-factory">/</span>
           {customBreadcrumb ? (
             customBreadcrumb
           ) : (
-            <strong>{activeTitle || (isDemo ? screen.title : metadata.title)}</strong>
+            <strong>{activeTitle || metadata.title}</strong>
           )}
         </div>
       </div>
@@ -56,10 +72,10 @@ export function Topbar({ customBreadcrumb, activeTitle }: TopbarProps = {}) {
           <kbd>⌘ K</kbd>
         </button>
         <span className="topbar-rule" />
-        {!isDemo && <NotificationInbox />}
+        {showNotifications && <NotificationInbox />}
         <span className="live-indicator">
           <span className="dot" />
-          {isDemo ? 'Demo session' : 'Workspace'}
+          {sessionLabel}
         </span>
         <Button
           className="topbar-assistant"

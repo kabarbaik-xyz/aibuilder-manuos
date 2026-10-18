@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useGraphStore } from "../../store/graph-store";
+import { useUiStore } from "../../store/ui-store";
 import { Icon } from "../../components/icons";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -26,8 +27,8 @@ const STARTER_PROMPTS = [
 ];
 
 export function BrainDrawer() {
-  const store = useGraphStore();
-  const { setScreen, closeModal } = store;
+  const setScreen = useGraphStore((s) => s.setScreen);
+  const closeModal = useUiStore((s) => s.closeModal);
 
   const [inputQuery, setInputQuery] = useState("");
   const [loading, setLoading] = useState(false);

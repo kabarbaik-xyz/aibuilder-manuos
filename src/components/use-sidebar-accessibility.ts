@@ -1,9 +1,9 @@
 'use client';
 import { useEffect } from 'react';
-import { useGraphStore } from '@/store/graph-store';
+import { useUiStore } from '@/store/ui-store';
 import { lockBodyScroll } from '@/lib/body-scroll-lock';
 export function useSidebarAccessibility() {
- const open=useGraphStore(s=>s.isNavMenuOpen),collapsed=useGraphStore(s=>s.isSidebarCollapsed);
+ const open=useUiStore(s=>s.isNavMenuOpen),collapsed=useUiStore(s=>s.isSidebarCollapsed);
  useEffect(()=>{
   const sidebar=document.getElementById('sidebar');const workspace=document.querySelector<HTMLElement>('.workspace');const media=window.matchMedia('(max-width: 850px)');
   let release:(()=>void)|undefined;

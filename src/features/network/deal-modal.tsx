@@ -2,12 +2,13 @@
 
 import React from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 
 export function DealModal({ capacity = false }: { capacity?: boolean }) {
-  const store = useGraphStore();
-  const { networkDeals, acceptNetworkDeal, receiveNetworkMaterial, closeModal } = store;
+  const { networkDeals, acceptNetworkDeal, receiveNetworkMaterial } = useGraphStore();
+  const closeModal = useUiStore((s) => s.closeModal);
 
   const activeSupplyDeal = networkDeals.find((d) => d.targetRef === 'TB-24');
   const isAccepted = activeSupplyDeal?.status === 'ACCEPTED';

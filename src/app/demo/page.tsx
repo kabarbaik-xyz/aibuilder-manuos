@@ -1,2 +1,5 @@
-import { AppShell } from '@/components/app-shell';
-export default function DemoPage(){return <AppShell/>;}
+import { DemoShell } from '@/components/demo/demo-shell';
+
+export default function DemoPage() {
+  return <DemoShell />;
+}

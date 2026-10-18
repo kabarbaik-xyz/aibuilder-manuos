@@ -8,5 +8,5 @@ import type { PrincipalJson } from '@/server/auth/principal';
 export function useWorkspaceNavigation() {
  const pathname = usePathname();
  const session = useQuery({ queryKey: queryKeys.me(), queryFn: () => apiRequest<{data: PrincipalJson}>('/api/me'), retry:false });
- return { ...session, principal:session.data?.data, pathname, metadata:resolveRouteMetadata(pathname), isDemo:pathname === '/demo' };
+ return { ...session, principal:session.data?.data, pathname, metadata:resolveRouteMetadata(pathname) };
 }

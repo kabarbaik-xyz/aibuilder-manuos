@@ -2,18 +2,15 @@
 
 import React, { useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 
 export function NetworkView() {
   const store = useGraphStore();
-  const {
-    networkDeals,
-    openModal,
-    setScreen,
-    receiveNetworkMaterial,
-  } = store;
+  const { networkDeals, setScreen, receiveNetworkMaterial } = store;
+  const openModal = useUiStore((s) => s.openModal);
 
   const [activeTab, setActiveTab] = useState<'capacity' | 'supply'>('capacity');
   const activeSupplyDeal = networkDeals.find((d) => d.targetRef === 'TB-24');

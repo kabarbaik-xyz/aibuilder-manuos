@@ -14,34 +14,42 @@ interface LaunchPath {
   icon: IconName;
 }
 
-const LAUNCH_PATHS: LaunchPath[] = [
-  {
-    badge: 'INSTANT SANDBOX',
-    title: 'Interactive Role-Switching Demo',
-    desc: 'Switch between Executive, Planner, Technician, and Customer views with pre-loaded factory orders.',
-    href: '/demo',
-    cta: 'Launch Live Sandbox',
-    icon: 'spark',
-  },
-  {
-    badge: 'COMMAND CENTER',
-    title: 'Sign In to Operational Workspace',
-    desc: 'Manage live RFQs, revision-locked BOMs, finite schedules, and double-entry inventory.',
-    href: '/login',
-    cta: 'Sign In to Workspace',
-    icon: 'factory',
-  },
-  {
-    badge: 'BUYER PORTAL',
-    title: 'Customer Portal & Passports',
-    desc: 'Inspect live order milestones, ECO approvals, and serialized Digital Product Passports.',
-    href: '/portal/orders',
-    cta: 'Preview Buyer Portal',
-    icon: 'shield',
-  },
-];
+const DEMO_PATH: LaunchPath = {
+  badge: 'INSTANT SANDBOX',
+  title: 'Interactive Role-Switching Demo',
+  desc: 'Switch between Executive, Planner, Technician, and Customer views with pre-loaded factory orders.',
+  href: '/demo',
+  cta: 'Launch Live Sandbox',
+  icon: 'spark',
+};
 
-export function LandingCTA() {
+const PORTAL_PATH: LaunchPath = {
+  badge: 'BUYER PORTAL',
+  title: 'Customer Portal & Passports',
+  desc: 'Inspect live order milestones, ECO approvals, and serialized Digital Product Passports.',
+  href: '/portal/orders',
+  cta: 'Preview Buyer Portal',
+  icon: 'shield',
+};
+
+function workspacePath(authenticated: boolean): LaunchPath {
+  return {
+    badge: 'COMMAND CENTER',
+    title: authenticated ? 'Open Operational Workspace' : 'Sign In to Operational Workspace',
+    desc: 'Manage live RFQs, revision-locked BOMs, finite schedules, and double-entry inventory.',
+    href: authenticated ? '/' : '/login',
+    cta: authenticated ? 'Open Workspace' : 'Sign In to Workspace',
+    icon: 'factory',
+  };
+}
+
+export interface LandingCTAProps {
+  /** Signed-in visitors get "Open workspace" instead of the Sign In CTAs. */
+  authenticated?: boolean;
+}
+
+export function LandingCTA({ authenticated = false }: LandingCTAProps = {}) {
+  const launchPaths = [DEMO_PATH, workspacePath(authenticated), PORTAL_PATH];
   return (
     <section className="l-cta-section" aria-labelledby="cta-heading">
       <div className="l-section-inner">
@@ -71,17 +79,17 @@ export function LandingCTA() {
                 <Icon name="arrow" className="w-4 h-4" />
               </ButtonLink>
               <ButtonLink
-                href="/login"
+                href={authenticated ? '/' : '/login'}
                 variant="default"
                 id="cta-signin-button"
               >
-                Sign In to Workspace
+                {authenticated ? 'Open Workspace' : 'Sign In to Workspace'}
               </ButtonLink>
             </div>
           </div>
 
           <div className="l-cta-paths-grid">
-            {LAUNCH_PATHS.map((path) => (
+            {launchPaths.map((path) => (
               <Link key={path.title} href={path.href} className="l-cta-path-card">
                 <div className="l-cta-path-head">
                   <div className="l-cta-path-icon" aria-hidden="true">

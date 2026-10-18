@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useUiStore } from '../../store/ui-store';
 import { selectRealProgress } from '../../store/selectors';
 import { Icon } from '../../components/icons';
 import { Button } from '../../components/ui/button';
@@ -10,11 +11,8 @@ import { ComputedValue } from '../../components/ui/computed-value';
 
 export function WorkstationView() {
   const store = useGraphStore();
-  const {
-    openModal,
-    recordOutput,
-    requestInspection,
-  } = store;
+  const { recordOutput, requestInspection } = store;
+  const openModal = useUiStore((s) => s.openModal);
 
   const progress = selectRealProgress(store, '1042');
   const [isPaused, setIsPaused] = useState(false);
@@ -104,9 +102,11 @@ export function WorkstationView() {
                 icon={isPaused ? 'play' : 'pause'}
                 onClick={() => {
                   setIsPaused(!isPaused);
-                  store.showToast(
-                    isPaused ? 'Task resumed.' : 'Task paused. Timer stopped.'
-                  );
+                  useUiStore
+                    .getState()
+                    .showToast(
+                      isPaused ? 'Task resumed.' : 'Task paused. Timer stopped.'
+                    );
                 }}
               >
                 {isPaused ? 'Resume task' : 'Pause task'}
@@ -162,7 +162,7 @@ export function WorkstationView() {
                   if (progress.awaitingQC > 0) {
                     requestInspection('T3');
                   } else {
-                    store.showToast('No completed units awaiting inspection.');
+                    useUiStore.getState().showToast('No completed units awaiting inspection.');
                   }
                 }}
               >

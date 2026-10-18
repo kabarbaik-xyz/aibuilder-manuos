@@ -30,7 +30,14 @@ import {
 } from '../data/seed';
 import { analyzeRippleEffect } from '../engines/ripple';
 import { generateRecoveryOptions } from '../engines/recovery';
+import { useUiStore } from './ui-store';
 
+/**
+ * Demo-only simulation store. Holds the fictional "Precision Works" domain
+ * graph plus scenario actions. Shared shell UI state (modals, toasts,
+ * sidebar/nav flags) lives in `useUiStore` so production code never imports
+ * this module.
+ */
 export interface GraphStoreState {
   // Graph Entities
   orders: Order[];
@@ -51,11 +58,6 @@ export interface GraphStoreState {
   networkDeals: NetworkDeal[];
   currentPersona: PersonaType;
   currentScreen: ScreenType;
-  isNavMenuOpen: boolean;
-  isSidebarCollapsed: boolean;
-  toastMessage: string | null;
-  activeModal: string | null; // 'recovery' | 'memory' | 'passport' | 'promise' | 'deal' | 'intake' | 'brain' | 'audit' | 'task' | 'search' | null
-  modalData: any;
 
   // Actions
   injectDisruption: (materialId?: string, delayDays?: number) => void;
@@ -69,16 +71,9 @@ export interface GraphStoreState {
   acceptNetworkDeal: (dealId: string) => void;
   receiveNetworkMaterial: (dealId: string) => void;
 
-  // UI Navigation Actions
+  // Demo persona/screen navigation (shell UI state lives in useUiStore)
   setPersona: (persona: PersonaType) => void;
   setScreen: (screen: ScreenType) => void;
-  toggleNavMenu: () => void;
-  toggleSidebar: () => void;
-  closeNavMenu: () => void;
-  setSidebarCollapsed: (collapsed: boolean) => void;
-  showToast: (msg: string) => void;
-  openModal: (modalName: string, data?: any) => void;
-  closeModal: () => void;
 }
 
 export const useGraphStore = create<GraphStoreState>((set, get) => ({
@@ -116,11 +111,6 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   networkDeals: [],
   currentPersona: 'Owner',
   currentScreen: 'command',
-  isNavMenuOpen: false,
-  isSidebarCollapsed: false,
-  toastMessage: null,
-  activeModal: null,
-  modalData: null,
 
   injectDisruption: (materialId = 'TB-24', delayDays = 2) => {
     const { tasks, orders, materials, audit } = get();
@@ -209,7 +199,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       audit: [newAuditEntry, ...audit],
     });
 
-    get().showToast('Material delay injected. Recovery ready for review.');
+    useUiStore.getState().showToast('Material delay injected. Recovery ready for review.');
   },
 
   resetScenario: () => {
@@ -235,8 +225,6 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       },
       activeRecovery: null,
       networkDeals: [],
-      activeModal: null,
-      modalData: null,
       audit: [
         {
           id: `audit-${Date.now()}`,
@@ -249,7 +237,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       ],
     });
 
-    get().showToast('Scenario reset. Ready to simulate a delay.');
+    useUiStore.getState().closeModal();
+    useUiStore.getState().showToast('Scenario reset. Ready to simulate a delay.');
   },
 
   approveRecoveryOption: (optionId: string, approvedBy = 'Alex Rahman') => {
@@ -294,7 +283,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       audit: [newAuditEntry, ...audit],
     });
 
-    get().showToast('Plan approved. Customer promise updated.');
+    useUiStore.getState().showToast('Plan approved. Customer promise updated.');
   },
 
   assignTechnician: (taskId: string, technicianId: string) => {
@@ -329,7 +318,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       audit: [newAuditEntry, ...audit],
     });
 
-    get().showToast(`${tech.name} assigned. 6 hours reserved.`);
+    useUiStore.getState().showToast(`${tech.name} assigned. 6 hours reserved.`);
   },
 
   recordOutput: (taskId: string, additionalUnits: number) => {
@@ -357,7 +346,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       audit: [newAuditEntry, ...audit],
     });
 
-    get().showToast(`${additionalUnits} unit${additionalUnits === 1 ? '' : 's'} recorded. Awaiting QC.`);
+    useUiStore.getState().showToast(`${additionalUnits} unit${additionalUnits === 1 ? '' : 's'} recorded. Awaiting QC.`);
   },
 
   requestInspection: (taskId: string) => {
@@ -375,7 +364,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     };
 
     set({ audit: [newAuditEntry, ...audit] });
-    get().showToast('QC inspection requested.');
+    useUiStore.getState().showToast('QC inspection requested.');
   },
 
   recordQCInspection: (taskId: string, unitSerial: string, passed: boolean) => {
@@ -401,7 +390,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       audit: [newAuditEntry, ...audit],
     });
 
-    get().showToast(`Unit ${unitSerial} ${passed ? 'passed QC' : 'sent for rework'}.`);
+    useUiStore.getState().showToast(`Unit ${unitSerial} ${passed ? 'passed QC' : 'sent for rework'}.`);
   },
 
   acknowledgePromise: (orderId: string) => {
@@ -424,7 +413,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       audit: [newAuditEntry, ...audit],
     });
 
-    get().showToast('Delivery plan acknowledged.');
+    useUiStore.getState().showToast('Delivery plan acknowledged.');
   },
 
   acceptNetworkDeal: (dealId: string) => {
@@ -457,7 +446,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       audit: [newAuditEntry, ...audit],
     });
 
-    get().showToast('Both sides accepted. Material receipt still required.');
+    useUiStore.getState().showToast('Both sides accepted. Material receipt still required.');
   },
 
   receiveNetworkMaterial: (dealId: string) => {
@@ -519,7 +508,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       audit: [newAuditEntry, ...audit],
     });
 
-    get().showToast('Materials received. Blocked tasks unblocked!');
+    useUiStore.getState().showToast('Materials received. Blocked tasks unblocked!');
   },
 
   setPersona: (persona: PersonaType) => {
@@ -527,50 +516,13 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     set({
       currentPersona: persona,
       currentScreen: profile.defaultScreen,
-      isNavMenuOpen: false,
     });
+    useUiStore.getState().closeNavMenu();
   },
 
   setScreen: (screen: ScreenType) => {
-    set({ currentScreen: screen, isNavMenuOpen: false });
-  },
-
-  toggleNavMenu: () => {
-    set((s) => ({ isNavMenuOpen: !s.isNavMenuOpen }));
-  },
-
-  toggleSidebar: () => {
-    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 850px)').matches) {
-      set((s) => ({ isNavMenuOpen: !s.isNavMenuOpen }));
-      return;
-    }
-
-    set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed }));
-  },
-
-  closeNavMenu: () => {
-    set({ isNavMenuOpen: false });
-  },
-
-  setSidebarCollapsed: (collapsed: boolean) => {
-    set({ isSidebarCollapsed: collapsed });
-  },
-
-  showToast: (msg: string) => {
-    set({ toastMessage: msg });
-    setTimeout(() => {
-      if (get().toastMessage === msg) {
-        set({ toastMessage: null });
-      }
-    }, 3500);
-  },
-
-  openModal: (modalName: string, data?: any) => {
-    set({ activeModal: modalName, modalData: data });
-  },
-
-  closeModal: () => {
-    set({ activeModal: null, modalData: null });
+    set({ currentScreen: screen });
+    useUiStore.getState().closeNavMenu();
   },
 }));
 
