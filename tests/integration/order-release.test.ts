@@ -328,11 +328,11 @@ describe('W03: Release and Process Instantiation Transaction', () => {
       'cmd-order-multi-line-release'
     );
 
-    for (const revision of orderRes.data.engineeringRevisions) {
+    for (const [index, revision] of orderRes.data.engineeringRevisions.entries()) {
       await engineeringService.saveEngineeringDraft(
         engineer.principal,
         revision.id,
-        { workflowVersionId: wfV1Id },
+        { workflowVersionId: index === 0 ? wfV1Id : wfV2Id },
         `cmd-eng-multi-${revision.id}`
       );
       await engineeringService.approveEngineeringRevision(
@@ -363,7 +363,12 @@ describe('W03: Release and Process Instantiation Transaction', () => {
       20_000_000n,
     ]);
     expect(jobs.map((job) => job.orderLine?.allocatedAtoms)).toEqual(jobs.map((job) => job.targetAtoms));
-    expect(jobs.every((job) => job.jobsheets.length === 1 && job.jobsheets[0].tasks.length === 3)).toBe(true);
+    expect(jobs.every((job) => job.jobsheets.length === 1)).toBe(true);
+    expect(jobs.map((job) => job.workflowVersionId).sort()).toEqual([wfV1Id, wfV2Id].sort());
+    expect(jobs.map((job) => job.jobsheets[0].tasks.length).sort()).toEqual([3, 4]);
+    expect(jobs.map((job) => job.engineeringRevisionId).sort()).toEqual(
+      orderRes.data.engineeringRevisions.map((revision: { id: string }) => revision.id).sort()
+    );
     expect(released.data.jobs).toHaveLength(2);
 
     const before = {
