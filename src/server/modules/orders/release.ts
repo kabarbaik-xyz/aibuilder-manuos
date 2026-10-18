@@ -209,8 +209,8 @@ export async function releaseOrder(
       });
 
       await new NotificationService(tx).notifyFacilityMembers(principal.workspaceId, order.facilityId, 'planning.read', {
-        category: 'RELEASE', title: `Order dirilis: ${order.orderNumber}`,
-        body: `${jobs.length} job tersedia untuk penjadwalan.`, subjectType: 'ORDER', subjectId: order.id,
+        category: 'RELEASE', title: `Order released: ${order.orderNumber}`,
+        body: `${jobs.length} job available for scheduling.`, subjectType: 'ORDER', subjectId: order.id,
         dedupeKey: `order-release:${order.id}`,
       });
 

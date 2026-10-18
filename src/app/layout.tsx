@@ -18,13 +18,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id">
+    <html lang="en">
       <head>
         <meta name="theme-color" content="#f5f7fb" />
       </head>
       <body>
         <a className="skip-link" href="#main">
-          Lewati ke konten
+          Skip to content
         </a>
         <Providers>{children}</Providers>
       </body>

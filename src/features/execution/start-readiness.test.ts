@@ -25,10 +25,10 @@ describe('getKnownTaskStartBlockReasons', () => {
         itemCode: 'RAW-01', requiredAtoms: 10n, issuedAtoms: 2n, reservedAtoms: 3n, availableInWarehouseAtoms: 1n,
       }],
     })).toEqual([
-      'Belum ada teknisi yang ditetapkan untuk sesi kerja.',
-      'Selesaikan blocker: Motor panas.',
-      'Operasi sebelumnya OP-10 belum selesai (RUNNING).',
-      'RAW-01 kurang 4 atom dari kebutuhan operasi.',
+      'No technician assigned for the work session.',
+      'Resolve blocker: Motor panas.',
+      'Predecessor operation OP-10 not yet complete (RUNNING).',
+      'RAW-01 short 4 atoms from operation requirement.',
     ]);
   });
 

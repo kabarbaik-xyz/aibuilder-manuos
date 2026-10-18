@@ -15,16 +15,16 @@ export function getKnownTaskStartBlockReasons(input: StartReadinessInput): strin
   const reasons: string[] = [];
 
   if (!input.hasTechnician) {
-    reasons.push('Belum ada teknisi yang ditetapkan untuk sesi kerja.');
+    reasons.push('No technician assigned for the work session.');
   }
 
   for (const title of input.blockingIssueTitles) {
-    reasons.push(`Selesaikan blocker: ${title}.`);
+    reasons.push(`Resolve blocker: ${title}.`);
   }
 
   for (const predecessor of input.predecessors) {
     if (predecessor.status !== 'COMPLETED') {
-      reasons.push(`Operasi sebelumnya ${predecessor.nodeKey} belum selesai (${predecessor.status}).`);
+      reasons.push(`Predecessor operation ${predecessor.nodeKey} not yet complete (${predecessor.status}).`);
     }
   }
 
@@ -32,7 +32,7 @@ export function getKnownTaskStartBlockReasons(input: StartReadinessInput): strin
     const coveredAtoms = demand.issuedAtoms + demand.reservedAtoms + demand.availableInWarehouseAtoms;
     if (coveredAtoms < demand.requiredAtoms) {
       reasons.push(
-        `${demand.itemCode} kurang ${demand.requiredAtoms - coveredAtoms} atom dari kebutuhan operasi.`
+        `${demand.itemCode} short ${demand.requiredAtoms - coveredAtoms} atoms from operation requirement.`
       );
     }
   }

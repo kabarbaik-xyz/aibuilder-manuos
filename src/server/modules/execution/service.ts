@@ -830,12 +830,12 @@ export class ExecutionService {
       }),
     ]);
     const readinessReasons: TaskExecutionDetailDTO['readinessReasons'] = [];
-    if (!task.assignedTechnicianId && !principal.technicianId) readinessReasons.push({ code: 'MISSING_ASSIGNMENT', severity: 'BLOCKER', message: 'Belum ada teknisi yang ditugaskan.' });
-    if (blockingIssue) readinessReasons.push({ code: 'BLOCKING_ISSUE', severity: 'BLOCKER', message: 'Ada isu prioritas tinggi/kritis yang belum selesai.' });
-    if (predecessors.some((predecessor) => !predecessor.isCompleted)) readinessReasons.push({ code: 'PREDECESSOR_INCOMPLETE', severity: 'BLOCKER', message: 'Operasi sebelumnya belum selesai.' });
-    if (findUndercoveredDemands(readiness).length) readinessReasons.push({ code: 'MATERIAL_SHORTAGE', severity: 'BLOCKER', message: 'Kebutuhan material belum seluruhnya tercukupi.' });
-    if (!['RELEASED', 'IN_PRODUCTION', 'PARTIALLY_DELIVERED'].includes(task.instance.order.status)) readinessReasons.push({ code: 'ORDER_NOT_RELEASED', severity: 'BLOCKER', message: 'Pesanan belum dirilis untuk produksi.' });
-    if (['COMPLETED', 'CANCELLED'].includes(task.status)) readinessReasons.push({ code: 'TERMINAL_STATUS', severity: 'BLOCKER', message: 'Operasi sudah berstatus akhir.' });
+    if (!task.assignedTechnicianId && !principal.technicianId) readinessReasons.push({ code: 'MISSING_ASSIGNMENT', severity: 'BLOCKER', message: 'No technician assigned.' });
+    if (blockingIssue) readinessReasons.push({ code: 'BLOCKING_ISSUE', severity: 'BLOCKER', message: 'High/critical priority issue not yet resolved.' });
+    if (predecessors.some((predecessor) => !predecessor.isCompleted)) readinessReasons.push({ code: 'PREDECESSOR_INCOMPLETE', severity: 'BLOCKER', message: 'Predecessor operation not yet complete.' });
+    if (findUndercoveredDemands(readiness).length) readinessReasons.push({ code: 'MATERIAL_SHORTAGE', severity: 'BLOCKER', message: 'Material requirements not fully covered.' });
+    if (!['RELEASED', 'IN_PRODUCTION', 'PARTIALLY_DELIVERED'].includes(task.instance.order.status)) readinessReasons.push({ code: 'ORDER_NOT_RELEASED', severity: 'BLOCKER', message: 'Order not yet released for production.' });
+    if (['COMPLETED', 'CANCELLED'].includes(task.status)) readinessReasons.push({ code: 'TERMINAL_STATUS', severity: 'BLOCKER', message: 'Operation already in terminal status.' });
     const cumulativeRecordedAtoms = outputs.reduce((sum, output) => sum + output.outputAtoms, 0n);
     const cumulativeScrapAtoms = inspections.reduce((sum, inspection) => sum + inspection.scrappedAtoms, 0n);
     const cumulativeReworkOutAtoms = inspections

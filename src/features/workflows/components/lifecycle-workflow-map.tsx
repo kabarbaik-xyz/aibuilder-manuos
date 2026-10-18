@@ -53,7 +53,7 @@ export function LifecycleWorkflowMap({
 
   return <section className="lifecycle-map-panel" aria-label="Workflow node map">
     <header className="lifecycle-map-header">
-      <div><h2>Workflow map</h2><p className="field-help">Ikuti alur lintas departemen dan percabangannya. Pilih node untuk membuka pengaturan stage.</p></div>
+      <div><h2>Workflow map</h2><p className="field-help">Follow the cross-department flow and branches. Select a node to open stage settings.</p></div>
       <div className="lifecycle-map-counts"><span>{nodes.length} stage</span><span>{edges.length} handoff</span></div>
     </header>
     {nodes.length ? <div className="lifecycle-map-canvas">

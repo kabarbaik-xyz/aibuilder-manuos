@@ -222,11 +222,11 @@ function ReferenceControl({ id, referenceType, value, onChange, disabled }: {
   return (
     <div className="space-y-1">
       <Select id={id} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
-        <option value="">Pilih {referenceType === 'customer' ? 'pelanggan' : referenceType === 'machine' ? 'mesin' : 'barang'}…</option>
-        {value && !options.some((option) => option.id === value) && <option value={value}>Referensi tersimpan</option>}
+        <option value="">Select {referenceType === 'customer' ? 'customer' : referenceType === 'machine' ? 'machine' : 'item'}…</option>
+        {value && !options.some((option) => option.id === value) && <option value={value}>Saved reference</option>}
         {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
       </Select>
-      {loadError && <span className="text-xs text-danger">Daftar referensi tidak dapat dimuat.</span>}
+      {loadError && <span className="text-xs text-danger">Reference list unavailable.</span>}
     </div>
   );
 }
@@ -238,50 +238,50 @@ function AttachmentControl({ id, value, onChange, readOnly, uploadLink }: { id?:
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
     setError(null);
-    if (value.length + files.length > 5) {
-      setError('Maksimal 5 file untuk satu field.');
-      return;
-    }
-    setUploading(true);
-    try {
-      const documentIds: string[] = [];
-      for (const file of Array.from(files)) {
-        if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: ukuran maksimum 10 MB.`);
-        if (!['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) throw new Error(`${file.name}: gunakan PDF, PNG, atau JPEG.`);
-        const form = new FormData();
-        form.set('file', file);
-        if (uploadLink) {
-          form.set('parentType', uploadLink.parentType);
-          form.set('parentId', uploadLink.parentId);
-        }
-        const response = await fetch('/api/documents/upload', { method: 'POST', body: form });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.id) throw new Error(payload.error?.message || `Gagal mengunggah ${file.name}.`);
-        documentIds.push(payload.id);
+if (value.length + files.length > 5) {
+        setError('Maximum 5 files per field.');
+        return;
       }
-      onChange([...value, ...documentIds]);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Upload file gagal.');
-    } finally {
-      setUploading(false);
-    }
+      setUploading(true);
+      try {
+        const documentIds: string[] = [];
+        for (const file of Array.from(files)) {
+          if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: maximum size 10 MB.`);
+          if (!['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) throw new Error(`${file.name}: use PDF, PNG, or JPEG.`);
+          const form = new FormData();
+          form.set('file', file);
+          if (uploadLink) {
+            form.set('parentType', uploadLink.parentType);
+            form.set('parentId', uploadLink.parentId);
+          }
+          const response = await fetch('/api/documents/upload', { method: 'POST', body: form });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.id) throw new Error(payload.error?.message || `Failed to upload ${file.name}.`);
+          documentIds.push(payload.id);
+        }
+        onChange([...value, ...documentIds]);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'File upload failed.');
+      } finally {
+        setUploading(false);
+      }
   };
 
   return (
     <div className="space-y-2">
       {!readOnly && <Input id={id} type="file" accept="application/pdf,image/png,image/jpeg" multiple disabled={uploading || value.length >= 5} onChange={(event) => { void upload(event.target.files); event.target.value = ''; }} />}
-      {uploading && <p className="text-xs text-muted">Mengunggah bukti…</p>}
+      {uploading && <p className="text-xs text-muted">Uploading evidence…</p>}
       {error && <p role="alert" className="text-xs text-danger">{error}</p>}
       {value.length > 0 ? (
         <ul className="space-y-1 text-sm">
           {value.map((id) => (
             <li key={id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surface-muted px-3 py-2">
-              <a className="min-w-0 truncate text-primary hover:underline" href={`/api/documents/${encodeURIComponent(id)}/download`} target="_blank" rel="noreferrer">Buka dokumen</a>
-              {!readOnly && <button type="button" className="text-xs text-muted hover:text-danger" onClick={() => onChange(value.filter((item) => item !== id))}>Hapus</button>}
+              <a className="min-w-0 truncate text-primary hover:underline" href={`/api/documents/${encodeURIComponent(id)}/download`} target="_blank" rel="noreferrer">Open document</a>
+              {!readOnly && <button type="button" className="text-xs text-muted hover:text-danger" onClick={() => onChange(value.filter((item) => item !== id))}>Delete</button>}
             </li>
           ))}
         </ul>
-      ) : <p className="text-xs text-muted">{readOnly ? 'Tidak ada dokumen terlampir.' : 'PDF, PNG, atau JPEG · maks. 10 MB per file · hingga 5 file.'}</p>}
+      ) : <p className="text-xs text-muted">{readOnly ? 'No documents attached.' : 'PDF, PNG, or JPEG · max. 10 MB per file · up to 5 files.'}</p>}
     </div>
   );
 }

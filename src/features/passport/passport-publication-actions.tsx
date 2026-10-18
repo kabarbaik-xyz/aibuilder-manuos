@@ -24,27 +24,27 @@ export function PassportPublicationActions({ serialNumber, itemId, orderId, publ
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error?.message || 'Perubahan passport gagal. Periksa hasil QC, akses facility, dan koneksi.');
+        throw new Error(payload?.error?.message || 'Passport change failed. Check QC results, facility access, and connection.');
       }
       onChanged(); setAction(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Perubahan passport gagal.'); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Passport change failed.'); }
     finally { setPending(false); }
   };
   return <>
     <div className="page-header-actions">
-      {published && <ButtonLink href={`/passports/${encodeURIComponent(serialNumber)}`}>Buka passport · {serialNumber}</ButtonLink>}
+      {published && <ButtonLink href={`/passports/${encodeURIComponent(serialNumber)}`}>Open passport · {serialNumber}</ButtonLink>}
       {canPublish && <Button onClick={() => { setError(null); setAction(published ? shared ? 'REVOKE' : 'SHARE' : 'PUBLISH'); }}>
-        {published ? shared ? 'Cabut akses customer' : 'Bagikan ke customer' : 'Publikasikan passport unit'}
+        {published ? shared ? 'Revoke customer access' : 'Share with customer' : 'Publish unit passport'}
       </Button>}
     </div>
-    <Dialog isOpen={action !== null} onClose={() => setAction(null)} title={action === 'PUBLISH' ? 'Publikasikan snapshot passport' : action === 'SHARE' ? 'Bagikan passport ke customer' : 'Cabut akses customer'} size="sm" pending={pending}
-      footer={<><Button data-dialog-dismiss disabled={pending}>Batal</Button><Button variant="primary" disabled={pending} onClick={() => void submit()}>{pending ? 'Memproses…' : action === 'PUBLISH' ? 'Publikasikan' : action === 'SHARE' ? 'Bagikan' : 'Cabut akses'}</Button></>}>
+    <Dialog isOpen={action !== null} onClose={() => setAction(null)} title={action === 'PUBLISH' ? 'Publish passport snapshot' : action === 'SHARE' ? 'Share passport with customer' : 'Revoke customer access'} size="sm" pending={pending}
+      footer={<><Button data-dialog-dismiss disabled={pending}>Cancel</Button><Button variant="primary" disabled={pending} onClick={() => void submit()}>{pending ? 'Processing…' : action === 'PUBLISH' ? 'Publish' : action === 'SHARE' ? 'Share' : 'Revoke'}</Button></>}>
       <div className="page-stack">
         <p>Nomor seri: <strong>{serialNumber}</strong></p>
         <p>{action === 'PUBLISH'
-          ? 'Server memeriksa identitas output dan penerimaan QC, lalu menyimpan snapshot tetap beserta hash isi. Kuantitas material diberi label total konsumsi batch job. Customer mendapat akses setelah Anda memilih Bagikan.'
-          : action === 'SHARE' ? 'Customer pemilik order dapat membaca snapshot ini. Tindakan dan identitas Anda dicatat.'
-          : 'Customer tidak dapat lagi membuka passport ini. Snapshot dan riwayat publikasi tetap tersimpan.'}</p>
+          ? 'The server verifies output identity and QC receipt, then stores an immutable snapshot with a content hash. Material quantity is labeled as total batch job consumption. The customer gets access after you choose Share.'
+          : action === 'SHARE' ? 'The customer who owns the order can read this snapshot. Your action and identity are recorded.'
+          : 'The customer can no longer open this passport. The snapshot and publication history remain stored.'}</p>
         {error && <p className="text-danger" role="alert">{error}</p>}
       </div>
     </Dialog>

@@ -131,12 +131,12 @@ export default function PassportPage() {
               {/* Verification & Traceability Panel */}
               <div className="panel">
                 <div className="panel-head">
-                  <div>
-                    <h3>Verification & Material Traceability</h3>
-                    <p>
-                      Identitas output unit dan bukti QC dari snapshot publikasi
-                    </p>
-                  </div>
+<div>
+                      <h3>Verification & Material Traceability</h3>
+                      <p>
+                        Unit output identity and QC evidence from the publication snapshot
+                      </p>
+                    </div>
                   <Badge variant={passport.status === "RELEASED" ? "success" : "warning"}>
                     {passport.status === "RELEASED" ? "Published Evidence" : "Internal Draft · Not Published"}
                   </Badge>
@@ -190,15 +190,15 @@ export default function PassportPage() {
                 </div>
               </div>
 
-              {passport.publicationVersion && <Panel className="p-4"><p className="small">Publikasi v{passport.publicationVersion}. Genealogi unit memakai identitas output dan lot khusus. Kuantitas input material adalah konsumsi batch job yang terkait.</p></Panel>}
-              {Boolean(passport.documents?.length) && <Panel className="p-4"><h3>Dokumen yang dipublikasikan</h3><ul>{passport.documents?.map((document) => <li key={document.id}><a className="text-primary hover:underline" href={document.downloadUrl} target="_blank" rel="noreferrer">{document.fileName}</a><p className="small muted break-all">SHA-256: {document.checksumSha256}</p></li>)}</ul></Panel>}
+              {passport.publicationVersion && <Panel className="p-4"><p className="small">Published v{passport.publicationVersion}. Unit genealogy uses output identity and a dedicated lot. Input material quantity is the associated batch job consumption.</p></Panel>}
+              {Boolean(passport.documents?.length) && <Panel className="p-4"><h3>Published documents</h3><ul>{passport.documents?.map((document) => <li key={document.id}><a className="text-primary hover:underline" href={document.downloadUrl} target="_blank" rel="noreferrer">{document.fileName}</a><p className="small muted break-all">SHA-256: {document.checksumSha256}</p></li>)}</ul></Panel>}
               {/* Material Provenance */}
               {passport.materials.length > 0 && (
                 <div className="panel">
                   <div className="panel-head">
                     <div>
-                      <h3>Konsumsi Material Batch Job</h3>
-                      <p>Total konsumsi aktual batch job; bukan alokasi material per unit</p>
+                      <h3>Batch Job Material Consumption</h3>
+                      <p>Actual batch job consumption; not per-unit material allocation</p>
                     </div>
                   </div>
                   <div className="panel-body">
@@ -333,7 +333,7 @@ export default function PassportPage() {
                         </time>
                       </div>
                       <p>
-                        Snapshot diterbitkan setelah identitas unit dan penerimaan QC diverifikasi. Hash mencakup isi snapshot.
+                        Snapshot published after unit identity and QC receipt were verified. Hash covers snapshot content.
                       </p>
                     </li>}
                   </ol>
@@ -428,7 +428,7 @@ export default function PassportPage() {
                       className="btn full"
                     >
                       <Icon name="file" />
-                      Cetak Snapshot Passport
+                      Print Passport Snapshot
                     </button>
                   </div>
                 </div>

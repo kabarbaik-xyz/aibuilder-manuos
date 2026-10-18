@@ -319,7 +319,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
     }
     const selectedPauseReason = pauseReasons?.find((reason) => reason.id === pauseReasonId);
     if (!selectedPauseReason) {
-      setActionError('Atur alasan jeda yang aktif sebelum menjeda tugas ini.');
+      setActionError('Select an active pause reason before pausing this task.');
       return;
     }
     try {

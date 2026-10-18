@@ -11,19 +11,19 @@ import { notFound } from 'next/navigation';
 import { NotFoundError } from '@/domain/errors';
 
 export const metadata = {
-  title: 'Detail Operasi & Penugasan | ManuOS',
-  description: 'Rincian penugasan sumber daya, prasyarat, dan kesiapan material operasi.',
+  title: 'Operation & Assignment Detail | ManuOS',
+  description: 'Resource assignment, prerequisites, and operation material readiness.',
 };
 
 const statusLabelMap: Record<string, string> = {
-  PENDING: 'Menunggu',
-  READY: 'Siap',
-  ASSIGNED: 'Ditugaskan',
-  RUNNING: 'Sedang berjalan',
+  PENDING: 'Pending',
+  READY: 'Ready',
+  ASSIGNED: 'Assigned',
+  RUNNING: 'Running',
   PAUSED: 'Paused',
   WAITING_QC: 'Waiting QC',
-  COMPLETED: 'Selesai',
-  CANCELLED: 'Dibatalkan',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
 };
 
 function getStatusVariant(status: string): 'default' | 'blue' | 'success' | 'warning' | 'danger' {
@@ -64,7 +64,7 @@ export default async function PlanningTaskDetailPage({
         <div className="od-identity">
           <Link href="/planning" className="od-back">
             <Icon name="arrow-left" />
-            <span>Jadwal produksi</span>
+            <span>Production schedule</span>
           </Link>
           <div className="od-title-row">
             <span className="my-work-node">{task.nodeKey}</span>
@@ -73,7 +73,7 @@ export default async function PlanningTaskDetailPage({
               {statusLabelMap[task.status] || task.status}
             </Badge>
             {(task.canStart || task.readinessReasons.length > 0) && <Badge variant={task.canStart ? 'success' : task.readinessReasons.length > 0 ? 'warning' : 'default'}>
-              {task.canStart ? 'Siap mulai' : task.readinessReasons.length > 0 ? `${task.readinessReasons.length} prasyarat tertahan` : statusLabelMap[task.status] || task.status}
+              {task.canStart ? 'Ready to start' : task.readinessReasons.length > 0 ? `${task.readinessReasons.length} blocked prerequisites` : statusLabelMap[task.status] || task.status}
             </Badge>}
           </div>
           <p className="od-subtitle">
@@ -84,17 +84,17 @@ export default async function PlanningTaskDetailPage({
         <div className="od-actions">
           <ButtonLink href={`/orders/${task.order.id}`}>
             <Icon name="order" />
-            <span>Detail order</span>
+            <span>Order detail</span>
           </ButtonLink>
           {canAskAi && (
-            <ButtonLink href={`/ai/assistant?taskId=${encodeURIComponent(task.id)}`} title="Tanyakan status, durasi, dan order terkait operasi ini. Jadwal tidak berubah dari tombol ini.">
+            <ButtonLink href={`/ai/assistant?taskId=${encodeURIComponent(task.id)}`} title="Ask about the status, duration, and orders related to this operation. The schedule does not change from this button.">
               <Icon name="spark" />
-              <span>Tanya AI tentang operasi</span>
+              <span>Ask AI about this operation</span>
             </ButtonLink>
           )}
           <ButtonLink href={`/shop-floor/tasks/${task.id}`} variant="primary">
             <Icon name="work" />
-            <span>Buka workstation</span>
+            <span>Open workstation</span>
           </ButtonLink>
         </div>
       </header>
@@ -106,18 +106,18 @@ export default async function PlanningTaskDetailPage({
             <Icon name="alert" />
           </span>
           <div className="od-banner-copy">
-            <strong>Operasi memiliki prasyarat yang perlu diselesaikan</strong>
+            <strong>This operation has prerequisites that must be completed</strong>
             <p>{task.readinessReasons.map((r) => r.message).join(' · ')}</p>
           </div>
           <div className="od-banner-tags">
             {task.readinessReasons.map((r) => (
               <span key={r.code} className="od-tag">
                 {r.code === 'MISSING_ASSIGNMENT'
-                  ? 'Perlu teknisi'
+                  ? 'Technician needed'
                   : r.code === 'MATERIAL_SHORTAGE'
-                    ? 'Material kurang'
+                    ? 'Material shortage'
                     : r.code === 'PREDECESSOR_INCOMPLETE'
-                      ? 'Pendahulu aktif'
+                      ? 'Active predecessor'
                       : r.code}
               </span>
             ))}
@@ -125,26 +125,26 @@ export default async function PlanningTaskDetailPage({
         </div>
       )}
 
-      <section className="od-facts" aria-label="Ringkasan operasi">
+      <section className="od-facts" aria-label="Operation summary">
         <div className="od-fact">
-          <span>Teknisi ditugaskan</span>
-          <strong>{task.assignedTechnician ? task.assignedTechnician.name : 'Belum ditugaskan'}</strong>
-          <small>{task.assignedTechnician ? `Kode ${task.assignedTechnician.code}` : 'Tetapkan melalui jadwal produksi'}</small>
+          <span>Assigned technician</span>
+          <strong>{task.assignedTechnician ? task.assignedTechnician.name : 'Not assigned'}</strong>
+          <small>{task.assignedTechnician ? `Code ${task.assignedTechnician.code}` : 'Assign via production schedule'}</small>
         </div>
         <div className="od-fact">
-          <span>Mesin / stasiun kerja</span>
-          <strong>{task.assignedMachine ? task.assignedMachine.name : 'Belum ditugaskan'}</strong>
-          <small>{task.assignedMachine ? `Kode ${task.assignedMachine.code}` : 'Stasiun kerja belum dipilih'}</small>
+          <span>Machine / workstation</span>
+          <strong>{task.assignedMachine ? task.assignedMachine.name : 'Not assigned'}</strong>
+          <small>{task.assignedMachine ? `Code ${task.assignedMachine.code}` : 'Workstation not selected'}</small>
         </div>
         <div className="od-fact">
-          <span>Waktu aktual / rencana</span>
-          <strong>{task.currentElapsedMinutes} / {task.plannedDurationMinutes} mnt</strong>
-          <small>Percobaan ke-{task.attemptNumber}</small>
+          <span>Actual / planned time</span>
+          <strong>{task.currentElapsedMinutes} / {task.plannedDurationMinutes} min</strong>
+          <small>Attempt {task.attemptNumber}</small>
         </div>
         <div className="od-fact">
-          <span>Hasil tahap / target</span>
-          <strong>{recordedQty} / {targetQty} unit</strong>
-          <small>Sisa {remainingQty} unit dapat dicatat</small>
+          <span>Stage output / target</span>
+          <strong>{recordedQty} / {targetQty} units</strong>
+          <small>{remainingQty} units can still be recorded</small>
         </div>
       </section>
 
@@ -152,35 +152,35 @@ export default async function PlanningTaskDetailPage({
         <section className="od-card">
           <header className="od-card-head">
             <div>
-              <h3>Acuan kerja</h3>
-              <p>Revisi engineering dan gambar untuk operasi ini</p>
+              <h3>Work reference</h3>
+              <p>Engineering revisions and drawings for this operation</p>
             </div>
             <Badge variant={task.assignedTechnician && task.assignedMachine ? 'success' : 'warning'}>
-              {task.assignedTechnician && task.assignedMachine ? 'Lengkap' : 'Perlu alokasi'}
+              {task.assignedTechnician && task.assignedMachine ? 'Complete' : 'Needs allocation'}
             </Badge>
           </header>
           <dl className="od-kv">
             <div>
-              <dt>Revisi engineering</dt>
+              <dt>Engineering revision</dt>
               <dd>
                 {task.workInstruction
                   ? `Rev #${task.workInstruction.engineeringRevisionNumber} · Workflow v${task.workInstruction.workflowVersionNumber}`
-                  : `Instruksi v${task.instructionRevision}`}
+                  : `Instruction v${task.instructionRevision}`}
               </dd>
             </div>
             <div>
-              <dt>Gambar teknik</dt>
+              <dt>Technical drawing</dt>
               <dd>
                 {task.workInstruction?.drawingNumber
                   ? `${task.workInstruction.drawingNumber}${task.workInstruction.revisionCode ? ` (${task.workInstruction.revisionCode})` : ''}`
-                  : 'Tidak ada lampiran gambar'}
+                  : 'No drawing attached'}
               </dd>
             </div>
           </dl>
           <div className="od-card-foot">
-            <span>Penjadwalan sumber daya</span>
+            <span>Resource scheduling</span>
             <Link href="/planning" className="font-semibold text-primary hover:underline">
-              Kelola di jadwal produksi →
+              Manage in production schedule →
             </Link>
           </div>
         </section>
@@ -188,13 +188,13 @@ export default async function PlanningTaskDetailPage({
         <section className="od-card">
           <header className="od-card-head">
             <div>
-              <h3>Urutan & kesiapan mulai</h3>
-              <p>Operasi pendahulu dan prasyarat eksekusi</p>
+              <h3>Sequence & start readiness</h3>
+              <p>Predecessor operations and execution prerequisites</p>
             </div>
             <Badge variant={task.predecessors.every((p) => p.isCompleted) ? 'success' : 'warning'}>
               {task.predecessors.length === 0
-                ? 'Tanpa pendahulu'
-                : `${task.predecessors.filter((p) => p.isCompleted).length}/${task.predecessors.length} selesai`}
+                ? 'No predecessors'
+                : `${task.predecessors.filter((p) => p.isCompleted).length}/${task.predecessors.length} complete`}
             </Badge>
           </header>
 
@@ -202,8 +202,8 @@ export default async function PlanningTaskDetailPage({
             <div className="od-callout is-success">
               <Icon name="check" />
               <div>
-                <strong>Tidak ada operasi pendahulu</strong>
-                <p>Operasi ini tidak perlu menunggu penyelesaian operasi lain. Kesiapan mulai tetap mengikuti prasyarat di bawah.</p>
+                <strong>No predecessor operations</strong>
+                <p>This operation does not wait for another operation to finish. Start readiness still follows the prerequisites below.</p>
               </div>
             </div>
           ) : (
@@ -212,7 +212,7 @@ export default async function PlanningTaskDetailPage({
                 <div key={p.taskId}>
                   <dt>
                     <Link href={`/planning/tasks/${p.taskId}`} className="font-semibold text-primary hover:underline">
-                      Operasi {p.nodeKey}
+                      Operation {p.nodeKey}
                     </Link>
                   </dt>
                   <dd>
@@ -227,19 +227,19 @@ export default async function PlanningTaskDetailPage({
 
           <dl className="od-kv">
             <div>
-              <dt>Status kesiapan mulai</dt>
-              <dd>{task.canStart ? 'Memenuhi seluruh syarat mulai' : 'Menunggu pemenuhan prasyarat'}</dd>
+              <dt>Start readiness status</dt>
+              <dd>{task.canStart ? 'All start conditions met' : 'Awaiting prerequisites'}</dd>
             </div>
             <div>
-              <dt>Prasyarat tertahan</dt>
-              <dd>{task.readinessReasons.length === 0 ? 'Tidak ada' : `${task.readinessReasons.length} item`}</dd>
+              <dt>Blocked prerequisites</dt>
+              <dd>{task.readinessReasons.length === 0 ? 'None' : `${task.readinessReasons.length} items`}</dd>
             </div>
           </dl>
 
           <div className="od-card-foot">
-            <span>Alur kerja order</span>
+            <span>Order workflow</span>
             <Link href={`/orders/${task.order.id}`} className="font-semibold text-primary hover:underline">
-              Lihat routing order →
+              View order routing →
             </Link>
           </div>
         </section>
@@ -247,8 +247,8 @@ export default async function PlanningTaskDetailPage({
         <section className="od-card">
           <header className="od-card-head">
             <div>
-              <h3>Kesiapan material operasi</h3>
-              <p>Kebutuhan komponen BOM dan alokasi WIP pada operasi ini</p>
+              <h3>Operation material readiness</h3>
+              <p>BOM component needs and WIP allocation for this operation</p>
             </div>
             <Badge
               variant={
@@ -258,10 +258,10 @@ export default async function PlanningTaskDetailPage({
               }
             >
               {demands.length === 0
-                ? 'Tanpa komposisi'
+                ? 'No composition'
                 : demands.every((d) => BigInt(d.issuedAtoms) >= BigInt(d.requiredAtoms))
-                  ? 'Tercukupi'
-                  : 'Perlu pengeluaran WIP'}
+                  ? 'Covered'
+                  : 'Needs WIP issue'}
             </Badge>
           </header>
 
@@ -269,8 +269,8 @@ export default async function PlanningTaskDetailPage({
             <div className="od-callout">
               <Icon name="info" />
               <div>
-                <strong>Tidak ada kebutuhan material BOM langsung</strong>
-                <p>Operasi {task.nodeKey} tidak memerlukan komponen tambahan di luar WIP sebelumnya.</p>
+                <strong>No direct BOM material requirements</strong>
+                <p>Operation {task.nodeKey} does not require additional components beyond previous WIP.</p>
               </div>
             </div>
           ) : (
@@ -286,8 +286,8 @@ export default async function PlanningTaskDetailPage({
                       <span className="block text-xs text-muted">{demand.itemName}</span>
                     </dt>
                     <dd>
-                      <span>WIP {issuedQty} / {reqQty} unit</span>
-                      <span className="block text-xs text-muted font-normal">Reservasi: {reservedQty} unit</span>
+                      <span>WIP {issuedQty} / {reqQty} units</span>
+                      <span className="block text-xs text-muted font-normal">Reserved: {reservedQty} units</span>
                     </dd>
                   </div>
                 );
@@ -296,9 +296,9 @@ export default async function PlanningTaskDetailPage({
           )}
 
           <div className="od-card-foot">
-            <span>Pengeluaran material</span>
+            <span>Material issue</span>
             <Link href="/inventory/issues/new" className="font-semibold text-primary hover:underline">
-              Keluarkan material ke WIP →
+              Issue material to WIP →
             </Link>
           </div>
         </section>
@@ -306,11 +306,11 @@ export default async function PlanningTaskDetailPage({
         <section className="od-card">
           <header className="od-card-head">
             <div>
-              <h3>Riwayat sesi kerja</h3>
-              <p>Catatan waktu aktual operator di lantai produksi</p>
+              <h3>Session history</h3>
+              <p>Actual time records from shop-floor operators</p>
             </div>
             <Badge variant={task.activeSession ? 'blue' : 'default'}>
-              {task.activeSession ? 'Sesi aktif' : `${task.sessions.length} sesi`}
+              {task.activeSession ? 'Active session' : `${task.sessions.length} sessions`}
             </Badge>
           </header>
 
@@ -318,8 +318,8 @@ export default async function PlanningTaskDetailPage({
             <div className="od-callout">
               <Icon name="clock" />
               <div>
-                <strong>Belum ada sesi eksekusi tercatat</strong>
-                <p>Operasi ini belum dimulai oleh operator. Buka workstation untuk memulai dan mencatat hasil kerja.</p>
+                <strong>No execution sessions recorded</strong>
+                <p>This operation has not been started by an operator. Open workstation to begin and record work.</p>
               </div>
             </div>
           ) : (
@@ -329,11 +329,11 @@ export default async function PlanningTaskDetailPage({
                   <dt>
                     <strong className="text-ink">{session.technicianName || 'Operator'}</strong>
                     <span className="block text-xs text-muted">
-                      {session.sessionType === 'RUNNING' ? 'Sesi kerja aktif' : 'Sesi jeda'}
+                      {session.sessionType === 'RUNNING' ? 'Active work session' : 'Paused session'}
                     </span>
                   </dt>
                   <dd>
-                    {session.durationMinutes != null ? `${session.durationMinutes} mnt` : 'Sedang berjalan'}
+                    {session.durationMinutes != null ? `${session.durationMinutes} min` : 'Running'}
                   </dd>
                 </div>
               ))}
@@ -341,9 +341,9 @@ export default async function PlanningTaskDetailPage({
           )}
 
           <div className="od-card-foot">
-            <span>Eksekusi lantai produksi</span>
+            <span>Shop-floor execution</span>
             <Link href={`/shop-floor/tasks/${task.id}`} className="font-semibold text-primary hover:underline">
-              Buka workstation operasi →
+              Open operation workstation →
             </Link>
           </div>
         </section>
