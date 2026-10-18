@@ -2392,6 +2392,58 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/orders/{id}/evidence:
+    get:
+      summary: Read the authorized order evidence timeline
+      description: Returns a bounded, read-only projection of lifecycle, engineering, scheduling, form, stock, quality and shipment evidence. Customer principals use the separately scoped passport projection and cannot read this internal timeline. Event categories that the caller cannot read are omitted.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: search, in: query, required: false, schema: { type: string, maxLength: 120 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+      responses:
+        '200':
+          description: Authorized order evidence timeline
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [orderId, orderNumber, events, sampled, appliedSearch]
+                    properties:
+                      orderId: { type: string }
+                      orderNumber: { type: string }
+                      sampled: { type: boolean, description: True when one or more source queries reached its read bound or matching events exceeded limit. }
+                      appliedSearch: { type: string, nullable: true }
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          required: [reference, category, title, label, summary, occurredAt, orderId, href, references]
+                          properties:
+                            reference: { type: string }
+                            category: { type: string, enum: [WORKFLOW, ENGINEERING, FORM, SCHEDULING, MATERIAL, PRODUCTION, QUALITY, DELIVERY, PASSPORT] }
+                            title: { type: string }
+                            label: { type: string }
+                            summary: { type: string }
+                            occurredAt: { type: string, format: date-time }
+                            orderId: { type: string }
+                            lineId: { type: string }
+                            jobId: { type: string }
+                            taskId: { type: string }
+                            stageId: { type: string }
+                            submissionId: { type: string }
+                            lotId: { type: string }
+                            shipmentId: { type: string }
+                            actorName: { type: string }
+                            href: { type: string }
+                            references: { type: array, items: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/orders/{id}/lines:
     get:
       summary: List order lines for an order
