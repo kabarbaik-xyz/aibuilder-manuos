@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js15 App Router, React19, strict TypeScript, existing typed icon facade/shared UI controls, Tailwind4 semantic light tokens, Prisma/SQLite, executeCommand, bigint atoms, existing scheduling and ledger engines.
 
-**Status (2026-10-18):** Implementation remains in progress; Gate A, Gate B and integrated acceptance are not complete. Latest checks include a cross-domain focused set of 10 integration suites / 69 tests, lifecycle definition/runtime/action-registry/intake checks (17 tests), workflow version checks (6 tests), and `npm run typecheck`. OpenAPI parsing and Prisma schema validation passed earlier. Recent work adds subject/facility-scoped form evidence, a unified lifecycle action contract with persisted completion facts, selected-workflow intake/replay, Studio field previews, live Planning bookings in the order view, authorized lifecycle context for CoreAI, handoff history, and activation-relative stage deadlines. The user explicitly waived E2E; browser-only UI behavior and the integrated persona journey remain unverified. Do not treat lifecycle rollout as ready until the remaining unchecked items are verified.
+**Status (2026-10-18):** Implementation remains in progress; Gate A, Gate B and integrated acceptance are not complete. The latest focused verification passes typecheck and 7 spec files / 35 tests for QC lifecycle routing, workflow contracts, order lifecycle and QC; a separate Studio-validation pass adds 4 files / 19 tests. Recent work also adds selected-workflow enforcement, QC rework completion gates, typed QC outcome routing, stage/field validation paths and persisted-state instance completion. The user explicitly asked the agent to skip E2E and finish spec tests; browser and full persona acceptance remain user-owned and unverified. Do not treat lifecycle rollout as ready until the remaining agent-owned items are verified.
 
 ## Global constraints
 
@@ -259,6 +259,8 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 ### Task11: Migration, regression and integrated acceptance
 
 **Files:** additive Prisma migrations and fixtures, `contracts/openapi.yaml`, user-facing workflow/form guides, `tests/e2e/order-lifecycle.spec.ts`, `tests/browser/order-lifecycle.spec.ts`, existing integration/E2E suites.
+
+**Verification boundary:** The user explicitly waived agent-run E2E. Do not run E2E/browser suites; leave their acceptance items visibly pending for the user. Continue with focused unit and isolated integration specs plus typecheck.
 
 - [ ] Keep current production-routing workflows operational. Introduce lifecycle selection for new eligible orders behind a documented rollout setting. Legacy orders show legacy mode; attaching a workflow to an existing draft is an explicit audited command validating current state and pins. Released/in-progress orders are not silently migrated.
 - [ ] Supply one configured published lifecycle with named departments, active membership policies, published forms and validated production routing. Fixture data belongs in tests/demo setup, not hardcoded operational UI.
