@@ -109,16 +109,17 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Tests:** extend `src/domain/forms/validation.test.ts`; create `tests/browser/dynamic-form-controls.spec.ts`.
 
 - [ ] Establish the browser harness against an isolated createFactoryFixture server, with its lifecycle cleanup. Existing `tests/e2e` specs and `test:e2e` use Vitest/API handlers; they are not browser proof. Reuse them for API coverage and put real UI specs in `tests/browser`.
-- [ ] Implement actual multiselect arrays; typed booleans; decimal strings without float arithmetic; DatePicker; authorized named master lookup; real document upload/download using existing document endpoints.
+- [x] Implement actual multiselect arrays; typed booleans; decimal strings without float arithmetic; DatePicker; authorized named master lookup; real document upload/download using existing document endpoints. API round trips and the attachment renderer contract are covered by specs.
 - [x] Validate live references in the current workspace and reject invalid, foreign, inactive, missing or differently-scoped attachment documents. Attachments may be unlinked only when uploaded by the current actor; subject-linked evidence must match the form subject.
 - [x] Apply order/task/inspection facility scoping to machine references while retaining shared facility-neutral machines.
 - [ ] Verify upload/download behavior through the browser renderer (browser/E2E verification was explicitly waived by the user; API and renderer specs remain in scope).
-- [ ] Keep visibleWhen behavior identical in preview, runtime and server validation. Hidden fields do not silently satisfy required visible evidence.
-- [ ] Namespace control IDs by form instance/renderer instance; preview and multiple operational forms must not share IDs.
+- [x] Keep visibleWhen behavior identical in preview, runtime and server validation. Hidden fields do not silently satisfy required visible evidence; the preview/runtime use the shared renderer and server validation uses the same visibility evaluator.
+- [x] Namespace control IDs by form instance/renderer instance; the shared renderer uses a per-instance React useId namespace.
 - [x] Cover all 9 field kinds in API integration round trips through draft save → final submit → reload/read-only; verify linked attachment evidence, authorized reference lookup, decimal-as-string precision, typed boolean/multiselect/date values and conditional visibility.
 - [ ] Verify actual browser rendering/fill/read-only/correction for all 9 field kinds, including upload file-type/size limits and field control behavior.
-- [ ] Prevent publish for any field capability not supported in both renderer and server; show actionable errors in the builder.
-- [ ] Run `rtk proxy npx vitest run src/domain/forms/validation.test.ts` and `rtk proxy npx playwright test --config playwright.config.ts tests/browser/dynamic-form-controls.spec.ts` against the isolated fixture server created in this task.
+- [x] Prevent publish for any field capability not supported in both renderer and server; publish revalidates the strict closed field-kind schema and returns actionable field errors.
+- [x] Run `rtk proxy npx vitest run src/domain/forms/validation.test.ts` (9 passed) and the relevant API/renderer specs.
+- [ ] Run browser rendering/upload/download/read-only/correction specs; browser/E2E verification was explicitly waived by the user.
 
 **GateA:** Tasks1–3 must pass before enabling lifecycle configuration in production-facing UI. No raw-ID field, unscoped submission route or live mutable binding dependency may remain in the supported contract.
 
