@@ -182,7 +182,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [ ] Show stage action, due date/schedule, predecessor blockers, pinned forms and required evidence. Mount SubmissionPanel in the real order/task/inspection contexts.
 - [ ] Clarify task/stage completion vs form submission; once all gates pass, execute the domain action with explicit consequences and applicable approval.
 - [x] Record reassignment actor/reason and claim actor transactionally in the lifecycle event stream.
-- [ ] Notify affected users transactionally through in-app notifications. External email/Slack delivery is outside this plan.
+- [x] Notify the active previous and new assignee transactionally through in-app notifications. External email/Slack delivery is outside this plan.
 - [ ] Log in through the normal flow per persona in isolated E2E; verify menus, landing destination, queue, form access and handoff to the next actor, including multi-role behavior.
 
 ## Phase4 — Use scheduling as the authoritative capacity path

@@ -3,6 +3,7 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
+import { NotificationService } from '@/server/modules/notifications/service';
 import { completeLifecycleAction } from './service';
 
 const permissionByAction: Record<string, string> = {
@@ -34,7 +35,7 @@ export async function reassignLifecycleStage(
     handler: async (tx) => {
       const stage = await tx.orderLifecycleStage.findFirst({
         where: { id: input.stageId, workspaceId: principal.workspaceId },
-        include: { instance: { select: { id: true, status: true, order: { select: { facilityId: true } } } } },
+        include: { instance: { select: { id: true, status: true, order: { select: { orderNumber: true, facilityId: true } } } } },
       });
       if (!stage || stage.instance.status !== 'ACTIVE') throw new NotFoundError('Lifecycle stage not found.');
       if (['COMPLETED', 'SKIPPED', 'CANCELLED'].includes(stage.state)) throw new ConflictError('Completed lifecycle work cannot be reassigned.');
@@ -48,7 +49,7 @@ export async function reassignLifecycleStage(
       const candidate = await tx.membership.findFirst({
         where: { id: input.membershipId, workspaceId: principal.workspaceId, status: 'ACTIVE', departmentId: stage.departmentId },
         include: {
-          user: { select: { name: true } },
+          user: { select: { id: true, name: true } },
           facilityGrants: { select: { facilityId: true } },
           roles: { where: { role: { isActive: true } }, select: { role: { select: { code: true, permissions: { select: { permissionCode: true } } } } } },
         },
@@ -89,6 +90,27 @@ export async function reassignLifecycleStage(
           detailJson: JSON.stringify({ fromMembershipId: oldMembershipId, toMembershipId: candidate.id, reason }),
         },
       });
+      const notificationService = new NotificationService(tx);
+      const notificationRecipients = new Set([candidate.user.id]);
+      if (oldMembershipId && oldMembershipId !== candidate.id) {
+        const previousMembership = await tx.membership.findFirst({
+          where: { id: oldMembershipId, workspaceId: principal.workspaceId, status: 'ACTIVE' },
+          select: { userId: true },
+        });
+        if (previousMembership) notificationRecipients.add(previousMembership.userId);
+      }
+      for (const userId of notificationRecipients) {
+        await notificationService.sendNotification(principal.workspaceId, {
+          userId,
+          title: 'Lifecycle work reassigned',
+          category: 'ASSIGNMENT',
+          facilityId,
+          body: `${stage.name} for ${stage.instance.order.orderNumber} was reassigned. Reason: ${reason}`,
+          subjectType: 'ORDER_LIFECYCLE_STAGE',
+          subjectId: stage.id,
+          dedupeKey: `order-lifecycle-reassign:${stage.id}:${input.expectedVersion}:${userId}`,
+        });
+      }
       const data = { stageId: stage.id, assignedMembershipId: candidate.id, assignedTo: candidate.user.name, version: stage.version + 1 };
       return { data, aggregateType: 'OrderLifecycleStage', aggregateId: stage.id, previousVersion: stage.version, resourceVersion: data.version, auditDetails: { action: 'reassign', instanceId: stage.instance.id, reason } };
     },

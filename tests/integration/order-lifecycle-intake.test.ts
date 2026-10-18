@@ -225,6 +225,11 @@ describe('order lifecycle intake', () => {
     expect(plannerQueue.find(row => row.id === stage.id)).toMatchObject({ assignedTo: planner.principal.name, canReassign: false });
     await expect(fixture.db.orderLifecycleEvent.findFirst({ where: { stageId: stage.id, eventType: 'STAGE_REASSIGNED' } }))
       .resolves.toMatchObject({ actorUserId: owner.userId, detailJson: expect.stringContaining('Coverage handoff') });
+    expect(await fixture.db.notificationInbox.findMany({ where: { subjectType: 'ORDER_LIFECYCLE_STAGE', subjectId: stage.id }, select: { userId: true, category: true } }))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ userId: owner.userId, category: 'ASSIGNMENT' }),
+        expect.objectContaining({ userId: planner.userId, category: 'ASSIGNMENT' }),
+      ]));
 
     const result = await completeEvidenceReviewStage(fixture.db, planner.principal, { stageId: stage.id, expectedVersion: stage.version + 1 }, 'lifecycle-review-complete');
     expect(result.data).toMatchObject({ stageId: stage.id, state: 'COMPLETED' });

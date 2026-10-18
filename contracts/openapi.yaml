@@ -2303,7 +2303,7 @@ paths:
   /api/order-lifecycle/stages/{id}/reassign:
     post:
       summary: Reassign an active lifecycle stage to an eligible member
-      description: Requires workflow author or workspace administration permission, facility scope, an active same-department membership with the lifecycle action permission, and an expected stage version. A reason and reassignment audit event are mandatory.
+      description: Requires workflow author or workspace administration permission, facility scope, an active same-department membership with the lifecycle action permission, and an expected stage version. A reason, reassignment audit event, and transactional in-app notifications to active prior and new assignees are mandatory.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - $ref: '#/components/parameters/AccessIdempotency'
