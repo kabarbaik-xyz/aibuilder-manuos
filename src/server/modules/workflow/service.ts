@@ -176,9 +176,9 @@ export class WorkflowService {
     const raw = JSON.parse(version.definitionJson) as unknown;
     if (version.template.kind === 'ORDER_LIFECYCLE') {
       const parsed = contracts.orderLifecycleDefinitionSchema.safeParse(raw);
-      if (!parsed.success) throw new BadRequestError(`Lifecycle definition is invalid: ${parsed.error.issues.map((issue) => issue.message).join('; ')}`);
+      if (!parsed.success) throw new BadRequestError(`Lifecycle definition is invalid: ${parsed.error.issues.map((issue) => `${issue.path.join('.') || 'definition'}: ${issue.message}`).join('; ')}`);
       const validation = validateLifecycleDefinition(parsed.data as OrderLifecycleDefinition);
-      if (!validation.isValid) throw new BadRequestError(`Lifecycle definition is invalid: ${validation.errors.map((error) => error.message).join('; ')}`);
+      if (!validation.isValid) throw new BadRequestError(`Lifecycle definition is invalid: ${validation.errors.map((error) => `${error.stageKey ? `${error.stageKey}${error.fieldKey ? `.${error.fieldKey}` : ''}: ` : ''}${error.message}`).join('; ')}`);
       await this.validateLifecycleReferences(tx, workspaceId, parsed.data as OrderLifecycleDefinition);
       return createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex');
     }
@@ -347,7 +347,7 @@ export class WorkflowService {
         if (version.template.kind === 'ORDER_LIFECYCLE') {
           const definition = input.definition as OrderLifecycleDefinition;
           const validation = validateLifecycleDefinition(definition);
-          if (!validation.isValid) throw new BadRequestError(`Invalid lifecycle: ${validation.errors.map((e) => e.message).join('; ')}`);
+          if (!validation.isValid) throw new BadRequestError(`Invalid lifecycle: ${validation.errors.map((error) => `${error.stageKey ? `${error.stageKey}${error.fieldKey ? `.${error.fieldKey}` : ''}: ` : ''}${error.message}`).join('; ')}`);
           await this.validateLifecycleReferences(tx, principal.workspaceId, definition);
           definitionHash = createHash('sha256').update(JSON.stringify(definition)).digest('hex');
         } else {

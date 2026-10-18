@@ -94,6 +94,6 @@ describe('order lifecycle definition validation', () => {
     const routed = { ...validDefinition.stages[1], predecessors: ['qc'], activationCondition: { kind: 'QC_OUTCOME' as const, sourceStageKey: 'qc', operator: 'EQUALS' as const, value: 'PASSED_AFTER_REWORK' as const } };
     expect(validateLifecycleDefinition({ ...validDefinition, stages: [qc, routed] })).toMatchObject({ isValid: true, errors: [] });
     expect(validateLifecycleDefinition({ ...validDefinition, stages: [{ ...qc, action: 'ORDER_CONFIRM' }, routed] }).errors)
-      .toContainEqual(expect.objectContaining({ code: 'INVALID_QC_OUTCOME_SOURCE', stageKey: routed.key }));
+      .toContainEqual(expect.objectContaining({ code: 'INVALID_QC_OUTCOME_SOURCE', stageKey: routed.key, fieldKey: 'activationCondition.sourceStageKey' }));
   });
 });

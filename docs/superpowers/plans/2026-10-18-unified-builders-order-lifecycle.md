@@ -153,7 +153,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Select deadline vs resource-capacity scheduling. Only resource-capacity stages can invoke approved production routing and Planning; do not demand machines for Sales/approval/delivery administration.
 - [x] Make order-form and QC outcome routing configurable through typed controls, not free JSON or raw condition codes.
 - [x] Preview who receives work, what forms are shown, what blocks completion and which stage/branch activates next. Preview remains non-mutating and is not proof of actual scheduling capacity.
-- [ ] Publish validation reports errors at the exact stage/field; published view is read-only with fork action.
+- [x] Publish validation reports errors at the exact stage/field; published view is read-only with fork action.
 - [ ] Prove an author configures and publishes an example without API tools/raw IDs; unsupported configuration cannot publish.
 
 **GateB:** A complete cross-department example is configurable, valid and inspectable in Studio; execution previews match deterministic engine results. No lifecycle rollout before GateA and GateB.

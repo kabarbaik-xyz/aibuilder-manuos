@@ -122,7 +122,7 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
           : <div className="flex gap-2"><Button onClick={() => runAction('fork')}>Fork new version</Button><Button variant="ghost" onClick={() => runAction('retire')}>Retire</Button></div>}
       </div>
       <FormField id="lifecycle-name" label="Workflow name" required><Input value={definition.name} onChange={event => setDefinition(current => ({ ...current, name: event.target.value }))} disabled={readOnly} /></FormField>
-      {!validation.isValid && <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm"><strong>Fix these before publish</strong><ul className="mt-2 list-disc pl-5">{validation.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.stageKey ? `${error.stageKey}: ` : ''}{error.message}</li>)}</ul></div>}
+      {!validation.isValid && <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm"><strong>Fix these before publish</strong><ul className="mt-2 list-disc pl-5">{validation.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.stageKey ? `${error.stageKey}${error.fieldKey ? ` › ${error.fieldKey}` : ''}: ` : ''}{error.message}</li>)}</ul></div>}
       {definition.stages.map((stage, index) => {
         const compatibleForms = applicableForms(stage.action);
         const compatibleFormIds = new Set(compatibleForms.map(form => form.publishedVersion?.id));
