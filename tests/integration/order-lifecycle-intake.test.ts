@@ -129,6 +129,63 @@ describe('order lifecycle intake', () => {
       .resolves.toContainEqual(expect.objectContaining({ membershipId: owner.membershipId }));
   });
 
+  it('executes an alternate administrative sequence without requiring the default production stages', async () => {
+    const owner = fixture.alpha.users.owner;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: fixture.alpha.masters.departmentId },
+    });
+    const template = await workflowService.createTemplate(owner.principal, {
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      code: 'LIFECYCLE-ALT-ADMIN-SEQUENCE',
+      name: 'Customer confirmation then evidence review',
+      kind: 'ORDER_LIFECYCLE',
+    }, 'lifecycle-alt-sequence-template');
+    const assignment = {
+      kind: 'MEMBER' as const,
+      membershipId: owner.membershipId,
+      departmentId: fixture.alpha.masters.departmentId,
+    };
+    await workflowService.saveVersionDraft(owner.principal, template.data.initialVersionId!, {
+      definition: {
+        schemaVersion: 1,
+        name: 'Customer confirmation then evidence review',
+        stages: [
+          {
+            key: 'CONFIRM', name: 'Confirm customer order', action: 'ORDER_CONFIRM' as const,
+            departmentId: fixture.alpha.masters.departmentId, assignment,
+            schedule: { kind: 'DEADLINE' as const, dueAfterMinutes: 120 }, predecessors: [], forms: [],
+          },
+          {
+            key: 'REVIEW', name: 'Review order evidence', action: 'REVIEW_EVIDENCE' as const,
+            departmentId: fixture.alpha.masters.departmentId, assignment,
+            schedule: { kind: 'DEADLINE' as const, dueAfterMinutes: 60 }, predecessors: ['CONFIRM'], forms: [],
+          },
+        ],
+      },
+    }, 'lifecycle-alt-sequence-draft');
+    await workflowService.publishVersion(owner.principal, template.data.initialVersionId!, 'lifecycle-alt-sequence-publish');
+    const order = await orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId, orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId, orderedQuantity: '1', requestedDate: '2026-11-01T00:00:00.000Z',
+      lifecycleWorkflowVersionId: template.data.initialVersionId,
+    }, 'lifecycle-alt-sequence-order-create');
+
+    await orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-alt-sequence-confirm');
+    const reviewStage = await fixture.db.orderLifecycleStage.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id }, stageKey: 'REVIEW' },
+    });
+    expect(reviewStage.state).toBe('READY');
+    await completeEvidenceReviewStage(fixture.db, owner.principal, {
+      stageId: reviewStage.id, expectedVersion: reviewStage.version,
+    }, 'lifecycle-alt-sequence-review');
+    await expect(fixture.db.orderLifecycleInstance.findFirstOrThrow({ where: { orderId: order.data.id } }))
+      .resolves.toMatchObject({ status: 'COMPLETED' });
+    expect(await fixture.db.orderLifecycleEvent.count({
+      where: { instance: { orderId: order.data.id }, eventType: 'STAGE_COMPLETED' },
+    })).toBe(2);
+  });
+
   it('claims a department queue atomically and exposes the stage only to its claimant', async () => {
     const owner = fixture.alpha.users.owner;
     const template = await workflowService.createTemplate(owner.principal, {
