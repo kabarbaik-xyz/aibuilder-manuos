@@ -17,12 +17,12 @@ interface QrScannerOverlayProps {
 function cameraErrorMessage(error: unknown) {
   const name = error instanceof Error ? error.name : '';
   const text = typeof error === 'string' ? error : error instanceof Error ? error.message : '';
-  if (name === 'NotAllowedError' || /denied|permission/i.test(text)) return 'Akses kamera ditolak. Izinkan kamera di pengaturan browser, atau masukkan kode secara manual.';
-  if (/camera not found|NotFound/i.test(`${name} ${text}`)) return 'Kamera tidak ditemukan di perangkat ini. Masukkan kode secara manual.';
-  return 'Kamera tidak dapat dibuka. Pastikan halaman dibuka lewat HTTPS, atau masukkan kode secara manual.';
+  if (name === 'NotAllowedError' || /denied|permission/i.test(text)) return 'Camera access denied. Allow the camera in your browser settings, or enter the code manually.';
+  if (/camera not found|NotFound/i.test(`${name} ${text}`)) return 'No camera was found on this device. Enter the code manually.';
+  return 'The camera could not be opened. Make sure the page is served over HTTPS, or enter the code manually.';
 }
 
-export function QrScannerOverlay({ open, onClose, onDetect, onManualFallback, title = 'Pindai kode QR' }: QrScannerOverlayProps) {
+export function QrScannerOverlay({ open, onClose, onDetect, onManualFallback, title = 'Scan QR code' }: QrScannerOverlayProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<import('qr-scanner').default | null>(null);
   const handledRef = useRef(false);
@@ -49,7 +49,7 @@ export function QrScannerOverlay({ open, onClose, onDetect, onManualFallback, ti
         const { default: QrScanner } = await import('qr-scanner');
         if (cancelled || !videoRef.current) return;
         if (!(await QrScanner.hasCamera())) {
-          setError('Kamera tidak ditemukan di perangkat ini. Masukkan kode secara manual.');
+          setError('No camera was found on this device. Enter the code manually.');
           setStarting(false);
           return;
         }
@@ -105,12 +105,12 @@ export function QrScannerOverlay({ open, onClose, onDetect, onManualFallback, ti
             <Icon name="qr" />
             <h2>{title}</h2>
           </div>
-          <button type="button" className="qr-close" onClick={onClose} aria-label="Tutup pemindai"><Icon name="close" /></button>
+          <button type="button" className="qr-close" onClick={onClose} aria-label="Close scanner"><Icon name="close" /></button>
         </header>
         <div className="qr-stage">
           <video ref={videoRef} className="qr-video" playsInline muted />
           {!error && <div className="qr-reticle" aria-hidden="true" />}
-          {starting && !error && <p className="qr-status" role="status">Membuka kamera…</p>}
+          {starting && !error && <p className="qr-status" role="status">Opening camera…</p>}
           {error && (
             <div className="qr-status qr-error" role="alert">
               <Icon name="alert" />
@@ -119,10 +119,10 @@ export function QrScannerOverlay({ open, onClose, onDetect, onManualFallback, ti
           )}
         </div>
         <footer className="qr-foot">
-          <p>Arahkan kamera ke QR tugas, job, atau pesanan (TASK:, JOB:, ORDER:).</p>
+          <p>Point the camera at a task, job, or order QR code (TASK:, JOB:, ORDER:).</p>
           <div className="qr-actions">
-            {hasFlash && <Button onClick={toggleTorch}>{torchOn ? 'Matikan lampu' : 'Nyalakan lampu'}</Button>}
-            <Button onClick={onManualFallback ?? onClose}>Input manual</Button>
+            {hasFlash && <Button onClick={toggleTorch}>{torchOn ? 'Turn off flash' : 'Turn on flash'}</Button>}
+            <Button onClick={onManualFallback ?? onClose}>Manual entry</Button>
           </div>
         </footer>
       </div>

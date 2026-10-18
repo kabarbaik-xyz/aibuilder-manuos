@@ -89,7 +89,7 @@ export function LifecycleWorkQueue() {
     switch (row.action) {
       case 'ENGINEERING_APPROVE': return { href: `/engineering/orders/${row.orderId}`, label: 'Review engineering' };
       case 'PLAN_PRODUCTION': return { href: '/planning', label: 'Open planning' };
-      case 'EXECUTE_PRODUCTION': return { href: '/shop-floor', label: 'Open My Work' };
+      case 'EXECUTE_PRODUCTION': return { href: '/shop-floor', label: 'Open My Tasks' };
       case 'FINALIZE_QC': return { href: '/quality/inspections', label: 'Open inspections' };
       case 'CONFIRM_DELIVERY': return { href: '/delivery/shipments', label: 'Open delivery' };
       default: return { href: `/orders/${row.orderId}`, label: 'Open order' };

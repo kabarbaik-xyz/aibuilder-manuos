@@ -138,7 +138,7 @@ export class ShiftSwapService {
           const incomingSlot = current.slots[1-slotIndex];
           const tech = await tx.technician.findUniqueOrThrow({ where: { id: slot.technicianId } });
           const member = tech.membershipId ? await tx.membership.findFirst({ where: { id: tech.membershipId, workspaceId: principal.workspaceId, status: 'ACTIVE' } }) : null;
-          if (member) await new NotificationService(tx).sendNotification(principal.workspaceId, { userId: member.userId, title: 'Shift swap approved', body: `Your shift is now ${incomingSlot.startAt} to ${incomingSlot.endAt} (UTC). Scheduled work in that shift is assigned to you. Review My Work.`, category: 'ASSIGNMENT', facilityId: slot.facilityId ?? undefined, dedupeKey: `shift-swap:${id}:${member.userId}`, subjectType: 'TECHNICIAN', subjectId: tech.id });
+          if (member) await new NotificationService(tx).sendNotification(principal.workspaceId, { userId: member.userId, title: 'Shift swap approved', body: `Your shift is now ${incomingSlot.startAt} to ${incomingSlot.endAt} (UTC). Scheduled work in that shift is assigned to you. Review My Tasks.`, category: 'ASSIGNMENT', facilityId: slot.facilityId ?? undefined, dedupeKey: `shift-swap:${id}:${member.userId}`, subjectType: 'TECHNICIAN', subjectId: tech.id });
         }
       }
       const decisionUpdate = await tx.shiftSwapRequest.updateMany({ where: { id, workspaceId: principal.workspaceId, version: input.expectedVersion, status: 'PENDING' }, data: { status: input.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED', decidedById: principal.userId, decidedAt: new Date(), decisionNote: input.note, version: { increment: 1 } } });

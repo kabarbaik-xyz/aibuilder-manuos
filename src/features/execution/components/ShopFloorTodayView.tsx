@@ -20,12 +20,12 @@ function formatMinutes(value: number) {
 }
 
 const taskStatusLabels: Record<string, string> = {
-  RUNNING: "Berjalan",
+  RUNNING: "Running",
   PAUSED: "Paused",
   WAITING_QC: "Waiting QC",
-  READY: "Siap",
-  ASSIGNED: "Ditetapkan",
-  BLOCKED: "Terblokir",
+  READY: "Ready",
+  ASSIGNED: "Assigned",
+  BLOCKED: "Blocked",
 };
 
 export function ShopFloorTodayView() {
@@ -44,7 +44,7 @@ export function ShopFloorTodayView() {
     const code = (override ?? scanCode).trim();
     if (!code) return;
     if (!isOnline) {
-      setScanMessage('Pemindaian memerlukan koneksi server. Sambungkan kembali sebelum mencoba.');
+      setScanMessage('Scanning requires a server connection. Reconnect and try again.');
       return;
     }
     setScanMessage(null);
@@ -59,10 +59,10 @@ export function ShopFloorTodayView() {
       setScanMessage(
         result.type === "JOB"
           ? `${result.displayCode} found, but no active tasks can be opened.`
-          : "Kode dikenali, tetapi akun ini tidak memiliki akses untuk membuka order tersebut."
+          : "Code recognized, but this account does not have access to open that order."
       );
     } catch (submitErr) {
-      setScanMessage(submitErr instanceof Error ? submitErr.message : "Kode tidak ditemukan atau tidak dapat diakses akun ini.");
+      setScanMessage(submitErr instanceof Error ? submitErr.message : "Code not found or not accessible to this account.");
     }
   };
 
@@ -73,8 +73,8 @@ export function ShopFloorTodayView() {
   return (
     <div className="page-stack">
       <PageHeader
-        title="Antrean kerja"
-        description={`Tugas produksi aktif untuk ${principal?.name || "Operator"}`}
+        title="Work queue"
+        description={`Active production tasks for ${principal?.name || "Operator"}`}
         actions={
           <Button icon="reset" onClick={() => void refetch()}>
             Refresh
@@ -84,11 +84,11 @@ export function ShopFloorTodayView() {
 
       {/* Subnavigation Bar */}
       <Tabs
-        ariaLabel="Navigasi lantai produksi"
+        ariaLabel="Shop floor navigation"
         activeId="today"
         items={[
           { id: "all", label: "All tasks", href: "/shop-floor", icon: "work" },
-          { id: "today", label: "Antrean kerja", href: "/shop-floor/today", icon: "clock", count: isLoading ? undefined : queuedTasks.length },
+          { id: "today", label: "Work queue", href: "/shop-floor/today", icon: "clock", count: isLoading ? undefined : queuedTasks.length },
           { id: "profile", label: "My profile", href: "/shop-floor/profile", icon: "technician" },
         ]}
       />
@@ -97,16 +97,16 @@ export function ShopFloorTodayView() {
       <div className="p-3 bg-surface border border-line rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs">
         <div className="flex items-center gap-2">
           <Badge variant={isOnline ? "success" : "warning"}>
-              {isOnline ? "Perangkat online" : "Perangkat luring"}
+              {isOnline ? "Device online" : "Device offline"}
           </Badge>
           <span className="text-muted">
             {isOnline
-              ? "Perubahan perlu koneksi server dan tidak disimpan saat luring."
-              : "Pemindaian dan eksekusi tersedia setelah tersambung kembali."}
+              ? "Changes require a server connection and are not saved while offline."
+              : "Scanning and execution become available after reconnecting."}
           </span>
         </div>
         {principal?.facilityId && !/^[a-z]+-[0-9a-f]{8}-/i.test(principal.facilityId) && (
-          <Badge variant="default">Fasilitas: {principal.facilityId}</Badge>
+          <Badge variant="default">Facility: {principal.facilityId}</Badge>
         )}
       </div>
 
@@ -114,19 +114,19 @@ export function ShopFloorTodayView() {
       <form
         className="my-work-scan rounded-xl border border-line bg-surface"
         onSubmit={handleScanSubmit}
-        aria-label="Pindai barcode di workstation"
+        aria-label="Scan a barcode at the workstation"
       >
         <Input
           type="text"
-          placeholder="Pindai QR atau masukkan kode tugas / job…"
+          placeholder="Scan a QR code or enter a task / job code…"
           value={scanCode}
           onChange={(e) => setScanCode(e.target.value)}
         />
         <Button type="button" icon="qr" disabled={!isOnline || scanMutation.isPending} onClick={() => setShowCamera(true)}>
-          Pindai QR
+          Scan QR
         </Button>
         <Button type="submit" variant="primary" disabled={!isOnline || !scanCode.trim() || scanMutation.isPending}>
-          {scanMutation.isPending ? "Memeriksa…" : "Buka kode"}
+          {scanMutation.isPending ? "Checking…" : "Open code"}
         </Button>
         {scanMessage && (
           <p role="status" className="my-work-scan-message text-amber-700 font-medium">
@@ -147,7 +147,7 @@ export function ShopFloorTodayView() {
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" />
               <strong className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
-                Sesi aktif
+                Active session
               </strong>
             </div>
             <h3 className="text-sm font-semibold text-ink mt-1">
@@ -155,7 +155,7 @@ export function ShopFloorTodayView() {
             </h3>
             <p className="text-xs text-muted">
               Order {activeTask.orderNumber} ({activeTask.customerName}) •{" "}
-              berjalan {formatMinutes(activeTask.currentElapsedMinutes)}
+              elapsed {formatMinutes(activeTask.currentElapsedMinutes)}
             </p>
           </div>
           <ButtonLink href={`/shop-floor/tasks/${activeTask.id}`} variant="primary" size="small">
@@ -169,38 +169,38 @@ export function ShopFloorTodayView() {
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between flex-wrap gap-3">
           <div>
             <strong className="text-xs font-bold text-amber-800 uppercase tracking-wide">
-              Sesi kerja dijeda
+              Work session paused
             </strong>
             <h3 className="text-sm font-semibold text-ink mt-1">
               {pausedTask.nodeKey} — {pausedTask.itemName}
             </h3>
             <p className="text-xs text-muted">
-              Order {pausedTask.orderNumber} • Menunggu sesi dilanjutkan
+              Order {pausedTask.orderNumber} • Waiting for the session to resume
             </p>
           </div>
           <ButtonLink href={`/shop-floor/tasks/${pausedTask.id}`} variant="primary" size="small">
-            Review Review & continue continue
+            Review & continue
           </ButtonLink>
         </div>
       )}
 
       {/* Tasks Queue for Today */}
-      <section className="space-y-3" aria-label="Antrean tugas aktif">
+      <section className="space-y-3" aria-label="Active task queue">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-ink">
-          Antrean aktif ({queuedTasks.length})
+          Active queue ({queuedTasks.length})
           </h2>
-          <span className="text-xs text-muted">Pilih tugas untuk membuka workstation</span>
+          <span className="text-xs text-muted">Select a task to open the workstation</span>
         </div>
 
         {isLoading ? (
-          <LoadingState message="Memuat antrean kerja…" />
+          <LoadingState message="Loading work queue…" />
         ) : error ? (
           <ErrorState message={error.message} onRetry={() => void refetch()} />
         ) : queuedTasks.length === 0 ? (
           <EmptyState
-            title="Tidak ada tugas aktif"
-            description="Tugas produksi aktif akan muncul di sini setelah ditetapkan."
+            title="No active tasks"
+            description="Active production tasks will appear here once they are assigned."
           />
         ) : (
           <div className="grid gap-3">
@@ -230,7 +230,7 @@ export function ShopFloorTodayView() {
                     {t.itemName}
                   </h3>
                     <p className="text-xs text-muted">
-                      Order {t.orderNumber} • {t.customerName} • Rencana {formatMinutes(t.plannedDurationMinutes)}
+                      Order {t.orderNumber} • {t.customerName} • Planned {formatMinutes(t.plannedDurationMinutes)}
                   </p>
                 </div>
                 <ButtonLink

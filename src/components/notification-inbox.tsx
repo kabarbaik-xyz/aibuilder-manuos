@@ -37,13 +37,13 @@ export function NotificationInbox() {
     setError(null);
     try {
       const response = await fetch('/api/notifications?limit=50', { cache: 'no-store' });
-      if (!response.ok) throw new Error('Notification tidak dapat dimuat. Coba lagi.');
+      if (!response.ok) throw new Error('Notifications could not be loaded. Try again.');
       const payload = (await response.json()) as InboxResponse;
       setItems(payload.data);
       setUnreadCount(payload.meta.unreadCount);
       setSuppressedCount(payload.meta.delivery.suppressed);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Terjadi kesalahan saat memuat notifications.');
+      setError(cause instanceof Error ? cause.message : 'Something went wrong while loading notifications.');
     } finally {
       setLoading(false);
     }
@@ -70,10 +70,10 @@ export function NotificationInbox() {
           ? { action: 'MARK_READ', notificationId }
           : { action: 'MARK_ALL_READ' }),
       });
-      if (!response.ok) throw new Error('Status notifications gagal diperbarui. Coba lagi.');
+      if (!response.ok) throw new Error('Notification status could not be updated. Try again.');
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Terjadi kesalahan saat memperbarui notifications.');
+      setError(cause instanceof Error ? cause.message : 'Something went wrong while updating notifications.');
     } finally {
       setPendingId(null);
     }
@@ -83,8 +83,8 @@ export function NotificationInbox() {
     <Button
       variant="icon"
       icon="bell"
-      aria-label={`Notification${unreadCount ? `, ${unreadCount} unread` : ''}`}
-      title="Notification"
+      aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}
+      title="Notifications"
       className="notification-trigger"
       onClick={() => setOpen(true)}
     >
@@ -93,44 +93,44 @@ export function NotificationInbox() {
     <Dialog
       isOpen={open}
       onClose={() => setOpen(false)}
-      title="Notification"
+      title="Notifications"
       subtitle={unreadCount ? `${unreadCount} notifications unread` : 'Updates for your account'}
       size="md"
       className="notification-dialog"
-      footer={<Button onClick={() => setOpen(false)}>Tutup</Button>}
+      footer={<Button onClick={() => setOpen(false)}>Close</Button>}
     >
       <div className="notification-toolbar">
-        <Button variant="text" size="small" onClick={() => { setOpen(false); setPreferencesOpen(true); }}>Preferensi</Button>
+        <Button variant="text" size="small" onClick={() => { setOpen(false); setPreferencesOpen(true); }}>Preferences</Button>
         <Button variant="text" size="small" disabled={unreadCount === 0 || pendingId !== null} onClick={() => void markRead()}>
-          Tandai semua dibaca
+          Mark all as read
         </Button>
       </div>
       {suppressedCount > 0 && <p className="small muted">{suppressedCount} notifications filtered per account preference.</p>}
-      {error && <ErrorState title="Notification unavailable" message={error} onRetry={() => void refresh()} />}
-      {!error && loading && items.length === 0 && <p className="muted">Loading notifications……</p>}
-      {!error && !loading && items.length === 0 && <EmptyState title="No notifications yet" description="Updates sent to your account will appear here.." />}
+      {error && <ErrorState title="Notifications unavailable" message={error} onRetry={() => void refresh()} />}
+      {!error && loading && items.length === 0 && <p className="muted">Loading notifications…</p>}
+      {!error && !loading && items.length === 0 && <EmptyState title="No notifications yet" description="Updates sent to your account will appear here." />}
       {!error && items.length > 0 && <ul className="notification-list">
         {items.map((item) => {
           const href = getNotificationHref(item);
           return <li key={item.id} className={`notification-item ${item.status === 'UNREAD' ? 'unread' : ''}`}>
             <div className="notification-copy">
-              <div className="notification-title-row"><strong>{item.title}</strong>{item.status === 'UNREAD' && <Badge variant="blue">Baru</Badge>}</div>
+              <div className="notification-title-row"><strong>{item.title}</strong>{item.status === 'UNREAD' && <Badge variant="blue">New</Badge>}</div>
               {item.body && <p>{item.body}</p>}
-              {href && <ButtonLink href={href} variant="ghost" size="small">Buka terkait</ButtonLink>}
-              <time dateTime={item.createdAt}>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</time>
+              {href && <ButtonLink href={href} variant="ghost" size="small">Open related</ButtonLink>}
+              <time dateTime={item.createdAt}>{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.createdAt))}</time>
             </div>
             {item.status === 'UNREAD' && <Button
               variant="icon"
               icon="check"
-              aria-label={`Tandai ${item.title} sebagai dibaca`}
-              title="Tandai sudah dibaca"
+              aria-label={`Mark ${item.title} as read`}
+              title="Mark as read"
               disabled={pendingId !== null}
               onClick={() => void markRead(item.id)}
             />}
           </li>;
         })}
       </ul>}
-      {pendingId && <span className="sr-only" role="status">Memperbarui notifications…</span>}
+      {pendingId && <span className="sr-only" role="status">Updating notifications…</span>}
     </Dialog>
     <NotificationPreferencesDialog isOpen={preferencesOpen} onClose={() => { setPreferencesOpen(false); setOpen(true); }} />
   </>;

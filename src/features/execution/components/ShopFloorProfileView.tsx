@@ -9,17 +9,17 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/resource-s
 import { useTechnicianProfile } from "../hooks";
 
 const skillAssessmentLabels: Record<string, string> = {
-  VERIFIED: "Terverifikasi",
-  CLAIMED: "Diklaim",
-  OBSERVED: "Diamati",
-  REVOKED: "Dicabut",
-  UNVERIFIED: "Belum diverifikasi",
+  VERIFIED: "Verified",
+  CLAIMED: "Claimed",
+  OBSERVED: "Observed",
+  REVOKED: "Revoked",
+  UNVERIFIED: "Not verified",
 };
 
 const certificationStatusLabels: Record<string, string> = {
-  ACTIVE: "Aktif",
-  EXPIRED: "Kedaluwarsa",
-  REVOKED: "Dicabut",
+  ACTIVE: "Active",
+  EXPIRED: "Expired",
+  REVOKED: "Revoked",
 };
 
 export function ShopFloorProfileView() {
@@ -28,8 +28,8 @@ export function ShopFloorProfileView() {
   return (
     <div className="page-stack">
       <PageHeader
-        title="Profil Operator"
-        description="Kualifikasi terverifikasi, sertifikasi aktif, dan otorisasi fasilitas."
+        title="Operator profile"
+        description="Verified qualifications, active certifications, and facility authorizations."
         actions={
           <Button icon="reset" onClick={() => void refetch()}>
             Refresh
@@ -39,23 +39,23 @@ export function ShopFloorProfileView() {
 
       {/* Subnavigation Bar */}
       <Tabs
-        ariaLabel="Navigasi lantai produksi"
+        ariaLabel="Shop floor navigation"
         activeId="profile"
         items={[
           { id: "all", label: "All tasks", href: "/shop-floor", icon: "work" },
-          { id: "today", label: "Antrean kerja", href: "/shop-floor/today", icon: "clock" },
+          { id: "today", label: "Work queue", href: "/shop-floor/today", icon: "clock" },
           { id: "profile", label: "My profile", href: "/shop-floor/profile", icon: "technician" },
         ]}
       />
 
       {isLoading ? (
-        <LoadingState message="Memuat profil operator dan kualifikasi…" />
+        <LoadingState message="Loading operator profile and qualifications…" />
       ) : error ? (
         <ErrorState message={error.message} onRetry={() => void refetch()} />
       ) : !profile ? (
         <EmptyState
-          title="Profil tidak tersedia"
-          description="Akun ini belum terhubung dengan data teknisi aktif."
+          title="Profile unavailable"
+          description="This account is not linked to active technician data yet."
         />
       ) : (
         <div className="space-y-6">
@@ -68,35 +68,35 @@ export function ShopFloorProfileView() {
               </div>
               <div className="flex items-center gap-2">
                 {profile.code && (
-                  <Badge variant="blue">Kode pegawai: {profile.code}</Badge>
+                  <Badge variant="blue">Employee ID: {profile.code}</Badge>
                 )}
                 <Badge variant={profile.facilityName ? "default" : "warning"}>
                   {profile.facilityName
-                    ? `Fasilitas: ${profile.facilityName}`
+                    ? `Facility: ${profile.facilityName}`
                     : profile.facilityId
-                    ? `ID fasilitas: ${profile.facilityId}`
-                    : "Fasilitas belum ditetapkan"}
+                    ? `Facility ID: ${profile.facilityId}`
+                    : "Facility not assigned"}
                 </Badge>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-line text-xs">
               <div>
-                <span className="text-muted block">Departemen:</span>
+                <span className="text-muted block">Department:</span>
                 <strong className="text-ink font-medium">
-                  {profile.departmentName || "Belum tersedia"}
+                  {profile.departmentName || "Not available"}
                 </strong>
               </div>
               <div>
-                <span className="text-muted block">Kalender kerja:</span>
+                <span className="text-muted block">Work calendar:</span>
                 <strong className="text-ink font-medium">
-                  {profile.calendarName || "Belum tersedia"}
+                  {profile.calendarName || "Not available"}
                 </strong>
               </div>
               <div>
-                <span className="text-muted block">Peran sistem:</span>
+                <span className="text-muted block">System roles:</span>
                 <span className="text-ink font-medium">
-                  {profile.roles.length ? profile.roles.join(", ") : "Belum tersedia"}
+                  {profile.roles.length ? profile.roles.join(", ") : "Not available"}
                 </span>
               </div>
             </div>
@@ -106,17 +106,17 @@ export function ShopFloorProfileView() {
           <section className="p-5 bg-surface border border-line rounded-xl space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-ink">Matriks keterampilan terverifikasi</h3>
+                <h3 className="text-sm font-bold text-ink">Verified skills matrix</h3>
                 <p className="text-xs text-muted">
-                  Kemampuan manufaktur yang dinilai supervisor (skala 0–4).
+                  Manufacturing capabilities assessed by a supervisor (scale 0–4).
                 </p>
               </div>
-              <Badge variant="default">{profile.skills.length} keterampilan</Badge>
+              <Badge variant="default">{profile.skills.length} skills</Badge>
             </div>
 
             {profile.skills.length === 0 ? (
               <p className="text-xs text-muted py-4 text-center bg-surface-muted rounded-lg border border-line">
-                Belum ada data keterampilan. Hubungi supervisor untuk penilaian.
+                No skill data yet. Contact your supervisor for an assessment.
               </p>
             ) : (
               <div className="divide-y divide-line border border-line rounded-lg overflow-hidden">
@@ -126,13 +126,13 @@ export function ShopFloorProfileView() {
                       <strong className="text-ink font-medium">{s.skillName}</strong>
                       <span className="text-muted ml-2 font-mono">({s.skillCode})</span>
                       {s.evidence && (
-                        <p className="text-muted mt-0.5 italic">Bukti: {s.evidence}</p>
+                        <p className="text-muted mt-0.5 italic">Evidence: {s.evidence}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="blue">Level {s.level} / 4</Badge>
                       <Badge variant={s.assessmentStatus === "VERIFIED" ? "success" : "warning"}>
-                        {skillAssessmentLabels[s.assessmentStatus] || "Belum diverifikasi"}
+                        {skillAssessmentLabels[s.assessmentStatus] || "Not verified"}
                       </Badge>
                     </div>
                   </div>
@@ -145,17 +145,17 @@ export function ShopFloorProfileView() {
           <section className="p-5 bg-surface border border-line rounded-xl space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-ink">Sertifikasi aktif</h3>
+                <h3 className="text-sm font-bold text-ink">Active certifications</h3>
                 <p className="text-xs text-muted">
-                  Kredensial regulasi, keselamatan, dan peralatan beserta masa berlakunya.
+                  Regulatory, safety, and equipment credentials with their validity periods.
                 </p>
               </div>
-              <Badge variant="default">{profile.certifications.length} kredensial</Badge>
+              <Badge variant="default">{profile.certifications.length} credentials</Badge>
             </div>
 
             {profile.certifications.length === 0 ? (
               <p className="text-xs text-muted py-4 text-center bg-surface-muted rounded-lg border border-line">
-                Tidak ada sertifikasi aktif. Tugas yang mewajibkan kredensial akan tetap dibatasi.
+                No active certifications. Tasks that require credentials will remain restricted.
               </p>
             ) : (
               <div className="divide-y divide-line border border-line rounded-lg overflow-hidden">
@@ -165,8 +165,8 @@ export function ShopFloorProfileView() {
                       <strong className="text-ink font-medium">{c.name}</strong>
                       <span className="text-muted ml-2 font-mono">({c.code})</span>
                       <p className="text-muted mt-0.5">
-                        Berlaku sampai: {c.validUntil}
-                        {c.scope && <span className="ml-2">• Cakupan: {c.scope}</span>}
+                        Valid until: {c.validUntil}
+                        {c.scope && <span className="ml-2">• Scope: {c.scope}</span>}
                       </p>
                     </div>
                     <Badge variant={c.status === "ACTIVE" ? "success" : "danger"}>

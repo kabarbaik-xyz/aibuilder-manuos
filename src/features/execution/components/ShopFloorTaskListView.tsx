@@ -41,7 +41,7 @@ export function ShopFloorTaskListView() {
     const code = (override ?? scanCode).trim();
     if (!code) return;
     if (!isOnline) {
-      setScanMessage('Pemindaian memerlukan koneksi server. Sambungkan kembali sebelum mencoba.');
+      setScanMessage('Scanning requires a server connection. Reconnect and try again.');
       return;
     }
     setScanMessage(null);
@@ -56,45 +56,45 @@ export function ShopFloorTaskListView() {
       setScanMessage(
         result.type === 'JOB'
           ? `${result.displayCode} found, but no active tasks can be opened.`
-          : 'Kode dikenali, tetapi akun ini tidak memiliki akses untuk membuka order tersebut.'
+          : 'Code recognized, but this account does not have access to open that order.'
       );
     } catch (submitError) {
-      setScanMessage(submitError instanceof Error ? submitError.message : 'Kode tidak ditemukan atau tidak dapat diakses akun ini.');
+      setScanMessage(submitError instanceof Error ? submitError.message : 'Code not found or not accessible to this account.');
     }
   };
 
   return <div className="page-stack my-work-page">
     <PageHeader title="My Tasks" description={supervisor ? 'Review active production tasks in your workspace.' : 'Assigned production tasks.'} actions={<Button icon="reset" disabled={pagination.disabled} onClick={() => void refetch()}>Refresh</Button>} />
     <Tabs
-      ariaLabel="Navigasi lantai produksi"
+      ariaLabel="Shop floor navigation"
       activeId="all"
       items={[
         { id: 'all', label: 'All tasks', href: '/shop-floor', icon: 'work', count: isPending ? undefined : total },
-        { id: 'today', label: 'Antrean kerja', href: '/shop-floor/today', icon: 'clock' },
+        { id: 'today', label: 'Work queue', href: '/shop-floor/today', icon: 'clock' },
         { id: 'profile', label: 'My profile', href: '/shop-floor/profile', icon: 'technician' },
       ]}
     />
-      <section className="my-work-queue" aria-label="Pekerjaan produksi aktif">
+      <section className="my-work-queue" aria-label="Active production work">
       <div className="my-work-toolbar">
         <div className="my-work-filters" role="group" aria-label="Filter work by status">{filters.map(filter => <button type="button" key={filter.value} aria-pressed={status === filter.value} className={status === filter.value ? 'active' : ''} onClick={() => setStatus(filter.value)}>{filter.label}<span>{isPending ? '—' : filter.value ? counts[filter.value] || 0 : total}</span></button>)}</div>
-        <Input type="search" aria-label="Cari pekerjaan aktif" placeholder="Cari order, barang, atau pelanggan…" value={search} onChange={event => setSearch(event.target.value)} />
+        <Input type="search" aria-label="Search active work" placeholder="Search order, item, or customer…" value={search} onChange={event => setSearch(event.target.value)} />
       </div>
-      <form className="my-work-scan" aria-label="Buka pekerjaan dengan barcode atau QR code" onSubmit={handleScanSubmit}>
-        <Input type="text" aria-label="Barcode tugas atau job" placeholder="Pindai atau masukkan kode tugas / job" value={scanCode} onChange={event => setScanCode(event.target.value)} />
-        <Button type="button" icon="qr" disabled={!isOnline || scanMutation.isPending} onClick={() => setShowCamera(true)}>Pindai QR</Button>
+      <form className="my-work-scan" aria-label="Open work with a barcode or QR code" onSubmit={handleScanSubmit}>
+        <Input type="text" aria-label="Task or job barcode" placeholder="Scan or enter a task / job code" value={scanCode} onChange={event => setScanCode(event.target.value)} />
+        <Button type="button" icon="qr" disabled={!isOnline || scanMutation.isPending} onClick={() => setShowCamera(true)}>Scan QR</Button>
         <Button type="submit" variant="primary" disabled={!isOnline || !scanCode.trim() || scanMutation.isPending}>
-          {scanMutation.isPending ? 'Memeriksa kode…' : 'Buka kode'}
+          {scanMutation.isPending ? 'Checking code…' : 'Open code'}
         </Button>
         {scanMessage && <p role="status" className="my-work-scan-message">{scanMessage}</p>}
-        {!isOnline && <p role="status" className="my-work-scan-message">Pemindaian memerlukan koneksi server; tindakan ini tidak disimpan saat luring.</p>}
+        {!isOnline && <p role="status" className="my-work-scan-message">Scanning requires a server connection; this action is not saved while offline.</p>}
       </form>
       <QrScannerOverlay open={showCamera} onClose={() => setShowCamera(false)} onDetect={(code) => { setShowCamera(false); setScanCode(code); void handleScanSubmit(undefined, code); }} />
-      {isPending ? <LoadingState message="Memuat pekerjaan produksi…" /> : error ? <ErrorState message={error.message} onRetry={() => void refetch()} /> : !data?.data.length ? <EmptyState title="Tugas tidak ditemukan" description={search || status ? 'Coba status atau kata pencarian lain.' : 'Tugas akan muncul setelah pekerjaan produksi ditetapkan.'} /> : <>
-        <div className="my-work-column-head" aria-hidden="true"><span>Tugas & produk</span><span>Order & pelanggan</span><span>Waktu</span><span>Status</span><span /></div>
+      {isPending ? <LoadingState message="Loading production work…" /> : error ? <ErrorState message={error.message} onRetry={() => void refetch()} /> : !data?.data.length ? <EmptyState title="No tasks found" description={search || status ? 'Try a different status or search term.' : 'Tasks will appear once production work is assigned.'} /> : <>
+        <div className="my-work-column-head" aria-hidden="true"><span>Task & product</span><span>Order & customer</span><span>Time</span><span>Status</span><span /></div>
         <div className="my-work-rows">{data.data.map(task => <article key={task.id} className="my-work-row">
           <div className="my-work-identity"><div className="my-work-task-heading"><h2>{task.nodeName}</h2><span className="my-work-node">{task.nodeKey}</span></div><p>{task.itemName}</p></div>
           <div className="my-work-order"><strong>{task.orderNumber}</strong><p>{task.customerName}</p></div>
-          <div className="my-work-time"><strong>{minutes(task.currentElapsedMinutes)} <span>berjalan</span></strong><p>{minutes(task.plannedDurationMinutes)} rencana</p></div>
+          <div className="my-work-time"><strong>{minutes(task.currentElapsedMinutes)} <span>elapsed</span></strong><p>{minutes(task.plannedDurationMinutes)} planned</p></div>
           <div className="my-work-status"><Badge variant={task.status === 'RUNNING' ? 'success' : task.status === 'PAUSED' || task.status === 'WAITING_QC' ? 'warning' : 'default'}>{filters.find(filter => filter.value === task.status)?.label || task.status}</Badge>{task.blockReason && <p>{task.blockReason}</p>}</div>
           <ButtonLink href={`/shop-floor/tasks/${task.id}`} size="small" variant={task.status === 'RUNNING' || task.status === 'PAUSED' ? 'primary' : 'default'}>{task.status === 'RUNNING' ? 'Continue work' : task.status === 'PAUSED' ? 'Review' : 'View task'}</ButtonLink>
         </article>)}</div>
