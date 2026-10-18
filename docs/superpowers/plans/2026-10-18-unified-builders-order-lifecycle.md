@@ -237,6 +237,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Tests:** `tests/integration/lifecycle-traceability.test.ts`.
 
 - [ ] Record stable event references to lifecycle stage/attempt, workflow/routing/form/binding pins, actor/PIC/department, submission/correction, approval, schedule proposal/booking changes, issue/rework, material lot/output/QC and shipment.
+- [x] Show lifecycle handoff time, stage transition, typed domain action and its completion fact in the order history; facts come from the action registry and existing command transactions.
 - [ ] Read from authoritative event/submission/ledger sources; do not manufacture duplicate stock or an independently editable audit timeline. Corrections append and preserve original evidence.
 - [ ] Link AI proposal evidence to its human decision and actual applied command result. Failed attempts must not look successfully applied.
 - [ ] Build a scoped timeline searchable by order/line/job/stage/lot. Access checks apply to every detail/download, not only to the top-level order.
