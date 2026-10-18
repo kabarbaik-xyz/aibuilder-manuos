@@ -85,6 +85,7 @@ export interface OrderDto {
       toState: string | null;
       detailJson: string;
       occurredAt: string;
+      actorName?: string;
     }>;
   }>;
   demands?: Array<{

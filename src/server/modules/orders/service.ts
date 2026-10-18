@@ -129,6 +129,21 @@ export class OrderService {
       throw new ForbiddenError(`Access denied: customer user cannot access order '${id}'`);
     }
 
+    if (principal.customerId) {
+      const { lifecycleInstances: _internalLifecycle, ...customerSafeOrder } = order;
+      return customerSafeOrder as typeof order;
+    }
+
+    if (!principal.customerId && order.lifecycleInstances?.length) {
+      const actorIds = [...new Set(order.lifecycleInstances.flatMap(instance => instance.events.map(event => event.actorUserId)))];
+      const actors = actorIds.length ? await this.prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
+      const actorNames = new Map(actors.map(actor => [actor.id, actor.name]));
+      order.lifecycleInstances = order.lifecycleInstances.map(instance => ({
+        ...instance,
+        events: instance.events.map(event => ({ ...event, actorName: actorNames.get(event.actorUserId) ?? 'Former user' })),
+      }));
+    }
+
     return order;
   }
 

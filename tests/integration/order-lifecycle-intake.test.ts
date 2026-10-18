@@ -82,6 +82,10 @@ describe('order lifecycle intake', () => {
     expect(lifecycle?.stages[0]).toMatchObject({
       stageKey: 'SALES-REVIEW', state: 'READY', assignedMembershipId: owner.membershipId,
     });
+    const internalOrderView = await orderService.getOrder(owner.principal, created.data.id);
+    expect(internalOrderView.lifecycleInstances[0].events[0]).toMatchObject({ actorUserId: owner.userId, actorName: owner.principal.name });
+    const customerOrderView = await orderService.getOrder(fixture.alpha.users.customerUser.principal, created.data.id);
+    expect(customerOrderView).not.toHaveProperty('lifecycleInstances');
     await expect(listLifecycleWorkItems(fixture.db, owner.principal)).resolves.toMatchObject([{
       orderId: created.data.id,
       orderNumber: created.data.orderNumber,
