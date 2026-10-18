@@ -199,6 +199,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Tests:** `tests/integration/lifecycle-scheduling.test.ts`; extend existing finite-capacity, dispatch and workforce suites only for new behaviors.
 
 - [ ] Link lifecycle production/planning stages to the real job/Task instances and booking IDs. Never copy a second independent schedule into lifecycle state.
+- [x] Surface current production task status and confirmed Planning bookings in the order lifecycle panel, linked to the live task detail. Booking rows are read from the existing task/resource-booking records; no duplicate schedule is persisted.
 - [ ] Compute feasibility using dependency graph, shift/roster, technician skill/cert validity, machine capability, existing bookings, material readiness and facility scope.
 - [ ] Administrative stages display deadline/owner and actual progress; they do not appear as production capacity without an explicit supported resource model.
 - [ ] Stage activation creates schedulable work or reveals existing released tasks; it does not silently confirm bookings.
