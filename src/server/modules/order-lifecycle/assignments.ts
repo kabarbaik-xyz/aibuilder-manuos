@@ -5,16 +5,7 @@ import { requireAnyPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
 import { NotificationService } from '@/server/modules/notifications/service';
 import { completeLifecycleAction } from './service';
-
-const permissionByAction: Record<string, string> = {
-  ORDER_CONFIRM: 'order.create',
-  ENGINEERING_APPROVE: 'engineering.approve',
-  PLAN_PRODUCTION: 'planning.write',
-  EXECUTE_PRODUCTION: 'task.execute_assigned',
-  FINALIZE_QC: 'quality.inspect',
-  CONFIRM_DELIVERY: 'delivery.dispatch',
-  REVIEW_EVIDENCE: 'order.read',
-};
+import { getLifecycleActionDescriptor } from './action-registry';
 
 export async function reassignLifecycleStage(
   db: PrismaClient,
@@ -61,7 +52,7 @@ export async function reassignLifecycleStage(
         | { kind: 'MEMBER'; membershipId: string; departmentId?: string }
         | { kind: 'DEPARTMENT_QUEUE'; departmentId: string; eligibleRoleCodes: string[] };
       const candidateRoles = candidate.roles.map((grant: { role: { code: string; permissions: Array<{ permissionCode: string }> } }) => grant.role);
-      const actionPermission = permissionByAction[stage.action];
+      const actionPermission = getLifecycleActionDescriptor(stage.action).requiredPermission;
       const hasActionPermission = candidateRoles.some((role: { permissions: Array<{ permissionCode: string }> }) => role.permissions.some(permission => permission.permissionCode === actionPermission));
       const roleEligible = assignment.kind === 'MEMBER' || assignment.eligibleRoleCodes.some((roleCode: string) => candidateRoles.some((role: { code: string }) => role.code === roleCode));
       if (!hasActionPermission || !roleEligible) throw new BadRequestError('The selected member is not eligible for this lifecycle action.');
@@ -137,7 +128,7 @@ export async function claimLifecycleStage(
         include: { instance: { select: { id: true, status: true, order: { select: { facilityId: true } } } } },
       });
       if (!stage || stage.instance.status !== 'ACTIVE') throw new NotFoundError('Lifecycle stage not found.');
-      if (!principal.permissions.has(permissionByAction[stage.action] ?? '')) {
+      if (!principal.permissions.has(getLifecycleActionDescriptor(stage.action).requiredPermission)) {
         throw new ForbiddenError('You do not have permission to claim this stage.');
       }
       const assignment = JSON.parse(stage.assignmentJson) as

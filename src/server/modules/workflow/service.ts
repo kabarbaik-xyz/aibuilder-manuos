@@ -12,6 +12,7 @@ import {
 } from '@/domain/workflow-definition';
 import * as contracts from './contracts';
 import { validateLifecycleDefinition, type OrderLifecycleDefinition } from '@/domain/order-lifecycle-definition';
+import { getLifecycleActionDescriptor } from '@/server/modules/order-lifecycle/action-registry';
 import { createHash } from 'crypto';
 
 export class WorkflowService {
@@ -97,14 +98,9 @@ export class WorkflowService {
     workspaceId: string,
     definition: OrderLifecycleDefinition
   ) {
-    const permissionByAction: Record<string, string> = {
-      ORDER_CONFIRM: 'order.create', ENGINEERING_APPROVE: 'engineering.approve',
-      PLAN_PRODUCTION: 'planning.write', EXECUTE_PRODUCTION: 'task.execute_assigned',
-      FINALIZE_QC: 'quality.inspect', CONFIRM_DELIVERY: 'delivery.dispatch', REVIEW_EVIDENCE: 'order.read',
-    };
     for (const stage of definition.stages) {
-      const requiredPermission = permissionByAction[stage.action];
-      if (!requiredPermission) throw new BadRequestError(`Stage '${stage.key}' has no permission mapping for action '${stage.action}'.`);
+      const descriptor = getLifecycleActionDescriptor(stage.action);
+      const requiredPermission = descriptor.requiredPermission;
       const department = await tx.department.findFirst({
         where: { id: stage.departmentId, workspaceId, isActive: true, archivedAt: null },
         select: { id: true },
@@ -139,17 +135,7 @@ export class WorkflowService {
           where: { id: form.formVersionId, workspaceId, status: 'PUBLISHED', contentHash: form.contentHash },
           include: { template: { select: { purpose: true } } },
         });
-        const allowedPurposesByAction: Record<string, string[]> = {
-          ORDER_CONFIRM: ['ORDER_SPEC'],
-          ENGINEERING_APPROVE: ['ORDER_SPEC'],
-          PLAN_PRODUCTION: ['TASK_EVIDENCE'],
-          EXECUTE_PRODUCTION: ['TASK_EVIDENCE'],
-          FINALIZE_QC: ['QC_EVIDENCE'],
-          CONFIRM_DELIVERY: ['ORDER_SPEC'],
-          REVIEW_EVIDENCE: ['ORDER_SPEC'],
-        };
-        const allowedPurposes = allowedPurposesByAction[stage.action] ?? [];
-        if (!version || !allowedPurposes.includes(version.template.purpose)) {
+        if (!version || !descriptor.formPurposes.includes(version.template.purpose)) {
           throw new BadRequestError(`Stage '${stage.key}' form pin is unpublished, changed, or incompatible with its action.`);
         }
       }
