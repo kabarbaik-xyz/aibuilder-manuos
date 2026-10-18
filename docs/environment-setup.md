@@ -79,6 +79,10 @@ This document specifies the validated runtime versions, dependencies, provider S
 
 ## 4. Google Cloud Run Deployment Prerequisites
 
+### Order lifecycle rollout
+
+`NEXT_PUBLIC_MANUOS_ORDER_LIFECYCLE_ENABLED` controls lifecycle adoption for new orders. It defaults to enabled to preserve the current order form behavior. Set it to `false` in the build environment to hide lifecycle selection and reject lifecycle attachment/selection at the API boundary; rebuild the application after changing it because `NEXT_PUBLIC_*` values are embedded in the client bundle. Production-routing workflow selection remains available, and existing orders are never migrated by this switch.
+
 1. **GCP Project & Services:**
    - GCP Project ID (configured during deployment).
    - Artifact Registry repository: `manuos-repo`.

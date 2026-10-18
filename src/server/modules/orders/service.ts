@@ -9,6 +9,7 @@ import * as contracts from './contracts';
 import { validateLifecycleDefinition, type OrderLifecycleDefinition } from '@/domain/order-lifecycle-definition';
 import { orderLifecycleDefinitionSchema } from '@/server/modules/workflow/contracts';
 import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
+import { isOrderLifecycleEnabled } from '@/domain/order-lifecycle-rollout';
 
 export class OrderService {
   constructor(private readonly prisma: PrismaClient = defaultDb) {}
@@ -185,6 +186,9 @@ export class OrderService {
     idempotencyKey: string
   ) {
     requirePermission(principal, 'order.create');
+    if (input.lifecycleWorkflowVersionId && !isOrderLifecycleEnabled()) {
+      throw new BadRequestError('Order lifecycle rollout is disabled. Create a legacy draft or contact an administrator.');
+    }
 
     return executeCommand({
       principal,
@@ -574,6 +578,9 @@ export class OrderService {
     idempotencyKey: string,
   ) {
     requirePermission(principal, 'order.create');
+    if (!isOrderLifecycleEnabled()) {
+      throw new BadRequestError('Order lifecycle rollout is disabled. A workflow cannot be attached to this draft yet.');
+    }
 
     return executeCommand({
       principal,

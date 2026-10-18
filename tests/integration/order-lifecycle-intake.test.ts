@@ -168,6 +168,25 @@ describe('order lifecycle intake', () => {
       orderedQuantity: '2',
       requestedDate: '2026-11-01T00:00:00.000Z',
     }, 'lifecycle-attach-order');
+    const previousRollout = process.env.NEXT_PUBLIC_MANUOS_ORDER_LIFECYCLE_ENABLED;
+    process.env.NEXT_PUBLIC_MANUOS_ORDER_LIFECYCLE_ENABLED = 'false';
+    try {
+      await expect(orderService.attachLifecycle(owner.principal, order.data.id, {
+        expectedVersion: order.data.version,
+        workflowVersionId: versionId,
+      }, 'lifecycle-attach-disabled')).rejects.toThrow(/rollout is disabled/i);
+      await expect(orderService.createOrderDraft(owner.principal, {
+        customerId: fixture.alpha.masters.customerId,
+        orderTypeId: fixture.alpha.masters.orderTypeId,
+        itemId: fixture.alpha.masters.fgItemId,
+        orderedQuantity: '2',
+        requestedDate: '2026-11-01T00:00:00.000Z',
+        lifecycleWorkflowVersionId: versionId,
+      }, 'lifecycle-create-disabled')).rejects.toThrow(/rollout is disabled/i);
+    } finally {
+      if (previousRollout === undefined) delete process.env.NEXT_PUBLIC_MANUOS_ORDER_LIFECYCLE_ENABLED;
+      else process.env.NEXT_PUBLIC_MANUOS_ORDER_LIFECYCLE_ENABLED = previousRollout;
+    }
     const result = await orderService.attachLifecycle(owner.principal, order.data.id, {
       expectedVersion: order.data.version,
       workflowVersionId: versionId,
