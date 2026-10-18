@@ -181,6 +181,13 @@ describe('order lifecycle intake', () => {
     await forms.retireFormVersion(owner.principal, {
       templateId: form.templateId, versionId: published.versionId, expectedVersion: 3,
     }, 'lifecycle-retire-pinned-form');
+    const ordersBeforeFailedIntake = await fixture.db.order.count({ where: { workspaceId: fixture.alpha.workspaceId } });
+    await expect(orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId, orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId, orderedQuantity: '1', requestedDate: '2026-11-02T00:00:00.000Z',
+      lifecycleWorkflowVersionId: template.data.initialVersionId,
+    }, 'lifecycle-intake-retired-form')).rejects.toThrow(/no longer published/i);
+    expect(await fixture.db.order.count({ where: { workspaceId: fixture.alpha.workspaceId } })).toBe(ordersBeforeFailedIntake);
     await expect(orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-confirm-with-missing-pin'))
       .rejects.toThrow(/Required form.*must be submitted/i);
     await expect(fixture.db.order.findUniqueOrThrow({ where: { id: order.data.id } }))
