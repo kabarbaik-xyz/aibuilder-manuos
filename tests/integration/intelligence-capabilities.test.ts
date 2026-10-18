@@ -51,7 +51,7 @@ describe('CoreAI capability readiness', () => {
       href: '/ai/recovery',
       statusLabel: 'Schedule review, alternate machines, overtime proposals, and subcontract tracking available',
     });
-    expect(recovery?.prerequisite).toContain('Before applying, revalidate current bookings and versions');
+    expect(recovery?.prerequisite).toContain('revalidate saved order/task evidence');
     expect(recovery?.prerequisite).toContain('supervisor-gated');
     expect(recovery?.unavailableReason).toContain('split-shipment allocation');
     expect(recovery?.prerequisite).toContain('affected technician direct supervisor');
