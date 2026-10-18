@@ -250,15 +250,15 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Create:** `src/server/modules/order-lifecycle/traceability.ts`, `src/features/orders/components/order-evidence-timeline.tsx`.
 **Tests:** `tests/integration/lifecycle-traceability.test.ts`.
 
-- [ ] Record stable event references to lifecycle stage/attempt, workflow/routing/form/binding pins, actor/PIC/department, submission/correction, approval, schedule proposal/booking changes, issue/rework, material lot/output/QC and shipment.
+- [x] Record stable event references to lifecycle stage/attempt, workflow/routing/form/binding pins, actor/PIC/department, submission/correction, approval, schedule proposal/booking changes, issue/rework, material lot/output/QC and shipment. Internal timeline records pinned lifecycle/form/routing versions, handoff actor and department, submission sequence/correction reason, recovery decision state, booking changes, lot-linked ledger movement, QC/rework and shipment milestones.
 - [x] Show lifecycle handoff time, stage transition, typed domain action and its completion fact in the order history; facts come from the action registry and existing command transactions.
 - Internal order history now resolves the lifecycle event actor to a readable name; customer order detail omits the internal lifecycle event stream. Full evidence genealogy and per-link authorization remain open.
 - Order detail resolves each immutable lifecycle form pin to its historical template name/version, requiredness and completion point, even after the version is retired; it does not substitute the current template.
-- [ ] Read from authoritative event/submission/ledger sources; do not manufacture duplicate stock or an independently editable audit timeline. Corrections append and preserve original evidence.
-- [ ] Link AI proposal evidence to its human decision and actual applied command result. Failed attempts must not look successfully applied.
-- [ ] Build a scoped timeline searchable by order/line/job/stage/lot. Access checks apply to every detail/download, not only to the top-level order.
-- [ ] Add public/customer-safe evidence projections only through existing passport publication permissions; internal answers, personnel details and unpublished attachments are excluded by default.
-- [ ] Test complete genealogy and a correction/reassignment/reschedule/rework path, including an inaccessible evidence link and a multi-shipment order.
+- [x] Read from authoritative event/submission/ledger sources; do not manufacture duplicate stock or an independently editable audit timeline. Corrections append and preserve original evidence.
+- [x] Link AI proposal evidence to its human decision and actual applied command result. Failed attempts must not look successfully applied; only persisted APPROVED state from the successful apply command appears as applied.
+- [ ] Build a scoped timeline searchable by order/line/job/stage/lot. Access checks apply to every detail/download, not only to the top-level order. The timeline is bounded/searchable and each linked record retains its own authorization boundary; full per-link denial coverage still needs specs.
+- [x] Add public/customer-safe evidence projections only through existing passport publication permissions; internal answers, personnel details and unpublished attachments are excluded by default. The internal timeline lists published immutable passport snapshots only; customer access stays on the existing passport reader/sharing rules.
+- [ ] Test complete genealogy and a correction/reassignment/reschedule/rework path, including an inaccessible evidence link and a multi-shipment order. Current specs cover facility/customer denial, multiple shipments, passport publication and pending-vs-applied recovery evidence; correction/reassignment/reschedule/rework genealogy remains open.
 
 ## Phase6 — Prove the entire journey before rollout
 
