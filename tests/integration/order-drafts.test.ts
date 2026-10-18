@@ -238,6 +238,7 @@ describe('W02: Real Order Drafts and Reviewed Engineering Revisions', () => {
     // Customer A rep can view own order
     const readback = await orderService.getOrder(customerUser.principal, order!.id);
     expect(readback.id).toBe(order!.id);
+    expect(readback.instances.flatMap(instance => instance.tasks).every(task => !('resourceBookings' in task))).toBe(true);
 
     // Customer B rep is denied access
     await expect(

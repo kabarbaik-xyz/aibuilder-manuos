@@ -109,6 +109,32 @@ describe('DF01: Form Definition and Answer Validation Engine', () => {
     expect(badDate.issues.some((i) => i.code === 'INVALID_DATE')).toBe(true);
   });
 
+  it('compares decimal bounds exactly without floating-point rounding', () => {
+    const def: FormDefinition = validateDefinition({
+      schemaVersion: 1,
+      purpose: 'TASK_EVIDENCE',
+      fields: [
+        { key: 'reading', label: 'Reading', kind: 'decimal', max: '9007199254740992.0000000000000001' },
+      ],
+    });
+
+    const aboveMax = validateAnswers(def, { reading: '9007199254740992.0000000000000002' }, 'FINAL');
+    expect(aboveMax.valid).toBe(false);
+    expect(aboveMax.issues.some((issue) => issue.code === 'MAX_VALUE')).toBe(true);
+  });
+
+  it('rejects calendar dates that JavaScript would otherwise normalize', () => {
+    const def: FormDefinition = validateDefinition({
+      schemaVersion: 1,
+      purpose: 'TASK_EVIDENCE',
+      fields: [{ key: 'inspection_date', label: 'Inspection date', kind: 'date' }],
+    });
+
+    expect(validateAnswers(def, { inspection_date: '2026-02-31' }, 'FINAL').issues)
+      .toContainEqual(expect.objectContaining({ fieldKey: 'inspection_date', code: 'INVALID_DATE' }));
+    expect(validateAnswers(def, { inspection_date: '2024-02-29' }, 'FINAL').valid).toBe(true);
+  });
+
   it('executes exact fixture: finish select with painted/raw and conditional paint_code', () => {
     // Exact specification fixture:
     // finish select with painted/raw; required paint_code text visible only when finish equals painted.

@@ -147,6 +147,16 @@ export async function instantiateWorkflow(
         },
       });
 
+  // An implicit release allocates the full order-line quantity to its new job.
+  // Persist the allocation with the job so a later release retry can reconcile
+  // the line total instead of seeing jobs whose atoms are absent from the line.
+  if (!manufacturingOrder && orderLine) {
+    await tx.orderLine.update({
+      where: { workspaceId_id: { workspaceId: principal.workspaceId, id: orderLine.id } },
+      data: { allocatedAtoms: { increment: mo.targetAtoms } },
+    });
+  }
+
   // 5. Create Jobsheet
   const jobsheet = await tx.jobsheet.create({
     data: {
@@ -162,6 +172,23 @@ export async function instantiateWorkflow(
   const incomingEdgeNodes = new Set(publishedVersion.edges.map((e: any) => e.toNodeKey));
   const taskMap = new Map<string, any>();
   const taskIdRecord: Record<string, string> = {};
+  const lifecycleVersion = order.lifecycleWorkflowVersionId
+    ? await tx.workflowVersion.findFirst({
+        where: { id: order.lifecycleWorkflowVersionId, workspaceId: principal.workspaceId, status: 'PUBLISHED' },
+        select: { definitionJson: true },
+      })
+    : null;
+  let lifecycleTaskFormPins: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }> = [];
+  if (lifecycleVersion) {
+    try {
+      const lifecycleDefinition = JSON.parse(lifecycleVersion.definitionJson) as { stages?: Array<{ action?: string; forms?: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }> }> };
+      lifecycleTaskFormPins = (lifecycleDefinition.stages ?? [])
+        .filter((stage) => stage.action === 'PLAN_PRODUCTION' || stage.action === 'EXECUTE_PRODUCTION')
+        .flatMap((stage) => stage.forms ?? []);
+    } catch {
+      throw new BadRequestError('The order lifecycle version contains invalid pinned task form configuration.');
+    }
+  }
 
   for (const node of publishedVersion.nodes) {
     const isRoot = !incomingEdgeNodes.has(node.key);
@@ -201,8 +228,23 @@ export async function instantiateWorkflow(
           formBindingId: binding.id,
           subjectType: 'TASK',
           subjectId: task.id,
+          required: binding.required,
+          completionPoint: binding.completionPoint,
           status: 'PENDING',
         },
+      });
+    }
+    for (const pin of lifecycleTaskFormPins) {
+      const pinnedVersion = await tx.formVersion.findFirst({
+        where: { id: pin.formVersionId, workspaceId: principal.workspaceId, status: 'PUBLISHED', contentHash: pin.contentHash },
+        select: { id: true, template: { select: { purpose: true } } },
+      });
+      if (!pinnedVersion || pinnedVersion.template.purpose !== 'TASK_EVIDENCE') {
+        throw new BadRequestError('A production lifecycle task form pin is unpublished, changed, or incompatible.');
+      }
+      await tx.formInstance.createMany({
+        data: [{ workspaceId: principal.workspaceId, formVersionId: pin.formVersionId, subjectType: 'TASK', subjectId: task.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' }],
+        skipDuplicates: true,
       });
     }
   }
@@ -233,6 +275,8 @@ export async function instantiateWorkflow(
             formBindingId: binding.id,
             subjectType: 'ORDER',
             subjectId: order.id,
+            required: binding.required,
+            completionPoint: 'BEFORE_ACTION',
             status: 'PENDING',
           },
         });

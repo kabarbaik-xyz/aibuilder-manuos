@@ -3,11 +3,16 @@ import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { createHash } from 'crypto';
 import { canonicalJson } from '@/server/db/transaction';
+import { FormSubmissionService } from '@/server/modules/forms/submissions';
+import { BadRequestError } from '@/domain/errors';
+import { ScheduleProposalService } from '@/server/modules/planning/schedule-proposals';
+import { z } from 'zod';
 
 export interface AuthorizedContextScope {
   orderId?: string;
   itemId?: string;
   taskId?: string;
+  evaluateRecovery?: boolean;
 }
 
 export interface AuthorizedContextOrder {
@@ -46,6 +51,25 @@ export interface AuthorizedContextTask {
   actualMinutes: number | null;
   orderId: string;
   orderNumber: string;
+  blockers: Array<{ kind: 'ISSUE' | 'PREDECESSOR'; summary: string; severity?: string; owner?: string | null; expectedResolutionAt?: string | null }>;
+}
+
+export interface AuthorizedContextBooking {
+  orderNumber: string;
+  operation: string;
+  resourceType: 'MACHINE' | 'TECHNICIAN';
+  resourceName: string | null;
+  startAt: string;
+  endAt: string;
+}
+
+export interface AuthorizedContextFormEvidence {
+  orderNumber: string;
+  subject: string;
+  purpose: string;
+  sequenceNumber: number;
+  finalizedAt: string;
+  answers: Array<{ field: string; value: string }>;
 }
 
 export interface AuthorizedContextDisruption {
@@ -56,13 +80,81 @@ export interface AuthorizedContextDisruption {
   affectedOrderNumbers: string[];
 }
 
+export interface AuthorizedContextLifecycleStage {
+  orderId: string;
+  orderNumber: string;
+  workflowName: string;
+  workflowVersion: number;
+  name: string;
+  action: string;
+  state: string;
+  department: string;
+  assignedTo: string | null;
+  dueAt: string | null;
+  scheduleKind: string;
+  blockers: string[];
+  formPins: Array<{
+    name: string | null;
+    version: number | null;
+    purpose: string | null;
+    required: boolean;
+    completionPoint: string;
+    status: 'AVAILABLE' | 'UNAVAILABLE' | 'RESTRICTED';
+  }>;
+}
+
+export interface AuthorizedContextRecoveryReview {
+  orderNumber: string;
+  projectedEndAt: string;
+  evaluatedAt: string;
+  taskCount: number;
+  state: 'PENDING_APPROVAL';
+  mustRevalidateBeforeApply: true;
+}
+
+export interface AuthorizedContextRecoveryEvaluation {
+  orderNumber: string;
+  status: string;
+  projectedEndAt: string | null;
+  evaluatedAt: string;
+  taskCount: number;
+  scheduledTaskCount: number;
+  blockers: string[];
+  readOnly: true;
+  applied: false;
+}
+
+export interface AuthorizedContextQcSummary {
+  orderNumber: string;
+  finalizedInspections: number;
+  inspectedQty: string;
+  passedQty: string;
+  reworkQty: string;
+  scrappedQty: string;
+  dispositions: string[];
+  latestFinalizedAt: string;
+}
+
 export interface AuthorizedContext {
+  snapshotCapturedAt: string;
+  coverage: Record<'orders' | 'tasks' | 'confirmedBookings' | 'submittedFormEvidence' | 'inventory' | 'resources' | 'lifecycleStages' | 'recoveryReviews' | 'currentRecoveryEvaluation' | 'qcSummaries', {
+    status: 'AVAILABLE' | 'EMPTY' | 'RESTRICTED';
+    includedCount: number;
+    limit: number;
+    sampled: boolean;
+  }>;
   workspaceId: string;
   workspaceRevision: number;
   orders: AuthorizedContextOrder[];
   tasks: AuthorizedContextTask[];
+  confirmedBookings: AuthorizedContextBooking[];
+  submittedFormEvidence: AuthorizedContextFormEvidence[];
   inventory: AuthorizedContextInventory[];
   resources: AuthorizedContextResource[];
+  lifecycleStages: AuthorizedContextLifecycleStage[];
+  recoveryReviews: AuthorizedContextRecoveryReview[];
+  currentRecoveryEvaluation: AuthorizedContextRecoveryEvaluation | null;
+  qcSummaries: AuthorizedContextQcSummary[];
   disruptions: AuthorizedContextDisruption[];
   evidenceIndex: string[]; // Serialized valid IDs, order numbers, part numbers, machine codes
   contextHash: string;
@@ -113,6 +205,7 @@ export async function buildAuthorizedContext(
   prisma: PrismaClient,
   scope?: AuthorizedContextScope
 ): Promise<AuthorizedContext> {
+  const snapshotCapturedAt = new Date().toISOString();
   const workspaceId = principal.workspaceId;
 
   // 1. Fetch workspace revision
@@ -121,14 +214,17 @@ export async function buildAuthorizedContext(
     select: { revision: true },
   });
   const workspaceRevision = workspace?.revision ?? 1;
+  const facilityIds = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
+  const canReadAcrossFacilities = principal.roles.includes('OWNER');
 
   // 2. Fetch scoped orders (respect customer tenancy if customer user)
   const effectiveCustomerId = principal.customerId || undefined;
-  const canReadOrders = principal.permissions.has('order.read') || principal.permissions.has('planning.read') || (Boolean(effectiveCustomerId) && principal.permissions.has('customer_order.read_own'));
+  const canReadOrders = principal.permissions.has('order.read') || principal.permissions.has('planning.read') || principal.permissions.has('quality.read') || (Boolean(effectiveCustomerId) && principal.permissions.has('customer_order.read_own'));
   const dbOrders = canReadOrders ? await prisma.order.findMany({
     where: {
       workspaceId,
       ...(effectiveCustomerId ? { customerId: effectiveCustomerId } : {}),
+      ...(!effectiveCustomerId && !canReadAcrossFacilities ? { facilityId: { in: facilityIds } } : {}),
       ...(scope?.orderId ? { id: scope.orderId } : {}),
       ...(scope?.itemId ? { itemId: scope.itemId } : {}),
       ...(scope?.taskId ? { instances: { some: { tasks: { some: { id: scope.taskId } } } } } : {}),
@@ -161,9 +257,19 @@ export async function buildAuthorizedContext(
       workspaceId,
       ...(scope?.taskId ? { id: scope.taskId } : {}),
       ...(canReadAllTasks ? {} : { assignedTechnicianId: principal.technicianId! }),
+      ...(!canReadAcrossFacilities ? { instance: { order: { facilityId: { in: facilityIds } } } } : {}),
       status: { not: 'CANCELLED' },
     },
-    include: { instance: { include: { order: true } } },
+    include: {
+      instance: { include: { order: true } },
+      predecessorDeps: { include: { predecessor: { select: { nodeKey: true, status: true } } } },
+      issues: {
+        where: { status: { in: ['OPEN', 'REOPENED'] }, severity: { in: ['HIGH', 'CRITICAL'] } },
+        include: { ownerUser: { select: { name: true } } },
+        orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }],
+        take: 10,
+      },
+    },
     take: scope?.taskId ? 1 : 10,
     orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
   }) : [];
@@ -175,7 +281,296 @@ export async function buildAuthorizedContext(
     actualMinutes: task.actualDurationMinutes > 0 ? task.actualDurationMinutes : null,
     orderId: task.instance.order.id,
     orderNumber: task.instance.order.orderNumber,
+    blockers: [
+      ...task.predecessorDeps
+        .filter(dependency => !['COMPLETED', 'CANCELLED'].includes(dependency.predecessor.status))
+        .map(dependency => ({ kind: 'PREDECESSOR' as const, summary: `Waiting for operation ${dependency.predecessor.nodeKey} (${dependency.predecessor.status.toLowerCase()})` })),
+      ...task.issues.map(issue => ({
+        kind: 'ISSUE' as const,
+        summary: issue.title,
+        severity: issue.severity,
+        owner: issue.ownerUser?.name ?? null,
+        expectedResolutionAt: issue.expectedResolutionAt?.toISOString() ?? null,
+      })),
+    ],
   }));
+
+  const submittedFormEvidence: AuthorizedContextFormEvidence[] = [];
+  if (!effectiveCustomerId && principal.permissions.has('forms.read')) {
+    const formSubmissions = new FormSubmissionService(prisma);
+    const taskOrderById = new Map(dbTasks.map(task => [task.id, task.instance.order.orderNumber]));
+    const orderById = new Map(dbOrders.map(order => [order.id, order.orderNumber]));
+    const subjects = [
+      ...dbOrders.map(order => ({ subjectType: 'ORDER' as const, subjectId: order.id, subjectLabel: order.orderNumber })),
+      ...dbTasks.map(task => ({ subjectType: 'TASK' as const, subjectId: task.id, subjectLabel: `${taskOrderById.get(task.id)} / operation ${task.nodeKey}` })),
+    ];
+    for (const subject of subjects) {
+      const instances = await formSubmissions.listInstancesForSubject(principal, subject.subjectType, subject.subjectId);
+      for (const form of instances) {
+        const submission = form.latestSubmission;
+        if (submission?.status !== 'FINAL' || !submission.finalizedAt) continue;
+        const answers = Object.entries(submission.answers).flatMap(([key, value]) => {
+          const field = form.definition.fields.find(candidate => candidate.key === key);
+          if (!field || field.kind === 'reference' || field.kind === 'attachment' || value === null) return [];
+          const displayValue = field.kind === 'boolean'
+            ? value ? 'Yes' : 'No'
+            : field.kind === 'select' && typeof value === 'string'
+              ? field.options?.find(option => option.value === value)?.label ?? value
+              : field.kind === 'multiselect' && Array.isArray(value)
+                ? value.map(item => field.options?.find(option => option.value === item)?.label ?? item).join(', ')
+                : Array.isArray(value) ? value.join(', ') : String(value);
+          const readableValue = displayValue;
+          return [{ field: field.label, value: readableValue.slice(0, 500) }];
+        }).slice(0, 12);
+        if (answers.length === 0) continue;
+        submittedFormEvidence.push({
+          orderNumber: subject.subjectType === 'ORDER' ? (orderById.get(subject.subjectId) ?? subject.subjectLabel) : (taskOrderById.get(subject.subjectId) ?? subject.subjectLabel),
+          subject: subject.subjectLabel,
+          purpose: form.definition.purpose,
+          sequenceNumber: submission.sequenceNumber,
+          finalizedAt: submission.finalizedAt,
+          answers,
+        });
+        if (submittedFormEvidence.length >= 20) break;
+      }
+      if (submittedFormEvidence.length >= 20) break;
+    }
+  }
+
+  const dbBookings = !effectiveCustomerId && principal.permissions.has('planning.read') && orders.length > 0
+    ? await prisma.resourceBooking.findMany({
+        where: {
+          workspaceId,
+          status: 'CONFIRMED',
+          task: { instance: { orderId: { in: orders.map(order => order.id) } } },
+        },
+        include: { task: { include: { instance: { include: { order: { select: { id: true, orderNumber: true } } } } } } },
+        orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
+        take: 30,
+      })
+    : [];
+
+  // Lifecycle ownership is internal operational data; never expose it in customer context.
+  const dbLifecycleStages = !effectiveCustomerId && canReadOrders && orders.length > 0
+    ? await prisma.orderLifecycleStage.findMany({
+        where: { workspaceId, instance: { orderId: { in: orders.map(order => order.id) }, status: 'ACTIVE' } },
+        include: {
+          department: { select: { name: true } },
+          assignedMembership: { select: { user: { select: { name: true } } } },
+          instance: { include: {
+            order: { select: { id: true, orderNumber: true } },
+            workflowVersion: { select: { versionNumber: true, template: { select: { name: true } } } },
+          } },
+        },
+        orderBy: [{ dueAt: 'asc' }, { createdAt: 'asc' }],
+        take: 60,
+      })
+    : [];
+  const stageFormPins = dbLifecycleStages.flatMap(stage => {
+    const pins = JSON.parse(stage.formPinsJson) as Array<{
+      formVersionId: string;
+      contentHash: string;
+      required: boolean;
+      completionPoint?: string;
+    }>;
+    return pins.map(pin => ({ stageId: stage.id, ...pin }));
+  });
+  const readableFormVersions = principal.permissions.has('forms.read') && stageFormPins.length > 0
+    ? await prisma.formVersion.findMany({
+        where: {
+          workspaceId,
+          OR: stageFormPins.map(pin => ({ id: pin.formVersionId, contentHash: pin.contentHash })),
+        },
+        select: { id: true, contentHash: true, versionNumber: true, template: { select: { name: true, purpose: true } } },
+      })
+    : [];
+  const formVersionByPin = new Map(readableFormVersions.map(version => [`${version.id}:${version.contentHash}`, version]));
+  const lifecycleByKey = new Map(dbLifecycleStages.map(stage => [`${stage.instanceId}:${stage.stageKey}`, stage]));
+  const lifecycleStages: AuthorizedContextLifecycleStage[] = dbLifecycleStages.map(stage => ({
+    orderId: stage.instance.order.id,
+    orderNumber: stage.instance.order.orderNumber,
+    workflowName: stage.instance.workflowVersion.template.name,
+    workflowVersion: stage.instance.workflowVersion.versionNumber,
+    name: stage.name,
+    action: stage.action,
+    state: stage.state,
+    department: stage.department.name,
+    assignedTo: stage.assignedMembership?.user.name ?? null,
+    dueAt: stage.dueAt?.toISOString() ?? null,
+    scheduleKind: JSON.parse(stage.scheduleJson).kind,
+    blockers: (JSON.parse(stage.predecessorKeysJson) as string[]).flatMap(predecessorKey => {
+      const predecessor = lifecycleByKey.get(`${stage.instanceId}:${predecessorKey}`);
+      return predecessor && !['COMPLETED', 'SKIPPED'].includes(predecessor.state)
+        ? [`Waiting for ${predecessor.name} (${predecessor.state.toLowerCase()})`]
+        : [];
+    }),
+    formPins: (JSON.parse(stage.formPinsJson) as Array<{
+      formVersionId: string;
+      contentHash: string;
+      required: boolean;
+      completionPoint?: string;
+    }>).map(pin => {
+      const version = formVersionByPin.get(`${pin.formVersionId}:${pin.contentHash}`);
+      const restricted = !principal.permissions.has('forms.read');
+      return {
+        name: version?.template.name ?? null,
+        version: version?.versionNumber ?? null,
+        purpose: version?.template.purpose ?? null,
+        required: pin.required,
+        completionPoint: pin.completionPoint ?? 'UNKNOWN',
+        status: restricted ? 'RESTRICTED' as const : version ? 'AVAILABLE' as const : 'UNAVAILABLE' as const,
+      };
+    }),
+  }));
+
+  // QC is internal operational evidence. Limit it to already-authorized orders
+  // and require the quality permission; customer order access never exposes QC.
+  const canReadQc = !effectiveCustomerId && principal.permissions.has('quality.read') && orders.length > 0;
+  const qcInspections = canReadQc ? await prisma.inspection.findMany({
+    where: {
+      workspaceId,
+      status: 'FINALIZED',
+      sourceType: 'PRODUCTION_OUTPUT',
+      reinspectionOfId: null,
+      productionOutput: { task: { instance: { orderId: { in: orders.map(order => order.id) } } } },
+    },
+    select: {
+      inspectedAtoms: true, passedAtoms: true, reworkAtoms: true, scrappedAtoms: true,
+      disposition: true, updatedAt: true,
+      productionOutput: {
+        select: {
+          task: {
+            select: {
+              instance: { select: { order: { select: { orderNumber: true } } } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    take: 100,
+  }) : [];
+  const qcByOrder = new Map<string, { count: number; inspected: bigint; passed: bigint; rework: bigint; scrapped: bigint; dispositions: Set<string>; latest: Date }>();
+  for (const inspection of qcInspections) {
+    const orderNumber = inspection.productionOutput?.task.instance.order.orderNumber;
+    if (!orderNumber) continue;
+    const summary = qcByOrder.get(orderNumber) ?? {
+      count: 0, inspected: 0n, passed: 0n, rework: 0n, scrapped: 0n,
+      dispositions: new Set<string>(), latest: inspection.updatedAt,
+    };
+    summary.count += 1;
+    summary.inspected += inspection.inspectedAtoms;
+    summary.passed += inspection.passedAtoms;
+    summary.rework += inspection.reworkAtoms;
+    summary.scrapped += inspection.scrappedAtoms;
+    if (inspection.disposition) summary.dispositions.add(inspection.disposition);
+    if (inspection.updatedAt > summary.latest) summary.latest = inspection.updatedAt;
+    qcByOrder.set(orderNumber, summary);
+  }
+  const qcSummaries: AuthorizedContextQcSummary[] = [...qcByOrder].map(([orderNumber, summary]) => ({
+    orderNumber, finalizedInspections: summary.count,
+    inspectedQty: formatQuantity(summary.inspected), passedQty: formatQuantity(summary.passed),
+    reworkQty: formatQuantity(summary.rework), scrappedQty: formatQuantity(summary.scrapped),
+    dispositions: [...summary.dispositions].sort(), latestFinalizedAt: summary.latest.toISOString(),
+  }));
+
+  // A recovery review is useful to AI only while its persisted order, active job,
+  // workflow/engineering pins and complete open-task version set still match.
+  // Applying it always performs the authoritative live capacity revalidation.
+  const recoveryReviews: AuthorizedContextRecoveryReview[] = [];
+  const canReadRecoveryReviews = !effectiveCustomerId && principal.permissions.has('planning.read') && orders.length > 0;
+  const pendingRecoveryRows = canReadRecoveryReviews ? await prisma.recoveryProposal.findMany({
+    where: { workspaceId, orderId: { in: orders.map(order => order.id) }, status: 'PROPOSED' },
+    include: { order: { select: { orderNumber: true, version: true, status: true } } },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    take: 20,
+  }) : [];
+  const recoverySnapshotSchema = z.object({
+    mode: z.literal('SCHEDULE_REVIEW'),
+    scheduleReview: z.object({
+      instanceId: z.string(), workflowVersionId: z.string(), engineeringRevisionId: z.string(),
+      evaluatedAt: z.string().datetime(), projectedEndAt: z.string().datetime(),
+      taskVersions: z.array(z.object({ taskId: z.string(), version: z.number().int() })),
+      tasks: z.array(z.object({ taskId: z.string(), version: z.number().int(), startAt: z.string().datetime(), endAt: z.string().datetime() })),
+    }),
+  });
+  for (const row of pendingRecoveryRows) {
+    if (row.order.version !== row.orderVersion || ['DELIVERED', 'CANCELLED'].includes(row.order.status)) continue;
+    let saved: z.infer<typeof recoverySnapshotSchema>;
+    try {
+      const parsed = recoverySnapshotSchema.safeParse(JSON.parse(row.proposalJson));
+      if (!parsed.success) continue;
+      saved = parsed.data;
+    } catch {
+      continue;
+    }
+    const snapshot = saved.scheduleReview;
+    const instance = await prisma.workflowInstance.findFirst({
+      where: { workspaceId, id: snapshot.instanceId, orderId: row.orderId, status: 'ACTIVE', workflowVersionId: snapshot.workflowVersionId, engineeringRevisionId: snapshot.engineeringRevisionId },
+      select: { id: true },
+    });
+    if (!instance || snapshot.tasks.length === 0 || snapshot.taskVersions.length !== snapshot.tasks.length) continue;
+    const openTasks = await prisma.task.findMany({
+      where: { workspaceId, instanceId: instance.id, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+      select: { id: true, version: true, status: true },
+      orderBy: [{ id: 'asc' }],
+    });
+    const savedVersions = new Map(snapshot.taskVersions.map(task => [task.taskId, task.version]));
+    const savedTasks = new Map(snapshot.tasks.map(task => [task.taskId, task]));
+    if (openTasks.length !== savedVersions.size || openTasks.some(task => savedVersions.get(task.id) !== task.version || !['PENDING', 'READY'].includes(task.status))) continue;
+    const now = Date.now();
+    if (snapshot.tasks.some(task => new Date(task.startAt).getTime() <= now || new Date(task.endAt).getTime() <= new Date(task.startAt).getTime() || savedVersions.get(task.taskId) !== task.version || !savedTasks.has(task.taskId))) continue;
+    recoveryReviews.push({
+      orderNumber: row.order.orderNumber,
+      projectedEndAt: snapshot.projectedEndAt,
+      evaluatedAt: snapshot.evaluatedAt,
+      taskCount: snapshot.tasks.length,
+      state: 'PENDING_APPROVAL',
+      mustRevalidateBeforeApply: true,
+    });
+  }
+
+  let currentRecoveryEvaluation: AuthorizedContextRecoveryEvaluation | null = null;
+  if (scope?.evaluateRecovery && canReadRecoveryReviews && scope.orderId && orders.length === 1) {
+    const activeInstances = await prisma.workflowInstance.findMany({
+      where: { workspaceId, orderId: scope.orderId, status: 'ACTIVE' },
+      select: { id: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 2,
+    });
+    const evaluatedAt = new Date().toISOString();
+    if (activeInstances.length !== 1) {
+      currentRecoveryEvaluation = {
+        orderNumber: orders[0].orderNumber,
+        status: activeInstances.length ? 'MULTIPLE_ACTIVE_JOBS' : 'NO_ACTIVE_JOB',
+        projectedEndAt: null, evaluatedAt, taskCount: 0, scheduledTaskCount: 0,
+        blockers: [activeInstances.length ? 'Select one active production job in Planning before evaluating capacity.' : 'No active production job is available for a schedule preview.'],
+        readOnly: true, applied: false,
+      };
+    } else {
+      try {
+        const schedule = await new ScheduleProposalService(prisma).propose(principal, {
+          orderId: scope.orderId, instanceId: activeInstances[0].id,
+          startHorizon: new Date(Date.now() + 5 * 60_000).toISOString(), horizonDays: 30,
+        });
+        const unscheduled = schedule.tasks.filter(task => task.status !== 'SCHEDULED');
+        currentRecoveryEvaluation = {
+          orderNumber: orders[0].orderNumber, status: schedule.state,
+          projectedEndAt: schedule.projectedEndAt ?? null, evaluatedAt: schedule.evaluatedAt,
+          taskCount: schedule.tasks.length,
+          scheduledTaskCount: schedule.tasks.filter(task => task.status === 'SCHEDULED').length,
+          blockers: [...new Set(unscheduled.flatMap(task => task.reasons.map(reason => `${task.nodeKey}: ${reason}`)))].slice(0, 8),
+          readOnly: true, applied: false,
+        };
+      } catch (error) {
+        if (!(error instanceof BadRequestError)) throw error;
+        currentRecoveryEvaluation = {
+          orderNumber: orders[0].orderNumber, status: 'UNAVAILABLE', projectedEndAt: null,
+          evaluatedAt, taskCount: 0, scheduledTaskCount: 0,
+          blockers: ['The current schedule cannot be evaluated; review the active job in Planning.'],
+          readOnly: true, applied: false,
+        };
+      }
+    }
+  }
 
   // 3. Fetch inventory balances
   const balances = !effectiveCustomerId && principal.permissions.has('inventory.read') ? await prisma.stockBalance.findMany({
@@ -214,14 +609,27 @@ export async function buildAuthorizedContext(
   // 4. Fetch resources (machines & technicians)
   const canReadResources = !effectiveCustomerId && (principal.permissions.has('planning.read') || principal.permissions.has('resource.manage'));
   const machines = canReadResources ? await prisma.machine.findMany({
-    where: { workspaceId, archivedAt: null },
+    where: { workspaceId, archivedAt: null, ...(!canReadAcrossFacilities ? { OR: [{ facilityId: null }, { facilityId: { in: facilityIds } }] } : {}) },
     take: 10,
   }) : [];
 
   const technicians = canReadResources ? await prisma.technician.findMany({
-    where: { workspaceId, archivedAt: null, ...(scope?.itemId ? { id: scope.itemId } : {}) },
+    where: { workspaceId, archivedAt: null, ...(scope?.itemId ? { id: scope.itemId } : {}), ...(!canReadAcrossFacilities ? { OR: [{ facilityId: null }, { facilityId: { in: facilityIds } }] } : {}) },
     take: 10,
   }) : [];
+
+  const machineNames = new Map(machines.map(machine => [machine.id, machine.name]));
+  const technicianNames = new Map(technicians.map(technician => [technician.id, technician.name]));
+  const confirmedBookings: AuthorizedContextBooking[] = dbBookings.map(booking => ({
+    orderNumber: booking.task.instance.order.orderNumber,
+    operation: booking.task.nodeKey,
+    resourceType: booking.resourceType === 'TECHNICIAN' ? 'TECHNICIAN' : 'MACHINE',
+    resourceName: booking.resourceType === 'TECHNICIAN'
+      ? technicianNames.get(booking.resourceId) ?? null
+      : machineNames.get(booking.resourceId) ?? null,
+    startAt: booking.startAt.toISOString(),
+    endAt: booking.endAt.toISOString(),
+  }));
 
   const resources: AuthorizedContextResource[] = [
     ...machines.map((m) => ({
@@ -275,6 +683,18 @@ export async function buildAuthorizedContext(
   }
 
   const disruptions: AuthorizedContextDisruption[] = [];
+  const coverage = {
+    orders: { status: !canReadOrders ? 'RESTRICTED' as const : dbOrders.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbOrders.length, limit: 20, sampled: dbOrders.length === 20 },
+    tasks: { status: !(canReadAllTasks || canReadAssignedTasks) ? 'RESTRICTED' as const : dbTasks.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbTasks.length, limit: scope?.taskId ? 1 : 10, sampled: dbTasks.length === (scope?.taskId ? 1 : 10) },
+    confirmedBookings: { status: effectiveCustomerId || !principal.permissions.has('planning.read') ? 'RESTRICTED' as const : dbBookings.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbBookings.length, limit: 30, sampled: dbBookings.length === 30 },
+    submittedFormEvidence: { status: effectiveCustomerId || !principal.permissions.has('forms.read') ? 'RESTRICTED' as const : submittedFormEvidence.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: submittedFormEvidence.length, limit: 20, sampled: submittedFormEvidence.length === 20 },
+    inventory: { status: effectiveCustomerId || !principal.permissions.has('inventory.read') ? 'RESTRICTED' as const : balances.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: balances.length, limit: 30, sampled: balances.length === 30 },
+    resources: { status: !canReadResources ? 'RESTRICTED' as const : resources.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: resources.length, limit: 20, sampled: machines.length === 10 || technicians.length === 10 },
+    lifecycleStages: { status: effectiveCustomerId || !canReadOrders ? 'RESTRICTED' as const : dbLifecycleStages.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbLifecycleStages.length, limit: 60, sampled: dbLifecycleStages.length === 60 },
+    recoveryReviews: { status: !canReadRecoveryReviews ? 'RESTRICTED' as const : recoveryReviews.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: recoveryReviews.length, limit: 20, sampled: pendingRecoveryRows.length === 20 },
+    currentRecoveryEvaluation: { status: !canReadRecoveryReviews ? 'RESTRICTED' as const : currentRecoveryEvaluation ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: Number(Boolean(currentRecoveryEvaluation)), limit: 1, sampled: false },
+    qcSummaries: { status: !canReadQc ? 'RESTRICTED' as const : qcSummaries.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: qcSummaries.length, limit: 100, sampled: qcInspections.length === 100 },
+  };
 
   // Deterministic context hash
   const contextPayload = {
@@ -285,8 +705,15 @@ export async function buildAuthorizedContext(
     scope,
     orders,
     tasks,
+    confirmedBookings,
+    submittedFormEvidence,
     inventory,
     resources,
+    lifecycleStages,
+    recoveryReviews,
+    currentRecoveryEvaluation,
+    qcSummaries,
+    coverage,
     evidenceIndex: [...evidenceSet].sort(),
   };
 
@@ -295,12 +722,20 @@ export async function buildAuthorizedContext(
     .digest('hex');
 
   return {
+    snapshotCapturedAt,
+    coverage,
     workspaceId,
     workspaceRevision,
     orders,
     tasks,
+    confirmedBookings,
+    submittedFormEvidence,
     inventory,
     resources,
+    lifecycleStages,
+    recoveryReviews,
+    currentRecoveryEvaluation,
+    qcSummaries,
     disruptions,
     evidenceIndex: Array.from(evidenceSet),
     contextHash,

@@ -47,11 +47,58 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
           visibleWhen: { fieldKey: 'finish', operator: 'equals', value: 'painted' },
         },
         {
+          key: 'batch_code',
+          label: 'Batch code',
+          kind: 'text',
+          required: false,
+        },
+        {
+          key: 'operator_notes',
+          label: 'Operator notes',
+          kind: 'textarea',
+          required: false,
+        },
+        {
           key: 'dry_film_microns',
           label: 'Dry Film Thickness (um)',
           kind: 'decimal',
           precision: 1,
           required: true,
+        },
+        {
+          key: 'machine_reference',
+          label: 'Inspection machine',
+          kind: 'reference',
+          required: false,
+          referenceType: 'machine',
+        },
+        {
+          key: 'evidence_files',
+          label: 'Evidence files',
+          kind: 'attachment',
+          required: false,
+        },
+        {
+          key: 'safety_verified',
+          label: 'Safety verified',
+          kind: 'boolean',
+          required: false,
+        },
+        {
+          key: 'operations_checked',
+          label: 'Operations checked',
+          kind: 'multiselect',
+          required: false,
+          options: [
+            { value: 'setup', label: 'Setup' },
+            { value: 'calibration', label: 'Calibration' },
+          ],
+        },
+        {
+          key: 'inspection_date',
+          label: 'Inspection date',
+          kind: 'date',
+          required: false,
         },
       ],
     };
@@ -73,6 +120,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
   });
 
   it('allows saving incomplete DRAFT answers but rejects invalid supplied types or unknown keys', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-001', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,
@@ -108,6 +156,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
   });
 
   it('denies customer users from internal form submission', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-002', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,
@@ -127,6 +176,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
   });
 
   it('blocks finalization when required visible fields are missing, and succeeds when complete', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-003', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,
@@ -167,7 +217,247 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
     expect(reloaded.latestSubmission?.answers.paint_code).toBeUndefined();
   });
 
+  it('round-trips typed boolean, multiselect, date, and decimal evidence through draft and final submission', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-typed-values', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-typed-values',
+    }));
+    const document = await fixture.db.document.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      storageKey: `forms/typed-answer-${Date.now()}`,
+      fileName: 'typed-evidence.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 20,
+      checksumSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      uploadedById: fixture.alpha.users.qc.userId,
+    } });
+    const answers = {
+      finish: 'raw',
+      batch_code: 'BATCH-42',
+      operator_notes: 'No burrs observed.',
+      dry_film_microns: '30.5',
+      machine_reference: fixture.alpha.masters.machineId,
+      evidence_files: [document.id],
+      safety_verified: true,
+      operations_checked: ['setup', 'calibration'],
+      inspection_date: '2026-10-18',
+    };
+
+    const draft = await submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers,
+    }, 'typed-form-values-draft');
+    expect(draft.version).toBe(2);
+    const finalized = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 2,
+      answers,
+    }, 'typed-form-values-finalize');
+    expect(finalized.version).toBe(3);
+
+    const reloaded = await submissionService.getInstance(fixture.alpha.users.qc.principal, instance.instanceId);
+    expect(reloaded.latestSubmission?.answers).toMatchObject(answers);
+    expect(await fixture.db.formSubmissionDocument.findMany({ where: { submissionId: finalized.submissionId } }))
+      .toMatchObject([{ documentId: document.id, fieldKey: 'evidence_files' }]);
+  });
+
+  it('rejects references that are not active records in the current workspace', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-invalid-reference', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-invalid-reference',
+    }));
+
+    await expect(submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: {
+        finish: 'raw',
+        dry_film_microns: '30.0',
+        machine_reference: 'missing-machine',
+      },
+    })).rejects.toThrow(/Reference for 'Inspection machine' is unavailable/i);
+    expect(await fixture.db.formInstance.findUniqueOrThrow({ where: { id: instance.instanceId } }))
+      .toMatchObject({ status: 'PENDING', version: 1 });
+  });
+
+  it('rejects machine references outside the order facility', async () => {
+    const facilityA = await fixture.db.facility.create({ data: { workspaceId: fixture.alpha.workspaceId, code: 'FORM-FAC-A', name: 'Form facility A' } });
+    const facilityB = await fixture.db.facility.create({ data: { workspaceId: fixture.alpha.workspaceId, code: 'FORM-FAC-B', name: 'Form facility B' } });
+    const order = await fixture.db.order.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      orderNumber: `FORM-${Date.now()}`,
+      customerId: fixture.alpha.masters.customerId,
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId,
+      orderedAtoms: 1n,
+      requestedDate: new Date('2026-12-20T00:00:00.000Z'),
+      facilityId: facilityA.id,
+    } });
+    const otherFacilityMachine = await fixture.db.machine.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      code: 'FORM-MACHINE-B',
+      name: 'Machine in facility B',
+      machineClassId: fixture.alpha.masters.machineClassId,
+      facilityId: facilityB.id,
+    } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'ORDER',
+      subjectId: order.id,
+    }));
+
+    await expect(submissionService.finalizeSubmission(fixture.alpha.users.owner.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: { finish: 'raw', dry_film_microns: '30.0', machine_reference: otherFacilityMachine.id },
+    })).rejects.toThrow(/Reference for 'Inspection machine' is unavailable in this workspace/i);
+  });
+
+  it('rejects an attachment linked to a different operational subject', async () => {
+    await fixture.db.inspection.createMany({ data: [
+      { id: 'qc-insp-attachment-target', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId },
+      { id: 'qc-insp-attachment-other', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId },
+    ] });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-attachment-target',
+    }));
+    const document = await fixture.db.document.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      storageKey: `forms/other-subject-${Date.now()}`,
+      fileName: 'other-inspection.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 20,
+      checksumSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      uploadedById: fixture.alpha.users.qc.userId,
+    } });
+    await fixture.db.documentLink.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      documentId: document.id,
+      parentType: 'INSPECTION',
+      parentId: 'qc-insp-attachment-other',
+    } });
+
+    await expect(submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: { finish: 'raw', dry_film_microns: '30.0', evidence_files: [document.id] },
+    })).rejects.toThrow(/Attachment .* unavailable for this form subject/i);
+    expect(await fixture.db.formInstance.findUniqueOrThrow({ where: { id: instance.instanceId } }))
+      .toMatchObject({ status: 'PENDING', version: 1 });
+  });
+
+  it('serializes competing finalizations and replays an idempotent result once', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-finalize-race', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-finalize-race',
+    }));
+    const answers = { finish: 'raw', dry_film_microns: '45.5' };
+
+    const competing = await Promise.allSettled([
+      submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+        instanceId: instance.instanceId, expectedVersion: 1, answers,
+      }, 'qc-finalize-race-a'),
+      submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+        instanceId: instance.instanceId, expectedVersion: 1, answers,
+      }, 'qc-finalize-race-b'),
+    ]);
+    expect(competing.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(competing.filter((result) => result.status === 'rejected')).toHaveLength(1);
+
+    const winnerKey = competing[0].status === 'fulfilled' ? 'qc-finalize-race-a' : 'qc-finalize-race-b';
+    const winner = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId, expectedVersion: 1, answers,
+    }, winnerKey);
+    const submissionsBeforeReplay = await fixture.db.formSubmission.count({ where: { instanceId: instance.instanceId } });
+    const replay = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId, expectedVersion: 1, answers,
+    }, winnerKey);
+    expect(replay).toEqual(winner);
+    expect(await fixture.db.formSubmission.count({ where: { instanceId: instance.instanceId } })).toBe(submissionsBeforeReplay);
+    await expect(submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: { finish: 'painted', paint_code: 'RAL-9001', dry_film_microns: '45.5' },
+    }, winnerKey)).rejects.toThrow(/different request payload/i);
+  });
+
+  it('serializes competing draft saves and replays the winning idempotent request once', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-draft-save-race', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-draft-save-race',
+    }));
+    const answersA = { finish: 'raw' };
+    const answersB = { finish: 'painted', paint_code: 'RAL-7035' };
+    const keys = ['qc-draft-save-race-a', 'qc-draft-save-race-b'];
+    const competing = await Promise.allSettled([
+      submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+        instanceId: instance.instanceId, expectedVersion: 1, answers: answersA,
+      }, keys[0]),
+      submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+        instanceId: instance.instanceId, expectedVersion: 1, answers: answersB,
+      }, keys[1]),
+    ]);
+    expect(competing.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(competing.filter((result) => result.status === 'rejected')).toHaveLength(1);
+
+    const winnerIndex = competing[0].status === 'fulfilled' ? 0 : 1;
+    const winnerKey = keys[winnerIndex];
+    const winnerAnswers = winnerIndex === 0 ? answersA : answersB;
+    const winner = await submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId, expectedVersion: 1, answers: winnerAnswers,
+    }, winnerKey);
+    const submissionsBeforeReplay = await fixture.db.formSubmission.count({ where: { instanceId: instance.instanceId } });
+    const replay = await submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId, expectedVersion: 1, answers: winnerAnswers,
+    }, winnerKey);
+    expect(replay).toEqual(winner);
+    expect(await fixture.db.formSubmission.count({ where: { instanceId: instance.instanceId } })).toBe(submissionsBeforeReplay);
+    await expect(submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: winnerIndex === 0 ? answersB : answersA,
+    }, winnerKey)).rejects.toThrow(/different request payload/i);
+  });
+
+  it('records the authenticated principal when a caller forges an actor field', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-forged-actor', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-forged-actor',
+    }));
+
+    const result = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: { finish: 'raw', dry_film_microns: '45.5' },
+      actorId: fixture.alpha.users.owner.userId,
+    } as Parameters<typeof submissionService.finalizeSubmission>[1]);
+
+    await expect(fixture.db.formSubmission.findUniqueOrThrow({ where: { id: result.submissionId } }))
+      .resolves.toMatchObject({ actorId: fixture.alpha.users.qc.userId });
+  });
+
   it('creates an authorized correction with mandatory reason, preserving supersedes link', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-004', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {
         workspaceId: fixture.alpha.workspaceId,
@@ -177,6 +467,21 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       });
     });
 
+    const createDocument = (workspaceId: string, uploadedById: string, key: string) => fixture.db.document.create({
+      data: {
+        workspaceId,
+        storageKey: `forms/${key}-${Date.now()}`,
+        fileName: `${key}.pdf`,
+        mimeType: 'application/pdf',
+        sizeBytes: 20,
+        checksumSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        uploadedById,
+      },
+    });
+    const initialDocument = await createDocument(fixture.alpha.workspaceId, fixture.alpha.users.qc.userId, 'initial-evidence');
+    const correctionDocument = await createDocument(fixture.alpha.workspaceId, fixture.alpha.users.qc.userId, 'corrected-evidence');
+    const foreignDocument = await createDocument(fixture.beta.workspaceId, fixture.beta.users.owner.userId, 'foreign-evidence');
+
     // Initial finalization
     const initialFinal = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
       instanceId: instance.instanceId,
@@ -184,6 +489,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       answers: {
         finish: 'raw',
         dry_film_microns: '30.0',
+        evidence_files: [initialDocument.id],
       },
     });
 
@@ -197,12 +503,19 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       })
     ).rejects.toThrow(/Correction reason is mandatory/);
 
+    await expect(submissionService.createCorrection(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 2,
+      reason: 'Attach an inaccessible document',
+      answers: { finish: 'raw', dry_film_microns: '35.0', evidence_files: [foreignDocument.id] },
+    })).rejects.toThrow(/Attachment .* unavailable for this form subject/i);
+
     // Valid correction succeeds and links supersedesId
     const correctionRes = await submissionService.createCorrection(fixture.alpha.users.qc.principal, {
       instanceId: instance.instanceId,
       expectedVersion: 2,
       reason: 'Recalibrated gauge measurement after second pass',
-      answers: { finish: 'raw', dry_film_microns: '35.0' },
+      answers: { finish: 'raw', dry_film_microns: '35.0', evidence_files: [correctionDocument.id] },
     });
 
     expect(correctionRes.submissionId).toBeDefined();
@@ -215,5 +528,11 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
     expect(reloaded.latestSubmission?.correctionReason).toBe(
       'Recalibrated gauge measurement after second pass'
     );
+    await expect(fixture.db.formSubmissionDocument.findMany({
+      where: { submissionId: { in: [initialFinal.submissionId, correctionRes.submissionId] } },
+    })).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ submissionId: initialFinal.submissionId, documentId: initialDocument.id, fieldKey: 'evidence_files' }),
+      expect.objectContaining({ submissionId: correctionRes.submissionId, documentId: correctionDocument.id, fieldKey: 'evidence_files' }),
+    ]));
   });
 });

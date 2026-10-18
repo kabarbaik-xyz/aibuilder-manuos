@@ -11,6 +11,9 @@ import {
   WorkflowDefinition as DomainWorkflowDefinition,
 } from '@/domain/workflow-definition';
 import * as contracts from './contracts';
+import { validateLifecycleDefinition, type OrderLifecycleDefinition } from '@/domain/order-lifecycle-definition';
+import { getLifecycleActionDescriptor } from '@/server/modules/order-lifecycle/action-registry';
+import { createHash } from 'crypto';
 
 export class WorkflowService {
   constructor(private readonly prisma: PrismaClient = defaultDb) {}
@@ -90,6 +93,115 @@ export class WorkflowService {
     return template;
   }
 
+  private async validateLifecycleReferences(
+    tx: any,
+    workspaceId: string,
+    definition: OrderLifecycleDefinition
+  ) {
+    for (const stage of definition.stages) {
+      const descriptor = getLifecycleActionDescriptor(stage.action);
+      const requiredPermission = descriptor.requiredPermission;
+      const department = await tx.department.findFirst({
+        where: { id: stage.departmentId, workspaceId, isActive: true, archivedAt: null },
+        select: { id: true },
+      });
+      if (!department) throw new BadRequestError(`Stage '${stage.key}' references an inactive or unavailable department.`);
+
+      if (stage.assignment.kind === 'DEPARTMENT_QUEUE') {
+        if (stage.assignment.departmentId !== stage.departmentId) {
+          throw new BadRequestError(`Stage '${stage.key}' queue must match its owning department.`);
+        }
+        const roles = await tx.role.findMany({
+          where: { workspaceId, code: { in: stage.assignment.eligibleRoleCodes }, isActive: true, permissions: { some: { permissionCode: requiredPermission } } },
+          select: { code: true },
+        });
+        const available = new Set(roles.map((role: { code: string }) => role.code));
+        const missing = stage.assignment.eligibleRoleCodes.filter((code) => !available.has(code));
+        if (missing.length) throw new BadRequestError(`Stage '${stage.key}' references unavailable roles: ${missing.join(', ')}.`);
+      } else {
+        const membership = await tx.membership.findFirst({
+          where: {
+            id: stage.assignment.membershipId, workspaceId, status: 'ACTIVE',
+            departmentId: stage.assignment.departmentId ?? stage.departmentId,
+            roles: { some: { role: { isActive: true, permissions: { some: { permissionCode: requiredPermission } } } } },
+          },
+          select: { id: true },
+        });
+        if (!membership) throw new BadRequestError(`Stage '${stage.key}' member assignment must belong to its active department.`);
+      }
+
+      for (const form of stage.forms) {
+        const version = await tx.formVersion.findFirst({
+          where: { id: form.formVersionId, workspaceId, status: 'PUBLISHED', contentHash: form.contentHash },
+          include: { template: { select: { purpose: true } } },
+        });
+        if (!version || !descriptor.formPurposes.includes(version.template.purpose)) {
+          throw new BadRequestError(`Stage '${stage.key}' form pin is unpublished, changed, or incompatible with its action.`);
+        }
+      }
+
+      if (stage.activationCondition) {
+        const condition = stage.activationCondition;
+        const sourceStage = definition.stages.find((candidate) => candidate.key === condition.sourceStageKey);
+        if (condition.kind === 'QC_OUTCOME') {
+          if (sourceStage?.action !== 'FINALIZE_QC') {
+            throw new BadRequestError(`Stage '${stage.key}' QC outcome branch must reference a FINALIZE_QC predecessor.`);
+          }
+          continue;
+        }
+        const sourcePin = sourceStage?.forms.find((form) => form.formVersionId === condition.formVersionId);
+        if (!sourcePin) throw new BadRequestError(`Stage '${stage.key}' branch condition must reference a form pinned to '${condition.sourceStageKey}'.`);
+        const sourceVersion = await tx.formVersion.findFirst({
+          where: { id: sourcePin.formVersionId, workspaceId, contentHash: sourcePin.contentHash },
+          include: { template: { select: { purpose: true } } },
+        });
+        if (!sourceVersion || sourceVersion.template.purpose !== 'ORDER_SPEC') {
+          throw new BadRequestError(`Stage '${stage.key}' branch conditions currently require a pinned order specification form.`);
+        }
+        const formDefinition = JSON.parse(sourceVersion.definitionJson) as { fields?: Array<{ key: string; kind: string; options?: Array<{ value: string }> }> };
+        const field = formDefinition.fields?.find((candidate) => candidate.key === condition.fieldKey);
+        if (!field || field.kind !== 'select') {
+          throw new BadRequestError(`Stage '${stage.key}' branch field must be a select field in the pinned order specification form.`);
+        }
+        const allowedValues = new Set((field.options ?? []).map((option) => option.value));
+        const selectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
+        if (selectedValues.some((value) => !allowedValues.has(value))) {
+          throw new BadRequestError(`Stage '${stage.key}' branch condition contains a value not offered by '${condition.fieldKey}'.`);
+        }
+      }
+    }
+  }
+
+  private async validateStoredDefinition(tx: any, workspaceId: string, version: any): Promise<string> {
+    const raw = JSON.parse(version.definitionJson) as unknown;
+    if (version.template.kind === 'ORDER_LIFECYCLE') {
+      const parsed = contracts.orderLifecycleDefinitionSchema.safeParse(raw);
+      if (!parsed.success) throw new BadRequestError(`Lifecycle definition is invalid: ${parsed.error.issues.map((issue) => `${issue.path.join('.') || 'definition'}: ${issue.message}`).join('; ')}`);
+      const validation = validateLifecycleDefinition(parsed.data as OrderLifecycleDefinition);
+      if (!validation.isValid) throw new BadRequestError(`Lifecycle definition is invalid: ${validation.errors.map((error) => `${error.stageKey ? `${error.stageKey}${error.fieldKey ? `.${error.fieldKey}` : ''}: ` : ''}${error.message}`).join('; ')}`);
+      await this.validateLifecycleReferences(tx, workspaceId, parsed.data as OrderLifecycleDefinition);
+      return createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex');
+    }
+
+    const definition = raw as DomainWorkflowDefinition;
+    const catalog = await this.loadCatalog(workspaceId);
+    const validation = validateWorkflowDefinition(definition, catalog);
+    if (!validation.isValid) throw new BadRequestError(`Workflow definition is invalid: ${validation.errors.map((error) => error.message).join('; ')}`);
+    const bindings = await tx.formBinding.findMany({
+      where: { workspaceId, context: 'WORKFLOW_NODE', workflowVersionId: version.id },
+      include: { formVersion: { select: { contentHash: true } } },
+      orderBy: [{ workflowNodeKey: 'asc' }, { formVersionId: 'asc' }, { id: 'asc' }],
+    });
+    const executionBindings = bindings.map((binding: any) => ({
+      workflowNodeKey: binding.workflowNodeKey,
+      formVersionId: binding.formVersionId,
+      contentHash: binding.formVersion.contentHash,
+      required: binding.required,
+      completionPoint: binding.completionPoint,
+    }));
+    return createHash('sha256').update(JSON.stringify({ definition, formBindings: executionBindings })).digest('hex');
+  }
+
   async createTemplate(
     principal: Principal,
     input: contracts.CreateWorkflowTemplateInput,
@@ -104,6 +216,7 @@ export class WorkflowService {
       payload: input,
       prismaClient: this.prisma,
       handler: async (tx) => {
+        const kind = input.kind ?? 'PRODUCTION_ROUTING';
         // Verify orderType
         const orderType = await tx.orderType.findFirst({
           where: { id: input.orderTypeId, workspaceId: principal.workspaceId },
@@ -128,6 +241,7 @@ export class WorkflowService {
           data: {
             workspaceId: principal.workspaceId,
             orderTypeId: input.orderTypeId,
+            kind,
             code: input.code,
             name: input.name,
             description: input.description,
@@ -135,20 +249,15 @@ export class WorkflowService {
         });
 
         // Initialize draft version 1
-        const initialDef: DomainWorkflowDefinition = {
-          schemaVersion: 1,
-          name: `${input.name} Initial Routing`,
-          nodes: [
-            {
-              key: 'OP-10',
-              name: 'Initial Operation',
-              type: 'OPERATION',
-              plannedDurationMinutes: 60,
-            },
-          ],
-          edges: [],
-        };
-        const defHash = computeDefinitionHash(initialDef);
+        const initialDef = kind === 'ORDER_LIFECYCLE'
+          ? { schemaVersion: 1 as const, name: `${input.name} Order Lifecycle`, stages: [] }
+          : {
+              schemaVersion: 1 as const,
+              name: `${input.name} Initial Routing`,
+              nodes: [{ key: 'OP-10', name: 'Initial Operation', type: 'OPERATION' as const, plannedDurationMinutes: 60 }],
+              edges: [],
+            };
+        const defHash = createHash('sha256').update(JSON.stringify(initialDef)).digest('hex');
 
         const version = await tx.workflowVersion.create({
           data: {
@@ -162,16 +271,18 @@ export class WorkflowService {
           },
         });
 
-        await tx.workflowNode.create({
-          data: {
-            workspaceId: principal.workspaceId,
-            versionId: version.id,
-            key: 'OP-10',
-            name: 'Initial Operation',
-            type: 'OPERATION',
-            plannedDurationMinutes: 60,
-          },
-        });
+        if (kind === 'PRODUCTION_ROUTING') {
+          await tx.workflowNode.create({
+            data: {
+              workspaceId: principal.workspaceId,
+              versionId: version.id,
+              key: 'OP-10',
+              name: 'Initial Operation',
+              type: 'OPERATION',
+              plannedDurationMinutes: 60,
+            },
+          });
+        }
 
         return {
           data: { ...template, initialVersionId: version.id },
@@ -217,6 +328,7 @@ export class WorkflowService {
       handler: async (tx) => {
         const version = await tx.workflowVersion.findFirst({
           where: { id: versionId, workspaceId: principal.workspaceId },
+          include: { template: { select: { kind: true } } },
         });
         if (!version) throw new NotFoundError(`Workflow version '${versionId}' not found`);
 
@@ -231,14 +343,22 @@ export class WorkflowService {
         }
 
         // Validate DAG and catalog
-        const catalog = await this.loadCatalog(principal.workspaceId);
-        const valResult = validateWorkflowDefinition(input.definition as DomainWorkflowDefinition, catalog);
-        if (!valResult.isValid) {
-          const detail = valResult.errors.map((e) => e.message).join('; ');
-          throw new BadRequestError(`Invalid workflow definition: ${detail}`);
+        let definitionHash: string;
+        if (version.template.kind === 'ORDER_LIFECYCLE') {
+          const definition = input.definition as OrderLifecycleDefinition;
+          const validation = validateLifecycleDefinition(definition);
+          if (!validation.isValid) throw new BadRequestError(`Invalid lifecycle: ${validation.errors.map((error) => `${error.stageKey ? `${error.stageKey}${error.fieldKey ? `.${error.fieldKey}` : ''}: ` : ''}${error.message}`).join('; ')}`);
+          await this.validateLifecycleReferences(tx, principal.workspaceId, definition);
+          definitionHash = createHash('sha256').update(JSON.stringify(definition)).digest('hex');
+        } else {
+          const catalog = await this.loadCatalog(principal.workspaceId);
+          const valResult = validateWorkflowDefinition(input.definition as DomainWorkflowDefinition, catalog);
+          if (!valResult.isValid) {
+            const detail = valResult.errors.map((e) => e.message).join('; ');
+            throw new BadRequestError(`Invalid workflow definition: ${detail}`);
+          }
+          definitionHash = computeDefinitionHash(input.definition as DomainWorkflowDefinition);
         }
-
-        const definitionHash = computeDefinitionHash(input.definition as DomainWorkflowDefinition);
 
         // Replace nodes and edges atomically
         await tx.workflowEdge.deleteMany({
@@ -248,7 +368,8 @@ export class WorkflowService {
           where: { workspaceId: principal.workspaceId, versionId },
         });
 
-        for (const node of input.definition.nodes) {
+        const routingDefinition = input.definition as DomainWorkflowDefinition;
+        for (const node of version.template.kind === 'PRODUCTION_ROUTING' ? routingDefinition.nodes : []) {
           await tx.workflowNode.create({
             data: {
               workspaceId: principal.workspaceId,
@@ -265,7 +386,7 @@ export class WorkflowService {
           });
         }
 
-        for (const edge of input.definition.edges || []) {
+        for (const edge of version.template.kind === 'PRODUCTION_ROUTING' ? routingDefinition.edges || [] : []) {
           await tx.workflowEdge.create({
             data: {
               workspaceId: principal.workspaceId,
@@ -314,6 +435,7 @@ export class WorkflowService {
       handler: async (tx) => {
         const version = await tx.workflowVersion.findFirst({
           where: { id: versionId, workspaceId: principal.workspaceId },
+          include: { template: { select: { kind: true } } },
         });
         if (!version) throw new NotFoundError(`Workflow version '${versionId}' not found`);
 
@@ -323,14 +445,7 @@ export class WorkflowService {
           );
         }
 
-        const definition: DomainWorkflowDefinition = JSON.parse(version.definitionJson);
-        const catalog = await this.loadCatalog(principal.workspaceId);
-        const valResult = validateWorkflowDefinition(definition, catalog);
-        if (!valResult.isValid) {
-          throw new BadRequestError(
-            `Workflow definition cannot be submitted for review: ${valResult.errors.map((e) => e.message).join('; ')}`
-          );
-        }
+        await this.validateStoredDefinition(tx, principal.workspaceId, version);
 
         const updated = await tx.workflowVersion.update({
           where: { id: versionId },
@@ -362,6 +477,7 @@ export class WorkflowService {
       handler: async (tx) => {
         const version = await tx.workflowVersion.findFirst({
           where: { id: versionId, workspaceId: principal.workspaceId },
+          include: { template: { select: { kind: true } } },
         });
         if (!version) throw new NotFoundError(`Workflow version '${versionId}' not found`);
 
@@ -380,16 +496,7 @@ export class WorkflowService {
           );
         }
 
-        const definition: DomainWorkflowDefinition = JSON.parse(version.definitionJson);
-        const catalog = await this.loadCatalog(principal.workspaceId);
-        const valResult = validateWorkflowDefinition(definition, catalog);
-        if (!valResult.isValid) {
-          throw new BadRequestError(
-            `Workflow definition is invalid and cannot be published: ${valResult.errors.map((e) => e.message).join('; ')}`
-          );
-        }
-
-        const definitionHash = computeDefinitionHash(definition);
+        const definitionHash = await this.validateStoredDefinition(tx, principal.workspaceId, version);
 
         const updated = await tx.workflowVersion.update({
           where: { id: versionId },
@@ -466,6 +573,10 @@ export class WorkflowService {
           include: { nodes: true, edges: true },
         });
         if (!sourceVersion) throw new NotFoundError(`Workflow version '${versionId}' not found`);
+        const sourceFormBindings = await tx.formBinding.findMany({
+          where: { workspaceId: principal.workspaceId, context: 'WORKFLOW_NODE', workflowVersionId: sourceVersion.id },
+          orderBy: [{ workflowNodeKey: 'asc' }, { formVersionId: 'asc' }, { id: 'asc' }],
+        });
 
         // Find highest version number for this template
         const latest = await tx.workflowVersion.findFirst({
@@ -515,6 +626,20 @@ export class WorkflowService {
               joinPolicy: edge.joinPolicy,
               conditionCode: edge.conditionCode,
               conditionParamsJson: edge.conditionParamsJson,
+            },
+          });
+        }
+
+        for (const binding of sourceFormBindings) {
+          await tx.formBinding.create({
+            data: {
+              workspaceId: principal.workspaceId,
+              formVersionId: binding.formVersionId,
+              context: 'WORKFLOW_NODE',
+              workflowNodeKey: binding.workflowNodeKey,
+              workflowVersionId: newVersion.id,
+              required: binding.required,
+              completionPoint: binding.completionPoint,
             },
           });
         }

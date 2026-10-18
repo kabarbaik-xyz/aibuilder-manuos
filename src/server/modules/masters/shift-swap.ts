@@ -70,6 +70,9 @@ export class ShiftSwapService {
 
   async request(principal: Principal, raw: unknown, key: string) {
     authority(principal); const input = RequestShiftSwapSchema.parse(raw);
+    // executeCommand returns an idempotency receipt before its handler runs. Check
+    // live roster authority first so a replay cannot bypass a revoked membership.
+    await this.db.$transaction(tx => this.liveAuthority(tx, principal));
     return executeCommand({ principal, commandType: 'roster.swap.request', idempotencyKey: key, payload: input, prismaClient: this.db, handler: async (tx: Tx) => {
       const live = await this.liveAuthority(tx, principal); const snapshot = await this.snapshot(tx, live, input.sourceRosterId, input.targetRosterId);
       if (snapshot.slots[0].version !== input.sourceVersion || snapshot.slots[1].version !== input.targetVersion) throw new ConflictError('A selected shift changed; reload before requesting a swap', 'STALE_VERSION');
@@ -81,6 +84,8 @@ export class ShiftSwapService {
 
   async decide(principal: Principal, id: string, raw: unknown, key: string) {
     authority(principal); const input = DecideShiftSwapSchema.parse(raw);
+    // Keep revocation effective for receipt replays as well as first execution.
+    await this.db.$transaction(tx => this.liveAuthority(tx, principal));
     return executeCommand({ principal, commandType: 'roster.swap.decide', idempotencyKey: key, payload: { id, ...input }, prismaClient: this.db, handler: async (tx: Tx) => {
       const live = await this.liveAuthority(tx, principal);
       const request = await tx.shiftSwapRequest.findFirst({ where: { id, workspaceId: principal.workspaceId } });
@@ -157,7 +162,13 @@ export class ShiftSwapService {
       const facilityId = source.facilityId ?? tech.facilityId;
       if (facilityId && !live.facilityIds.includes(facilityId)) throw new ForbiddenError('Shift is outside your granted facilities');
       const rows = await this.db.rosterInterval.findMany({ where: { workspaceId: principal.workspaceId, intervalType: 'SHIFT', status: 'PUBLISHED', machineId: null, ...(facilityId ? { OR: [{ facilityId }, { facilityId: null, technician: { facilityId } }] } : { facilityId: null, AND: [{ technician: { facilityId: null } }] }), technicianId: { not: technicianId }, technician: { isActive: true, archivedAt: null }, startAt: { gt: new Date(), gte: new Date(source.startAt.getTime() - 31 * 86400000), lte: new Date(source.startAt.getTime() + 31 * 86400000) } }, include: { technician: true }, orderBy: { startAt: 'asc' }, take: 201 });
-      candidates = rows.filter(r => (r.facilityId ?? r.technician?.facilityId) === facilityId && (!r.technician?.facilityId || live.facilityIds.includes(r.technician.facilityId))).slice(0, 200).map(r => ({ id: r.id, version: r.version, technicianId: r.technicianId!, technicianName: r.technician!.name, startAt: r.startAt.toISOString(), endAt: r.endAt.toISOString() }));
+      const pending = rows.length ? await this.db.shiftSwapRequest.findMany({
+        where: { workspaceId: principal.workspaceId, status: 'PENDING', OR: [
+          { sourceRosterId: { in: rows.map(row => row.id) } }, { targetRosterId: { in: rows.map(row => row.id) } },
+        ] }, select: { sourceRosterId: true, targetRosterId: true },
+      }) : [];
+      const reservedShiftIds = new Set(pending.flatMap(request => [request.sourceRosterId, request.targetRosterId]));
+      candidates = rows.filter(r => !reservedShiftIds.has(r.id) && (r.facilityId ?? r.technician?.facilityId) === facilityId && (!r.technician?.facilityId || live.facilityIds.includes(r.technician.facilityId))).slice(0, 200).map(r => ({ id: r.id, version: r.version, technicianId: r.technicianId!, technicianName: r.technician!.name, startAt: r.startAt.toISOString(), endAt: r.endAt.toISOString() }));
     }
     return { requests: visible.slice(0, 50).map(r => ({ id: r.id, status: r.status, reason: r.reason, decisionNote: r.decisionNote, version: r.version, createdAt: r.createdAt.toISOString(), snapshot: JSON.parse(r.snapshotJson) as { slots: Array<{ technicianName: string; startAt: string; endAt: string }>; transfers: Array<{ orderNumber: string; operation: string }> } })), candidates, truncated: requests.length > 50 };
   }

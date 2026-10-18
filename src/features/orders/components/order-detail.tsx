@@ -41,6 +41,8 @@ import { formatQuantity } from '@/domain/quantity';
 import { apiRequest } from '@/lib/api/client';
 import { PermissionGate } from '@/components/ui/permission-gate';
 import { memoryHrefForItem } from '@/features/intelligence/memory-navigation';
+import { SubjectFormEvidence } from '@/features/forms/components/subject-form-evidence';
+import { OrderEvidenceTimeline } from './order-evidence-timeline';
 
 interface OrderDetailProps {
   order: OrderDto;
@@ -339,6 +341,65 @@ export function OrderDetail({ order }: OrderDetailProps) {
         {canRelease && <Button variant="primary" onClick={handleRelease} disabled={releaseMutation.isPending}>{releaseMutation.isPending ? 'Releasing…' : 'Release to production'}</Button>}
       </Panel>}
 
+      {order.lifecycleInstances?.[0] && (() => {
+        const lifecycle = order.lifecycleInstances[0];
+        return <Panel className="p-5 page-stack">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-base font-semibold text-ink">{lifecycle.workflowVersion.template.name}</h2><p className="field-help">Order lifecycle · version {lifecycle.workflowVersion.versionNumber} · stage ownership and handoffs</p></div>
+            <Badge variant={lifecycle.status === 'COMPLETED' ? 'success' : lifecycle.status === 'BLOCKED' ? 'warning' : 'blue'}>{lifecycle.status.replaceAll('_', ' ').toLowerCase()}</Badge>
+          </div>
+          <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {lifecycle.stages.map((stage) => <li key={stage.id} className="rounded-lg border border-line bg-surface-muted p-3">
+              <div className="flex items-start justify-between gap-2"><strong className="text-sm text-ink">{stage.name}</strong><Badge variant={stage.state === 'COMPLETED' ? 'success' : stage.state === 'BLOCKED' ? 'warning' : stage.state === 'READY' || stage.state === 'ACTIVE' ? 'blue' : 'default'}>{stage.state.replaceAll('_', ' ').toLowerCase()}</Badge></div>
+              <p className="small muted mt-1">{stage.department.name} · {stage.action.replaceAll('_', ' ').toLowerCase()}</p>
+              <p className="small mt-2 text-ink">{stage.assignedMembership?.user.name ?? 'Department queue'}</p>
+              {stage.dueAt && <p className="small muted mt-1">Due {formatDateTime(stage.dueAt)}</p>}
+              {!!stage.pinnedForms?.length && <div className="mt-3 border-t border-line pt-2">
+                <p className="small muted">Pinned evidence forms</p>
+                <ul className="mt-1 space-y-1">
+                  {stage.pinnedForms.map((form, index) => <li key={`${form.contentHash}-${index}`} className="small text-ink">
+                    {form.name}{form.version ? ` · v${form.version}` : ''} · {form.required ? 'required' : 'optional'} · {form.completionPoint.replaceAll('_', ' ').toLowerCase()}
+                  </li>)}
+                </ul>
+              </div>}
+            </li>)}
+          </ol>
+          {lifecycle.stages.some(stage => ['PLAN_PRODUCTION', 'EXECUTE_PRODUCTION'].includes(stage.action)) && order.instances?.some(instance => instance.tasks?.some((task: any) => Array.isArray(task.resourceBookings))) && <section className="page-stack border-t border-line pt-4" aria-label="Production schedule linked to this lifecycle">
+            <div><h3 className="text-sm font-semibold text-ink">Production schedule</h3><p className="field-help">Live tasks and confirmed bookings from Planning; this lifecycle does not keep a separate schedule.</p></div>
+            {order.instances?.flatMap(instance => instance.tasks ?? []).length ? <ul className="divide-y divide-line">
+              {order.instances?.flatMap(instance => instance.tasks ?? []).map((task: any) => <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                <div><Link href={`/planning/tasks/${encodeURIComponent(task.id)}`} className="font-medium text-primary underline">{task.nodeKey}</Link><span className="ml-2 muted">{task.status.replaceAll('_', ' ').toLowerCase()}</span>{task.assignedTechnician?.name && <span className="ml-2 muted">· {task.assignedTechnician.name}</span>}{task.assignedMachine?.name && <span className="ml-2 muted">· {task.assignedMachine.name}</span>}</div>
+                <div className="text-right small muted">{task.resourceBookings?.length ? task.resourceBookings.map((booking: any) => <div key={booking.id}>{booking.resourceType === 'MACHINE' ? task.assignedMachine?.name ?? 'Machine' : task.assignedTechnician?.name ?? 'Technician'} · {formatDateTime(booking.startAt)} – {formatDateTime(booking.endAt)}</div>) : 'No confirmed booking'}</div>
+              </li>)}
+            </ul> : <p className="rounded-lg border border-line bg-surface-muted p-3 text-sm muted">Production tasks appear here after engineering releases the order. Planning creates and revalidates their bookings.</p>}
+          </section>}
+          {lifecycle.events.length > 0 && <div className="page-stack border-t border-line pt-4">
+            <div><h3 className="text-sm font-semibold text-ink">Workflow handoff history</h3><p className="field-help">Recorded stage changes from the lifecycle event log.</p></div>
+            <ol className="divide-y divide-line">
+              {lifecycle.events.map((event) => {
+                const stage = lifecycle.stages.find(candidate => candidate.id === event.stageId);
+                let detail: { action?: string; completionFact?: string } = {};
+                try { detail = JSON.parse(event.detailJson || '{}') as typeof detail; } catch { /* Historical event detail may predate structured lifecycle facts. */ }
+                const completionFactLabels: Record<string, string> = {
+                  ORDER_CONFIRMED: 'Order confirmed', ENGINEERING_APPROVED: 'Engineering approved',
+                  SCHEDULE_PROPOSAL_APPLIED: 'Planning schedule applied', ALL_PRODUCTION_TASKS_COMPLETED: 'Production completed',
+                  ALL_QC_INSPECTIONS_FINALIZED: 'Quality inspections finalized', ALL_SHIPMENT_QUANTITIES_DELIVERED: 'All quantities delivered',
+                  EVIDENCE_REVIEWED: 'Evidence reviewed',
+                };
+                return <li key={event.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                  <span className="font-medium text-ink">{stage?.name ?? 'Workflow started'} · {event.eventType.replaceAll('_', ' ').toLowerCase()}{detail.action && <span className="ml-2 font-normal text-muted">· {detail.action.replaceAll('_', ' ').toLowerCase()}</span>}{detail.completionFact && <span className="ml-2 font-normal text-muted">· {completionFactLabels[detail.completionFact] ?? detail.completionFact.replaceAll('_', ' ').toLowerCase()}</span>}</span>
+                  <span className="muted">{event.actorName ? `${event.actorName} · ` : ''}{event.fromState && event.toState ? `${event.fromState.replaceAll('_', ' ')} → ${event.toState.replaceAll('_', ' ')} · ` : ''}{formatDateTime(event.occurredAt)}</span>
+                </li>;
+              })}
+            </ol>
+          </div>}
+        </Panel>;
+      })()}
+
+      <PermissionGate permission={['order.read', 'traceability.read', 'admin.access']}>
+        <OrderEvidenceTimeline orderId={order.id} />
+      </PermissionGate>
+
       {/* 4 Harmonized Metric Tiles */}
       {order.lines && order.lines.length > 1 && <Panel className="p-5 page-stack">
         <div><h2 className="text-sm font-semibold text-ink">Order lines</h2><p className="field-help">Each line has its own engineering revision and manufacturing jobs.</p></div>
@@ -426,7 +487,14 @@ export function OrderDetail({ order }: OrderDetailProps) {
 
       {/* TAB 1: Overview */}
       {activeTab === 'overview' && (
-        <div className="od-grid">
+        <div className="page-stack">
+          <SubjectFormEvidence
+            subjectType="ORDER"
+            subjectId={order.id}
+            title="Order specification forms"
+            description="Review and submit required customer specifications before the order is released."
+          />
+          <div className="od-grid">
           <section className="od-card" aria-labelledby="od-rfq-title">
             <header className="od-card-head">
               <h2 id="od-rfq-title"><FileText className="w-4 h-4" /> RFQ intake &amp; commercial notes</h2>
@@ -499,6 +567,7 @@ export function OrderDetail({ order }: OrderDetailProps) {
               {documentUploadMessage && <p role="status" className="od-sub">{documentUploadMessage}</p>}
             </section>
           </PermissionGate>
+          </div>
         </div>
       )}
 

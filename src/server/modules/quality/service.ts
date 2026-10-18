@@ -20,6 +20,116 @@ import {
   findDefaultLocationByKind,
 } from './repository';
 import { parseAtomInput, parseQuantity, MAX_UOM_PRECISION } from '@/domain/quantity';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
+import { isQualityLifecycleComplete } from '@/domain/quality-lifecycle';
+
+async function isOrderQualityLifecycleComplete(tx: any, workspaceId: string, orderId: string): Promise<boolean> {
+  const outputs = await tx.productionOutput.findMany({
+    where: { workspaceId, task: { instance: { orderId } } },
+    select: {
+      inspections: {
+        where: { reinspectionOfId: null },
+        select: {
+          status: true,
+          reworkAtoms: true,
+          reinspections: { where: { status: 'FINALIZED' }, select: { passedAtoms: true, scrappedAtoms: true } },
+          reworkAttempts: { where: { status: { in: ['PENDING', 'IN_PROGRESS'] } }, select: { id: true } },
+        },
+      },
+    },
+  });
+  return isQualityLifecycleComplete(outputs.map((output: any) => output.inspections.map((inspection: any) => ({
+    status: inspection.status,
+    reworkAtoms: inspection.reworkAtoms,
+    reinspectedAtoms: inspection.reinspections.reduce((total: bigint, reinspection: any) => total + reinspection.passedAtoms + reinspection.scrappedAtoms, 0n),
+    openReworkAttempts: inspection.reworkAttempts.length,
+  }))));
+}
+
+async function materializeLifecycleQcForms(tx: any, workspaceId: string, orderId: string, inspectionId: string): Promise<void> {
+  const order = await tx.order.findFirst({
+    where: { workspaceId, id: orderId },
+    select: { lifecycleWorkflowVersionId: true },
+  });
+  if (!order?.lifecycleWorkflowVersionId) return;
+  const lifecycleVersion = await tx.workflowVersion.findFirst({
+    where: { workspaceId, id: order.lifecycleWorkflowVersionId },
+    select: { definitionJson: true },
+  });
+  if (!lifecycleVersion) throw new BadRequestError('The order lifecycle version pinned to this reinspection is unavailable.');
+
+  let pins: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }>;
+  try {
+    const definition = JSON.parse(lifecycleVersion.definitionJson) as { stages?: Array<{ action?: string; forms?: typeof pins }> };
+    pins = (definition.stages ?? []).filter((stage) => stage.action === 'FINALIZE_QC').flatMap((stage) => stage.forms ?? []);
+  } catch {
+    throw new BadRequestError('The order lifecycle version contains invalid pinned QC form configuration.');
+  }
+
+  for (const pin of pins) {
+    const version = await tx.formVersion.findFirst({
+      where: { workspaceId, id: pin.formVersionId, contentHash: pin.contentHash },
+      include: { template: { select: { purpose: true } } },
+    });
+    if (!version || version.template.purpose !== 'QC_EVIDENCE') {
+      throw new BadRequestError('A lifecycle QC form pin is unavailable or incompatible with this reinspection.');
+    }
+    await tx.formInstance.createMany({
+      data: [{
+        workspaceId,
+        formVersionId: pin.formVersionId,
+        subjectType: 'INSPECTION',
+        subjectId: inspectionId,
+        required: pin.required,
+        completionPoint: pin.completionPoint,
+        status: 'PENDING',
+      }],
+      skipDuplicates: true,
+    });
+  }
+}
+
+export async function maybeCompleteOrderQualityLifecycle(tx: any, workspaceId: string, orderId: string, actorUserId: string, commandId: string) {
+  const remainingTasks = await tx.task.count({
+    where: { workspaceId, instance: { orderId }, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+  });
+  if (remainingTasks > 0 || !await isOrderQualityLifecycleComplete(tx, workspaceId, orderId)) return;
+
+  const lifecycle = await tx.orderLifecycleInstance.findFirst({
+    where: { workspaceId, orderId, status: 'ACTIVE' },
+    include: { stages: true },
+  });
+  const qcStages = (lifecycle?.stages ?? []).filter((stage: any) => stage.action === 'FINALIZE_QC' && ['READY', 'ACTIVE'].includes(stage.state));
+  if (qcStages.length === 0) return;
+  const qualityInspections = await tx.inspection.findMany({
+    where: { workspaceId, productionOutput: { task: { instance: { orderId } } } },
+    select: { id: true },
+  });
+  for (const stage of qcStages) {
+    const pins = JSON.parse(stage.formPinsJson) as Array<{ formVersionId: string; required: boolean }>;
+    for (const pin of pins.filter((candidate) => candidate.required)) {
+      if (qualityInspections.length === 0) return;
+      const submittedCount = await tx.formInstance.count({
+        where: {
+          workspaceId,
+          subjectType: 'INSPECTION',
+          subjectId: { in: qualityInspections.map((inspection: { id: string }) => inspection.id) },
+          formVersionId: pin.formVersionId,
+          status: 'SUBMITTED',
+        },
+      });
+      if (submittedCount !== qualityInspections.length) return;
+    }
+  }
+
+  await completeLifecycleAction(tx, {
+    workspaceId,
+    orderId,
+    action: 'FINALIZE_QC',
+    actorUserId,
+    commandId,
+  });
+}
 
 /**
  * Exact signed-decimal parsing for QC readings and checklist limits.
@@ -287,7 +397,7 @@ export async function createInspection(
       if (input.productionOutputId) {
         const currentOutput = await tx.productionOutput.findUnique({
           where: { workspaceId_id: { workspaceId, id: input.productionOutputId }, task: { is: executionTaskScope(principal) } },
-          select: { id: true, outputAtoms: true, status: true, serialId: true },
+          select: { id: true, outputAtoms: true, status: true, serialId: true, task: { select: { instanceId: true } } },
         });
         if (!currentOutput || currentOutput.status === 'REJECTED') {
           throw new NotFoundError(`Production output '${input.productionOutputId}' is not available for inspection`);
@@ -332,6 +442,68 @@ export async function createInspection(
         },
       });
 
+      if (inspection.qcChecklistId) {
+        const checklistBindings = await tx.formBinding.findMany({
+          where: {
+            workspaceId,
+            context: 'QC_CHECKLIST',
+            qcChecklistId: inspection.qcChecklistId,
+            formVersion: { status: 'PUBLISHED' },
+          },
+          select: { id: true, formVersionId: true, required: true },
+        });
+        if (checklistBindings.length) {
+          await tx.formInstance.createMany({
+            data: checklistBindings.map((binding: { id: string; formVersionId: string; required: boolean }) => ({
+              workspaceId,
+              formVersionId: binding.formVersionId,
+              formBindingId: binding.id,
+              subjectType: 'INSPECTION',
+              subjectId: inspection.id,
+              required: binding.required,
+              completionPoint: 'BEFORE_ACTION',
+              status: 'PENDING',
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      if (input.productionOutputId) {
+        const task = await tx.productionOutput.findUnique({
+          where: { workspaceId_id: { workspaceId, id: input.productionOutputId } },
+          select: { task: { select: { instance: { select: { orderId: true } } } } },
+        });
+        const order = task?.task.instance?.orderId
+          ? await tx.order.findFirst({ where: { workspaceId, id: task.task.instance.orderId }, select: { id: true, lifecycleWorkflowVersionId: true } })
+          : null;
+        const lifecycleVersion = order?.lifecycleWorkflowVersionId
+          ? await tx.workflowVersion.findFirst({ where: { workspaceId, id: order.lifecycleWorkflowVersionId, status: 'PUBLISHED' }, select: { definitionJson: true } })
+          : null;
+        if (lifecycleVersion) {
+          let qcPins: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }> = [];
+          try {
+            const definition = JSON.parse(lifecycleVersion.definitionJson) as { stages?: Array<{ action?: string; forms?: Array<{ formVersionId: string; contentHash: string; required: boolean; completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' }> }> };
+            qcPins = (definition.stages ?? []).filter((stage) => stage.action === 'FINALIZE_QC').flatMap((stage) => stage.forms ?? []);
+          } catch {
+            throw new BadRequestError('The order lifecycle version contains invalid pinned QC form configuration.');
+          }
+          for (const pin of qcPins) {
+            const pinnedVersion = await tx.formVersion.findFirst({
+              where: { workspaceId, id: pin.formVersionId, status: 'PUBLISHED', contentHash: pin.contentHash },
+              include: { template: { select: { purpose: true } } },
+            });
+            if (!pinnedVersion || pinnedVersion.template.purpose !== 'QC_EVIDENCE') {
+              throw new BadRequestError('A lifecycle QC form pin is unpublished, changed, or incompatible.');
+            }
+            await tx.formInstance.createMany({
+              data: [{ workspaceId, formVersionId: pin.formVersionId, subjectType: 'INSPECTION', subjectId: inspection.id, required: pin.required, completionPoint: pin.completionPoint, status: 'PENDING' }],
+              skipDuplicates: true,
+            });
+          }
+        }
+      }
+
       return {
         data: inspection,
         aggregateType: 'INSPECTION',
@@ -355,12 +527,6 @@ export async function finalizeInspection(
   const inspection = await findInspectionById(db, workspaceId, input.inspectionId);
   if (!inspection) {
     throw new NotFoundError(`Inspection '${input.inspectionId}' not found`);
-  }
-
-  if (inspection.status !== 'DRAFT') {
-    throw new BadRequestError(
-      `Cannot finalize inspection in status '${inspection.status}'. Only DRAFT inspections can be finalized.`
-    );
   }
 
   // 1. Invariant: Conservation of quantity
@@ -753,6 +919,16 @@ export async function finalizeInspection(
         }
       }
 
+      if (output?.task?.instanceId) {
+        const workflowInstance = await tx.workflowInstance.findFirst({
+          where: { workspaceId, id: output.task.instanceId },
+          select: { orderId: true },
+        });
+        if (workflowInstance) {
+          await maybeCompleteOrderQualityLifecycle(tx, workspaceId, workflowInstance.orderId, principal.userId, requestId);
+        }
+      }
+
       return {
         data: updatedInspection,
         aggregateType: 'INSPECTION',
@@ -1070,6 +1246,14 @@ export async function recordReinspection(
           notes: input.notes,
         },
       });
+      const taskContext = currentOriginal.productionOutputId
+        ? await tx.task.findFirst({
+            where: { workspaceId, id: currentOriginal.productionOutput?.taskId },
+            select: { instance: { select: { orderId: true } } },
+          })
+        : null;
+      const orderId = taskContext?.instance.orderId;
+      if (orderId) await materializeLifecycleQcForms(tx, workspaceId, orderId, reinspection.id);
 
       if (input.results && input.results.length > 0) {
         await tx.inspectionResult.createMany({
@@ -1101,6 +1285,8 @@ export async function recordReinspection(
           },
         });
       }
+
+      if (orderId) await maybeCompleteOrderQualityLifecycle(tx, workspaceId, orderId, principal.userId, requestId);
 
       return {
         data: reinspection,

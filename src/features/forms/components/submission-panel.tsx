@@ -141,6 +141,7 @@ export function SubmissionPanel({ instanceId, readOnly = false }: SubmissionPane
             <FormRenderer
               definition={definition}
               value={currentAnswers}
+              attachmentSubject={{ type: instance.subjectType, id: instance.subjectId }}
               readOnly={true}
             />
           </div>
@@ -165,6 +166,7 @@ export function SubmissionPanel({ instanceId, readOnly = false }: SubmissionPane
             <FormRenderer
               definition={definition}
               value={currentAnswers}
+              attachmentSubject={{ type: instance.subjectType, id: instance.subjectId }}
               onChange={setLocalAnswers}
               issues={issues}
               readOnly={readOnly}

@@ -34,6 +34,23 @@ describe('DF02: Form Versioning, Publication Lifecycle, and Pinned Instances', (
     expect(tpl.versions[0].status).toBe('DRAFT');
   });
 
+  it('replays template creation and version forks without creating duplicates', async () => {
+    const input = {
+      code: 'IDEMPOTENT_FORM_CREATE',
+      name: 'Idempotent form create',
+      purpose: 'ORDER_SPEC' as const,
+    };
+    const created = await formService.createTemplate(fixture.alpha.users.owner.principal, input, 'form-create-replay');
+    const replayed = await formService.createTemplate(fixture.alpha.users.owner.principal, input, 'form-create-replay');
+    expect(replayed).toEqual(created);
+    expect(await fixture.db.formTemplate.count({ where: { workspaceId: fixture.alpha.workspaceId, code: input.code } })).toBe(1);
+
+    const forked = await formService.forkVersion(fixture.alpha.users.owner.principal, created.templateId, created.versionId, 'form-fork-replay');
+    const forkReplay = await formService.forkVersion(fixture.alpha.users.owner.principal, created.templateId, created.versionId, 'form-fork-replay');
+    expect(forkReplay).toEqual(forked);
+    expect(await fixture.db.formVersion.count({ where: { templateId: created.templateId } })).toBe(2);
+  });
+
   it('updates draft version with a valid definition and enforces optimistic version check', async () => {
     const created = await formService.createTemplate(fixture.alpha.users.owner.principal, {
       code: 'TASK_WELD_EVIDENCE',
@@ -128,6 +145,51 @@ describe('DF02: Form Versioning, Publication Lifecycle, and Pinned Instances', (
     expect(reloaded.versions).toHaveLength(2);
     expect(reloaded.versions.find((v) => v.versionNumber === 1)?.status).toBe('PUBLISHED');
     expect(reloaded.versions.find((v) => v.versionNumber === 2)?.status).toBe('DRAFT');
+  });
+
+  it('allows only one concurrent publication of the same draft version', async () => {
+    const created = await formService.createTemplate(fixture.alpha.users.owner.principal, {
+      code: 'CONCURRENT_FORM_PUBLISH',
+      name: 'Concurrent form publication',
+      purpose: 'ORDER_SPEC',
+    });
+
+    const formVersionDelegate = fixture.db.formVersion as any;
+    const originalFindFirst = formVersionDelegate.findFirst;
+    let readers = 0;
+    let releaseReaders!: () => void;
+    const bothReadDraft = new Promise<void>((resolve) => { releaseReaders = resolve; });
+    formVersionDelegate.findFirst = async (args: any) => {
+      const version = await originalFindFirst(args);
+      if (args?.where && 'id' in args.where && args.where.id === created.versionId) {
+        readers += 1;
+        if (readers === 2) releaseReaders();
+        await bothReadDraft;
+      }
+      return version;
+    };
+
+    try {
+      const results = await Promise.allSettled([
+        formService.publishFormVersion(fixture.alpha.users.owner.principal, {
+          templateId: created.templateId,
+          versionId: created.versionId,
+          expectedVersion: 1,
+        }),
+        formService.publishFormVersion(fixture.alpha.users.owner.principal, {
+          templateId: created.templateId,
+          versionId: created.versionId,
+          expectedVersion: 1,
+        }),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      await expect(formService.getTemplate(fixture.alpha.users.owner.principal, created.templateId))
+        .resolves.toMatchObject({ versions: [expect.objectContaining({ status: 'PUBLISHED', version: 2 })] });
+    } finally {
+      formVersionDelegate.findFirst = originalFindFirst;
+    }
   });
 
   it('proves publishing v2 cannot alter an existing instance pinned to v1', async () => {

@@ -24,6 +24,8 @@ export const createOrderLineSchema = z.object({
 export const createOrderDraftSchema = z.object({
   customerId: z.string().min(1),
   orderTypeId: z.string().min(1),
+  workflowVersionId: z.string().optional(),
+  lifecycleWorkflowVersionId: z.string().optional(),
   itemId: z.string().optional(),
   orderedQuantity: positiveQuantitySchema.optional(),
   requestedDate: z.string(),
@@ -49,6 +51,11 @@ export const updateOrderDraftSchema = z.object({
   deliveryAddress: z.string().max(500).optional(),
   contractReference: z.string().max(100).optional(),
   status: z.enum(['DRAFT', 'REVIEW', 'READY', 'CANCELLED']).optional(),
+});
+
+export const attachOrderLifecycleSchema = z.object({
+  expectedVersion: z.number().int().min(1),
+  workflowVersionId: z.string().min(1),
 });
 
 export const addOrderLineSchema = z.object({
@@ -86,6 +93,7 @@ export const resolveCustomerQuestionSchema = z.object({
 export type CreateOrderLineInput = z.input<typeof createOrderLineSchema>;
 export type CreateOrderDraftInput = z.input<typeof createOrderDraftSchema>;
 export type UpdateOrderDraftInput = z.input<typeof updateOrderDraftSchema>;
+export type AttachOrderLifecycleInput = z.input<typeof attachOrderLifecycleSchema>;
 export type AddOrderLineInput = z.input<typeof addOrderLineSchema>;
 export type ConfirmOrderInput = z.input<typeof confirmOrderSchema>;
 export type AllocateJobInput = z.input<typeof allocateJobSchema>;

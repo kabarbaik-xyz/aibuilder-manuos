@@ -1,12 +1,14 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { FormDefinition, Answers, FormIssue } from '@/domain/forms/types';
 import { evaluateVisibility } from '@/domain/forms/conditions';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { DatePicker } from '@/components/ui/date-picker';
+import { getFormAttachmentUploadLink, type FormAttachmentSubjectType } from './attachment-context';
 
 export interface FormRendererProps {
   definition: FormDefinition;
@@ -14,6 +16,7 @@ export interface FormRendererProps {
   onChange?: (nextValue: Answers) => void;
   issues?: FormIssue[];
   readOnly?: boolean;
+  attachmentSubject?: { type: FormAttachmentSubjectType; id: string };
 }
 
 export function FormRenderer({
@@ -22,7 +25,9 @@ export function FormRenderer({
   onChange,
   issues = [],
   readOnly = false,
+  attachmentSubject,
 }: FormRendererProps) {
+  const rendererId = useId().replace(/:/g, '');
   const visibleKeys = evaluateVisibility(definition, value);
 
   const getIssueForField = (fieldKey: string) => {
@@ -55,7 +60,7 @@ export function FormRenderer({
 
         const issue = getIssueForField(field.key);
         const val = value[field.key];
-        const inputId = `form-field-${field.key}`;
+        const inputId = `form-${rendererId}-field-${field.key}`;
 
         const renderControl = () => {
           switch (field.kind) {
@@ -98,11 +103,11 @@ export function FormRenderer({
               );
             case 'date':
               return (
-                <Input
+                <DatePicker
                   id={inputId}
-                  type="date"
                   value={typeof val === 'string' ? val : ''}
-                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                  onChange={(next) => handleFieldChange(field.key, next)}
+                  aria-invalid={Boolean(issue)}
                   disabled={readOnly}
                 />
               );
@@ -124,48 +129,50 @@ export function FormRenderer({
               );
             case 'boolean':
               return (
-                <label className="flex items-center gap-2 cursor-pointer pt-1">
-                  <input
-                    id={inputId}
-                    type="checkbox"
-                    checked={Boolean(val)}
-                    onChange={(e) => handleFieldChange(field.key, e.target.checked)}
-                    disabled={readOnly}
-                    className="h-4 w-4 rounded border-line text-primary focus:ring-primary"
-                  />
-                  <span className="text-sm text-ink">{field.label}</span>
-                </label>
-              );
-            case 'attachment':
-              return (
-                <div className="rounded-md border border-dashed border-line bg-surface p-3 text-sm">
-                  {Array.isArray(val) && val.length > 0 ? (
-                    <div className="space-y-1">
-                      <span className="font-medium text-xs text-muted">Attached files ({val.length}):</span>
-                      <ul className="list-inside list-disc text-xs text-ink">
-                        {val.map((docId: string, idx: number) => (
-                          <li key={idx}>Document ID: {docId}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted">
-                      {readOnly ? 'No documents attached' : 'Click or drop files (PDF/PNG/JPEG, max 5 files)'}
-                    </span>
-                  )}
-                </div>
-              );
-            case 'reference':
-            default:
-              return (
-                <Input
+                <input
                   id={inputId}
+                  type="checkbox"
+                  checked={Boolean(val)}
+                  onChange={(e) => handleFieldChange(field.key, e.target.checked)}
+                  disabled={readOnly}
+                  className="h-4 w-4 rounded border-line text-primary focus:ring-primary"
+                />
+              );
+            case 'multiselect': {
+              const selected = Array.isArray(val) ? val : [];
+              return (
+                <fieldset className="space-y-2" disabled={readOnly} aria-describedby={issue ? `${inputId}-error` : undefined}>
+                  <legend className="sr-only">{field.label}</legend>
+                  {field.options?.map((option) => (
+                    <label key={option.value} className="flex items-center gap-2 text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(option.value)}
+                        onChange={(event) => handleFieldChange(field.key, event.target.checked
+                          ? [...selected, option.value]
+                          : selected.filter((item) => item !== option.value))}
+                        className="h-4 w-4 rounded border-line text-primary focus:ring-primary"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </fieldset>
+              );
+            }
+            case 'attachment':
+              return <AttachmentControl value={Array.isArray(val) ? val : []} onChange={(next) => handleFieldChange(field.key, next)} readOnly={readOnly} uploadLink={attachmentSubject ? getFormAttachmentUploadLink(attachmentSubject.type, attachmentSubject.id) : undefined} />;
+            case 'reference':
+              return (
+                <ReferenceControl
+                  id={inputId}
+                  referenceType={field.referenceType ?? 'item'}
                   value={typeof val === 'string' ? val : ''}
-                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                  placeholder={`Reference ID for ${field.referenceType || 'entity'}…`}
+                  onChange={(next) => handleFieldChange(field.key, next)}
                   disabled={readOnly}
                 />
               );
+            default:
+              return <span />;
           }
         };
 
@@ -183,6 +190,98 @@ export function FormRenderer({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ReferenceControl({ id, referenceType, value, onChange, disabled }: {
+  id: string;
+  referenceType: 'customer' | 'item' | 'machine';
+  value: string;
+  onChange: (next: string) => void;
+  disabled: boolean;
+}) {
+  const [options, setOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const [loadError, setLoadError] = useState(false);
+  useEffect(() => {
+    const endpoint = referenceType === 'customer' ? '/api/customers'
+      : referenceType === 'machine' ? '/api/resources/machines' : '/api/items';
+    let active = true;
+    fetch(endpoint).then(async (response) => {
+      if (!response.ok) throw new Error('Reference list unavailable');
+      const payload = await response.json();
+      const rows = Array.isArray(payload.data) ? payload.data : [];
+      if (active) setOptions(rows.map((row: any) => ({
+        id: row.id,
+        label: [row.code, row.name].filter(Boolean).join(' · ') || row.name || row.id,
+      })));
+    }).catch(() => { if (active) setLoadError(true); });
+    return () => { active = false; };
+  }, [referenceType]);
+
+  return (
+    <div className="space-y-1">
+      <Select id={id} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
+        <option value="">Pilih {referenceType === 'customer' ? 'pelanggan' : referenceType === 'machine' ? 'mesin' : 'barang'}…</option>
+        {value && !options.some((option) => option.id === value) && <option value={value}>Referensi tersimpan</option>}
+        {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </Select>
+      {loadError && <span className="text-xs text-danger">Daftar referensi tidak dapat dimuat.</span>}
+    </div>
+  );
+}
+
+function AttachmentControl({ id, value, onChange, readOnly, uploadLink }: { id?: string; value: string[]; onChange: (next: string[]) => void; readOnly: boolean; uploadLink?: { parentType: 'ORDER' | 'TASK'; parentId: string } }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const upload = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setError(null);
+    if (value.length + files.length > 5) {
+      setError('Maksimal 5 file untuk satu field.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const documentIds: string[] = [];
+      for (const file of Array.from(files)) {
+        if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: ukuran maksimum 10 MB.`);
+        if (!['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) throw new Error(`${file.name}: gunakan PDF, PNG, atau JPEG.`);
+        const form = new FormData();
+        form.set('file', file);
+        if (uploadLink) {
+          form.set('parentType', uploadLink.parentType);
+          form.set('parentId', uploadLink.parentId);
+        }
+        const response = await fetch('/api/documents/upload', { method: 'POST', body: form });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.id) throw new Error(payload.error?.message || `Gagal mengunggah ${file.name}.`);
+        documentIds.push(payload.id);
+      }
+      onChange([...value, ...documentIds]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Upload file gagal.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {!readOnly && <Input id={id} type="file" accept="application/pdf,image/png,image/jpeg" multiple disabled={uploading || value.length >= 5} onChange={(event) => { void upload(event.target.files); event.target.value = ''; }} />}
+      {uploading && <p className="text-xs text-muted">Mengunggah bukti…</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      {value.length > 0 ? (
+        <ul className="space-y-1 text-sm">
+          {value.map((id) => (
+            <li key={id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-surface-muted px-3 py-2">
+              <a className="min-w-0 truncate text-primary hover:underline" href={`/api/documents/${encodeURIComponent(id)}/download`} target="_blank" rel="noreferrer">Buka dokumen</a>
+              {!readOnly && <button type="button" className="text-xs text-muted hover:text-danger" onClick={() => onChange(value.filter((item) => item !== id))}>Hapus</button>}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-xs text-muted">{readOnly ? 'Tidak ada dokumen terlampir.' : 'PDF, PNG, atau JPEG · maks. 10 MB per file · hingga 5 file.'}</p>}
     </div>
   );
 }

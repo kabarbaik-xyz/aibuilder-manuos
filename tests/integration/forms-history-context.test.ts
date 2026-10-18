@@ -98,6 +98,7 @@ describe('DF06: Form History, Intelligence Read Model & Audit Provenance', () =>
   it('preserves pinned v1 instance evidence even after v2 is published and used', async () => {
     const subjectV1 = '00000000-0000-0000-0000-000000000010';
     const subjectV2 = '00000000-0000-0000-0000-000000000020';
+    await fixture.db.inspection.createMany({ data: [subjectV1, subjectV2].map((id) => ({ id, workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId })) });
 
     // Create and finalize instance pinned to v1
     const { instanceId: inst1Id } = await fixture.db.$transaction(async (tx) => {
@@ -158,6 +159,7 @@ describe('DF06: Form History, Intelligence Read Model & Audit Provenance', () =>
 
   it('records correction audit chain without mutating prior historical submission', async () => {
     const subjectId = '00000000-0000-0000-0000-000000000030';
+    await fixture.db.inspection.create({ data: { id: subjectId, workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
 
     const { instanceId } = await fixture.db.$transaction(async (tx) => {
       return formService.createFormInstance(tx, {

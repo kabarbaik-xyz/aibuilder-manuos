@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useWorkflowTemplate, useWorkflowVersion } from '@/features/workflows/hooks';
 import { useDepartments, useQcChecklists } from '@/features/masters/hooks';
 import { DefinitionEditor } from '@/features/workflows/components/definition-editor';
+import { LifecycleDefinitionEditor } from '@/features/workflows/components/lifecycle-definition-editor';
 import { LoadingState, ErrorState } from '@/components/ui/resource-state';
 
 export default function WorkflowVersionPage() {
@@ -42,14 +43,18 @@ export default function WorkflowVersionPage() {
 
   return (
     <div className="">
-      <DefinitionEditor
+      {template.kind === 'ORDER_LIFECYCLE' ? <LifecycleDefinitionEditor
+        template={template}
+        version={version}
+        departments={departments}
+      /> : <DefinitionEditor
         template={template}
         version={version}
         catalog={{
           departments,
           qcChecklists,
         }}
-      />
+      />}
     </div>
   );
 }

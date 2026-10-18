@@ -8,6 +8,7 @@ import { ScheduleProposalRequestSchema, ApplyScheduleProposalSchema, ApplySchedu
 import { AvailabilityService } from './availability';
 import { executeCommand } from '@/server/db/transaction';
 import { PlanningService } from './service';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 
 interface AppliedScheduleProposalDTO {
   state: 'APPLIED';
@@ -180,6 +181,13 @@ export class ScheduleProposalService {
           } });
           appliedTaskIds.push(task.taskId);
         }
+        await completeLifecycleAction(tx, {
+          workspaceId: principal.workspaceId,
+          orderId: order.id,
+          action: 'PLAN_PRODUCTION',
+          actorUserId: principal.userId,
+          commandId: idempotencyKey,
+        });
         return {
           data: { state: 'APPLIED' as const, orderId: input.orderId, instanceId: input.instanceId, appliedTaskIds },
           aggregateType: 'WORKFLOW_INSTANCE',

@@ -328,11 +328,11 @@ describe('W03: Release and Process Instantiation Transaction', () => {
       'cmd-order-multi-line-release'
     );
 
-    for (const revision of orderRes.data.engineeringRevisions) {
+    for (const [index, revision] of orderRes.data.engineeringRevisions.entries()) {
       await engineeringService.saveEngineeringDraft(
         engineer.principal,
         revision.id,
-        { workflowVersionId: wfV1Id },
+        { workflowVersionId: index === 0 ? wfV1Id : wfV2Id },
         `cmd-eng-multi-${revision.id}`
       );
       await engineeringService.approveEngineeringRevision(
@@ -362,7 +362,65 @@ describe('W03: Release and Process Instantiation Transaction', () => {
       10_000_000n,
       20_000_000n,
     ]);
-    expect(jobs.every((job) => job.jobsheets.length === 1 && job.jobsheets[0].tasks.length === 3)).toBe(true);
+    expect(jobs.map((job) => job.orderLine?.allocatedAtoms)).toEqual(jobs.map((job) => job.targetAtoms));
+    expect(jobs.every((job) => job.jobsheets.length === 1)).toBe(true);
+    expect(jobs.map((job) => job.workflowVersionId).sort()).toEqual([wfV1Id, wfV2Id].sort());
+    expect(jobs.map((job) => job.jobsheets[0].tasks.length).sort()).toEqual([3, 4]);
+    expect(jobs.map((job) => job.engineeringRevisionId).sort()).toEqual(
+      orderRes.data.engineeringRevisions.map((revision: { id: string }) => revision.id).sort()
+    );
     expect(released.data.jobs).toHaveLength(2);
+
+    const before = {
+      jobs: await testDb.db.manufacturingOrder.count({ where: { orderId: orderRes.data.id } }),
+      instances: await testDb.db.workflowInstance.count({ where: { orderId: orderRes.data.id } }),
+      tasks: await testDb.db.task.count({ where: { instance: { orderId: orderRes.data.id } } }),
+      demands: await testDb.db.materialDemand.count({ where: { orderId: orderRes.data.id } }),
+    };
+    const retry = await releaseOrder(owner.principal, orderRes.data.id, 'cmd-release-multi-line-new-key', testDb.db);
+    expect(retry.data.jobs.map((job) => job.instanceId).sort()).toEqual(released.data.jobs.map((job) => job.instanceId).sort());
+    expect({
+      jobs: await testDb.db.manufacturingOrder.count({ where: { orderId: orderRes.data.id } }),
+      instances: await testDb.db.workflowInstance.count({ where: { orderId: orderRes.data.id } }),
+      tasks: await testDb.db.task.count({ where: { instance: { orderId: orderRes.data.id } } }),
+      demands: await testDb.db.materialDemand.count({ where: { orderId: orderRes.data.id } }),
+    }).toEqual(before);
+  });
+
+  it('keeps a failed engineering approval from releasing an order or creating production work', async () => {
+    const order = await orderService.createOrderDraft(sales.principal, {
+      customerId,
+      orderTypeId,
+      itemId: fgItemId,
+      orderedQuantity: 3,
+      requestedDate: '2026-11-25T00:00:00.000Z',
+    }, 'cmd-order-open-question');
+    const revision = order.data.engineeringRevisions[0];
+    await engineeringService.saveEngineeringDraft(engineer.principal, revision.id, {
+      workflowVersionId: wfV1Id,
+    }, 'cmd-engineering-open-question-draft');
+    await testDb.db.customerQuestion.create({
+      data: {
+        workspaceId: owner.principal.workspaceId,
+        orderId: order.data.id,
+        question: 'Confirm the required surface finish.',
+      },
+    });
+
+    await expect(engineeringService.approveEngineeringRevision(
+      owner.principal,
+      revision.id,
+      'cmd-engineering-open-question-approve'
+    )).rejects.toThrow(/unresolved customer question/i);
+
+    await expect(releaseOrder(owner.principal, order.data.id, 'cmd-open-question-release', testDb.db))
+      .rejects.toThrow(/must be confirmed or READY/i);
+    expect(await testDb.db.engineeringRevision.findUniqueOrThrow({ where: { id: revision.id } }))
+      .toMatchObject({ status: 'DRAFT', approvedAt: null });
+    expect(await testDb.db.order.findUniqueOrThrow({ where: { id: order.data.id } }))
+      .toMatchObject({ status: 'DRAFT', confirmedAt: null });
+    expect(await testDb.db.manufacturingOrder.count({ where: { orderId: order.data.id } })).toBe(0);
+    expect(await testDb.db.workflowInstance.count({ where: { orderId: order.data.id } })).toBe(0);
+    expect(await testDb.db.task.count({ where: { instance: { orderId: order.data.id } } })).toBe(0);
   });
 });

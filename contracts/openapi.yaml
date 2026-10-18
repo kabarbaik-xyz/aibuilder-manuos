@@ -2200,6 +2200,315 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/form-instances:
+    get:
+      summary: List authorized form evidence for one order, task or inspection
+      parameters:
+        - { name: subjectType, in: query, required: true, schema: { type: string, enum: [ORDER, TASK, INSPECTION] } }
+        - { name: subjectId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Authorized form instances with pinned form definitions, snapshotted required/completionPoint values and latest submissions }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/forms:
+    get:
+      summary: List form templates available in the workspace
+      responses:
+        '200': { description: Form templates and their version summaries }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a form template with its initial draft version
+      description: Requires forms.create. Template and first draft version are created in one audited transaction. Idempotency-Key replays the same result; unknown request properties are rejected.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormTemplateCreate' }
+      responses:
+        '201': { description: Template and version IDs created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/forms/{id}/versions:
+    post:
+      summary: Fork a form version into a new draft
+      description: Requires forms.create. The source definition and content hash are copied into a new immutable-version lineage. Idempotency-Key replays the same fork result; unknown request properties are rejected.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormVersionFork' }
+      responses:
+        '201': { description: New draft version created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/form-instances/{id}:
+    get:
+      summary: Read one form instance and its latest submission
+      description: Requires current active workspace membership and subject-specific permission, assignment and facility scope. Caller identity is derived from the authenticated session.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Authorized form instance with its pinned definition, required/completionPoint snapshot and latest submission }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/form-instances/{id}/draft:
+    put:
+      summary: Save a version-checked form draft
+      description: Requires current active membership and subject access. Actor and subject are derived server-side; unknown request properties are rejected. Replays with the same Idempotency-Key and payload return the original command result.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormSubmissionDraft' }
+      responses:
+        '200': { description: Draft saved; response contains instanceId, submissionId and incremented version }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/form-instances/{id}/finalize:
+    post:
+      summary: Finalize a version-checked form submission
+      description: Requires current active membership and subject access. Actor and subject are derived server-side; unknown request properties are rejected. Finalized answers are immutable; use the correction endpoint for append-only corrections.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormSubmissionDraft' }
+      responses:
+        '200': { description: Submission finalized; response contains instanceId, submissionId and incremented version }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/form-instances/{id}/corrections:
+    post:
+      summary: Append a version-checked correction to a finalized submission
+      description: Requires current active membership, form-correction permission and subject access. Actor and subject are derived server-side; the required reason and prior finalized submission are preserved in the correction chain.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormSubmissionCorrection' }
+      responses:
+        '201': { description: Correction appended; response contains instanceId, submissionId and incremented version }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/forms/bindings:
+    post:
+      summary: Bind a published form version to an order type, draft workflow node or QC checklist
+      description: Workflow node bindings can only be added while the target workflow version is DRAFT. Publishing freezes the executable form-binding set for that version.
+      parameters:
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [formVersionId, context]
+              properties:
+                formVersionId: { type: string, format: uuid }
+                context: { type: string, enum: [ORDER_TYPE, WORKFLOW_NODE, QC_CHECKLIST] }
+                orderTypeId: { type: string, format: uuid }
+                workflowVersionId: { type: string, format: uuid }
+                workflowNodeKey: { type: string }
+                qcChecklistId: { type: string, format: uuid }
+                required: { type: boolean, default: true }
+              additionalProperties: false
+      responses:
+        '201': { description: Form binding created and audited }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/forms/{id}/versions/{versionId}/actions:
+    post:
+      summary: Advance a form version through review, publication or retirement
+      description: Requires the permission for the selected action and the expected current version. Unknown request fields are rejected. For publish actions, Idempotency-Key enables payload-bound replay.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormVersionAction' }
+      responses:
+        '200': { description: Form version action completed }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/forms/{id}/versions/{versionId}:
+    patch:
+      summary: Update an immutable form version while it remains a draft
+      description: Requires forms.edit_draft and expectedVersion. Published, review and retired versions cannot be edited. Unknown request properties are rejected.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FormVersionDraftUpdate' }
+      responses:
+        '200': { description: Draft definition updated and resource version incremented }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/workflows/lifecycle-members:
+    get:
+      summary: List active members for a lifecycle stage department assignment
+      description: Requires workflow.author or workspace.admin. The response is limited to active memberships in the caller's workspace and selected active department, with display names and active role names only; reassignment validates facility and action eligibility again on write.
+      parameters:
+        - { name: departmentId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Active department membership options for workflow assignment authoring }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/workflows/lifecycle-roles:
+    get:
+      summary: List safe active role choices for lifecycle stage assignments
+      description: Requires workflow.author, workflow.publish, or access.manage. Returns only active roles in the caller's workspace as code, display name, and active state; it does not expose role IDs, membership counts, or permission grants. Stage publication revalidates that every configured role can perform its action.
+      responses:
+        '200':
+          description: Workspace-scoped active lifecycle role choices
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [code, name, isActive]
+                      properties:
+                        code: { type: string }
+                        name: { type: string }
+                        isActive: { type: boolean, const: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/order-lifecycle/work-items:
+    get:
+      summary: List lifecycle stages assigned to the current membership or its eligible department queue
+      description: Requires an operational read capability. Personal results include direct membership assignments and department-queue stages whose configured role codes match the caller. Department results include eligible queue work; workflow authors and workspace admins can also review specific-member work in their own department for reassignment. Facility scope is enforced from the authenticated principal; callers cannot choose another department or workspace.
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [mine, department], default: mine } }
+      responses:
+        '200': { description: Bounded lifecycle stage summaries with order, owner department, schedule, predecessor keys, pinned form references, and a caller-specific canReassign capability }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/order-lifecycle/stages/{id}/claim:
+    post:
+      summary: Claim a ready department-queue lifecycle stage
+      description: Claims a stage for the caller's active membership using an expected version. Requires the stage action permission, configured department and eligible role, plus facility scope. A successful claim is audited and only the claimant retains the personal work item.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+              additionalProperties: false
+      responses:
+        '200': { description: Stage claimed by the authenticated membership }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/order-lifecycle/stages/{id}/complete:
+    post:
+      summary: Complete an assigned evidence-review lifecycle stage
+      description: Completes only REVIEW_EVIDENCE stages after validating the current membership assignment, facility scope, pinned required form evidence, and expected stage version. This action records the lifecycle transition and does not perform production, quality, inventory, or delivery mutations.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+              additionalProperties: false
+      responses:
+        '200': { description: Evidence-review stage completed and audited }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/order-lifecycle/stages/{id}/reassign:
+    post:
+      summary: Reassign an active lifecycle stage to an eligible member
+      description: Requires workflow author or workspace administration permission, facility scope, an active same-department membership with the lifecycle action permission, and an expected stage version. A reason, reassignment audit event, and transactional in-app notifications to active prior and new assignees are mandatory.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, membershipId, reason]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                membershipId: { type: string, format: uuid }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+              additionalProperties: false
+      responses:
+        '200': { description: Stage reassigned to the active eligible membership }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/orders:
     post:
       summary: Create an order draft with one or more item lines
@@ -2216,6 +2525,8 @@ paths:
               properties:
                 customerId: { type: string }
                 orderTypeId: { type: string }
+                workflowVersionId: { type: string, format: uuid, description: Optional explicit published production-routing version compatible with the selected order type. Omitted uses the latest published version for that order type. }
+                lifecycleWorkflowVersionId: { type: string, format: uuid, description: Optional published ORDER_LIFECYCLE version. The order and its initial stages are created atomically with this immutable workflow pin. }
                 itemId: { type: string, description: Legacy single-item compatibility field }
                 orderedQuantity: { oneOf: [{ type: string, pattern: '^\\d+(\\.\\d+)?$' }, { type: number, exclusiveMinimum: 0 }] }
                 requestedDate: { type: string, format: date-time }
@@ -2239,6 +2550,83 @@ paths:
         '201': { description: Created order and item lines }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/orders/{id}/lifecycle:
+    post:
+      summary: Attach a published lifecycle to an order draft
+      description: Pins the compatible published order lifecycle and creates its initial stages atomically. Only unconfirmed DRAFT orders without a lifecycle can be updated; expectedVersion prevents stale edits.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/AccessIdempotency'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, workflowVersionId]
+              properties:
+                expectedVersion: { type: integer, minimum: 1 }
+                workflowVersionId: { type: string, minLength: 1 }
+      responses:
+        '200': { description: Updated order with pinned lifecycle }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/orders/{id}/evidence:
+    get:
+      summary: Read the authorized order evidence timeline
+      description: Returns a bounded, read-only projection of lifecycle, engineering, scheduling, form, stock, quality and shipment evidence. Customer principals use the separately scoped passport projection and cannot read this internal timeline. Event categories that the caller cannot read are omitted.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: search, in: query, required: false, schema: { type: string, maxLength: 120 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+      responses:
+        '200':
+          description: Authorized order evidence timeline
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [orderId, orderNumber, events, sampled, appliedSearch]
+                    properties:
+                      orderId: { type: string }
+                      orderNumber: { type: string }
+                      sampled: { type: boolean, description: True when one or more source queries reached its read bound or matching events exceeded limit. }
+                      appliedSearch: { type: string, nullable: true }
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          required: [reference, category, title, label, summary, occurredAt, orderId, href, references]
+                          properties:
+                            reference: { type: string }
+                            category: { type: string, enum: [WORKFLOW, ENGINEERING, FORM, SCHEDULING, MATERIAL, PRODUCTION, QUALITY, DELIVERY, PASSPORT] }
+                            title: { type: string }
+                            label: { type: string }
+                            summary: { type: string }
+                            occurredAt: { type: string, format: date-time }
+                            orderId: { type: string }
+                            lineId: { type: string }
+                            jobId: { type: string }
+                            taskId: { type: string }
+                            stageId: { type: string }
+                            submissionId: { type: string }
+                            lotId: { type: string }
+                            shipmentId: { type: string }
+                            actorName: { type: string }
+                            href: { type: string }
+                            references: { type: array, items: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/orders/{id}/lines:
     get:
@@ -3458,7 +3846,90 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Resource version changed or command idempotency key conflicts with a prior payload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    LifecycleBranchCondition:
+      description: Typed activation rule. Legacy form conditions without kind remain accepted as FORM_ANSWER for published workflow compatibility.
+      oneOf:
+        - type: object
+          required: [kind, sourceStageKey, formVersionId, fieldKey, operator, value]
+          properties:
+            kind: { type: string, enum: [FORM_ANSWER] }
+            sourceStageKey: { type: string, minLength: 1, maxLength: 50 }
+            formVersionId: { type: string, minLength: 1 }
+            fieldKey: { type: string, minLength: 1, maxLength: 100 }
+            operator: { type: string, enum: [EQUALS, NOT_EQUALS, IN] }
+            value: { oneOf: [{ type: string }, { type: array, minItems: 1, items: { type: string } }] }
+        - type: object
+          required: [kind, sourceStageKey, operator, value]
+          properties:
+            kind: { type: string, enum: [QC_OUTCOME] }
+            sourceStageKey: { type: string, minLength: 1, maxLength: 50 }
+            operator: { type: string, enum: [EQUALS, IN] }
+            value:
+              oneOf:
+                - { type: string, enum: [PASSED, PASSED_AFTER_REWORK, PARTIAL, REJECTED] }
+                - type: array
+                  minItems: 1
+                  items: { type: string, enum: [PASSED, PASSED_AFTER_REWORK, PARTIAL, REJECTED] }
+        - type: object
+          required: [sourceStageKey, formVersionId, fieldKey, operator, value]
+          not: { required: [kind] }
+          properties:
+            sourceStageKey: { type: string, minLength: 1, maxLength: 50 }
+            formVersionId: { type: string, minLength: 1 }
+            fieldKey: { type: string, minLength: 1, maxLength: 100 }
+            operator: { type: string, enum: [EQUALS, NOT_EQUALS, IN] }
+            value: { oneOf: [{ type: string }, { type: array, minItems: 1, items: { type: string } }] }
+    FormSubmissionDraft:
+      type: object
+      required: [expectedVersion, answers]
+      additionalProperties: false
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        answers: { type: object, additionalProperties: true }
+    FormSubmissionCorrection:
+      type: object
+      required: [expectedVersion, reason, answers]
+      additionalProperties: false
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        answers: { type: object, additionalProperties: true }
+    FormVersionAction:
+      type: object
+      required: [action, expectedVersion]
+      additionalProperties: false
+      properties:
+        action: { type: string, enum: [submit_review, publish, retire] }
+        expectedVersion: { type: integer, minimum: 1 }
+    FormVersionDraftUpdate:
+      type: object
+      required: [expectedVersion, definition]
+      additionalProperties: false
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+        definition: { type: object, description: Validated FormDefinition for ORDER_SPEC, TASK_EVIDENCE or QC_EVIDENCE }
+    FormTemplateCreate:
+      type: object
+      required: [code, name, purpose]
+      additionalProperties: false
+      properties:
+        code: { type: string, minLength: 1, maxLength: 100 }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        purpose: { type: string, enum: [ORDER_SPEC, TASK_EVIDENCE, QC_EVIDENCE] }
+        description: { type: string, maxLength: 2000 }
+    FormVersionFork:
+      type: object
+      required: [fromVersionId]
+      additionalProperties: false
+      properties:
+        fromVersionId: { type: string, format: uuid }
     NotificationPreferences:
       type: object
       additionalProperties: false

@@ -5,6 +5,7 @@ import { requireAnyPermission, hasPermission } from '@/server/auth/permissions';
 import { executeCommand } from '@/server/db/transaction';
 import { BadRequestError, NotFoundError, ForbiddenError } from '@/domain/errors';
 import { ExecutionRepository } from './repository';
+import { assertRequiredFormsFinalized } from '@/server/modules/forms/completion';
 import { executionTaskScope } from './scope';
 import { ConsumptionService } from '../inventory/consumption';
 import {
@@ -217,6 +218,12 @@ export class ExecutionService {
         if (!currentTask || !['READY', 'ASSIGNED'].includes(currentTask.status)) {
           throw new BadRequestError(`Task '${task.nodeKey}' is no longer READY or ASSIGNED.`);
         }
+        await assertRequiredFormsFinalized(tx, {
+          workspaceId,
+          subjectType: 'TASK',
+          subjectId: currentTask.id,
+          completionPoint: 'BEFORE_ACTION',
+        });
         if (!['RELEASED', 'IN_PRODUCTION', 'PARTIALLY_DELIVERED'].includes(currentTask.instance.order.status)) {
           throw new BadRequestError(`Order '${currentTask.instance.order.orderNumber}' is not released for execution.`);
         }

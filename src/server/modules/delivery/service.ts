@@ -16,6 +16,7 @@ import {
   findShipmentById,
   getNextShipmentNumber,
 } from './repository';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 
 function resolveOrderLine(order: any, shipmentLine: { orderLineId?: string; itemId: string }) {
   if (order.lines.length > 0) {
@@ -563,12 +564,6 @@ export class DeliveryService {
       throw new NotFoundError(`Shipment '${input.shipmentId}' not found`);
     }
 
-    if (shipment.status !== ShipmentStatus.DISPATCHED) {
-      throw new BadRequestError(
-        `Cannot confirm delivery for shipment in status '${shipment.status}'. Shipment must be DISPATCHED.`
-      );
-    }
-
     return executeCommand<any, any>({
       principal,
       commandType: 'delivery.shipment.confirm',
@@ -639,6 +634,13 @@ export class DeliveryService {
               status: 'DELIVERED',
               version: { increment: 1 },
             },
+          });
+          await completeLifecycleAction(tx, {
+            workspaceId,
+            orderId: currentOrder.id,
+            action: 'CONFIRM_DELIVERY',
+            actorUserId: principal.userId,
+            commandId: requestId,
           });
         }
 

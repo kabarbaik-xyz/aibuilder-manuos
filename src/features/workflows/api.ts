@@ -1,5 +1,6 @@
 import { apiRequest } from '@/lib/api/client';
 import { WorkflowDefinition } from '@/domain/workflow-definition';
+import { OrderLifecycleDefinition } from '@/domain/order-lifecycle-definition';
 
 export interface WorkflowVersionDto {
   id: string;
@@ -21,6 +22,7 @@ export interface WorkflowVersionDto {
 export interface WorkflowTemplateDto {
   id: string;
   orderTypeId: string;
+  kind: 'PRODUCTION_ROUTING' | 'ORDER_LIFECYCLE';
   code: string;
   name: string;
   description: string | null;
@@ -46,7 +48,7 @@ export const workflowsApi = {
     return res.data;
   },
 
-  createTemplate: async (data: { orderTypeId: string; code: string; name: string; description?: string }) => {
+  createTemplate: async (data: { orderTypeId: string; kind?: WorkflowTemplateDto['kind']; code: string; name: string; description?: string }) => {
     return apiRequest<{ data: WorkflowTemplateDto & { initialVersionId: string } }>('/api/workflows', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -61,7 +63,7 @@ export const workflowsApi = {
   saveVersionDraft: async (
     templateId: string,
     versionId: string,
-    data: { expectedVersion?: number; definition: WorkflowDefinition }
+    data: { expectedVersion?: number; definition: WorkflowDefinition | OrderLifecycleDefinition }
   ) => {
     return apiRequest<{ data: WorkflowVersionDto }>(`/api/workflows/${templateId}/versions/${versionId}`, {
       method: 'PUT',

@@ -7,6 +7,7 @@ import { executeCommand } from '@/server/db/transaction';
 import * as contracts from './contracts';
 import { parseQuantity } from '@/domain/quantity';
 import { NotificationService } from '@/server/modules/notifications/service';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 
 export class EngineeringService {
   constructor(private readonly prisma: PrismaClient = defaultDb) {}
@@ -338,6 +339,19 @@ export class EngineeringService {
           body: `Revision ${rev.revisionNumber} approved.`, subjectType: 'ORDER', subjectId: rev.orderId,
           dedupeKey: `engineering-approved:${rev.id}`,
         });
+
+        const unapprovedRevisionCount = await tx.engineeringRevision.count({
+          where: { workspaceId: principal.workspaceId, orderId: rev.orderId, status: { not: 'APPROVED' } },
+        });
+        if (unapprovedRevisionCount === 0) {
+          await completeLifecycleAction(tx, {
+            workspaceId: principal.workspaceId,
+            orderId: rev.orderId,
+            action: 'ENGINEERING_APPROVE',
+            actorUserId: principal.userId,
+            commandId: idempotencyKey,
+          });
+        }
 
         return {
           data: updated,

@@ -10,6 +10,7 @@ import { assertRequiredFormsFinalized } from '../forms/completion';
 import { parseAtomInput } from '@/domain/quantity';
 import { z } from 'zod';
 import { executionTaskScope } from './scope';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 
 function hasDownstreamProductionOperation(
   taskId: string,
@@ -114,12 +115,6 @@ export async function recordOutput(
     );
   }
 
-  if (task.status !== 'RUNNING' && task.status !== 'READY' && task.status !== 'WAITING_QC') {
-    throw new BadRequestError(
-      `Cannot record output for task in status '${task.status}'. Task must be RUNNING or READY.`
-    );
-  }
-
   const order = task.instance.order;
   const targetItemId = task.targetItemId || order.itemId;
 
@@ -180,7 +175,7 @@ export async function recordOutput(
           ...executionTaskScope(principal),
         },
         include: {
-          instance: { include: { workflowVersion: { include: { nodes: true } } } },
+          instance: { include: { workflowVersion: { include: { nodes: true } }, order: { select: { id: true } } } },
           jobsheet: { include: { manufacturingOrder: true } },
         },
       });
@@ -497,12 +492,15 @@ export async function recordOutput(
         },
       });
 
-      // Gate: If task is completing or moving to WAITING_QC, verify required task evidence forms are finalized
-      await assertRequiredFormsFinalized(tx, {
-        workspaceId,
-        subjectType: 'TASK',
-        subjectId: currentTask.id,
-      });
+      // Gate stage-completion evidence only when this output completes the task.
+      if (taskOutputComplete) {
+        await assertRequiredFormsFinalized(tx, {
+          workspaceId,
+          subjectType: 'TASK',
+          subjectId: currentTask.id,
+          completionPoint: 'BEFORE_STAGE_COMPLETION',
+        });
+      }
 
       // Update Task status
       const nextStatus = taskOutputComplete
@@ -591,6 +589,25 @@ export async function recordOutput(
           }),
         },
       });
+
+      if (taskOutputComplete) {
+        const unfinishedProductionTasks = await tx.task.count({
+          where: {
+            workspaceId,
+            instance: { orderId: currentTask.instance.orderId },
+            status: { notIn: ['COMPLETED', 'CANCELLED', 'WAITING_QC'] },
+          },
+        });
+        if (unfinishedProductionTasks === 0) {
+          await completeLifecycleAction(tx, {
+            workspaceId,
+            orderId: currentTask.instance.orderId,
+            action: 'EXECUTE_PRODUCTION',
+            actorUserId: principal.userId,
+            commandId: requestId,
+          });
+        }
+      }
 
       return {
         data: {

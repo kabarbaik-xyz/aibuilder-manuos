@@ -142,6 +142,45 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
     await workflowService.submitReview(owner, draftV1.data.id, 'idemp-wf-p10-rev');
     await workflowService.publishVersion(owner, draftV1.data.id, 'idemp-wf-p10-pub');
 
+    const plannerMembershipId = alpha.users.planner.principal.membershipId;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: alpha.masters.departmentId },
+    });
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: plannerMembershipId } },
+      data: { departmentId: alpha.masters.departmentId },
+    });
+    const lifecycleTemplate = await workflowService.createTemplate(owner, {
+      orderTypeId: alpha.masters.orderTypeId,
+      code: 'WF-P10-LIFECYCLE',
+      name: 'Planning lifecycle integration',
+      kind: 'ORDER_LIFECYCLE',
+    }, 'p10-lifecycle-template');
+    await workflowService.saveVersionDraft(owner, lifecycleTemplate.data.initialVersionId!, {
+      definition: {
+        schemaVersion: 1,
+        name: 'Planning lifecycle integration',
+        stages: [
+          {
+            key: 'ENGINEERING', name: 'Approve engineering', action: 'ENGINEERING_APPROVE',
+            departmentId: alpha.masters.departmentId,
+            assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: alpha.masters.departmentId },
+            schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 },
+            predecessors: [], forms: [],
+          },
+          {
+            key: 'PLAN', name: 'Schedule released work', action: 'PLAN_PRODUCTION',
+            departmentId: alpha.masters.departmentId,
+            assignment: { kind: 'MEMBER', membershipId: plannerMembershipId, departmentId: alpha.masters.departmentId },
+            schedule: { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' },
+            predecessors: ['ENGINEERING'], forms: [],
+          },
+        ],
+      },
+    }, 'p10-lifecycle-draft');
+    await workflowService.publishVersion(owner, lifecycleTemplate.data.initialVersionId!, 'p10-lifecycle-publish');
+
     // 5. Create Order and release
     const orderRes = await orderService.createOrderDraft(
       owner,
@@ -151,6 +190,7 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
         itemId: alpha.masters.fgItemId,
         orderedQuantity: 10,
         requestedDate: '2026-11-20T17:00:00.000Z',
+        lifecycleWorkflowVersionId: lifecycleTemplate.data.initialVersionId,
       },
       'idemp-order-p10-01'
     );
@@ -166,7 +206,16 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       },
       'idemp-eng-p10-rev1'
     );
-    await engineeringService.approveEngineeringRevision(owner, testRevId, 'idemp-eng-p10-appr');
+    const approvedRevision = await engineeringService.approveEngineeringRevision(owner, testRevId, 'idemp-eng-p10-appr');
+    const replayedApproval = await engineeringService.approveEngineeringRevision(owner, testRevId, 'idemp-eng-p10-appr');
+    expect(replayedApproval.meta.replayed).toBe(true);
+    // A fresh key after success must observe the recorded outcome without
+    // emitting another lifecycle transition or approval notification.
+    await engineeringService.approveEngineeringRevision(owner, testRevId, 'idemp-eng-p10-appr-retry');
+    expect(approvedRevision.data.status).toBe('APPROVED');
+    expect(await fixture.db.orderLifecycleEvent.count({
+      where: { instance: { orderId: testOrderId }, eventType: 'STAGE_COMPLETED' },
+    })).toBe(1);
 
     const releaseRes = await releaseOrder(owner, testOrderId, 'idemp-order-p10-rel', fixture.db);
     testInstanceId = releaseRes.data.instanceId;
@@ -587,14 +636,34 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeBookings);
       expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'SCHEDULE_PROPOSAL_APPLY' } })).toBe(0);
 
-      const applied = await scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-ok');
-      const replay = await scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-ok');
-      expect(applied.data.state).toBe('APPLIED');
+      const concurrent = await Promise.allSettled([
+        scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-race-a'),
+        scheduleProposalService.applyReviewedProposal(planner, reviewed, 'phase10-schedule-apply-race-b'),
+      ]);
+      const applied = concurrent.filter((result) => result.status === 'fulfilled');
+      const rejected = concurrent.filter((result) => result.status === 'rejected');
+      expect(applied).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toMatchObject({ code: 'STALE_VERSION' });
+      const winningKey = concurrent[0].status === 'fulfilled' ? 'phase10-schedule-apply-race-a' : 'phase10-schedule-apply-race-b';
+      const replay = await scheduleProposalService.applyReviewedProposal(planner, reviewed, winningKey);
+      expect(applied[0].status === 'fulfilled' && applied[0].value.data.state).toBe('APPLIED');
       expect(replay.meta.replayed).toBe(true);
       expect(await fixture.db.task.count({ where: { workspaceId: alpha.workspaceId, instanceId: testInstanceId, status: 'ASSIGNED' } })).toBe(2);
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, status: 'CONFIRMED' } })).toBe(4);
       expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'SCHEDULE_PROPOSAL_APPLY' } })).toBe(2);
       expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'planning.schedule-proposal.apply' } })).toBe(1);
+      const lifecycleStage = await fixture.db.orderLifecycleStage.findFirstOrThrow({
+        where: { workspaceId: alpha.workspaceId, instance: { orderId: testOrderId }, stageKey: 'PLAN' },
+      });
+      expect(lifecycleStage.state).toBe('COMPLETED');
+      expect(await fixture.db.orderLifecycleEvent.count({
+        where: { workspaceId: alpha.workspaceId, stageId: lifecycleStage.id, eventType: 'STAGE_COMPLETED' },
+      })).toBe(1);
+      const lifecycleEvent = await fixture.db.orderLifecycleEvent.findFirstOrThrow({
+        where: { workspaceId: alpha.workspaceId, stageId: lifecycleStage.id, eventType: 'STAGE_COMPLETED' },
+      });
+      expect(JSON.parse(lifecycleEvent.detailJson)).toEqual({ action: 'PLAN_PRODUCTION', completionFact: 'SCHEDULE_PROPOSAL_APPLIED' });
 
       await fixture.db.resourceBooking.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] } } });
       await fixture.db.workflowEvent.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, action: 'SCHEDULE_PROPOSAL_APPLY' } });
