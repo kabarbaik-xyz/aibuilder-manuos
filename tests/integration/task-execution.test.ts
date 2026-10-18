@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { releaseOrder } from '@/server/modules/orders/release';
 import { WorkflowService } from '@/server/modules/workflow/service';
@@ -10,6 +11,7 @@ import { InventoryService } from '@/server/modules/inventory/service';
 import { MastersService } from '@/server/modules/masters/service';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@/domain/errors';
 import { recordOutput } from '@/server/modules/execution/output';
+import { FormService } from '@/server/modules/forms/service';
 
 describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
   let fixture: FactoryFixture;
@@ -114,6 +116,26 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
     );
     wfV1Id = draftV1.data.id;
 
+    const forms = new FormService(fixture.db);
+    const taskEvidence = await forms.createTemplate(alpha.users.owner.principal, {
+      code: `TASK_EVIDENCE_${randomUUID().slice(0, 8)}`,
+      name: 'Task execution evidence',
+      purpose: 'TASK_EVIDENCE',
+    });
+    await forms.publishFormVersion(alpha.users.owner.principal, {
+      templateId: taskEvidence.templateId,
+      versionId: taskEvidence.versionId,
+      expectedVersion: 1,
+    });
+    const taskBinding = await forms.bindFormVersion(alpha.users.owner.principal, {
+      formVersionId: taskEvidence.versionId,
+      context: 'WORKFLOW_NODE',
+      workflowVersionId: wfV1Id,
+      workflowNodeKey: 'OP-10',
+      required: false,
+      completionPoint: 'BEFORE_ACTION',
+    }, 'task-execution-form-binding');
+
     await workflowService.submitReview(alpha.users.owner.principal, wfV1Id, 'key-wf-rev-v1');
     await workflowService.publishVersion(alpha.users.owner.principal, wfV1Id, 'key-wf-pub-v1');
 
@@ -167,6 +189,32 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
     instanceId = releaseRes.data.instanceId;
     op10TaskId = releaseRes.data.taskIds['OP-10'];
     qc20TaskId = releaseRes.data.taskIds['QC-20'];
+    const pinnedTaskForms = await fixture.db.formInstance.findMany({ where: { subjectType: 'TASK', subjectId: op10TaskId } });
+    expect(pinnedTaskForms)
+      .toMatchObject([{ formVersionId: taskEvidence.versionId, formBindingId: taskBinding.bindingId, required: false, completionPoint: 'BEFORE_ACTION' }]);
+
+    const v2 = await workflowService.forkVersion(alpha.users.owner.principal, wfV1Id, 'task-execution-form-v2-fork');
+    const additionalEvidence = await forms.createTemplate(alpha.users.owner.principal, {
+      code: `TASK_EVIDENCE_V2_${randomUUID().slice(0, 8)}`,
+      name: 'Additional task evidence',
+      purpose: 'TASK_EVIDENCE',
+    });
+    await forms.publishFormVersion(alpha.users.owner.principal, {
+      templateId: additionalEvidence.templateId,
+      versionId: additionalEvidence.versionId,
+      expectedVersion: 1,
+    });
+    await forms.bindFormVersion(alpha.users.owner.principal, {
+      formVersionId: additionalEvidence.versionId,
+      context: 'WORKFLOW_NODE',
+      workflowVersionId: v2.data.id,
+      workflowNodeKey: 'OP-10',
+      required: true,
+      completionPoint: 'BEFORE_STAGE_COMPLETION',
+    }, 'task-execution-form-v2-binding');
+    await workflowService.publishVersion(alpha.users.owner.principal, v2.data.id, 'task-execution-form-v2-publish');
+    expect(await fixture.db.formInstance.findMany({ where: { subjectType: 'TASK', subjectId: op10TaskId } }))
+      .toEqual(pinnedTaskForms);
   });
 
   afterAll(async () => {

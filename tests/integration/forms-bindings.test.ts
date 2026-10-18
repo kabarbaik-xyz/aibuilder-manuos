@@ -208,9 +208,10 @@ describe('published form workflow bindings', () => {
       workflowVersionId: workflow.data.initialVersionId,
       workflowNodeKey: 'OP-10',
       required: true,
+      completionPoint: 'BEFORE_ACTION',
     }, 'task-form-binding-create');
     expect(await fixture.db.formBinding.findUniqueOrThrow({ where: { id: binding.bindingId } }))
-      .toMatchObject({ context: 'WORKFLOW_NODE', workflowVersionId: workflow.data.initialVersionId, workflowNodeKey: 'OP-10' });
+      .toMatchObject({ context: 'WORKFLOW_NODE', workflowVersionId: workflow.data.initialVersionId, workflowNodeKey: 'OP-10', completionPoint: 'BEFORE_ACTION' });
 
     await workflowService.publishVersion(owner, workflow.data.initialVersionId, 'task-form-workflow-publish');
     const laterForm = await forms.createTemplate(owner, {
@@ -232,5 +233,42 @@ describe('published form workflow bindings', () => {
       required: true,
     }, 'task-form-binding-after-publish')).rejects.toThrow(/only be bound to a draft workflow/i);
     expect(await fixture.db.formBinding.count({ where: { workflowVersionId: workflow.data.initialVersionId } })).toBe(1);
+
+    const fork = await workflowService.forkVersion(owner, workflow.data.initialVersionId, 'task-form-workflow-fork');
+    expect(await fixture.db.formBinding.findMany({ where: { workflowVersionId: fork.data.id } }))
+      .toMatchObject([{ formVersionId: form.versionId, workflowNodeKey: 'OP-10', required: true, completionPoint: 'BEFORE_ACTION' }]);
+  });
+
+  it('includes published task form bindings in the workflow execution hash', async () => {
+    const owner = fixture.alpha.users.owner.principal;
+    const workflows = new WorkflowService(fixture.db);
+    const createWorkflow = (code: string) => workflows.createTemplate(owner, {
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      code,
+      name: 'Workflow execution hash',
+    }, `hash-workflow-${code}`);
+    const [withForm, withoutForm] = await Promise.all([
+      createWorkflow(`HASH_FORM_${randomUUID().slice(0, 8)}`),
+      createWorkflow(`HASH_EMPTY_${randomUUID().slice(0, 8)}`),
+    ]);
+    const form = await forms.createTemplate(owner, {
+      code: `HASH_TASK_${randomUUID().slice(0, 8)}`,
+      name: 'Hash task evidence',
+      purpose: 'TASK_EVIDENCE',
+    });
+    await forms.publishFormVersion(owner, { templateId: form.templateId, versionId: form.versionId, expectedVersion: 1 });
+    await forms.bindFormVersion(owner, {
+      formVersionId: form.versionId,
+      context: 'WORKFLOW_NODE',
+      workflowVersionId: withForm.data.initialVersionId,
+      workflowNodeKey: 'OP-10',
+      required: true,
+      completionPoint: 'BEFORE_ACTION',
+    }, 'hash-workflow-binding');
+
+    const publishedWithForm = await workflows.publishVersion(owner, withForm.data.initialVersionId, 'hash-workflow-publish-form');
+    const publishedWithoutForm = await workflows.publishVersion(owner, withoutForm.data.initialVersionId, 'hash-workflow-publish-empty');
+    expect(publishedWithForm.data.definitionHash).toBeDefined();
+    expect(publishedWithForm.data.definitionHash).not.toBe(publishedWithoutForm.data.definitionHash);
   });
 });

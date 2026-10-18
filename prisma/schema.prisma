@@ -2092,6 +2092,7 @@ model FormBinding {
   workflowVersionId  String?        @map("workflow_version_id")
   qcChecklistId      String?        @map("qc_checklist_id")
   required           Boolean        @default(true)
+  completionPoint    String         @default("BEFORE_STAGE_COMPLETION") @map("completion_point")
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 

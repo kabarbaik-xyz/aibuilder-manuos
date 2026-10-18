@@ -1,0 +1,1 @@
+ALTER TABLE "form_bindings" ADD COLUMN "completion_point" TEXT NOT NULL DEFAULT 'BEFORE_STAGE_COMPLETION';

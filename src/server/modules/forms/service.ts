@@ -519,6 +519,7 @@ export class FormService {
             workflowVersionId: input.workflowVersionId ?? null,
             qcChecklistId: input.qcChecklistId ?? null,
             required: input.required ?? true,
+            completionPoint: input.completionPoint ?? 'BEFORE_STAGE_COMPLETION',
           },
         });
         const data = { bindingId: binding.id };

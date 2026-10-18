@@ -195,7 +195,19 @@ export class WorkflowService {
     const catalog = await this.loadCatalog(workspaceId);
     const validation = validateWorkflowDefinition(definition, catalog);
     if (!validation.isValid) throw new BadRequestError(`Workflow definition is invalid: ${validation.errors.map((error) => error.message).join('; ')}`);
-    return computeDefinitionHash(definition);
+    const bindings = await tx.formBinding.findMany({
+      where: { workspaceId, context: 'WORKFLOW_NODE', workflowVersionId: version.id },
+      include: { formVersion: { select: { contentHash: true } } },
+      orderBy: [{ workflowNodeKey: 'asc' }, { formVersionId: 'asc' }, { id: 'asc' }],
+    });
+    const executionBindings = bindings.map((binding: any) => ({
+      workflowNodeKey: binding.workflowNodeKey,
+      formVersionId: binding.formVersionId,
+      contentHash: binding.formVersion.contentHash,
+      required: binding.required,
+      completionPoint: binding.completionPoint,
+    }));
+    return createHash('sha256').update(JSON.stringify({ definition, formBindings: executionBindings })).digest('hex');
   }
 
   async createTemplate(
@@ -569,6 +581,10 @@ export class WorkflowService {
           include: { nodes: true, edges: true },
         });
         if (!sourceVersion) throw new NotFoundError(`Workflow version '${versionId}' not found`);
+        const sourceFormBindings = await tx.formBinding.findMany({
+          where: { workspaceId: principal.workspaceId, context: 'WORKFLOW_NODE', workflowVersionId: sourceVersion.id },
+          orderBy: [{ workflowNodeKey: 'asc' }, { formVersionId: 'asc' }, { id: 'asc' }],
+        });
 
         // Find highest version number for this template
         const latest = await tx.workflowVersion.findFirst({
@@ -618,6 +634,20 @@ export class WorkflowService {
               joinPolicy: edge.joinPolicy,
               conditionCode: edge.conditionCode,
               conditionParamsJson: edge.conditionParamsJson,
+            },
+          });
+        }
+
+        for (const binding of sourceFormBindings) {
+          await tx.formBinding.create({
+            data: {
+              workspaceId: principal.workspaceId,
+              formVersionId: binding.formVersionId,
+              context: 'WORKFLOW_NODE',
+              workflowNodeKey: binding.workflowNodeKey,
+              workflowVersionId: newVersion.id,
+              required: binding.required,
+              completionPoint: binding.completionPoint,
             },
           });
         }

@@ -30,6 +30,7 @@ export interface BindFormVersionInput {
   workflowVersionId?: string;
   qcChecklistId?: string;
   required?: boolean;
+  completionPoint?: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION';
 }
 
 export interface CreateFormInstanceInput {

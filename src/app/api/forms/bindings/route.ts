@@ -15,6 +15,7 @@ const bindSchema = z.object({
   workflowVersionId: z.string().optional(),
   qcChecklistId: z.string().optional(),
   required: z.boolean().optional(),
+  completionPoint: z.enum(['BEFORE_ACTION', 'BEFORE_STAGE_COMPLETION']).optional(),
 }).strict();
 
 export async function POST(request: NextRequest) {

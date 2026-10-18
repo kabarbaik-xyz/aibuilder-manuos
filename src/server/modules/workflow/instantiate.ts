@@ -219,7 +219,7 @@ export async function instantiateWorkflow(
           subjectType: 'TASK',
           subjectId: task.id,
           required: binding.required,
-          completionPoint: 'BEFORE_STAGE_COMPLETION',
+          completionPoint: binding.completionPoint,
           status: 'PENDING',
         },
       });
