@@ -62,6 +62,15 @@ describe('order lifecycle intake', () => {
       requestedDate: '2026-11-01T00:00:00.000Z',
       lifecycleWorkflowVersionId: versionId,
     }, 'lifecycle-order-create');
+    const replayed = await orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId,
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId,
+      orderedQuantity: '2',
+      requestedDate: '2026-11-01T00:00:00.000Z',
+      lifecycleWorkflowVersionId: versionId,
+    }, 'lifecycle-order-create');
+    expect(replayed.data.id).toBe(created.data.id);
     const lifecycle = await fixture.db.orderLifecycleInstance.findUnique({
       where: { workspaceId_orderId: { workspaceId: fixture.alpha.workspaceId, orderId: created.data.id } },
       include: { stages: true },
