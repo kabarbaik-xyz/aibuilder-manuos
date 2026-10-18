@@ -228,7 +228,7 @@ function ReferenceControl({ id, referenceType, value, onChange, disabled }: {
   );
 }
 
-function AttachmentControl({ value, onChange, readOnly }: { value: string[]; onChange: (next: string[]) => void; readOnly: boolean }) {
+function AttachmentControl({ id, value, onChange, readOnly }: { id?: string; value: string[]; onChange: (next: string[]) => void; readOnly: boolean }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -262,7 +262,7 @@ function AttachmentControl({ value, onChange, readOnly }: { value: string[]; onC
 
   return (
     <div className="space-y-2">
-      {!readOnly && <Input type="file" accept="application/pdf,image/png,image/jpeg" multiple disabled={uploading || value.length >= 5} onChange={(event) => { void upload(event.target.files); event.target.value = ''; }} />}
+      {!readOnly && <Input id={id} type="file" accept="application/pdf,image/png,image/jpeg" multiple disabled={uploading || value.length >= 5} onChange={(event) => { void upload(event.target.files); event.target.value = ''; }} />}
       {uploading && <p className="text-xs text-muted">Mengunggah bukti…</p>}
       {error && <p role="alert" className="text-xs text-danger">{error}</p>}
       {value.length > 0 ? (
