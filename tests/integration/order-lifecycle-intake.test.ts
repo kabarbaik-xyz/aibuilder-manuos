@@ -10,6 +10,7 @@ import { claimLifecycleStage, completeEvidenceReviewStage, reassignLifecycleStag
 import { FormService } from '@/server/modules/forms/service';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
 import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
+import { releaseOrder } from '@/server/modules/orders/release';
 
 describe('order lifecycle intake', () => {
   let fixture: FactoryFixture;
@@ -127,6 +128,52 @@ describe('order lifecycle intake', () => {
     await expect(listLifecycleWorkItems(fixture.db, fixture.alpha.users.planner.principal)).resolves.toHaveLength(0);
     await expect(listLifecycleDepartmentMembers(fixture.db, owner.principal, fixture.alpha.masters.departmentId))
       .resolves.toContainEqual(expect.objectContaining({ membershipId: owner.membershipId }));
+  });
+
+  it('does not let a workflow that omits engineering bypass approved release prerequisites', async () => {
+    const owner = fixture.alpha.users.owner;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: fixture.alpha.masters.departmentId },
+    });
+    const template = await workflowService.createTemplate(owner.principal, {
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      code: 'LIFECYCLE-OMITS-ENGINEERING',
+      name: 'Sales confirmation without engineering stage',
+      kind: 'ORDER_LIFECYCLE',
+    }, 'lifecycle-no-engineering-template');
+    const versionId = template.data.initialVersionId!;
+    await workflowService.saveVersionDraft(owner.principal, versionId, {
+      definition: {
+        schemaVersion: 1,
+        name: 'Sales confirmation without engineering stage',
+        stages: [{
+          key: 'SALES-CONFIRM', name: 'Confirm order', action: 'ORDER_CONFIRM',
+          departmentId: fixture.alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: fixture.alpha.masters.departmentId },
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 }, predecessors: [], forms: [],
+        }],
+      },
+    }, 'lifecycle-no-engineering-draft');
+    await workflowService.publishVersion(owner.principal, versionId, 'lifecycle-no-engineering-publish');
+
+    const order = await orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId,
+      orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId,
+      orderedQuantity: '1',
+      requestedDate: '2026-11-02T00:00:00.000Z',
+      lifecycleWorkflowVersionId: versionId,
+    }, 'lifecycle-no-engineering-order');
+    await orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-no-engineering-confirm');
+
+    await expect(releaseOrder(owner.principal, order.data.id, 'lifecycle-no-engineering-release', fixture.db))
+      .rejects.toThrow(/no APPROVED engineering revision/i);
+    expect(await fixture.db.manufacturingOrder.count({ where: { orderId: order.data.id } })).toBe(0);
+    expect(await fixture.db.workflowInstance.count({ where: { orderId: order.data.id } })).toBe(0);
+    expect(await fixture.db.orderLifecycleEvent.count({
+      where: { instance: { orderId: order.data.id }, eventType: 'STAGE_COMPLETED' },
+    })).toBe(1);
   });
 
   it('executes an alternate administrative sequence without requiring the default production stages', async () => {
