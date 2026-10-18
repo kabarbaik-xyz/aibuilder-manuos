@@ -2,12 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
 import { BadRequestError } from '@/domain/errors';
-import { requirePermission } from '@/server/auth/permissions';
 
 const lifecycleReadPermissions = [
   'order.read', 'order.create', 'order.write', 'engineering.approve', 'planning.read', 'planning.write',
   'task.assign', 'task.execute_assigned', 'quality.read', 'quality.inspect',
-  'delivery.read', 'delivery.dispatch', 'workspace.admin',
+  'delivery.read', 'delivery.dispatch', 'workflow.author', 'workspace.admin',
 ];
 
 /** Lists only lifecycle work assigned to this membership or its eligible department queue. */
@@ -20,6 +19,7 @@ export async function listLifecycleWorkItems(
   if (scope === 'department' && !principal.departmentId) {
     throw new BadRequestError('Your membership is not assigned to a department.');
   }
+  const canReassign = principal.permissions.has('workflow.author') || principal.permissions.has('workspace.admin');
 
   const facilityIds = principal.facilityIds ?? (principal.facilityId ? [principal.facilityId] : []);
   const stages = await db.orderLifecycleStage.findMany({
@@ -70,7 +70,8 @@ export async function listLifecycleWorkItems(
       && assignment.departmentId === principal.departmentId
       && (!stage.assignedMembershipId || stage.assignedMembershipId === principal.membershipId)
       && assignment.eligibleRoleCodes.some((roleCode) => principal.roles.includes(roleCode));
-    if (scope === 'department' ? !roleEligible : !personallyAssigned && !roleEligible) return [];
+    const managerDepartmentView = scope === 'department' && canReassign;
+    if (scope === 'department' ? !managerDepartmentView && !roleEligible : !personallyAssigned && !roleEligible) return [];
 
     return [{
       id: stage.id,
@@ -104,6 +105,7 @@ export async function listLifecycleWorkItems(
       predecessorKeys: JSON.parse(stage.predecessorKeysJson),
       assignmentKind: assignment.kind,
       claimedByMe: stage.assignedMembershipId === principal.membershipId,
+      canReassign,
     }];
   });
 }
@@ -113,7 +115,7 @@ export async function listLifecycleDepartmentMembers(
   principal: Principal,
   departmentId: string
 ) {
-  requirePermission(principal, 'workflow.author');
+  requireAnyPermission(principal, ['workflow.author', 'workspace.admin']);
   if (!departmentId) throw new BadRequestError('Choose a department before selecting an assignee.');
   const department = await db.department.findFirst({
     where: { id: departmentId, workspaceId: principal.workspaceId, isActive: true, archivedAt: null },
