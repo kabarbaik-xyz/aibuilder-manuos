@@ -154,6 +154,7 @@ export async function releaseOrder(
         workspaceId: principal.workspaceId,
         subjectType: 'ORDER',
         subjectId: order.id,
+        completionPoint: 'BEFORE_ACTION',
       });
 
       // Each order line has an independent, pinned workflow and manufacturing target.

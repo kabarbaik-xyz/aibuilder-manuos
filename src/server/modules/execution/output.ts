@@ -498,12 +498,15 @@ export async function recordOutput(
         },
       });
 
-      // Gate: If task is completing or moving to WAITING_QC, verify required task evidence forms are finalized
-      await assertRequiredFormsFinalized(tx, {
-        workspaceId,
-        subjectType: 'TASK',
-        subjectId: currentTask.id,
-      });
+      // Gate stage-completion evidence only when this output completes the task.
+      if (taskOutputComplete) {
+        await assertRequiredFormsFinalized(tx, {
+          workspaceId,
+          subjectType: 'TASK',
+          subjectId: currentTask.id,
+          completionPoint: 'BEFORE_STAGE_COMPLETION',
+        });
+      }
 
       // Update Task status
       const nextStatus = taskOutputComplete

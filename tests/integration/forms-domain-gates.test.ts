@@ -118,6 +118,49 @@ describe('DF05: Form Gates & Domain Lifecycle Integration', () => {
     ).resolves.not.toThrow();
   });
 
+  it('enforces pending required evidence at its configured completion point only', async () => {
+    const taskBeforeStage = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'TASK',
+      subjectId: 'task-before-stage-form-gate',
+      completionPoint: 'BEFORE_STAGE_COMPLETION',
+    }));
+    await expect(fixture.db.$transaction((tx) => assertRequiredFormsFinalized(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      subjectType: 'TASK',
+      subjectId: 'task-before-stage-form-gate',
+      completionPoint: 'BEFORE_ACTION',
+    }))).resolves.toBeUndefined();
+    await expect(fixture.db.$transaction((tx) => assertRequiredFormsFinalized(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      subjectType: 'TASK',
+      subjectId: 'task-before-stage-form-gate',
+      completionPoint: 'BEFORE_STAGE_COMPLETION',
+    }))).rejects.toThrow(/has not been finalized/i);
+    expect(taskBeforeStage.instanceId).toBeTruthy();
+
+    await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'TASK',
+      subjectId: 'task-before-action-form-gate',
+      completionPoint: 'BEFORE_ACTION',
+    }));
+    await expect(fixture.db.$transaction((tx) => assertRequiredFormsFinalized(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      subjectType: 'TASK',
+      subjectId: 'task-before-action-form-gate',
+      completionPoint: 'BEFORE_ACTION',
+    }))).rejects.toThrow(/has not been finalized/i);
+    await expect(fixture.db.$transaction((tx) => assertRequiredFormsFinalized(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      subjectType: 'TASK',
+      subjectId: 'task-before-action-form-gate',
+      completionPoint: 'BEFORE_STAGE_COMPLETION',
+    }))).resolves.toBeUndefined();
+  });
+
   it('blocks domain gate when a required form instance is in PENDING/DRAFT status', async () => {
     const subjectId = '00000000-0000-0000-0000-000000000002';
 

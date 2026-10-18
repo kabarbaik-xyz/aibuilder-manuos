@@ -98,6 +98,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Test that publishing/rebinding v2 neither changes the form rendered for existing v1 instances nor introduces a new required gate on them.
 - [x] Materialize order specification forms on order/workflow initialization, before release. Ensure task and inspection evidence exist before their respective action gates.
 - [x] Test the full required-order-form path: create order → see instance → draft save → final submit → release allowed. Release with absent/unfinished pinned form is rejected atomically.
+- [x] Enforce completion point semantics at action entry, task completion, and order release; partial output is not blocked by evidence required only before stage completion.
 - [ ] Treat legacy zero-binding instances explicitly: no retroactive requirement insertion. Add a compatibility reader and migration fixtures for existing forms/workflows.
 - [x] Run focused binding and execution specs: `rtk proxy npx vitest run tests/integration/forms-bindings.test.ts tests/integration/forms-domain-gates.test.ts tests/integration/forms-history-context.test.ts tests/integration/task-execution.test.ts` (26 passed).
 

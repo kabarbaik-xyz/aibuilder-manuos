@@ -5,6 +5,7 @@ export interface AssertRequiredFormsInput {
   workspaceId: string;
   subjectType: 'ORDER' | 'TASK' | 'INSPECTION';
   subjectId: string;
+  completionPoint?: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION';
 }
 
 /**
@@ -26,6 +27,7 @@ export async function assertRequiredFormsFinalized(
       workspaceId: input.workspaceId,
       subjectType: input.subjectType,
       subjectId: input.subjectId,
+      ...(input.completionPoint ? { completionPoint: input.completionPoint } : {}),
     },
     include: {
       formVersion: { include: { template: true } },
