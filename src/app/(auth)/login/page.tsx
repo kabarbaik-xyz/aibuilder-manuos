@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnTo = searchParams.get('returnTo') || '/';
+  const returnTo = searchParams.get('returnTo') || '/welcome';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

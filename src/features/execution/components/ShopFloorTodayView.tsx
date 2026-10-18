@@ -21,8 +21,8 @@ function formatMinutes(value: number) {
 
 const taskStatusLabels: Record<string, string> = {
   RUNNING: "Berjalan",
-  PAUSED: "Dijeda",
-  WAITING_QC: "Menunggu QC",
+  PAUSED: "Paused",
+  WAITING_QC: "Waiting QC",
   READY: "Siap",
   ASSIGNED: "Ditetapkan",
   BLOCKED: "Terblokir",
@@ -77,7 +77,7 @@ export function ShopFloorTodayView() {
         description={`Tugas produksi aktif untuk ${principal?.name || "Operator"}`}
         actions={
           <Button icon="reset" onClick={() => void refetch()}>
-            Muat ulang
+            Refresh
           </Button>
         }
       />
@@ -87,9 +87,9 @@ export function ShopFloorTodayView() {
         ariaLabel="Navigasi lantai produksi"
         activeId="today"
         items={[
-          { id: "all", label: "Semua tugas", href: "/shop-floor", icon: "work" },
+          { id: "all", label: "All tasks", href: "/shop-floor", icon: "work" },
           { id: "today", label: "Antrean kerja", href: "/shop-floor/today", icon: "clock", count: isLoading ? undefined : queuedTasks.length },
-          { id: "profile", label: "Profil saya", href: "/shop-floor/profile", icon: "technician" },
+          { id: "profile", label: "My profile", href: "/shop-floor/profile", icon: "technician" },
         ]}
       />
 
@@ -159,7 +159,7 @@ export function ShopFloorTodayView() {
             </p>
           </div>
           <ButtonLink href={`/shop-floor/tasks/${activeTask.id}`} variant="primary" size="small">
-            Lanjutkan kerja
+            Continue work
           </ButtonLink>
         </div>
       )}
@@ -179,7 +179,7 @@ export function ShopFloorTodayView() {
             </p>
           </div>
           <ButtonLink href={`/shop-floor/tasks/${pausedTask.id}`} variant="primary" size="small">
-            Tinjau jeda & lanjutkan
+            Review Review & continue continue
           </ButtonLink>
         </div>
       )}
@@ -238,7 +238,7 @@ export function ShopFloorTodayView() {
                   size="small"
                   variant={t.status === "RUNNING" || t.status === "PAUSED" ? "primary" : "default"}
                 >
-                  {t.status === "RUNNING" ? "Lanjutkan" : t.status === "PAUSED" ? "Lanjutkan" : "Buka tugas"}
+                  {t.status === "RUNNING" ? "Running" : t.status === "PAUSED" ? "Paused" : "View task"}
                 </ButtonLink>
               </div>
             ))}

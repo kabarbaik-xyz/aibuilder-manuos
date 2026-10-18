@@ -32,7 +32,7 @@ export function ShopFloorProfileView() {
         description="Kualifikasi terverifikasi, sertifikasi aktif, dan otorisasi fasilitas."
         actions={
           <Button icon="reset" onClick={() => void refetch()}>
-            Muat ulang
+            Refresh
           </Button>
         }
       />
@@ -42,9 +42,9 @@ export function ShopFloorProfileView() {
         ariaLabel="Navigasi lantai produksi"
         activeId="profile"
         items={[
-          { id: "all", label: "Semua tugas", href: "/shop-floor", icon: "work" },
+          { id: "all", label: "All tasks", href: "/shop-floor", icon: "work" },
           { id: "today", label: "Antrean kerja", href: "/shop-floor/today", icon: "clock" },
-          { id: "profile", label: "Profil saya", href: "/shop-floor/profile", icon: "technician" },
+          { id: "profile", label: "My profile", href: "/shop-floor/profile", icon: "technician" },
         ]}
       />
 

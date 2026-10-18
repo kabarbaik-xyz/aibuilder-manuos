@@ -43,8 +43,8 @@ const taskStatusLabels: Record<string, string> = {
   READY: 'Siap',
   ASSIGNED: 'Ditugaskan',
   RUNNING: 'Berjalan',
-  PAUSED: 'Dijeda',
-  WAITING_QC: 'Menunggu QC',
+  PAUSED: 'Paused',
+  WAITING_QC: 'Waiting QC',
   COMPLETED: 'Selesai',
   CANCELLED: 'Dibatalkan',
 };
@@ -534,7 +534,7 @@ export function ShopFloorWorkstationView({ taskId }: ShopFloorWorkstationViewPro
                 disabled={!isOnline || resumeMutation.isPending}
                 icon="reset"
               >
-                {resumeMutation.isPending ? 'Melanjutkan…' : 'Lanjutkan operasi'}
+                {resumeMutation.isPending ? 'Resume…' : 'Continue operation'}
               </Button>
             )}
           </div>
