@@ -11,6 +11,7 @@ import { FormService } from '@/server/modules/forms/service';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
 import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 import { releaseOrder } from '@/server/modules/orders/release';
+import { getOrderEvidenceTimeline } from '@/server/modules/order-lifecycle/traceability';
 
 describe('order lifecycle intake', () => {
   let fixture: FactoryFixture;
@@ -480,6 +481,11 @@ describe('order lifecycle intake', () => {
     expect(plannerQueue.find(row => row.id === stage.id)).toMatchObject({ assignedTo: planner.principal.name, canReassign: false });
     await expect(fixture.db.orderLifecycleEvent.findFirst({ where: { stageId: stage.id, eventType: 'STAGE_REASSIGNED' } }))
       .resolves.toMatchObject({ actorUserId: owner.userId, detailJson: expect.stringContaining('Coverage handoff') });
+    const timeline = await getOrderEvidenceTimeline(fixture.db, owner.principal, order.data.id);
+    expect(timeline.events).toContainEqual(expect.objectContaining({
+      reference: expect.stringMatching(/^LIFECYCLE_EVENT:/), title: 'stage reassigned',
+      summary: expect.stringContaining('Coverage handoff'),
+    }));
     expect(await fixture.db.notificationInbox.findMany({ where: { subjectType: 'ORDER_LIFECYCLE_STAGE', subjectId: stage.id }, select: { userId: true, category: true } }))
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ userId: owner.userId, category: 'ASSIGNMENT' }),

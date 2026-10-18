@@ -148,6 +148,12 @@ describe('Order evidence timeline', () => {
       sequenceNumber: 1, status: 'FINAL', answersJson: '{}',
       actorId: alpha.users.owner.principal.userId, finalizedAt: new Date('2026-12-20T10:00:00.000Z'),
     } });
+    const correction = await fixture.db.formSubmission.create({ data: {
+      workspaceId: alpha.workspaceId, instanceId: formInstance.instanceId,
+      sequenceNumber: 2, status: 'FINAL', answersJson: '{"corrected":true}',
+      actorId: alpha.users.owner.principal.userId, finalizedAt: new Date('2026-12-20T10:30:00.000Z'),
+      correctionReason: 'Corrected the recorded measurement', supersedesId: submission.id,
+    } });
     const privateShipment = await fixture.db.shipment.create({ data: {
       workspaceId: alpha.workspaceId, shipmentNumber: 'SHP-TIMELINE-PRIVATE', orderId: order.data.id,
       customerId: alpha.masters.customerId, status: 'ALLOCATED', allocatedAt: new Date('2026-12-20T11:00:00.000Z'),
@@ -155,6 +161,10 @@ describe('Order evidence timeline', () => {
     } });
     const ownerTimeline = await getOrderEvidenceTimeline(fixture.db, alpha.users.owner.principal, order.data.id);
     expect(ownerTimeline.events.some(event => event.reference === `FORM_SUBMISSION:${submission.id}`)).toBe(true);
+    expect(ownerTimeline.events).toContainEqual(expect.objectContaining({
+      reference: `FORM_SUBMISSION:${correction.id}`, title: 'Form evidence corrected',
+      summary: 'Corrected the recorded measurement', submissionId: correction.id,
+    }));
 
     const role = await fixture.db.role.create({ data: {
       workspaceId: alpha.workspaceId, code: 'TIMELINE_EVIDENCE_READER', name: 'Timeline evidence reader',
@@ -174,6 +184,7 @@ describe('Order evidence timeline', () => {
 
     const timeline = await getOrderEvidenceTimeline(fixture.db, restrictedReader, order.data.id);
     expect(timeline.events.some(event => event.reference === `FORM_SUBMISSION:${submission.id}`)).toBe(false);
+    expect(timeline.events.some(event => event.reference === `FORM_SUBMISSION:${correction.id}`)).toBe(false);
     expect(timeline.events.some(event => event.reference.startsWith('ENGINEERING_REVISION:'))).toBe(false);
     expect(timeline.events.some(event => event.reference.startsWith(`SHIPMENT:${privateShipment.id}:`))).toBe(false);
   });

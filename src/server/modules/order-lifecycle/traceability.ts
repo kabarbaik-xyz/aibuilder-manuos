@@ -112,7 +112,7 @@ export async function getOrderEvidenceTimeline(
     return {
       reference: `LIFECYCLE_EVENT:${event.id}`, category: 'WORKFLOW',
       title: event.eventType.replaceAll('_', ' ').toLowerCase(), label,
-      summary: [action, fact, event.fromState && event.toState ? `${event.fromState.toLowerCase()} → ${event.toState.toLowerCase()}` : null].filter(Boolean).join(' · ') || `${event.stage?.department.name ?? 'Workflow'} handoff`,
+      summary: [action, fact, detail.reason, event.fromState && event.toState ? `${event.fromState.toLowerCase()} → ${event.toState.toLowerCase()}` : null].filter(Boolean).join(' · ') || `${event.stage?.department.name ?? 'Workflow'} handoff`,
       occurredAt: event.occurredAt.toISOString(), orderId, stageId: event.stageId ?? undefined,
       actorName: actorById.get(event.actorUserId) ?? 'Former user', href: `/orders/${encodeURIComponent(orderId)}#lifecycle`, references: [order.orderNumber],
     };
