@@ -264,10 +264,18 @@ describe('order lifecycle intake', () => {
         expect.objectContaining({ userId: planner.userId, category: 'ASSIGNMENT' }),
       ]));
 
-    const result = await completeEvidenceReviewStage(fixture.db, planner.principal, { stageId: stage.id, expectedVersion: stage.version + 1 }, 'lifecycle-review-complete');
-    expect(result.data).toMatchObject({ stageId: stage.id, state: 'COMPLETED' });
+    const completions = await Promise.allSettled([
+      completeEvidenceReviewStage(fixture.db, planner.principal, { stageId: stage.id, expectedVersion: stage.version + 1 }, 'lifecycle-review-complete-a'),
+      completeEvidenceReviewStage(fixture.db, planner.principal, { stageId: stage.id, expectedVersion: stage.version + 1 }, 'lifecycle-review-complete-b'),
+    ]);
+    expect(completions.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(completions.filter(result => result.status === 'rejected')).toHaveLength(1);
     await expect(fixture.db.orderLifecycleEvent.findFirst({ where: { stageId: stage.id, eventType: 'STAGE_COMPLETED' } }))
       .resolves.toMatchObject({ actorUserId: planner.userId, toState: 'COMPLETED' });
+    expect(await fixture.db.orderLifecycleEvent.count({ where: { stageId: stage.id, eventType: 'STAGE_COMPLETED' } })).toBe(1);
+    await expect(completeEvidenceReviewStage(fixture.db, planner.principal, { stageId: stage.id, expectedVersion: stage.version + 1 }, 'lifecycle-review-new-key-after-success'))
+      .rejects.toThrow(/not found|ready or active/i);
+    expect(await fixture.db.orderLifecycleEvent.count({ where: { stageId: stage.id, eventType: 'STAGE_COMPLETED' } })).toBe(1);
     await expect(completeEvidenceReviewStage(fixture.db, owner.principal, { stageId: stage.id, expectedVersion: stage.version }, 'lifecycle-review-stale'))
       .rejects.toThrow(/not found|changed|ready or active/i);
   });
