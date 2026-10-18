@@ -47,6 +47,7 @@ export interface AuthorizedContextTask {
   actualMinutes: number | null;
   orderId: string;
   orderNumber: string;
+  blockers: Array<{ kind: 'ISSUE' | 'PREDECESSOR'; summary: string; severity?: string; owner?: string | null; expectedResolutionAt?: string | null }>;
 }
 
 export interface AuthorizedContextBooking {
@@ -87,6 +88,7 @@ export interface AuthorizedContextLifecycleStage {
   assignedTo: string | null;
   dueAt: string | null;
   scheduleKind: string;
+  blockers: string[];
 }
 
 export interface AuthorizedContext {
@@ -211,7 +213,16 @@ export async function buildAuthorizedContext(
       ...(!canReadAcrossFacilities ? { instance: { order: { facilityId: { in: facilityIds } } } } : {}),
       status: { not: 'CANCELLED' },
     },
-    include: { instance: { include: { order: true } } },
+    include: {
+      instance: { include: { order: true } },
+      predecessorDeps: { include: { predecessor: { select: { nodeKey: true, status: true } } } },
+      issues: {
+        where: { status: { in: ['OPEN', 'REOPENED'] }, severity: { in: ['HIGH', 'CRITICAL'] } },
+        include: { ownerUser: { select: { name: true } } },
+        orderBy: [{ severity: 'desc' }, { createdAt: 'asc' }],
+        take: 10,
+      },
+    },
     take: scope?.taskId ? 1 : 10,
     orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
   }) : [];
@@ -223,6 +234,18 @@ export async function buildAuthorizedContext(
     actualMinutes: task.actualDurationMinutes > 0 ? task.actualDurationMinutes : null,
     orderId: task.instance.order.id,
     orderNumber: task.instance.order.orderNumber,
+    blockers: [
+      ...task.predecessorDeps
+        .filter(dependency => !['COMPLETED', 'CANCELLED'].includes(dependency.predecessor.status))
+        .map(dependency => ({ kind: 'PREDECESSOR' as const, summary: `Waiting for operation ${dependency.predecessor.nodeKey} (${dependency.predecessor.status.toLowerCase()})` })),
+      ...task.issues.map(issue => ({
+        kind: 'ISSUE' as const,
+        summary: issue.title,
+        severity: issue.severity,
+        owner: issue.ownerUser?.name ?? null,
+        expectedResolutionAt: issue.expectedResolutionAt?.toISOString() ?? null,
+      })),
+    ],
   }));
 
   const submittedFormEvidence: AuthorizedContextFormEvidence[] = [];
@@ -296,6 +319,7 @@ export async function buildAuthorizedContext(
         take: 60,
       })
     : [];
+  const lifecycleByKey = new Map(dbLifecycleStages.map(stage => [`${stage.instanceId}:${stage.stageKey}`, stage]));
   const lifecycleStages: AuthorizedContextLifecycleStage[] = dbLifecycleStages.map(stage => ({
     orderId: stage.instance.order.id,
     orderNumber: stage.instance.order.orderNumber,
@@ -308,6 +332,12 @@ export async function buildAuthorizedContext(
     assignedTo: stage.assignedMembership?.user.name ?? null,
     dueAt: stage.dueAt?.toISOString() ?? null,
     scheduleKind: JSON.parse(stage.scheduleJson).kind,
+    blockers: (JSON.parse(stage.predecessorKeysJson) as string[]).flatMap(predecessorKey => {
+      const predecessor = lifecycleByKey.get(`${stage.instanceId}:${predecessorKey}`);
+      return predecessor && !['COMPLETED', 'SKIPPED'].includes(predecessor.state)
+        ? [`Waiting for ${predecessor.name} (${predecessor.state.toLowerCase()})`]
+        : [];
+    }),
   }));
 
   // 3. Fetch inventory balances

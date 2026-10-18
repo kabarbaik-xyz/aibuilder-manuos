@@ -217,7 +217,8 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Include actual confirmed Planning bookings for authorized tasks in CoreAI context, with operation, visible resource name and time window; prompts distinguish a booking from general availability.
 - [x] Include finalized form answers only through the existing form read/subject authorization service; omit drafts, attachments and reference IDs, and retain the finalization timestamp. Verified by integration spec.
 - [x] Include evidence provenance/timestamps and distinguish current records, historical snapshots, restricted/missing data and actual totals vs samples. Exclude secrets, unauthorized form fields and unrelated departments' restricted records.
-- [ ] Support contextual questions such as why a stage is blocked, who owns the next action and which validated recovery options exist. Evidence links open readable authorized records, never model-authored URLs.
+- [x] Support contextual questions about why a task/stage is blocked and who owns the next action, using authorized active issues and predecessor states. Evidence links still resolve through readable authorized records, never model-authored URLs.
+- [ ] Include only currently validated recovery options from the existing proposal adapter; do not invent a workaround when no current proposal exists.
 - [ ] AI builder changes apply only to authorized drafts after deterministic schema/catalog validation. Operational AI changes create the existing validated proposal; approval invokes Task8/domain adapters and never direct state mutation.
 - [ ] Test that prompt text cannot change actor/workspace, unlock forms, self-approve schedules or claim unsupported facts. Provider failure produces an honest grounded fallback with no mutation.
 - [ ] Update capabilities/help copy so only connected behaviors are advertised.

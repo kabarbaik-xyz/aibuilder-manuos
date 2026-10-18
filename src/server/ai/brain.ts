@@ -88,10 +88,10 @@ ${context.inventory.map((i) => `  * ${i.itemCode} (${i.itemName}): On Hand: ${i.
 ${(inventoryQuestion ? [] : context.resources).map((r) => `  * ${r.code} (${r.name}, ${r.type}): Status: ${r.status}`).join('\n')}
 
 - Current Order Workflow Stages (${inventoryQuestion ? 'omitted: inventory-only question' : context.lifecycleStages.length}):
-${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.orderNumber}: ${stage.workflowName} v${stage.workflowVersion}, ${stage.name} (${stage.action.replaceAll('_', ' ')}) is ${stage.state.replaceAll('_', ' ').toLowerCase()} in ${stage.department}; owner ${stage.assignedTo ?? 'eligible department queue'}, due ${stage.dueAt ?? 'not set'}, scheduling ${stage.scheduleKind.toLowerCase()}`).join('\n')}
+${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.orderNumber}: ${stage.workflowName} v${stage.workflowVersion}, ${stage.name} (${stage.action.replaceAll('_', ' ')}) is ${stage.state.replaceAll('_', ' ').toLowerCase()} in ${stage.department}; owner ${stage.assignedTo ?? 'eligible department queue'}, due ${stage.dueAt ?? 'not set'}, scheduling ${stage.scheduleKind.toLowerCase()}${stage.blockers.length ? `; waiting on ${stage.blockers.join(', ')}` : ''}`).join('\n')}
 
 - Assigned/Plannable Tasks (${context.tasks.length}):
-${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.orderNumber} / operation ${task.nodeKey}, status ${task.status}, planned ${task.plannedMinutes ?? 'unavailable'} minutes, actual ${task.actualMinutes ?? 'unavailable'} minutes`).join('\n')}
+${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.orderNumber} / operation ${task.nodeKey}, status ${task.status}, planned ${task.plannedMinutes ?? 'unavailable'} minutes, actual ${task.actualMinutes ?? 'unavailable'} minutes${task.blockers.length ? `; blockers: ${task.blockers.map(blocker => `${blocker.severity ? `${blocker.severity} ` : ''}${blocker.summary}${blocker.owner ? ` (owner ${blocker.owner})` : ''}${blocker.expectedResolutionAt ? `, expected ${blocker.expectedResolutionAt}` : ''}`).join('; ')}` : ''}`).join('\n')}
 
 - Confirmed Resource Bookings (${inventoryQuestion ? 'omitted: inventory-only question' : context.confirmedBookings.length}):
 ${(inventoryQuestion ? [] : context.confirmedBookings).map(booking => `  * ${booking.orderNumber} / operation ${booking.operation}: ${booking.resourceName ?? booking.resourceType.toLowerCase()} booked ${booking.startAt} to ${booking.endAt}`).join('\n')}
@@ -111,6 +111,7 @@ Rules:
 - A confirmed booking is an actual reservation for its time window only; do not infer general availability, shift coverage, or a complete schedule from the bounded booking sample.
 - Form evidence contains only finalized answers from form instances the current user can read. Drafts, attachments and reference IDs are omitted; do not treat absent answers as evidence that a requirement was not submitted.
 - For workflow questions: use only the supplied current stage, department, owner, due date, and scheduling policy. A stage state is not proof that its domain action or evidence has completed; use task, QC, and delivery records for those outcomes.
+- For blocker questions: identify only blockers explicitly listed on the task or lifecycle stage. Name the recorded owner and expected resolution time when present. Recovery options may be called validated only when a supplied, current proposal explicitly validates them; otherwise explain the blocker and point to its owner without inventing a workaround.
 - Translate enum values into natural words: IN_PRODUCTION → In production, PARTIALLY_DELIVERED → Partially delivered. Do not print raw status codes, UUIDs, or internal field names.
 - If there is an evidenced issue, finish with one concrete next step. If none is evidenced, do not invent urgency or recommendations. Make missing evidence explicit.
 - State briefly that this covers the accessible sample, not the whole factory. Never present sample counts as workspace totals. Do not claim an item is raw material or finished goods unless context explicitly supports that classification.

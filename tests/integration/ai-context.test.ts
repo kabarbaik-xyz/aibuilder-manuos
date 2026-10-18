@@ -109,12 +109,20 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       name: 'Customer order workflow', kind: 'ORDER_LIFECYCLE',
     }, 'ai-lifecycle-template');
     await workflows.saveVersionDraft(owner.principal, template.data.initialVersionId!, {
-      definition: { schemaVersion: 1, name: 'Customer order workflow', stages: [{
-        key: 'SALES-REVIEW', name: 'Review customer request', action: 'REVIEW_EVIDENCE',
-        departmentId: alpha.masters.departmentId,
-        assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: alpha.masters.departmentId },
-        schedule: { kind: 'DEADLINE', dueAfterMinutes: 240 }, predecessors: [], forms: [],
-      }] },
+      definition: { schemaVersion: 1, name: 'Customer order workflow', stages: [
+        {
+          key: 'SALES-REVIEW', name: 'Review customer request', action: 'REVIEW_EVIDENCE',
+          departmentId: alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: alpha.masters.departmentId },
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 240 }, predecessors: [], forms: [],
+        },
+        {
+          key: 'ENGINEERING-REVIEW', name: 'Review engineering package', action: 'ENGINEERING_APPROVE',
+          departmentId: alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: owner.membershipId, departmentId: alpha.masters.departmentId },
+          schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 }, predecessors: ['SALES-REVIEW'], forms: [],
+        },
+      ] },
     }, 'ai-lifecycle-version');
     await workflows.publishVersion(owner.principal, template.data.initialVersionId!, 'ai-lifecycle-publish');
     const order = await orders.createOrderDraft(owner.principal, {
@@ -128,6 +136,10 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       orderNumber: order.data.orderNumber, workflowName: 'Customer order workflow',
       name: 'Review customer request', department: expect.any(String), assignedTo: expect.any(String),
       state: 'READY', scheduleKind: 'DEADLINE',
+    }));
+    expect(plannerContext.lifecycleStages).toContainEqual(expect.objectContaining({
+      name: 'Review engineering package',
+      blockers: ['Waiting for Review customer request (ready)'],
     }));
     const customerContext = await buildAuthorizedContext(alpha.users.customerUser.principal, fixture.db, { orderId: order.data.id });
     expect(customerContext.lifecycleStages).toEqual([]);
@@ -223,6 +235,24 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     const answer = response.status === 'SUCCESS' ? response.data : response.fallbackData;
     expect(answer?.evidence).toContainEqual(expect.objectContaining({ recordType: 'TASK', recordId: taskId, href: `/planning/tasks/${taskId}` }));
     const taskContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { taskId });
+    await fixture.db.taskIssue.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        taskId,
+        title: 'Fixture blocker',
+        severity: 'CRITICAL',
+        status: 'OPEN',
+        ownerUserId: alpha.users.planner.userId,
+        reporterUserId: alpha.users.owner.userId,
+      },
+    });
+    const blockedTaskContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { taskId });
+    expect(blockedTaskContext.tasks).toContainEqual(expect.objectContaining({
+      id: taskId,
+      blockers: [expect.objectContaining({
+        kind: 'ISSUE', severity: 'CRITICAL', owner: expect.any(String),
+      })],
+    }));
     expect(taskContext.confirmedBookings).toContainEqual(expect.objectContaining({
       orderNumber: order.data.orderNumber,
       operation: 'OP-10',
