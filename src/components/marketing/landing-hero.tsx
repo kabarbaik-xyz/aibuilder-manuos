@@ -40,7 +40,7 @@ export function LandingHero() {
               <Icon name="arrow" className="w-4 h-4" />
             </ButtonLink>
             <ButtonLink href="/login" variant="default" id="hero-signin-button">
-              Sign in
+              Sign In
             </ButtonLink>
           </div>
         </div>

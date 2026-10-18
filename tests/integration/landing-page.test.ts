@@ -69,4 +69,11 @@ describe('Landing Page & Route Resolution', () => {
     expect(result).toBeDefined();
     expect(typeof result).toBe('object');
   });
+
+  it('renders login page component without errors', async () => {
+    const { default: LoginPage } = await import('@/app/(auth)/login/page');
+    const result = LoginPage();
+    expect(result).toBeDefined();
+    expect(typeof result).toBe('object');
+  });
 });

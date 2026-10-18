@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'ManuOS · Manufacturing Orchestration System',
+  title: 'ManuOS · Manufacturing Orchestrating System',
   description: 'ManuOS interactive prototype for manufacturing operations, recovery studio, and factory network.',
   manifest: '/manifest.json',
   icons: {
