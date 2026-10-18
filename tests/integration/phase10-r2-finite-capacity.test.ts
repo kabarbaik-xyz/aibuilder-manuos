@@ -137,6 +137,32 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
     await workflowService.submitReview(owner, draftV1.data.id, 'idemp-wf-p10-rev');
     await workflowService.publishVersion(owner, draftV1.data.id, 'idemp-wf-p10-pub');
 
+    const plannerMembershipId = alpha.users.planner.principal.membershipId;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: alpha.workspaceId, id: plannerMembershipId } },
+      data: { departmentId: alpha.masters.departmentId },
+    });
+    const lifecycleTemplate = await workflowService.createTemplate(owner, {
+      orderTypeId: alpha.masters.orderTypeId,
+      code: 'WF-P10-LIFECYCLE',
+      name: 'Planning lifecycle integration',
+      kind: 'ORDER_LIFECYCLE',
+    }, 'p10-lifecycle-template');
+    await workflowService.saveVersionDraft(owner, lifecycleTemplate.data.initialVersionId!, {
+      definition: {
+        schemaVersion: 1,
+        name: 'Planning lifecycle integration',
+        stages: [{
+          key: 'PLAN', name: 'Schedule released work', action: 'PLAN_PRODUCTION',
+          departmentId: alpha.masters.departmentId,
+          assignment: { kind: 'MEMBER', membershipId: plannerMembershipId, departmentId: alpha.masters.departmentId },
+          schedule: { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' },
+          predecessors: [], forms: [],
+        }],
+      },
+    }, 'p10-lifecycle-draft');
+    await workflowService.publishVersion(owner, lifecycleTemplate.data.initialVersionId!, 'p10-lifecycle-publish');
+
     // 5. Create Order and release
     const orderRes = await orderService.createOrderDraft(
       owner,
@@ -146,6 +172,7 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
         itemId: alpha.masters.fgItemId,
         orderedQuantity: 10,
         requestedDate: '2026-11-20T17:00:00.000Z',
+        lifecycleWorkflowVersionId: lifecycleTemplate.data.initialVersionId,
       },
       'idemp-order-p10-01'
     );
@@ -437,6 +464,17 @@ describe('Phase 10: R2 Finite Capacity, Feasible Promises & Factory Memory', () 
       expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, status: 'CONFIRMED' } })).toBe(4);
       expect(await fixture.db.workflowEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'SCHEDULE_PROPOSAL_APPLY' } })).toBe(2);
       expect(await fixture.db.auditEvent.count({ where: { workspaceId: alpha.workspaceId, action: 'planning.schedule-proposal.apply' } })).toBe(1);
+      const lifecycleStage = await fixture.db.orderLifecycleStage.findFirstOrThrow({
+        where: { workspaceId: alpha.workspaceId, instance: { orderId: testOrderId }, stageKey: 'PLAN' },
+      });
+      expect(lifecycleStage.state).toBe('COMPLETED');
+      expect(await fixture.db.orderLifecycleEvent.count({
+        where: { workspaceId: alpha.workspaceId, stageId: lifecycleStage.id, eventType: 'STAGE_COMPLETED' },
+      })).toBe(1);
+      const lifecycleEvent = await fixture.db.orderLifecycleEvent.findFirstOrThrow({
+        where: { workspaceId: alpha.workspaceId, stageId: lifecycleStage.id, eventType: 'STAGE_COMPLETED' },
+      });
+      expect(JSON.parse(lifecycleEvent.detailJson)).toEqual({ action: 'PLAN_PRODUCTION', completionFact: 'SCHEDULE_PROPOSAL_APPLIED' });
 
       await fixture.db.resourceBooking.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] } } });
       await fixture.db.workflowEvent.deleteMany({ where: { workspaceId: alpha.workspaceId, taskId: { in: [task1Id, task2Id] }, action: 'SCHEDULE_PROPOSAL_APPLY' } });
