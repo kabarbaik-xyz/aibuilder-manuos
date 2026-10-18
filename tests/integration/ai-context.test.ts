@@ -392,14 +392,14 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       scheduledTaskCount: expect.any(Number), evaluatedAt: expect.any(String), status: expect.any(String),
     }));
     expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId } })).toBe(bookingCountBeforeFreshPreview);
-    const recoveryAnswer = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'What is the recovery review status?', { type: 'ORDER', id: order.data.id });
+    const recoveryAnswer = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'Apa status review jadwal dan apa yang perlu dicek?', { type: 'ORDER', id: order.data.id });
     const recoveryAnswerData = recoveryAnswer.status === 'SUCCESS' ? recoveryAnswer.data : recoveryAnswer.fallbackData;
     expect(recoveryAnswerData?.answer).toContain('awaiting approval');
     expect(recoveryAnswerData?.answer).toContain('revalidated before apply');
     await fixture.db.task.update({ where: { id: taskId }, data: { version: { increment: 1 } } });
     const staleRecoveryContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { orderId: order.data.id });
     expect(staleRecoveryContext.recoveryReviews).toEqual([]);
-    const staleRecoveryAnswer = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'What recovery options are validated?', { type: 'ORDER', id: order.data.id });
+    const staleRecoveryAnswer = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'Opsi pemulihan jadwal apa yang tervalidasi?', { type: 'ORDER', id: order.data.id });
     const staleRecoveryAnswerData = staleRecoveryAnswer.status === 'SUCCESS' ? staleRecoveryAnswer.data : staleRecoveryAnswer.fallbackData;
     expect(staleRecoveryAnswerData?.answer).toMatch(/no current pending schedule review/i);
     expect(staleRecoveryAnswerData?.answer).toMatch(/fresh finite-capacity preview/i);

@@ -44,7 +44,7 @@ export class ProductionBrainService {
     ]);
 
     const startTime = Date.now();
-    const asksRecovery = /recover|reschedul|schedule review/i.test(question);
+    const asksRecovery = /recover|reschedul|schedule review|jadwal|penjadwalan|pemulihan/i.test(question);
     const context = await buildAuthorizedContext(principal, this.prisma, scopedRecord
       ? scopedRecord.type === 'ORDER' ? { orderId: scopedRecord.id, evaluateRecovery: asksRecovery }
         : scopedRecord.type === 'ITEM' ? { itemId: scopedRecord.id }
@@ -200,7 +200,7 @@ Rules:
     const q = question.toLowerCase();
     const activeOrders = context.orders.filter((o) => !['DELIVERED', 'CANCELLED', 'DRAFT'].includes(o.status));
     const readableStatus = (status: string) => status.toLowerCase().replaceAll('_', ' ');
-    if (/recover|reschedul|schedule review/i.test(q)) {
+    if (/recover|reschedul|schedule review|jadwal|penjadwalan|pemulihan/i.test(q)) {
       const evaluation = context.currentRecoveryEvaluation;
       if (evaluation) {
         const reviews = context.recoveryReviews.filter(review => review.orderNumber === evaluation.orderNumber).slice(0, 2);
