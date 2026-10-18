@@ -109,9 +109,20 @@ export interface AuthorizedContextRecoveryReview {
   mustRevalidateBeforeApply: true;
 }
 
+export interface AuthorizedContextQcSummary {
+  orderNumber: string;
+  finalizedInspections: number;
+  inspectedQty: string;
+  passedQty: string;
+  reworkQty: string;
+  scrappedQty: string;
+  dispositions: string[];
+  latestFinalizedAt: string;
+}
+
 export interface AuthorizedContext {
   snapshotCapturedAt: string;
-  coverage: Record<'orders' | 'tasks' | 'confirmedBookings' | 'submittedFormEvidence' | 'inventory' | 'resources' | 'lifecycleStages' | 'recoveryReviews', {
+  coverage: Record<'orders' | 'tasks' | 'confirmedBookings' | 'submittedFormEvidence' | 'inventory' | 'resources' | 'lifecycleStages' | 'recoveryReviews' | 'qcSummaries', {
     status: 'AVAILABLE' | 'EMPTY' | 'RESTRICTED';
     includedCount: number;
     limit: number;
@@ -127,6 +138,7 @@ export interface AuthorizedContext {
   resources: AuthorizedContextResource[];
   lifecycleStages: AuthorizedContextLifecycleStage[];
   recoveryReviews: AuthorizedContextRecoveryReview[];
+  qcSummaries: AuthorizedContextQcSummary[];
   disruptions: AuthorizedContextDisruption[];
   evidenceIndex: string[]; // Serialized valid IDs, order numbers, part numbers, machine codes
   contextHash: string;
@@ -395,6 +407,57 @@ export async function buildAuthorizedContext(
     }),
   }));
 
+  // QC is internal operational evidence. Limit it to already-authorized orders
+  // and require the quality permission; customer order access never exposes QC.
+  const canReadQc = !effectiveCustomerId && principal.permissions.has('quality.read') && orders.length > 0;
+  const qcInspections = canReadQc ? await prisma.inspection.findMany({
+    where: {
+      workspaceId,
+      status: 'FINALIZED',
+      sourceType: 'PRODUCTION_OUTPUT',
+      reinspectionOfId: null,
+      productionOutput: { task: { instance: { orderId: { in: orders.map(order => order.id) } } } },
+    },
+    select: {
+      inspectedAtoms: true, passedAtoms: true, reworkAtoms: true, scrappedAtoms: true,
+      disposition: true, updatedAt: true,
+      productionOutput: {
+        select: {
+          task: {
+            select: {
+              instance: { select: { order: { select: { orderNumber: true } } } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    take: 100,
+  }) : [];
+  const qcByOrder = new Map<string, { count: number; inspected: bigint; passed: bigint; rework: bigint; scrapped: bigint; dispositions: Set<string>; latest: Date }>();
+  for (const inspection of qcInspections) {
+    const orderNumber = inspection.productionOutput?.task.instance.order.orderNumber;
+    if (!orderNumber) continue;
+    const summary = qcByOrder.get(orderNumber) ?? {
+      count: 0, inspected: 0n, passed: 0n, rework: 0n, scrapped: 0n,
+      dispositions: new Set<string>(), latest: inspection.updatedAt,
+    };
+    summary.count += 1;
+    summary.inspected += inspection.inspectedAtoms;
+    summary.passed += inspection.passedAtoms;
+    summary.rework += inspection.reworkAtoms;
+    summary.scrapped += inspection.scrappedAtoms;
+    if (inspection.disposition) summary.dispositions.add(inspection.disposition);
+    if (inspection.updatedAt > summary.latest) summary.latest = inspection.updatedAt;
+    qcByOrder.set(orderNumber, summary);
+  }
+  const qcSummaries: AuthorizedContextQcSummary[] = [...qcByOrder].map(([orderNumber, summary]) => ({
+    orderNumber, finalizedInspections: summary.count,
+    inspectedQty: formatQuantity(summary.inspected), passedQty: formatQuantity(summary.passed),
+    reworkQty: formatQuantity(summary.rework), scrappedQty: formatQuantity(summary.scrapped),
+    dispositions: [...summary.dispositions].sort(), latestFinalizedAt: summary.latest.toISOString(),
+  }));
+
   // A recovery review is useful to AI only while its persisted order, active job,
   // workflow/engineering pins and complete open-task version set still match.
   // Applying it always performs the authoritative live capacity revalidation.
@@ -571,6 +634,7 @@ export async function buildAuthorizedContext(
     resources: { status: !canReadResources ? 'RESTRICTED' as const : resources.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: resources.length, limit: 20, sampled: machines.length === 10 || technicians.length === 10 },
     lifecycleStages: { status: effectiveCustomerId || !canReadOrders ? 'RESTRICTED' as const : dbLifecycleStages.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbLifecycleStages.length, limit: 60, sampled: dbLifecycleStages.length === 60 },
     recoveryReviews: { status: !canReadRecoveryReviews ? 'RESTRICTED' as const : recoveryReviews.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: recoveryReviews.length, limit: 20, sampled: pendingRecoveryRows.length === 20 },
+    qcSummaries: { status: !canReadQc ? 'RESTRICTED' as const : qcSummaries.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: qcSummaries.length, limit: 100, sampled: qcInspections.length === 100 },
   };
 
   // Deterministic context hash
@@ -588,6 +652,7 @@ export async function buildAuthorizedContext(
     resources,
     lifecycleStages,
     recoveryReviews,
+    qcSummaries,
     coverage,
     evidenceIndex: [...evidenceSet].sort(),
   };
@@ -609,6 +674,7 @@ export async function buildAuthorizedContext(
     resources,
     lifecycleStages,
     recoveryReviews,
+    qcSummaries,
     disruptions,
     evidenceIndex: Array.from(evidenceSet),
     contextHash,

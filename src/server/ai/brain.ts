@@ -57,7 +57,7 @@ export class ProductionBrainService {
     }
 
     const model = process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest';
-    const promptVersion = 'brain-qa-v11-pinned-lifecycle-forms';
+    const promptVersion = 'brain-qa-v12-lifecycle-qc-facts';
     const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
     // 1. Check scoped cache
@@ -93,6 +93,9 @@ ${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.o
 - Pending Recovery Reviews (${inventoryQuestion ? 'omitted: inventory-only question' : context.recoveryReviews.length}):
 ${(inventoryQuestion ? [] : context.recoveryReviews).map(review => `  * ${review.orderNumber}: saved finite-capacity schedule review projects completion ${review.projectedEndAt}; evaluated ${review.evaluatedAt}; ${review.taskCount} task(s); pending human approval. Its saved snapshot matches current order/job/task versions, but capacity, materials and qualifications must be revalidated before apply.`).join('\n')}
 
+- Initial finalized QC summaries (${inventoryQuestion ? 'omitted: inventory-only question' : context.qcSummaries.length}; excludes follow-up reinspections to avoid counting the same rework twice):
+${(inventoryQuestion ? [] : context.qcSummaries).map(qc => `  * ${qc.orderNumber}: ${qc.finalizedInspections} initial inspection(s), ${qc.inspectedQty} inspected, ${qc.passedQty} passed, ${qc.reworkQty} rework, ${qc.scrappedQty} scrapped; disposition(s) ${qc.dispositions.join(', ') || 'not recorded'}; latest finalized ${qc.latestFinalizedAt}.`).join('\n')}
+
 - Assigned/Plannable Tasks (${context.tasks.length}):
 ${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.orderNumber} / operation ${task.nodeKey}, status ${task.status}, planned ${task.plannedMinutes ?? 'unavailable'} minutes, actual ${task.actualMinutes ?? 'unavailable'} minutes${task.blockers.length ? `; blockers: ${task.blockers.map(blocker => `${blocker.severity ? `${blocker.severity} ` : ''}${blocker.summary}${blocker.owner ? ` (owner ${blocker.owner})` : ''}${blocker.expectedResolutionAt ? `, expected ${blocker.expectedResolutionAt}` : ''}`).join('; ')}` : ''}`).join('\n')}
 
@@ -114,6 +117,7 @@ Rules:
 - A confirmed booking is an actual reservation for its time window only; do not infer general availability, shift coverage, or a complete schedule from the bounded booking sample.
 - Form evidence contains only finalized answers from form instances the current user can read. Drafts, attachments and reference IDs are omitted; do not treat absent answers as evidence that a requirement was not submitted.
 - For workflow questions: use only the supplied current stage, department, owner, due date, and scheduling policy. A stage state is not proof that its domain action or evidence has completed; use task, QC, and delivery records for those outcomes.
+- For QC questions: use only finalized QC summaries and their recorded quantities/dispositions. Do not infer pass rates or treat open inspections as finalized evidence.
 - For blocker questions: identify only blockers explicitly listed on the task or lifecycle stage. Name the recorded owner and expected resolution time when present. Recovery options may be called validated only when a supplied, current proposal explicitly validates them; otherwise explain the blocker and point to its owner without inventing a workaround.
 - A pending Recovery schedule review is a saved proposal, not an approved change or a guarantee of current capacity. State that human approval and live apply-time revalidation are still required; do not describe unavailable alternative strategies as evaluated.
 - Translate enum values into natural words: IN_PRODUCTION → In production, PARTIALLY_DELIVERED → Partially delivered. Do not print raw status codes, UUIDs, or internal field names.
@@ -201,6 +205,18 @@ Rules:
       };
     }
     const selectedOrder = scopedRecord?.type === 'ORDER' ? context.orders.find(order => order.id === scopedRecord.id) : undefined;
+    if (selectedOrder && /quality|qc|inspection|inspected|rework|scrap|passed/i.test(q)) {
+      const qc = context.qcSummaries.find(summary => summary.orderNumber === selectedOrder.orderNumber);
+      const qcRestricted = context.coverage.qcSummaries.status === 'RESTRICTED';
+      return {
+        answer: qc
+          ? `${selectedOrder.orderNumber} has ${qc.finalizedInspections} initial finalized QC inspection(s).\n\n### Recorded quantities\n- Inspected: ${qc.inspectedQty}; passed: ${qc.passedQty}.\n- Rework: ${qc.reworkQty}; scrapped: ${qc.scrappedQty}.\n- Disposition: ${qc.dispositions.join(', ') || 'not recorded'}; latest finalization: ${qc.latestFinalizedAt}.\n- Follow-up reinspections are excluded from these initial quantities.\n\nThis covers the accessible QC sample for the selected order.`
+          : qcRestricted
+            ? `QC details for ${selectedOrder.orderNumber} are restricted for this account.`
+            : `No finalized production QC inspection is present in the accessible snapshot for ${selectedOrder.orderNumber}. Open inspections are not included as finalized evidence.`,
+        evidenceRefs: [selectedOrder.orderNumber], linkToScreen: 'quality',
+      };
+    }
     if (selectedOrder) return {
       answer: `${selectedOrder.orderNumber} is ${readableStatus(selectedOrder.status)}.\n\n### Order details\n- Item: ${selectedOrder.itemCode}.\n- Ordered quantity: ${selectedOrder.orderedQty}.\n- Promised delivery: ${selectedOrder.promisedDate ?? 'Not committed'}.\n\nThis summary covers the selected order only.`,
       evidenceRefs: [selectedOrder.orderNumber, selectedOrder.itemCode], linkToScreen: 'orchestrator',

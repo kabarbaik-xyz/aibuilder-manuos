@@ -331,6 +331,30 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       answers: [{ field: 'Setup notes', value: 'Clamp inspected and secured.' }],
     }));
 
+    const output = await fixture.db.productionOutput.create({ data: {
+      workspaceId: alpha.workspaceId, taskId, itemId: alpha.masters.fgItemId,
+      outputAtoms: 3_000_000n, destinationLocationId: alpha.masters.quarantineLocationId,
+      operatorUserId: alpha.users.operator.userId,
+    } });
+    await fixture.db.inspection.create({ data: {
+      workspaceId: alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', productionOutputId: output.id,
+      inspectedAtoms: 3_000_000n, passedAtoms: 2_000_000n, reworkAtoms: 500_000n,
+      scrappedAtoms: 500_000n, status: 'FINALIZED', disposition: 'PARTIAL',
+      inspectorUserId: alpha.users.qc.userId, updatedAt: new Date('2026-12-19T00:30:00.000Z'),
+    } });
+    const qcContext = await buildAuthorizedContext(alpha.users.owner.principal, fixture.db, { orderId: order.data.id });
+    expect(qcContext.qcSummaries).toContainEqual({
+      orderNumber: order.data.orderNumber, finalizedInspections: 1, inspectedQty: '3', passedQty: '2',
+      reworkQty: '0.5', scrappedQty: '0.5', dispositions: ['PARTIAL'],
+      latestFinalizedAt: '2026-12-19T00:30:00.000Z',
+    });
+    const qcAnswer = await brainService.answerProductionQuestion(alpha.users.owner.principal, 'What is the QC result?', { type: 'ORDER', id: order.data.id });
+    const qcAnswerData = qcAnswer.status === 'SUCCESS' ? qcAnswer.data : qcAnswer.fallbackData;
+    expect(qcAnswerData?.answer).toMatch(/QC|inspection|inspected/i);
+    const customerQcContext = await buildAuthorizedContext(alpha.users.customerUser.principal, fixture.db, { orderId: order.data.id });
+    expect(customerQcContext.qcSummaries).toEqual([]);
+    expect(customerQcContext.coverage.qcSummaries.status).toBe('RESTRICTED');
+
     const task = await fixture.db.task.findUniqueOrThrow({ where: { id: taskId }, include: { instance: true } });
     const recoverySnapshot = {
       id: 'ai-recovery-review', orderId: order.data.id, orderNumber: order.data.orderNumber,
