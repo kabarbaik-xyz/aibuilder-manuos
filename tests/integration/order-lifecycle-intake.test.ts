@@ -300,6 +300,7 @@ describe('order lifecycle intake', () => {
     expect(stagesBefore.find(stage => stage.stageKey === 'REVIEW')?.dueAt).toBeNull();
 
     await orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-deadline-confirm');
+    await orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-deadline-confirm');
     const review = await fixture.db.orderLifecycleStage.findFirstOrThrow({
       where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id }, stageKey: 'REVIEW' },
     });
@@ -310,6 +311,9 @@ describe('order lifecycle intake', () => {
       where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id }, eventType: 'STAGE_COMPLETED' },
     });
     expect(JSON.parse(completedEvent.detailJson)).toEqual({ action: 'ORDER_CONFIRM', completionFact: 'ORDER_CONFIRMED' });
+    expect(await fixture.db.orderLifecycleEvent.count({
+      where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id }, eventType: 'STAGE_COMPLETED' },
+    })).toBe(1);
   });
 
   it('routes a published lifecycle from finalized order-form answers and skips the other branch', async () => {
