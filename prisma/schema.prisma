@@ -1162,6 +1162,7 @@ model OrderLifecycleStage {
   scheduleJson          String   @map("schedule_json")
   formPinsJson          String   @default("[]") @map("form_pins_json")
   predecessorKeysJson   String   @default("[]") @map("predecessor_keys_json")
+  activationConditionJson String @default("null") @map("activation_condition_json")
   state                 String   @default("PENDING") // PENDING | READY | ACTIVE | BLOCKED | WAITING_APPROVAL | COMPLETED | SKIPPED | CANCELLED
   assignedMembershipId String?  @map("assigned_membership_id")
   dueAt                 DateTime? @map("due_at")

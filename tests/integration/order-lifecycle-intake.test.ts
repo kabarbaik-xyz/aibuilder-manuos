@@ -287,4 +287,79 @@ describe('order lifecycle intake', () => {
     expect(review.dueAt?.getTime()).toBeGreaterThanOrEqual(Date.now() + 29 * 60_000);
     expect(review.dueAt?.getTime()).toBeLessThanOrEqual(Date.now() + 30 * 60_000);
   });
+
+  it('routes a published lifecycle from finalized order-form answers and skips the other branch', async () => {
+    const owner = fixture.alpha.users.owner;
+    await fixture.db.membership.update({
+      where: { workspaceId_id: { workspaceId: fixture.alpha.workspaceId, id: owner.membershipId } },
+      data: { departmentId: fixture.alpha.masters.departmentId },
+    });
+    const forms = new FormService(fixture.db);
+    const submissions = new FormSubmissionService(fixture.db);
+    const form = await forms.createTemplate(owner.principal, {
+      code: 'LIFECYCLE_BRANCH_SPEC', name: 'Order path selection', purpose: 'ORDER_SPEC',
+    }, 'lifecycle-branch-form-create');
+    await forms.updateDraftVersion(owner.principal, form.templateId, form.versionId, {
+      expectedVersion: 1,
+      definition: {
+        schemaVersion: 1, purpose: 'ORDER_SPEC', fields: [{
+          key: 'order_path', label: 'Order path', kind: 'select', required: true,
+          options: [{ value: 'standard', label: 'Standard' }, { value: 'custom', label: 'Custom' }],
+        }],
+      },
+    }, 'lifecycle-branch-form-draft');
+    const published = await forms.publishFormVersion(owner.principal, {
+      templateId: form.templateId, versionId: form.versionId, expectedVersion: 2,
+    }, 'lifecycle-branch-form-publish');
+    const workflow = await workflowService.createTemplate(owner.principal, {
+      orderTypeId: fixture.alpha.masters.orderTypeId, code: 'LIFECYCLE-CONDITIONAL-BRANCH',
+      name: 'Conditional order path', kind: 'ORDER_LIFECYCLE',
+    }, 'lifecycle-branch-workflow-create');
+    const assigned = (key: string) => ({
+      key, name: key, action: 'REVIEW_EVIDENCE' as const,
+      departmentId: fixture.alpha.masters.departmentId,
+      assignment: { kind: 'MEMBER' as const, membershipId: owner.membershipId, departmentId: fixture.alpha.masters.departmentId },
+      schedule: { kind: 'DEADLINE' as const, dueAfterMinutes: 60 },
+    });
+    await workflowService.saveVersionDraft(owner.principal, workflow.data.initialVersionId!, {
+      definition: {
+        schemaVersion: 1, name: 'Conditional order path', stages: [
+          {
+            ...assigned('SALES'), name: 'Confirm order', action: 'ORDER_CONFIRM' as const,
+            predecessors: [], forms: [{ formVersionId: published.versionId, contentHash: published.hash, required: true, completionPoint: 'BEFORE_ACTION' as const }],
+          },
+          {
+            ...assigned('STANDARD'), predecessors: ['SALES'], forms: [],
+            activationCondition: { sourceStageKey: 'SALES', formVersionId: published.versionId, fieldKey: 'order_path', operator: 'EQUALS' as const, value: 'standard' },
+          },
+          {
+            ...assigned('CUSTOM'), predecessors: ['SALES'], forms: [],
+            activationCondition: { sourceStageKey: 'SALES', formVersionId: published.versionId, fieldKey: 'order_path', operator: 'EQUALS' as const, value: 'custom' },
+          },
+          { ...assigned('END'), predecessors: ['STANDARD', 'CUSTOM'], forms: [] },
+        ],
+      },
+    }, 'lifecycle-branch-workflow-draft');
+    await workflowService.publishVersion(owner.principal, workflow.data.initialVersionId!, 'lifecycle-branch-workflow-publish');
+    const order = await orderService.createOrderDraft(owner.principal, {
+      customerId: fixture.alpha.masters.customerId, orderTypeId: fixture.alpha.masters.orderTypeId,
+      itemId: fixture.alpha.masters.fgItemId, orderedQuantity: '1', requestedDate: '2026-11-01T00:00:00.000Z',
+      lifecycleWorkflowVersionId: workflow.data.initialVersionId,
+    }, 'lifecycle-branch-order-create');
+    const formInstance = await fixture.db.formInstance.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, subjectType: 'ORDER', subjectId: order.data.id, formVersionId: published.versionId },
+    });
+    await submissions.finalizeSubmission(owner.principal, {
+      instanceId: formInstance.id, expectedVersion: 1, answers: { order_path: 'standard' },
+    }, 'lifecycle-branch-form-submit');
+
+    await orderService.confirmOrder(owner.principal, order.data.id, 'lifecycle-branch-confirm');
+    const stages = await fixture.db.orderLifecycleStage.findMany({
+      where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id } },
+    });
+    expect(stages.map(({ stageKey, state }) => [stageKey, state]).sort(([left], [right]) => String(left).localeCompare(String(right)))).toEqual([
+      ['CUSTOM', 'SKIPPED'], ['END', 'PENDING'],
+      ['SALES', 'COMPLETED'], ['STANDARD', 'READY'],
+    ]);
+  });
 });

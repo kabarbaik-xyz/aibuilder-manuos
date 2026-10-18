@@ -20,8 +20,9 @@ Not ready to serve as the end-to-end, cross-department order lifecycle engine. W
 |---|---|---|
 | Visual workflow editor | Canvas/list and node properties, graph validation, department, planned duration, machine/skill/cert requirements | Usable routing foundation |
 | Workflow publish/version/fork | Immutable published editing path, hashes, command wrapper, instance version pin | Usable foundation; publish can go directly from DRAFT |
-| Sequential/parallel dependencies | DAG runtime and AND predecessors | Present; conditional/XOR decisions and loops not established |
-| Dynamic conditions | conditionCode/conditionParams stored and carried through canvas | Partial: no operational evaluator found consuming those conditions |
+| Sequential/parallel dependencies | DAG runtime and AND predecessors | Present for production routing |
+| Lifecycle branch conditions | Typed lifecycle stage condition, required pinned ORDER_SPEC select field, finalized answer evaluation, explicit skipped stages | Partial: simple single-level equality/inequality/list matching only; nested conditions, rejection and rework transitions remain unsupported |
+| Dynamic production-routing conditions | conditionCode/conditionParams stored and carried through canvas | Partial: no operational evaluator found consuming those routing-edge conditions |
 | Department ownership | departmentId stored on workflow node | Partial: not a complete department queue/assignment policy |
 | PIC/role assignment | requiredPermission stored; actual execution assignment is technician/machine based | Missing general member/team ownership, fallback/escalation and stage-specific task dispatch |
 | Stage types/actions | OPERATION / INSPECTION / APPROVAL in contracts | Partial: not explicit lifecycle actions for sales intake, engineering approval, planning, shipping etc. Labels alone do not supply handlers |

@@ -17,6 +17,8 @@ interface DepartmentOption { id: string; name: string }
 interface RoleOption { id: string; code: string; name: string; isActive: boolean }
 interface MemberOption { membershipId: string; name: string; roles: Array<{ code: string; name: string }> }
 interface FormOption { id: string; code: string; name: string; purpose: string; publishedVersion?: { id: string; versionNumber: number; contentHash: string } }
+interface FormFieldOption { key: string; label: string; kind: string; options?: Array<{ value: string; label: string }> }
+interface FormVersionDetail { id: string; definition: { fields: FormFieldOption[] } }
 
 const actionLabels: Record<LifecycleAction, string> = {
   ORDER_CONFIRM: 'Confirm customer order', ENGINEERING_APPROVE: 'Approve engineering',
@@ -37,6 +39,18 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
   const readOnly = version.status === 'PUBLISHED' || version.status === 'RETIRED';
   const roles = useQuery({ queryKey: ['workflow-lifecycle-roles'], queryFn: () => apiRequest<{ data: RoleOption[] }>('/api/roles') });
   const forms = useQuery({ queryKey: ['workflow-lifecycle-forms'], queryFn: () => apiRequest<{ data: FormOption[] }>('/api/forms') });
+  const formDefinitions = useQuery({
+    queryKey: ['workflow-lifecycle-form-definitions', forms.data?.data.map(form => form.publishedVersion?.id ?? '').join('|')],
+    queryFn: async () => {
+      const publishedForms = (forms.data?.data ?? []).filter(form => form.publishedVersion);
+      const results = await Promise.all(publishedForms.map(async form => {
+        const response = await apiRequest<{ data: { versions: FormVersionDetail[] } }>(`/api/forms/${form.id}`);
+        return [form.publishedVersion!.id, response.data.versions.find(version => version.id === form.publishedVersion!.id)?.definition] as const;
+      }));
+      return new Map(results.filter(([, definition]) => Boolean(definition)).map(([id, definition]) => [id, definition!]));
+    },
+    enabled: Boolean(forms.data?.data.length),
+  });
   const members = useQuery({
     queryKey: ['workflow-lifecycle-members', definition.stages.map(stage => stage.departmentId).join('|')],
     queryFn: async () => {
@@ -81,6 +95,13 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
     const purposes = action === 'FINALIZE_QC' ? ['QC_EVIDENCE'] : action === 'ORDER_CONFIRM' || action === 'ENGINEERING_APPROVE' || action === 'CONFIRM_DELIVERY' || action === 'REVIEW_EVIDENCE' ? ['ORDER_SPEC'] : ['TASK_EVIDENCE'];
     return (forms.data?.data ?? []).filter(form => purposes.includes(form.purpose) && form.publishedVersion);
   };
+  const branchSourceForms = (stage: OrderLifecycleDefinition['stages'][number]) => definition.stages
+    .filter(candidate => stage.predecessors.includes(candidate.key))
+    .flatMap(source => source.forms
+      .filter(pin => forms.data?.data.find(form => form.publishedVersion?.id === pin.formVersionId)?.purpose === 'ORDER_SPEC')
+      .map(pin => ({ source, pin, fields: formDefinitions.data?.get(pin.formVersionId)?.fields.filter(field => field.kind === 'select') ?? [] })));
+  const updateBranchCondition = (key: string, condition: NonNullable<OrderLifecycleDefinition['stages'][number]['activationCondition']> | undefined) =>
+    updateStage(key, current => ({ ...current, activationCondition: condition }));
   const toggleForm = (key: string, form: FormOption) => updateStage(key, stage => {
     const formVersionId = form.publishedVersion?.id;
     if (!formVersionId || !form.publishedVersion) return stage;
@@ -132,6 +153,70 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
             <div className="page-stack"><FormField id={`${stage.key}-schedule`} label="Scheduling policy"><Select value={stage.schedule.kind} onChange={event => updateStage(stage.key, current => ({ ...current, schedule: event.target.value === 'RESOURCE_CAPACITY' ? { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' } : { kind: 'DEADLINE', dueAfterMinutes: 480 } }))} disabled={readOnly || stage.action === 'PLAN_PRODUCTION' || stage.action === 'EXECUTE_PRODUCTION'}><option value="DEADLINE">Owner deadline</option><option value="RESOURCE_CAPACITY">Production capacity from approved routing</option></Select></FormField>{stage.schedule.kind === 'DEADLINE' && <FormField id={`${stage.key}-deadline`} label="Deadline (minutes)"><Input type="number" min={1} value={stage.schedule.dueAfterMinutes} onChange={event => updateStage(stage.key, current => ({ ...current, schedule: { kind: 'DEADLINE', dueAfterMinutes: Number(event.target.value) } }))} disabled={readOnly} /></FormField>}</div>
             <fieldset><legend className="form-label">Starts after</legend><div className="grid gap-2 sm:grid-cols-2">{definition.stages.filter(candidate => candidate.key !== stage.key).map(candidate => <label key={candidate.key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stage.predecessors.includes(candidate.key)} onChange={event => updateStage(stage.key, current => ({ ...current, predecessors: event.target.checked ? [...current.predecessors, candidate.key] : current.predecessors.filter(key => key !== candidate.key) }))} disabled={readOnly} />{candidate.name}</label>)}</div></fieldset>
           </div>
+          <fieldset className="rounded-lg border border-line p-3">
+            <legend className="form-label px-1">Branch routing</legend>
+            <p className="field-help">A condition reads a finalized select answer from a pinned order form on a direct predecessor. If it does not match, this stage is skipped.</p>
+            <FormField id={`${stage.key}-branch-mode`} label="When this stage becomes eligible">
+              <Select value={stage.activationCondition ? 'condition' : 'always'} onChange={event => {
+                if (event.target.value === 'always') updateBranchCondition(stage.key, undefined);
+                else if (!stage.activationCondition) {
+                  const first = branchSourceForms(stage)[0];
+                  if (first?.fields[0]) updateBranchCondition(stage.key, {
+                    sourceStageKey: first.source.key, formVersionId: first.pin.formVersionId,
+                    fieldKey: first.fields[0].key, operator: 'EQUALS', value: first.fields[0].options?.[0]?.value ?? '',
+                  });
+                }
+              }} disabled={readOnly}>
+                <option value="always">Always, after predecessors finish</option>
+                <option value="condition" disabled={!branchSourceForms(stage).some(option => option.fields.length)}>Only when a form answer matches</option>
+              </Select>
+            </FormField>
+            {stage.activationCondition && <div className="form-grid mt-3">
+              <FormField id={`${stage.key}-branch-source`} label="Predecessor form" required>
+                <Select value={`${stage.activationCondition.sourceStageKey}|${stage.activationCondition.formVersionId}`} onChange={event => {
+                  const selected = branchSourceForms(stage).find(option => `${option.source.key}|${option.pin.formVersionId}` === event.target.value);
+                  if (selected?.fields[0]) updateBranchCondition(stage.key, {
+                    ...stage.activationCondition!, sourceStageKey: selected.source.key, formVersionId: selected.pin.formVersionId,
+                    fieldKey: selected.fields[0].key, value: selected.fields[0].options?.[0]?.value ?? '',
+                  });
+                }} disabled={readOnly || formDefinitions.isPending}>
+                  {branchSourceForms(stage).map(option => <option key={`${option.source.key}|${option.pin.formVersionId}`} value={`${option.source.key}|${option.pin.formVersionId}`}>{option.source.name} · {forms.data?.data.find(form => form.publishedVersion?.id === option.pin.formVersionId)?.name}</option>)}
+                </Select>
+              </FormField>
+              {(() => {
+                const selected = branchSourceForms(stage).find(option => option.source.key === stage.activationCondition?.sourceStageKey && option.pin.formVersionId === stage.activationCondition?.formVersionId);
+                const fields = selected?.fields ?? [];
+                const field = fields.find(option => option.key === stage.activationCondition?.fieldKey) ?? fields[0];
+                const values = field?.options ?? [];
+                return <>
+                  <FormField id={`${stage.key}-branch-field`} label="Form question" required>
+                    <Select value={stage.activationCondition!.fieldKey} onChange={event => {
+                      const nextField = fields.find(option => option.key === event.target.value);
+                      updateBranchCondition(stage.key, { ...stage.activationCondition!, fieldKey: event.target.value, value: nextField?.options?.[0]?.value ?? '' });
+                    }} disabled={readOnly || !fields.length}>
+                      {fields.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+                    </Select>
+                  </FormField>
+                  <FormField id={`${stage.key}-branch-operator`} label="Answer rule" required>
+                    <Select value={stage.activationCondition!.operator} onChange={event => updateBranchCondition(stage.key, { ...stage.activationCondition!, operator: event.target.value as 'EQUALS' | 'NOT_EQUALS' | 'IN', value: event.target.value === 'IN' ? [values[0]?.value ?? ''] : values[0]?.value ?? '' })} disabled={readOnly}>
+                      <option value="EQUALS">is</option><option value="NOT_EQUALS">is not</option><option value="IN">is one of</option>
+                    </Select>
+                  </FormField>
+                  <FormField id={`${stage.key}-branch-value`} label="Answer value" required>
+                    {stage.activationCondition!.operator === 'IN' ? <div className="grid gap-2 rounded-lg border border-line p-3">
+                      {values.map(option => <label key={option.value} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Array.isArray(stage.activationCondition!.value) && stage.activationCondition!.value.includes(option.value)} onChange={event => {
+                        const currentValues = Array.isArray(stage.activationCondition!.value) ? stage.activationCondition!.value : [];
+                        const nextValues = event.target.checked ? [...currentValues, option.value] : currentValues.filter(value => value !== option.value);
+                        updateBranchCondition(stage.key, { ...stage.activationCondition!, value: nextValues });
+                      }} disabled={readOnly} />{option.label}</label>)}
+                    </div> : <Select value={String(stage.activationCondition!.value)} onChange={event => updateBranchCondition(stage.key, { ...stage.activationCondition!, value: event.target.value })} disabled={readOnly || !values.length}>
+                      {values.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </Select>}
+                  </FormField>
+                </>;
+              })()}
+            </div>}
+          </fieldset>
           <fieldset><legend className="form-label">Published forms</legend><p className="field-help">Choose version-pinned evidence for this stage. Forms stay attached to the published workflow version.</p><div className="grid gap-3 sm:grid-cols-2">{visibleForms.map(form => {
             const formVersion = form.publishedVersion!;
             const pin = stage.forms.find(candidate => candidate.formVersionId === formVersion.id);
@@ -148,6 +233,7 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
             <h4 className="font-semibold text-ink">Execution preview</h4>
             <p className="mt-1 text-muted">When ready, <span className="font-medium text-ink">{assignmentPreview}</span> in <span className="font-medium text-ink">{departments.find(department => department.id === stage.departmentId)?.name ?? 'the selected department'}</span> handles “{stage.name}” ({actionLabels[stage.action]}).</p>
             <p className="mt-1 text-muted">Evidence: {formPreview.length ? formPreview.join(' · ') : 'no form attached'}.</p>
+            {stage.activationCondition && <p className="mt-1 text-muted">Branch rule: {branchSourceForms(stage).find(option => option.source.key === stage.activationCondition?.sourceStageKey && option.pin.formVersionId === stage.activationCondition?.formVersionId)?.fields.find(field => field.key === stage.activationCondition?.fieldKey)?.label ?? stage.activationCondition.fieldKey} {stage.activationCondition.operator === 'EQUALS' ? 'is' : stage.activationCondition.operator === 'NOT_EQUALS' ? 'is not' : 'is one of'} “{Array.isArray(stage.activationCondition.value) ? stage.activationCondition.value.join(', ') : stage.activationCondition.value}”; otherwise this stage is skipped.</p>}
             <p className="mt-1 text-muted">Scheduling: {stage.schedule.kind === 'DEADLINE' ? `owner deadline ${stage.schedule.dueAfterMinutes} minutes after activation` : 'real production capacity through Planning after Engineering approval'}.</p>
             <p className="mt-1 text-muted">Next: {successors.length ? successors.map(successor => successor.name).join(', ') : 'workflow ends after this stage'}{successors.length > 1 ? ' (parallel successors; each also waits for its other predecessors)' : ''}.</p>
             {stage.schedule.kind === 'RESOURCE_CAPACITY' && <p className="mt-1 text-xs text-muted">Preview does not reserve capacity. Planning revalidates resources, skills, shifts, material and bookings.</p>}

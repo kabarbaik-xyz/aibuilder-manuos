@@ -90,8 +90,31 @@ export async function completeLifecycleAction(
     key: candidate.stageKey,
     state: candidate.state as LifecycleStageState,
     predecessors: JSON.parse(candidate.predecessorKeysJson) as string[],
+    activationCondition: JSON.parse(candidate.activationConditionJson ?? 'null') ?? undefined,
   }));
-  const decision = evaluateStageTransition(snapshots, { stageKey: stage.stageKey, outcome: 'COMPLETE' });
+  const conditionFacts: Record<string, Record<string, unknown>> = {};
+  for (const candidate of snapshots) {
+    const condition = candidate.activationCondition;
+    if (!condition || conditionFacts[condition.sourceStageKey]?.[condition.fieldKey] !== undefined) continue;
+    const source = instance.stages.find((item: any) => item.stageKey === condition.sourceStageKey);
+    const pinnedForms = source ? JSON.parse(source.formPinsJson) as Array<{ formVersionId: string }> : [];
+    if (!pinnedForms.some((form) => form.formVersionId === condition.formVersionId)) continue;
+    const formInstances = await tx.formInstance.findMany({
+      where: {
+        workspaceId: input.workspaceId,
+        subjectType: 'ORDER',
+        subjectId: input.orderId,
+        formVersionId: condition.formVersionId,
+        status: 'SUBMITTED',
+      },
+      include: { submissions: { where: { status: 'FINAL' }, orderBy: { sequenceNumber: 'desc' }, take: 1 } },
+    });
+    // A route may use only one finalized order-spec answer set. Ambiguity or
+    // absent evidence stays missing and the deterministic evaluator fails closed.
+    if (formInstances.length !== 1 || !formInstances[0].submissions[0]) continue;
+    conditionFacts[condition.sourceStageKey] = JSON.parse(formInstances[0].submissions[0].answersJson) as Record<string, unknown>;
+  }
+  const decision = evaluateStageTransition(snapshots, { stageKey: stage.stageKey, outcome: 'COMPLETE', conditionFacts });
   if (!decision.allowed) throw new ConflictError(`Lifecycle stage cannot complete: ${decision.reason ?? 'invalid transition'}.`);
 
   for (const change of decision.changes) {
@@ -114,7 +137,7 @@ export async function completeLifecycleAction(
         workspaceId: input.workspaceId,
         instanceId: instance.id,
         stageId: current.id,
-        eventType: change.state === 'COMPLETED' ? 'STAGE_COMPLETED' : 'STAGE_READY',
+        eventType: change.state === 'COMPLETED' ? 'STAGE_COMPLETED' : change.state === 'SKIPPED' ? 'STAGE_SKIPPED' : 'STAGE_READY',
         fromState: current.state,
         toState: change.state,
         actorUserId: input.actorUserId,
@@ -124,7 +147,9 @@ export async function completeLifecycleAction(
     });
   }
 
-  const unfinished = instance.stages.filter((candidate: any) => candidate.id !== stage.id && !['COMPLETED', 'SKIPPED'].includes(candidate.state));
+  const projectedStates = new Map(instance.stages.map((candidate: any) => [candidate.stageKey, candidate.state]));
+  for (const change of decision.changes) projectedStates.set(change.stageKey, change.state);
+  const unfinished = instance.stages.filter((candidate: any) => !['COMPLETED', 'SKIPPED'].includes(projectedStates.get(candidate.stageKey) ?? candidate.state));
   if (unfinished.length === 0) {
     await tx.orderLifecycleInstance.updateMany({
       where: { workspaceId: input.workspaceId, id: instance.id, version: instance.version, status: 'ACTIVE' },

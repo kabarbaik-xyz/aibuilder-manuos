@@ -40,4 +40,45 @@ describe('order lifecycle stage transitions', () => {
     expect(evaluateStageTransition(stages, { stageKey: 'sales', outcome: 'COMPLETE' })).toMatchObject({ allowed: false, changes: [] });
     expect(evaluateStageTransition(stages, { stageKey: 'missing', outcome: 'COMPLETE' })).toMatchObject({ allowed: false, changes: [] });
   });
+
+  it('activates only the matching branch and skips a non-matching branch', () => {
+    const stages: LifecycleStageSnapshot[] = [
+      { key: 'sales', state: 'ACTIVE', predecessors: [] },
+      { key: 'engineering', state: 'PENDING', predecessors: ['sales'] },
+      {
+        key: 'standard', state: 'PENDING', predecessors: ['sales'],
+        activationCondition: { sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'standard' },
+      },
+      {
+        key: 'custom', state: 'PENDING', predecessors: ['sales'],
+        activationCondition: { sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom' },
+      },
+    ];
+
+    expect(evaluateStageTransition(stages, { stageKey: 'sales', outcome: 'COMPLETE', conditionFacts: { sales: { order_type: 'standard' } } })).toMatchObject({
+      allowed: true,
+      changes: [
+        { stageKey: 'sales', state: 'COMPLETED' },
+        { stageKey: 'engineering', state: 'READY' },
+        { stageKey: 'standard', state: 'READY' },
+        { stageKey: 'custom', state: 'SKIPPED' },
+      ],
+    });
+  });
+
+  it('fails closed when a branch condition fact is missing', () => {
+    const stages: LifecycleStageSnapshot[] = [
+      { key: 'sales', state: 'ACTIVE', predecessors: [] },
+      {
+        key: 'custom', state: 'PENDING', predecessors: ['sales'],
+        activationCondition: { sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom' },
+      },
+    ];
+
+    expect(evaluateStageTransition(stages, { stageKey: 'sales', outcome: 'COMPLETE' })).toMatchObject({
+      allowed: false,
+      changes: [],
+      reason: 'MISSING_CONDITION_FACT:custom.order_type',
+    });
+  });
 });

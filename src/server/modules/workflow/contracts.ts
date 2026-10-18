@@ -50,6 +50,20 @@ export const lifecycleActionSchema = z.enum([
   'ORDER_CONFIRM', 'ENGINEERING_APPROVE', 'PLAN_PRODUCTION', 'EXECUTE_PRODUCTION',
   'FINALIZE_QC', 'CONFIRM_DELIVERY', 'REVIEW_EVIDENCE',
 ]);
+export const lifecycleBranchConditionSchema = z.object({
+  sourceStageKey: z.string().min(1).max(50),
+  formVersionId: z.string().min(1),
+  fieldKey: z.string().min(1).max(100),
+  operator: z.enum(['EQUALS', 'NOT_EQUALS', 'IN']),
+  value: z.union([z.string(), z.array(z.string()).min(1)]),
+}).superRefine((condition, context) => {
+  if (condition.operator === 'IN' && typeof condition.value === 'string') {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "The 'in' operator requires a list of values.", path: ['value'] });
+  }
+  if (condition.operator !== 'IN' && Array.isArray(condition.value)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Equality operators require one text value.', path: ['value'] });
+  }
+});
 export const orderLifecycleDefinitionSchema = z.object({
   schemaVersion: z.literal(1),
   name: z.string().trim().min(1).max(200),
@@ -67,6 +81,7 @@ export const orderLifecycleDefinitionSchema = z.object({
       z.object({ kind: z.literal('RESOURCE_CAPACITY'), routingSource: z.literal('APPROVED_ENGINEERING') }),
     ]),
     predecessors: z.array(z.string().min(1)),
+    activationCondition: lifecycleBranchConditionSchema.optional(),
     forms: z.array(z.object({
       formVersionId: z.string().min(1),
       contentHash: z.string().min(1),

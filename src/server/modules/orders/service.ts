@@ -375,6 +375,7 @@ export class OrderService {
               scheduleJson: JSON.stringify(stage.schedule),
               formPinsJson: JSON.stringify(stage.forms),
               predecessorKeysJson: JSON.stringify(stage.predecessors),
+              activationConditionJson: JSON.stringify(stage.activationCondition ?? null),
               state: stage.predecessors.length === 0 ? 'READY' : 'PENDING',
               dueAt: stage.predecessors.length === 0 && stage.schedule.kind === 'DEADLINE'
                 ? new Date(Date.now() + stage.schedule.dueAfterMinutes * 60_000)

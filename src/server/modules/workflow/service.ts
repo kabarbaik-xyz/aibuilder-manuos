@@ -153,6 +153,30 @@ export class WorkflowService {
           throw new BadRequestError(`Stage '${stage.key}' form pin is unpublished, changed, or incompatible with its action.`);
         }
       }
+
+      if (stage.activationCondition) {
+        const condition = stage.activationCondition;
+        const sourceStage = definition.stages.find((candidate) => candidate.key === condition.sourceStageKey);
+        const sourcePin = sourceStage?.forms.find((form) => form.formVersionId === condition.formVersionId);
+        if (!sourcePin) throw new BadRequestError(`Stage '${stage.key}' branch condition must reference a form pinned to '${condition.sourceStageKey}'.`);
+        const sourceVersion = await tx.formVersion.findFirst({
+          where: { id: sourcePin.formVersionId, workspaceId, contentHash: sourcePin.contentHash },
+          include: { template: { select: { purpose: true } } },
+        });
+        if (!sourceVersion || sourceVersion.template.purpose !== 'ORDER_SPEC') {
+          throw new BadRequestError(`Stage '${stage.key}' branch conditions currently require a pinned order specification form.`);
+        }
+        const formDefinition = JSON.parse(sourceVersion.definitionJson) as { fields?: Array<{ key: string; kind: string; options?: Array<{ value: string }> }> };
+        const field = formDefinition.fields?.find((candidate) => candidate.key === condition.fieldKey);
+        if (!field || field.kind !== 'select') {
+          throw new BadRequestError(`Stage '${stage.key}' branch field must be a select field in the pinned order specification form.`);
+        }
+        const allowedValues = new Set((field.options ?? []).map((option) => option.value));
+        const selectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
+        if (selectedValues.some((value) => !allowedValues.has(value))) {
+          throw new BadRequestError(`Stage '${stage.key}' branch condition contains a value not offered by '${condition.fieldKey}'.`);
+        }
+      }
     }
   }
 

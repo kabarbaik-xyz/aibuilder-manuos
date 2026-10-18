@@ -52,4 +52,40 @@ describe('order lifecycle definition validation', () => {
       'UNSUPPORTED_SCHEDULE_POLICY', 'UNKNOWN_PREDECESSOR',
     ]));
   });
+
+  it('requires a branch condition to reference a predecessor and one of its pinned forms', () => {
+    const definition: OrderLifecycleDefinition = {
+      ...validDefinition,
+      stages: [
+        { ...validDefinition.stages[0], forms: [{ formVersionId: 'form-v1', contentHash: 'hash-v1', required: true, completionPoint: 'BEFORE_ACTION' }] },
+        {
+          ...validDefinition.stages[1],
+          activationCondition: {
+            sourceStageKey: 'sales', formVersionId: 'unpinned-form', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom',
+          },
+        },
+      ],
+    };
+
+    expect(validateLifecycleDefinition(definition)).toMatchObject({
+      isValid: false,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ code: 'UNPINNED_BRANCH_FORM', stageKey: 'production' }),
+      ]),
+    });
+    expect(validateLifecycleDefinition({
+      ...definition,
+      stages: [definition.stages[0], {
+        ...definition.stages[1],
+        activationCondition: { ...definition.stages[1].activationCondition!, formVersionId: 'form-v1' },
+      }],
+    }).isValid).toBe(true);
+    expect(validateLifecycleDefinition({
+      ...definition,
+      stages: [
+        { ...definition.stages[0], forms: [{ ...definition.stages[0].forms[0], required: false }] },
+        { ...definition.stages[1], activationCondition: { ...definition.stages[1].activationCondition!, formVersionId: 'form-v1' } },
+      ],
+    }).errors.map(error => error.code)).toContain('OPTIONAL_BRANCH_FORM');
+  });
 });

@@ -130,7 +130,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 
 - [ ] Add lifecycle template kind without changing legacy production-routing interpretation.
 - [ ] Validate active departments/members/roles, form pins/purposes, routing sources, deadlines, valid terminal paths, unknown adapters, duplicate keys and unreachable/dead-end stages.
-- [ ] Validate conditional references and values against pinned form schemas; bounded nested conditions only. No decision may read another workspace or unsubmitted draft answers.
+- [x] Validate simple select-answer branch references and values against required pinned order forms; branch evaluation is single-level and reads only finalized evidence in the current workspace. Nested conditions remain unsupported.
 - [ ] Test serial flow, parallel fan-out/AND join, exclusive branch plus merge, skipped branch handling, missing condition facts, rejection and explicit rework attempts.
 - [ ] Add membership assignment and lifecycle events with versioned CAS. Serialize immutable published definition/binding hashes; do not mutate completed attempts.
 - [ ] State publish/review rules explicitly. Do not imply mandatory two-person approval if the configured contract permits authorized self-publication.

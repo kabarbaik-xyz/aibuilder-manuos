@@ -1,3 +1,5 @@
+import type { LifecycleBranchCondition } from './order-lifecycle-definition';
+
 export type LifecycleStageState =
   | 'PENDING'
   | 'READY'
@@ -12,6 +14,7 @@ export interface LifecycleStageSnapshot {
   key: string;
   state: LifecycleStageState;
   predecessors: string[];
+  activationCondition?: LifecycleBranchCondition;
 }
 
 export interface StageTransitionChange {
@@ -28,6 +31,7 @@ export interface StageTransitionDecision {
 export interface StageTransitionAction {
   stageKey: string;
   outcome: 'COMPLETE';
+  conditionFacts?: Record<string, Record<string, unknown>>;
 }
 
 /** Pure, deterministic evaluator; persistence and compare-and-swap belong to the caller. */
@@ -43,16 +47,48 @@ export function evaluateStageTransition(
   }
 
   const changes: StageTransitionChange[] = [{ stageKey: stage.key, state: 'COMPLETED' }];
-  for (const candidate of stages) {
-    if (candidate.state !== 'PENDING' || !candidate.predecessors.includes(stage.key)) continue;
-    const unknownPredecessor = candidate.predecessors.find((key) => !byKey.has(key));
-    if (unknownPredecessor) {
-      return { allowed: false, changes: [], reason: `UNKNOWN_PREDECESSOR:${unknownPredecessor}` };
+  const projectedStates = new Map(stages.map((candidate) => [candidate.key, candidate.state]));
+  projectedStates.set(stage.key, 'COMPLETED');
+
+  // Evaluate newly unblocked branches in topological waves. A missing fact aborts
+  // the whole decision so callers never persist a partially activated workflow.
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const candidate of stages) {
+      if (projectedStates.get(candidate.key) !== 'PENDING') continue;
+      const unknownPredecessor = candidate.predecessors.find((key) => !byKey.has(key));
+      if (unknownPredecessor) {
+        return { allowed: false, changes: [], reason: `UNKNOWN_PREDECESSOR:${unknownPredecessor}` };
+      }
+      const allPredecessorsTerminal = candidate.predecessors.every((key) => {
+        const state = projectedStates.get(key);
+        return state === 'COMPLETED' || state === 'SKIPPED';
+      });
+      if (!allPredecessorsTerminal) continue;
+
+      let nextState: LifecycleStageState = 'READY';
+      if (candidate.activationCondition) {
+        const condition = candidate.activationCondition;
+        const facts = action.conditionFacts?.[condition.sourceStageKey];
+        if (!facts || !Object.prototype.hasOwnProperty.call(facts, condition.fieldKey)) {
+          return { allowed: false, changes: [], reason: `MISSING_CONDITION_FACT:${candidate.key}.${condition.fieldKey}` };
+        }
+        const actual = facts[condition.fieldKey];
+        if (actual === undefined || actual === null) {
+          return { allowed: false, changes: [], reason: `MISSING_CONDITION_FACT:${candidate.key}.${condition.fieldKey}` };
+        }
+        const matches = condition.operator === 'EQUALS'
+          ? actual === condition.value
+          : condition.operator === 'NOT_EQUALS'
+            ? actual !== condition.value
+            : Array.isArray(condition.value) && condition.value.includes(String(actual));
+        if (!matches) nextState = 'SKIPPED';
+      }
+      projectedStates.set(candidate.key, nextState);
+      changes.push({ stageKey: candidate.key, state: nextState });
+      progressed = true;
     }
-    const allPredecessorsComplete = candidate.predecessors.every((key) =>
-      key === stage.key || byKey.get(key)?.state === 'COMPLETED' || byKey.get(key)?.state === 'SKIPPED'
-    );
-    if (allPredecessorsComplete) changes.push({ stageKey: candidate.key, state: 'READY' });
   }
 
   return { allowed: true, changes };

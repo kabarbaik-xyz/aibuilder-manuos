@@ -25,6 +25,14 @@ export interface LifecycleFormPin {
   completionPoint: 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION';
 }
 
+export interface LifecycleBranchCondition {
+  sourceStageKey: string;
+  formVersionId: string;
+  fieldKey: string;
+  operator: 'EQUALS' | 'NOT_EQUALS' | 'IN';
+  value: string | string[];
+}
+
 export interface LifecycleStageDefinition {
   key: string;
   name: string;
@@ -33,6 +41,7 @@ export interface LifecycleStageDefinition {
   assignment: LifecycleAssignment;
   schedule: LifecycleSchedulePolicy;
   predecessors: string[];
+  activationCondition?: LifecycleBranchCondition;
   forms: LifecycleFormPin[];
 }
 
@@ -90,6 +99,30 @@ export function validateLifecycleDefinition(definition: OrderLifecycleDefinition
   }
 
   for (const stage of definition.stages) {
+    if (stage.activationCondition) {
+      const condition = stage.activationCondition;
+      const source = stageByKey.get(condition.sourceStageKey);
+      if (!source) {
+        errors.push({ code: 'UNKNOWN_BRANCH_SOURCE', stageKey: stage.key, message: `Branch condition refers to missing source stage '${condition.sourceStageKey}'.` });
+      } else if (!stage.predecessors.includes(source.key)) {
+        errors.push({ code: 'BRANCH_SOURCE_NOT_PREDECESSOR', stageKey: stage.key, message: `Branch source '${source.key}' must be a direct predecessor of '${stage.key}'.` });
+      }
+      const sourcePin = source?.forms.find((form) => form.formVersionId === condition.formVersionId);
+      if (source && !sourcePin) {
+        errors.push({ code: 'UNPINNED_BRANCH_FORM', stageKey: stage.key, message: `Branch condition must use a form pinned to source stage '${source.key}'.` });
+      } else if (sourcePin && !sourcePin.required) {
+        errors.push({ code: 'OPTIONAL_BRANCH_FORM', stageKey: stage.key, message: `Branch condition form on '${source?.key}' must be required so routing facts are submitted.` });
+      }
+      if (!condition.fieldKey.trim()) {
+        errors.push({ code: 'MISSING_BRANCH_FIELD', stageKey: stage.key, message: 'Branch condition needs a form field key.' });
+      }
+      if (condition.operator === 'IN' && (!Array.isArray(condition.value) || condition.value.length === 0)) {
+        errors.push({ code: 'INVALID_BRANCH_VALUE', stageKey: stage.key, message: "The 'in' branch operator requires at least one value." });
+      }
+      if (condition.operator !== 'IN' && typeof condition.value !== 'string') {
+        errors.push({ code: 'INVALID_BRANCH_VALUE', stageKey: stage.key, message: 'Equality branch operators require one text value.' });
+      }
+    }
     for (const predecessor of stage.predecessors) {
       if (!stageByKey.has(predecessor)) {
         errors.push({ code: 'UNKNOWN_PREDECESSOR', stageKey: stage.key, message: `Stage '${stage.key}' refers to missing predecessor '${predecessor}'.` });
