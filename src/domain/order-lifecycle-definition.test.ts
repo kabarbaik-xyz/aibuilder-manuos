@@ -61,7 +61,7 @@ describe('order lifecycle definition validation', () => {
         {
           ...validDefinition.stages[1],
           activationCondition: {
-            sourceStageKey: 'sales', formVersionId: 'unpinned-form', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom',
+            kind: 'FORM_ANSWER', sourceStageKey: 'sales', formVersionId: 'unpinned-form', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom',
           },
         },
       ],
@@ -77,15 +77,23 @@ describe('order lifecycle definition validation', () => {
       ...definition,
       stages: [definition.stages[0], {
         ...definition.stages[1],
-        activationCondition: { ...definition.stages[1].activationCondition!, formVersionId: 'form-v1' },
+        activationCondition: { ...(definition.stages[1].activationCondition as import('./order-lifecycle-definition').FormAnswerBranchCondition), formVersionId: 'form-v1' },
       }],
     }).isValid).toBe(true);
     expect(validateLifecycleDefinition({
       ...definition,
       stages: [
         { ...definition.stages[0], forms: [{ ...definition.stages[0].forms[0], required: false }] },
-        { ...definition.stages[1], activationCondition: { ...definition.stages[1].activationCondition!, formVersionId: 'form-v1' } },
+        { ...definition.stages[1], activationCondition: { ...(definition.stages[1].activationCondition as import('./order-lifecycle-definition').FormAnswerBranchCondition), formVersionId: 'form-v1' } },
       ],
     }).errors.map(error => error.code)).toContain('OPTIONAL_BRANCH_FORM');
+  });
+
+  it('allows QC outcome routing only from a direct QC stage', () => {
+    const qc = { ...validDefinition.stages[0], key: 'qc', action: 'FINALIZE_QC' as const };
+    const routed = { ...validDefinition.stages[1], predecessors: ['qc'], activationCondition: { kind: 'QC_OUTCOME' as const, sourceStageKey: 'qc', operator: 'EQUALS' as const, value: 'PASSED_AFTER_REWORK' as const } };
+    expect(validateLifecycleDefinition({ ...validDefinition, stages: [qc, routed] })).toMatchObject({ isValid: true, errors: [] });
+    expect(validateLifecycleDefinition({ ...validDefinition, stages: [{ ...qc, action: 'ORDER_CONFIRM' }, routed] }).errors)
+      .toContainEqual(expect.objectContaining({ code: 'INVALID_QC_OUTCOME_SOURCE', stageKey: routed.key }));
   });
 });

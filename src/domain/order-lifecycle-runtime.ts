@@ -32,6 +32,7 @@ export interface StageTransitionAction {
   stageKey: string;
   outcome: 'COMPLETE';
   conditionFacts?: Record<string, Record<string, unknown>>;
+  outcomeFacts?: Record<string, string>;
 }
 
 /** Pure, deterministic evaluator; persistence and compare-and-swap belong to the caller. */
@@ -70,6 +71,17 @@ export function evaluateStageTransition(
       let nextState: LifecycleStageState = 'READY';
       if (candidate.activationCondition) {
         const condition = candidate.activationCondition;
+        if (condition.kind === 'QC_OUTCOME') {
+          const actual = action.outcomeFacts?.[condition.sourceStageKey];
+          if (!actual) return { allowed: false, changes: [], reason: `MISSING_CONDITION_FACT:${candidate.key}.qcOutcome` };
+          const values = Array.isArray(condition.value) ? condition.value : [condition.value];
+          const matches = condition.operator === 'EQUALS' ? actual === condition.value : values.includes(actual as typeof values[number]);
+          if (!matches) nextState = 'SKIPPED';
+          projectedStates.set(candidate.key, nextState);
+          changes.push({ stageKey: candidate.key, state: nextState });
+          progressed = true;
+          continue;
+        }
         const facts = action.conditionFacts?.[condition.sourceStageKey];
         if (!facts || !Object.prototype.hasOwnProperty.call(facts, condition.fieldKey)) {
           return { allowed: false, changes: [], reason: `MISSING_CONDITION_FACT:${candidate.key}.${condition.fieldKey}` };

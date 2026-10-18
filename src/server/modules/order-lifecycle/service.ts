@@ -2,6 +2,7 @@ import { ConflictError, BadRequestError } from '@/domain/errors';
 import { evaluateStageTransition, type LifecycleStageState } from '@/domain/order-lifecycle-runtime';
 import type { LifecycleAction } from '@/domain/order-lifecycle-definition';
 import { getLifecycleActionDescriptor } from './action-registry';
+import { deriveQualityLifecycleOutcome } from '@/domain/quality-lifecycle';
 
 type Tx = any;
 
@@ -103,9 +104,32 @@ export async function completeLifecycleAction(
     activationCondition: JSON.parse(candidate.activationConditionJson ?? 'null') ?? undefined,
   }));
   const conditionFacts: Record<string, Record<string, unknown>> = {};
+  const outcomeFacts: Record<string, string> = {};
   for (const candidate of snapshots) {
     const condition = candidate.activationCondition;
-    if (!condition || conditionFacts[condition.sourceStageKey]?.[condition.fieldKey] !== undefined) continue;
+    if (!condition) continue;
+    if (condition.kind === 'QC_OUTCOME') {
+      if (outcomeFacts[condition.sourceStageKey]) continue;
+      const inspections = await tx.inspection.findMany({
+        where: {
+          workspaceId: input.workspaceId,
+          reinspectionOfId: null,
+          productionOutput: { task: { instance: { orderId: input.orderId } } },
+        },
+        select: {
+          status: true,
+          passedAtoms: true,
+          reworkAtoms: true,
+          scrappedAtoms: true,
+          reinspections: { select: { status: true, passedAtoms: true, scrappedAtoms: true } },
+        },
+      });
+      const outcome = deriveQualityLifecycleOutcome(inspections);
+      if (!outcome) continue;
+      outcomeFacts[condition.sourceStageKey] = outcome;
+      continue;
+    }
+    if (conditionFacts[condition.sourceStageKey]?.[condition.fieldKey] !== undefined) continue;
     const source = instance.stages.find((item: any) => item.stageKey === condition.sourceStageKey);
     const pinnedForms = source ? JSON.parse(source.formPinsJson) as Array<{ formVersionId: string }> : [];
     if (!pinnedForms.some((form) => form.formVersionId === condition.formVersionId)) continue;
@@ -124,7 +148,7 @@ export async function completeLifecycleAction(
     if (formInstances.length !== 1 || !formInstances[0].submissions[0]) continue;
     conditionFacts[condition.sourceStageKey] = JSON.parse(formInstances[0].submissions[0].answersJson) as Record<string, unknown>;
   }
-  const decision = evaluateStageTransition(snapshots, { stageKey: stage.stageKey, outcome: 'COMPLETE', conditionFacts });
+  const decision = evaluateStageTransition(snapshots, { stageKey: stage.stageKey, outcome: 'COMPLETE', conditionFacts, outcomeFacts });
   if (!decision.allowed) throw new ConflictError(`Lifecycle stage cannot complete: ${decision.reason ?? 'invalid transition'}.`);
 
   for (const change of decision.changes) {

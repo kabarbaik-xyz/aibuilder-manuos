@@ -47,11 +47,11 @@ describe('order lifecycle stage transitions', () => {
       { key: 'engineering', state: 'PENDING', predecessors: ['sales'] },
       {
         key: 'standard', state: 'PENDING', predecessors: ['sales'],
-        activationCondition: { sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'standard' },
+        activationCondition: { kind: 'FORM_ANSWER', sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'standard' },
       },
       {
         key: 'custom', state: 'PENDING', predecessors: ['sales'],
-        activationCondition: { sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom' },
+        activationCondition: { kind: 'FORM_ANSWER', sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom' },
       },
     ];
 
@@ -71,7 +71,7 @@ describe('order lifecycle stage transitions', () => {
       { key: 'sales', state: 'ACTIVE', predecessors: [] },
       {
         key: 'custom', state: 'PENDING', predecessors: ['sales'],
-        activationCondition: { sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom' },
+        activationCondition: { kind: 'FORM_ANSWER', sourceStageKey: 'sales', formVersionId: 'sales-form-v1', fieldKey: 'order_type', operator: 'EQUALS', value: 'custom' },
       },
     ];
 
@@ -79,6 +79,22 @@ describe('order lifecycle stage transitions', () => {
       allowed: false,
       changes: [],
       reason: 'MISSING_CONDITION_FACT:custom.order_type',
+    });
+  });
+
+  it('routes from a finalized QC outcome without relying on form fields', () => {
+    const stages: LifecycleStageSnapshot[] = [
+      { key: 'qc', state: 'ACTIVE', predecessors: [] },
+      { key: 'recovery', state: 'PENDING', predecessors: ['qc'], activationCondition: { kind: 'QC_OUTCOME', sourceStageKey: 'qc', operator: 'EQUALS', value: 'PASSED_AFTER_REWORK' } },
+      { key: 'delivery', state: 'PENDING', predecessors: ['qc'], activationCondition: { kind: 'QC_OUTCOME', sourceStageKey: 'qc', operator: 'EQUALS', value: 'PASSED' } },
+    ];
+    expect(evaluateStageTransition(stages, { stageKey: 'qc', outcome: 'COMPLETE', outcomeFacts: { qc: 'PASSED_AFTER_REWORK' } })).toMatchObject({
+      allowed: true,
+      changes: [
+        { stageKey: 'qc', state: 'COMPLETED' },
+        { stageKey: 'recovery', state: 'READY' },
+        { stageKey: 'delivery', state: 'SKIPPED' },
+      ],
     });
   });
 });

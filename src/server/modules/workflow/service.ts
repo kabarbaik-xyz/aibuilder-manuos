@@ -143,6 +143,12 @@ export class WorkflowService {
       if (stage.activationCondition) {
         const condition = stage.activationCondition;
         const sourceStage = definition.stages.find((candidate) => candidate.key === condition.sourceStageKey);
+        if (condition.kind === 'QC_OUTCOME') {
+          if (sourceStage?.action !== 'FINALIZE_QC') {
+            throw new BadRequestError(`Stage '${stage.key}' QC outcome branch must reference a FINALIZE_QC predecessor.`);
+          }
+          continue;
+        }
         const sourcePin = sourceStage?.forms.find((form) => form.formVersionId === condition.formVersionId);
         if (!sourcePin) throw new BadRequestError(`Stage '${stage.key}' branch condition must reference a form pinned to '${condition.sourceStageKey}'.`);
         const sourceVersion = await tx.formVersion.findFirst({

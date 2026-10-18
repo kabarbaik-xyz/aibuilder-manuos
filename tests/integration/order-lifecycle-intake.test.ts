@@ -384,11 +384,11 @@ describe('order lifecycle intake', () => {
           },
           {
             ...assigned('STANDARD'), predecessors: ['SALES'], forms: [],
-            activationCondition: { sourceStageKey: 'SALES', formVersionId: published.versionId, fieldKey: 'order_path', operator: 'EQUALS' as const, value: 'standard' },
+            activationCondition: { kind: 'FORM_ANSWER' as const, sourceStageKey: 'SALES', formVersionId: published.versionId, fieldKey: 'order_path', operator: 'EQUALS' as const, value: 'standard' },
           },
           {
             ...assigned('CUSTOM'), predecessors: ['SALES'], forms: [],
-            activationCondition: { sourceStageKey: 'SALES', formVersionId: published.versionId, fieldKey: 'order_path', operator: 'EQUALS' as const, value: 'custom' },
+            activationCondition: { kind: 'FORM_ANSWER' as const, sourceStageKey: 'SALES', formVersionId: published.versionId, fieldKey: 'order_path', operator: 'EQUALS' as const, value: 'custom' },
           },
           { ...assigned('END'), predecessors: ['STANDARD', 'CUSTOM'], forms: [] },
         ],
