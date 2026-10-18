@@ -99,7 +99,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Materialize order specification forms on order/workflow initialization, before release. Ensure task and inspection evidence exist before their respective action gates.
 - [x] Test the full required-order-form path: create order → see instance → draft save → final submit → release allowed. Release with absent/unfinished pinned form is rejected atomically.
 - [ ] Treat legacy zero-binding instances explicitly: no retroactive requirement insertion. Add a compatibility reader and migration fixtures for existing forms/workflows.
-- [ ] Run `rtk proxy npx vitest run tests/integration/forms-binding-pins.test.ts tests/integration/forms-domain-gates.test.ts tests/integration/forms-history-context.test.ts`.
+- [x] Run focused binding and execution specs: `rtk proxy npx vitest run tests/integration/forms-bindings.test.ts tests/integration/forms-domain-gates.test.ts tests/integration/forms-history-context.test.ts tests/integration/task-execution.test.ts` (26 passed).
 
 ### Task3: Complete advertised form controls
 
@@ -112,7 +112,8 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [ ] Validate referenced entities/documents server-side in current workspace/subject scope. Reject invalid, foreign, inaccessible or missing attachments rather than accepting an unresolvable evidence ID.
 - [ ] Keep visibleWhen behavior identical in preview, runtime and server validation. Hidden fields do not silently satisfy required visible evidence.
 - [ ] Namespace control IDs by form instance/renderer instance; preview and multiple operational forms must not share IDs.
-- [ ] Test all9 field kinds through fill → draft save → final submit → reload/read-only → correction. Include file-type/size limits, invalid references, decimal precision, required fields and conditional visibility.
+- [x] Cover all 9 field kinds in API integration round trips through draft save → final submit → reload/read-only; verify linked attachment evidence, authorized reference lookup, decimal-as-string precision, typed boolean/multiselect/date values and conditional visibility.
+- [ ] Verify actual browser rendering/fill/read-only/correction for all 9 field kinds, including upload file-type/size limits and field control behavior.
 - [ ] Prevent publish for any field capability not supported in both renderer and server; show actionable errors in the builder.
 - [ ] Run `rtk proxy npx vitest run src/domain/forms/validation.test.ts` and `rtk proxy npx playwright test --config playwright.config.ts tests/browser/dynamic-form-controls.spec.ts` against the isolated fixture server created in this task.
 

@@ -47,6 +47,18 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
           visibleWhen: { fieldKey: 'finish', operator: 'equals', value: 'painted' },
         },
         {
+          key: 'batch_code',
+          label: 'Batch code',
+          kind: 'text',
+          required: false,
+        },
+        {
+          key: 'operator_notes',
+          label: 'Operator notes',
+          kind: 'textarea',
+          required: false,
+        },
+        {
           key: 'dry_film_microns',
           label: 'Dry Film Thickness (um)',
           kind: 'decimal',
@@ -213,9 +225,22 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       subjectType: 'INSPECTION',
       subjectId: 'qc-insp-typed-values',
     }));
+    const document = await fixture.db.document.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      storageKey: `forms/typed-answer-${Date.now()}`,
+      fileName: 'typed-evidence.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 20,
+      checksumSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      uploadedById: fixture.alpha.users.qc.userId,
+    } });
     const answers = {
       finish: 'raw',
+      batch_code: 'BATCH-42',
+      operator_notes: 'No burrs observed.',
       dry_film_microns: '30.5',
+      machine_reference: fixture.alpha.masters.machineId,
+      evidence_files: [document.id],
       safety_verified: true,
       operations_checked: ['setup', 'calibration'],
       inspection_date: '2026-10-18',
@@ -236,6 +261,8 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
 
     const reloaded = await submissionService.getInstance(fixture.alpha.users.qc.principal, instance.instanceId);
     expect(reloaded.latestSubmission?.answers).toMatchObject(answers);
+    expect(await fixture.db.formSubmissionDocument.findMany({ where: { submissionId: finalized.submissionId } }))
+      .toMatchObject([{ documentId: document.id, fieldKey: 'evidence_files' }]);
   });
 
   it('rejects references that are not active records in the current workspace', async () => {
