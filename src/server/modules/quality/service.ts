@@ -100,6 +100,7 @@ export async function maybeCompleteOrderQualityLifecycle(tx: any, workspaceId: s
     include: { stages: true },
   });
   const qcStages = (lifecycle?.stages ?? []).filter((stage: any) => stage.action === 'FINALIZE_QC' && ['READY', 'ACTIVE'].includes(stage.state));
+  if (qcStages.length === 0) return;
   const qualityInspections = await tx.inspection.findMany({
     where: { workspaceId, productionOutput: { task: { instance: { orderId } } } },
     select: { id: true },
