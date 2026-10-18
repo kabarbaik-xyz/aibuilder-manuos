@@ -10,6 +10,7 @@ import { EngineeringService } from '@/server/modules/engineering/service';
 import { FormService } from '@/server/modules/forms/service';
 import { releaseOrder } from '@/server/modules/orders/release';
 import { z } from 'zod';
+import * as geminiClient from '@/server/ai/gemini-client';
 
 describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
   let fixture: FactoryFixture;
@@ -487,6 +488,33 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     expect(answerData!.answer).toBeDefined();
     expect(typeof answerData!.answer).toBe('string');
     expect(answerData!.linkToScreen).toBeDefined();
+  });
+
+  it('returns a grounded fallback when the provider is unavailable without mutating lifecycle state', async () => {
+    const { alpha } = fixture;
+    const provider = vi.spyOn(geminiClient, 'callGeminiStructured').mockResolvedValueOnce({
+      aiResult: null,
+      reason: 'unavailable',
+    });
+    const beforeInstances = await fixture.db.orderLifecycleInstance.count({ where: { workspaceId: alpha.workspaceId } });
+    const beforeEvents = await fixture.db.orderLifecycleEvent.count({ where: { workspaceId: alpha.workspaceId } });
+
+    const result = await brainService.answerProductionQuestion(
+      alpha.users.planner.principal,
+      'What active orders do we have?'
+    );
+
+    expect(provider).toHaveBeenCalledOnce();
+    expect(result.status).toBe('FALLBACK');
+    if (result.status === 'FALLBACK') {
+      expect(result.reason).toBe('UNAVAILABLE');
+      expect(result.message).toBe('AI provider is unavailable');
+      expect(result.fallbackData?.answer).toContain('accessible');
+      expect(result.fallbackData?.evidence).toBeDefined();
+    }
+    expect(await fixture.db.orderLifecycleInstance.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeInstances);
+    expect(await fixture.db.orderLifecycleEvent.count({ where: { workspaceId: alpha.workspaceId } })).toBe(beforeEvents);
+    provider.mockRestore();
   });
 
   it('enforces scoped in-memory caching with TTL', () => {
