@@ -185,7 +185,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 
 - [x] Expose department queue and personal assignments for Sales, Engineering, PPIC, Technician, QC and Delivery using actual permission/assignment scope. Do not add a universal read permission to make the UI work.
 - [x] Specific-member assignments require active eligible membership; ineligible or disabled recipients block and can be reassigned explicitly, with no silent fallback to administrator. Queue claim remains atomic.
-- [ ] General ownership uses membership IDs. Capacity scheduling resolves linked technician IDs; users cannot self-assert technician identity.
+- [x] General ownership uses membership IDs. Capacity scheduling resolves linked technician IDs; users cannot self-assert technician identity.
 - [x] Show stage action, due date/schedule, predecessor blockers, pinned forms and required evidence. Mount SubmissionPanel in the real order/task/inspection contexts.
 - [x] Clarify task/stage completion vs form submission; once all gates pass, execute the domain action with explicit consequences and applicable approval.
 - [x] Record reassignment actor/reason and claim actor transactionally in the lifecycle event stream.
@@ -203,10 +203,10 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Link lifecycle production/planning stages to the real job/Task instances and booking IDs. Never copy a second independent schedule into lifecycle state.
 - [x] Surface current production task status and confirmed Planning bookings in the order lifecycle panel, linked to the live task detail. Booking rows are read from the existing task/resource-booking records; no duplicate schedule is persisted.
 - [x] Compute feasibility using dependency graph, shift/roster, technician skill/cert validity, machine capability, existing bookings, material readiness and facility scope. Lifecycle proposal application uses the existing Planning revalidation path.
-- [ ] Administrative stages display deadline/owner and actual progress; they do not appear as production capacity without an explicit supported resource model.
-- [ ] Stage activation creates schedulable work or reveals existing released tasks; it does not silently confirm bookings.
+- [x] Administrative stages display deadline/owner and actual progress; they do not appear as production capacity without an explicit supported resource model.
+- [x] Stage activation creates schedulable work or reveals existing released tasks; it does not silently confirm bookings.
 - [ ] Preview schedule/reschedule impact on successor jobs and expected completion. Keep contractual promised date separate; changing customer commitment requires its existing approval path.
-- [ ] Apply only reviewed, current proposals through the existing approval/CAS transaction; record booking changes and lifecycle impact atomically. Unsupported policy paths must be rejected, not silently approximated.
+- [x] Apply only reviewed, current proposals through the existing approval/CAS transaction; record booking changes and lifecycle impact atomically. Unsupported policy paths must be rejected, not silently approximated.
 - [ ] Test resource conflict, expired skill, leave/shift swap, material shortage, overdue administrative prerequisite, stale approval and partial multi-job scheduling. One failure rolls back changes; no duplicated capacity or orphan bookings.
 - [ ] Ensure concurrent lifecycle actions and scheduling cannot start work from stale stage/assignment evidence.
 
