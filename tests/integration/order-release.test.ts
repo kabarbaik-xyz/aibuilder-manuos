@@ -381,4 +381,41 @@ describe('W03: Release and Process Instantiation Transaction', () => {
       demands: await testDb.db.materialDemand.count({ where: { orderId: orderRes.data.id } }),
     }).toEqual(before);
   });
+
+  it('keeps a failed engineering approval from releasing an order or creating production work', async () => {
+    const order = await orderService.createOrderDraft(sales.principal, {
+      customerId,
+      orderTypeId,
+      itemId: fgItemId,
+      orderedQuantity: 3,
+      requestedDate: '2026-11-25T00:00:00.000Z',
+    }, 'cmd-order-open-question');
+    const revision = order.data.engineeringRevisions[0];
+    await engineeringService.saveEngineeringDraft(engineer.principal, revision.id, {
+      workflowVersionId: wfV1Id,
+    }, 'cmd-engineering-open-question-draft');
+    await testDb.db.customerQuestion.create({
+      data: {
+        workspaceId: owner.principal.workspaceId,
+        orderId: order.data.id,
+        question: 'Confirm the required surface finish.',
+      },
+    });
+
+    await expect(engineeringService.approveEngineeringRevision(
+      owner.principal,
+      revision.id,
+      'cmd-engineering-open-question-approve'
+    )).rejects.toThrow(/unresolved customer question/i);
+
+    await expect(releaseOrder(owner.principal, order.data.id, 'cmd-open-question-release', testDb.db))
+      .rejects.toThrow(/must be confirmed or READY/i);
+    expect(await testDb.db.engineeringRevision.findUniqueOrThrow({ where: { id: revision.id } }))
+      .toMatchObject({ status: 'DRAFT', approvedAt: null });
+    expect(await testDb.db.order.findUniqueOrThrow({ where: { id: order.data.id } }))
+      .toMatchObject({ status: 'DRAFT', confirmedAt: null });
+    expect(await testDb.db.manufacturingOrder.count({ where: { orderId: order.data.id } })).toBe(0);
+    expect(await testDb.db.workflowInstance.count({ where: { orderId: order.data.id } })).toBe(0);
+    expect(await testDb.db.task.count({ where: { instance: { orderId: order.data.id } } })).toBe(0);
+  });
 });
