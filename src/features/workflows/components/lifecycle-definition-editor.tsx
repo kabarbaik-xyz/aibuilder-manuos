@@ -3,15 +3,19 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import './workflow-editor.css';
 import { apiRequest } from '@/lib/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { FormField } from '@/components/ui/form-field';
+import { Dialog } from '@/components/ui/dialog';
+import { Tabs } from '@/components/ui/tabs';
 import { useSaveWorkflowVersionDraft, useWorkflowVersionAction } from '../hooks';
 import { WorkflowTemplateDto, WorkflowVersionDto } from '../api';
 import { lifecycleVersionActions } from '../lifecycle-version-actions';
+import { LifecycleWorkflowMap } from './lifecycle-workflow-map';
 import { LIFECYCLE_ACTIONS, QC_LIFECYCLE_OUTCOMES, OrderLifecycleDefinition, LifecycleAction, FormAnswerBranchCondition, validateLifecycleDefinition } from '@/domain/order-lifecycle-definition';
 
 interface DepartmentOption { id: string; name: string }
@@ -35,6 +39,10 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
     try { return JSON.parse(version.definitionJson) as OrderLifecycleDefinition; }
     catch { return { schemaVersion: 1, name: template.name, stages: [] }; }
   });
+  const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
+  const [dialogBaseline, setDialogBaseline] = useState<OrderLifecycleDefinition | null>(null);
+  const [stageSection, setStageSection] = useState<'general' | 'routing' | 'forms'>('general');
+  const [activeView, setActiveView] = useState<'map' | 'edit'>('map');
   const saveMutation = useSaveWorkflowVersionDraft(template.id, version.id);
   const actionMutation = useWorkflowVersionAction(template.id, version.id);
   const versionActions = lifecycleVersionActions(version.status);
@@ -66,6 +74,7 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
     enabled: Boolean(template.id && !readOnly),
   });
   const validation = useMemo(() => validateLifecycleDefinition(definition), [definition]);
+  const departmentNames = useMemo(() => Object.fromEntries(departments.map(department => [department.id, department.name])), [departments]);
 
   const updateStage = (key: string, update: (stage: OrderLifecycleDefinition['stages'][number]) => OrderLifecycleDefinition['stages'][number]) => {
     setDefinition(current => ({ ...current, stages: current.stages.map(stage => stage.key === key ? update(stage) : stage) }));
@@ -74,14 +83,16 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
     let index = definition.stages.length + 1;
     while (definition.stages.some(stage => stage.key === `STAGE-${String(index).padStart(2, '0')}`)) index++;
     const key = `STAGE-${String(index).padStart(2, '0')}`;
-    const departmentId = departments[0]?.id ?? '';
-    const roleCode = roles.data?.data.find(role => role.isActive)?.code;
+    const departmentId = '';
+    setDialogBaseline(definition);
+    setStageSection('general');
     setDefinition(current => ({ ...current, stages: [...current.stages, {
       key, name: 'New lifecycle stage', action: 'REVIEW_EVIDENCE', departmentId,
-      assignment: { kind: 'DEPARTMENT_QUEUE', departmentId, eligibleRoleCodes: roleCode ? [roleCode] : [] },
+      assignment: { kind: 'DEPARTMENT_QUEUE', departmentId, eligibleRoleCodes: [] },
       schedule: { kind: 'DEADLINE', dueAfterMinutes: 480 },
       predecessors: current.stages.length ? [current.stages[current.stages.length - 1].key] : [], forms: [],
     }] }));
+    setSelectedStageKey(key);
   };
   const updateAction = (key: string, action: LifecycleAction) => updateStage(key, stage => ({ ...stage, action,
     schedule: action === 'PLAN_PRODUCTION' || action === 'EXECUTE_PRODUCTION'
@@ -115,6 +126,26 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
   const runAction = (action: 'submit_review' | 'publish' | 'fork' | 'retire') => actionMutation.mutate(action, {
     onSuccess: (result: any) => { if (action === 'fork' && result.data?.id) router.push(`/workflows/${template.id}/versions/${result.data.id}`); },
   });
+  const openStageSettings = (stageKey: string) => {
+    setDialogBaseline(definition);
+    setStageSection('general');
+    setSelectedStageKey(stageKey);
+  };
+  const activeStageKey = selectedStageKey;
+  const closeStageDialog = () => {
+    if (dialogBaseline) setDefinition(dialogBaseline);
+    setSelectedStageKey(null);
+    setDialogBaseline(null);
+  };
+  const applyStageDialog = () => {
+    setSelectedStageKey(null);
+    setDialogBaseline(null);
+  };
+  const removeStage = (stageKey: string) => {
+    setDefinition(current => ({ ...current, stages: current.stages.filter(item => item.key !== stageKey).map(item => ({ ...item, predecessors: item.predecessors.filter(key => key !== stageKey) })) }));
+    setSelectedStageKey(null);
+    setDialogBaseline(null);
+  };
 
   return <div className="page-stack">
     <header className="page-header"><div><h1>{template.name}</h1><p className="muted">Order lifecycle · {template.orderType?.name ?? 'Order type'} · version {version.versionNumber}</p></div><Badge variant={version.status === 'PUBLISHED' ? 'success' : 'default'}>{version.status}</Badge></header>
@@ -132,9 +163,37 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
           {versionActions.canRetire && <Button variant="ghost" onClick={() => runAction('retire')}>Retire</Button>}
         </div>
       </div>
-      <FormField id="lifecycle-name" label="Workflow name" required><Input value={definition.name} onChange={event => setDefinition(current => ({ ...current, name: event.target.value }))} disabled={readOnly} /></FormField>
       {!validation.isValid && <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm"><strong>Fix these before publish</strong><ul className="mt-2 list-disc pl-5">{validation.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.stageKey ? `${error.stageKey}${error.fieldKey ? ` › ${error.fieldKey}` : ''}: ` : ''}{error.message}</li>)}</ul></div>}
-      {definition.stages.map((stage, index) => {
+      <Tabs variant="underline" ariaLabel="Workflow views" activeId={activeView} onChange={setActiveView} items={[
+        { id: 'map', label: 'Node view', count: definition.stages.length },
+        { id: 'edit', label: 'Edit view' },
+      ]} />
+      <div role="tabpanel" aria-label="Node view" hidden={activeView !== 'map'}>
+        <LifecycleWorkflowMap definition={definition} departmentNames={departmentNames} onSelectStage={openStageSettings} />
+      </div>
+      <div role="tabpanel" aria-label="Edit view" hidden={activeView !== 'edit'}>
+        <div className="page-stack">
+          <FormField id="lifecycle-name" label="Workflow name" required><Input value={definition.name} onChange={event => setDefinition(current => ({ ...current, name: event.target.value }))} disabled={readOnly} /></FormField>
+          <div className="overflow-hidden rounded-xl border border-line">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-line bg-surface-muted px-4 py-3 text-xs font-semibold text-muted sm:grid-cols-[minmax(0,1fr)_180px_80px]">
+              <span>Stage</span><span className="hidden sm:block">Department</span><span className="text-right">Action</span>
+            </div>
+            {definition.stages.map((stage, index) => <div key={stage.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-line px-4 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_180px_80px]">
+              <div className="flex min-w-0 items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-muted text-xs font-semibold text-muted">{String(index + 1).padStart(2, '0')}</span><div className="min-w-0"><strong className="block text-sm text-ink">{stage.name || 'Untitled stage'}</strong><span className="block text-xs text-muted">{actionLabels[stage.action]}</span></div></div>
+              <span className="hidden text-sm text-muted sm:block">{departmentNames[stage.departmentId] ?? 'Not assigned'}</span>
+              <Button size="small" variant="text" onClick={() => openStageSettings(stage.key)}>{readOnly ? 'View' : 'Edit'}</Button>
+            </div>)}
+            {definition.stages.length === 0 && <p className="p-6 text-sm text-muted">No stages yet. Add a stage to build this workflow.</p>}
+          </div>
+        </div>
+      </div>
+      <Dialog isOpen={selectedStageKey !== null} onClose={closeStageDialog} title={dialogBaseline?.stages.some(stage => stage.key === selectedStageKey) ? (readOnly ? 'Stage details' : 'Edit stage') : 'Add stage'} subtitle="Set ownership, routing and evidence for this stage." size="lg" footer={<>
+        {!readOnly && <span className="mr-auto text-xs text-muted">Apply here, then save the workflow draft.</span>}
+        <Button onClick={closeStageDialog}>{readOnly ? 'Close' : 'Cancel'}</Button>
+        {!readOnly && <Button variant="primary" onClick={applyStageDialog} disabled={validation.errors.some(error => error.stageKey === selectedStageKey)}>Apply changes</Button>}
+      </>}>
+      {definition.stages.filter(stage => stage.key === activeStageKey).map(stage => {
+        const index = definition.stages.findIndex(candidate => candidate.key === stage.key);
         const compatibleForms = applicableForms(stage.action);
         const compatibleFormIds = new Set(compatibleForms.map(form => form.publishedVersion?.id));
         const visibleForms = (forms.data?.data ?? []).filter(form => form.publishedVersion && (compatibleFormIds.has(form.publishedVersion.id) || stage.forms.some(pin => pin.formVersionId === form.publishedVersion?.id)));
@@ -156,8 +215,12 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
           : formBranch
             ? `${branchSourceForms(stage).find(option => option.source.key === formBranch.sourceStageKey && option.pin.formVersionId === formBranch.formVersionId)?.fields.find(field => field.key === formBranch.fieldKey)?.label ?? formBranch.fieldKey} ${formBranch.operator === 'EQUALS' ? 'is' : formBranch.operator === 'NOT_EQUALS' ? 'is not' : 'is one of'} “${Array.isArray(formBranch.value) ? formBranch.value.join(', ') : formBranch.value}”`
             : null;
-        return <article key={stage.key} className="rounded-xl border border-line bg-surface p-4 page-stack">
-          <div className="flex items-start justify-between gap-3"><div><p className="small muted">Stage {index + 1} · {stage.key}</p><h3 className="text-base font-semibold">{stage.name}</h3></div>{!readOnly && <Button variant="ghost" onClick={() => setDefinition(current => ({ ...current, stages: current.stages.filter(item => item.key !== stage.key).map(item => ({ ...item, predecessors: item.predecessors.filter(key => key !== stage.key) })) }))}>Remove</Button>}</div>
+        return <article id={`lifecycle-stage-${stage.key}`} key={stage.key} className="page-stack">
+          <div className="flex items-start justify-between gap-4"><div><p className="small muted">Stage {String(index + 1).padStart(2, '0')} · {stage.key}</p><h3 className="mt-1 text-lg font-semibold text-ink">{stage.name}</h3></div>{!readOnly && <Button variant="ghost" onClick={() => removeStage(stage.key)}>Remove stage</Button>}</div>
+          <Tabs variant="underline" activeId={stageSection} onChange={setStageSection} ariaLabel="Stage configuration" items={[
+            { id: 'general', label: 'General' }, { id: 'routing', label: 'Routing' }, { id: 'forms', label: 'Forms', count: stage.forms.length },
+          ]} />
+          <div hidden={stageSection !== 'general'}>
           <div className="form-grid">
             <FormField id={`${stage.key}-name`} label="Stage name" required><Input value={stage.name} onChange={event => updateStage(stage.key, current => ({ ...current, name: event.target.value }))} disabled={readOnly} /></FormField>
             <FormField id={`${stage.key}-action`} label="Stage action" required><Select value={stage.action} onChange={event => updateAction(stage.key, event.target.value as LifecycleAction)} disabled={readOnly}>{LIFECYCLE_ACTIONS.map(action => <option key={action} value={action}>{actionLabels[action]}</option>)}</Select></FormField>
@@ -166,6 +229,8 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
               {stage.assignment.kind === 'MEMBER' ? <FormField id={`${stage.key}-member`} label="Assigned person" required><div><Select value={stage.assignment.membershipId} onChange={event => updateStage(stage.key, current => current.assignment.kind === 'MEMBER' ? { ...current, assignment: { ...current.assignment, membershipId: event.target.value } } : current)} disabled={readOnly || members.isPending}><option value="">Choose active department member</option>{(members.data?.get(stage.departmentId) ?? []).map(member => <option key={member.membershipId} value={member.membershipId}>{member.name}{member.roles.length ? ` · ${member.roles.map(role => role.name).join(', ')}` : ''}</option>)}</Select>{members.error && <p role="alert" className="text-xs text-danger">Department members could not be loaded.</p>}</div></FormField>
                 : <fieldset><legend className="form-label">Eligible role queue</legend><div className="grid gap-2 sm:grid-cols-2">{(roles.data?.data ?? []).filter(role => role.isActive).map(role => <label key={role.code} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stage.assignment.kind === 'DEPARTMENT_QUEUE' && stage.assignment.eligibleRoleCodes.includes(role.code)} onChange={() => toggleRole(stage.key, role.code)} disabled={readOnly} />{role.name}</label>)}</div></fieldset>}</div>
           </div>
+          </div>
+          <div hidden={stageSection !== 'routing'} className="space-y-5">
           <div className="form-grid">
             <div className="page-stack"><FormField id={`${stage.key}-schedule`} label="Scheduling policy"><Select value={stage.schedule.kind} onChange={event => updateStage(stage.key, current => ({ ...current, schedule: event.target.value === 'RESOURCE_CAPACITY' ? { kind: 'RESOURCE_CAPACITY', routingSource: 'APPROVED_ENGINEERING' } : { kind: 'DEADLINE', dueAfterMinutes: 480 } }))} disabled={readOnly || stage.action === 'PLAN_PRODUCTION' || stage.action === 'EXECUTE_PRODUCTION'}><option value="DEADLINE">Owner deadline</option><option value="RESOURCE_CAPACITY">Production capacity from approved routing</option></Select></FormField>{stage.schedule.kind === 'DEADLINE' && <FormField id={`${stage.key}-deadline`} label="Deadline (minutes)"><Input type="number" min={1} value={stage.schedule.dueAfterMinutes} onChange={event => updateStage(stage.key, current => ({ ...current, schedule: { kind: 'DEADLINE', dueAfterMinutes: Number(event.target.value) } }))} disabled={readOnly} /></FormField>}</div>
             <fieldset><legend className="form-label">Starts after</legend><div className="grid gap-2 sm:grid-cols-2">{definition.stages.filter(candidate => candidate.key !== stage.key).map(candidate => <label key={candidate.key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stage.predecessors.includes(candidate.key)} onChange={event => updateStage(stage.key, current => ({ ...current, predecessors: event.target.checked ? [...current.predecessors, candidate.key] : current.predecessors.filter(key => key !== candidate.key) }))} disabled={readOnly} />{candidate.name}</label>)}</div></fieldset>
@@ -242,35 +307,42 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
               })()}
             </div>}
           </fieldset>
-          <fieldset><legend className="form-label">Published forms</legend><p className="field-help">Choose version-pinned evidence for this stage. Forms stay attached to the published workflow version.</p><div className="grid gap-3 sm:grid-cols-2">{visibleForms.map(form => {
+          </div>
+          <div hidden={stageSection !== 'forms'}>
+          <fieldset className="min-w-0"><legend className="form-label">Stage forms</legend><p className="field-help mb-4">Choose the evidence to collect and when it must be completed.</p><div className="grid min-w-0 gap-4">{visibleForms.map(form => {
             const formVersion = form.publishedVersion!;
             const pin = stage.forms.find(candidate => candidate.formVersionId === formVersion.id);
             const compatible = compatibleFormIds.has(formVersion.id);
-            return <div key={formVersion.id} className="rounded-lg border border-line p-3 text-sm">
-              <label className="flex items-start gap-2"><input type="checkbox" checked={Boolean(pin)} onChange={() => toggleForm(stage.key, form)} disabled={readOnly || (!compatible && !pin)} /><span><strong>{form.name}</strong><span className="block muted">{form.code} · v{formVersion.versionNumber} · {formVersion.contentHash.slice(0, 10)}</span>{!compatible && <span className="block text-warning">Purpose is incompatible with this action. Remove this pin or change the action.</span>}</span></label>
-              {pin && <div className="mt-2 rounded-md bg-surface-muted px-2.5 py-2" aria-label={`${form.name} field preview`}>
-                <p className="text-xs font-medium text-ink">Fields in this version</p>
-                {formDefinitions.isPending ? <p className="mt-1 text-xs muted">Loading pinned form fields…</p> : formDefinitions.data?.get(formVersion.id)?.fields.length ? <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs muted">
-                  {formDefinitions.data.get(formVersion.id)!.fields.map(field => <li key={field.key}>{field.label} <span className="opacity-70">· {field.kind}</span></li>)}
-                </ul> : <p className="mt-1 text-xs text-warning">Pinned form fields could not be loaded for preview.</p>}
-              </div>}
-              {pin && <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            return <div key={formVersion.id} className="min-w-0 overflow-hidden rounded-xl border border-line text-sm">
+              <label className="flex cursor-pointer items-start gap-3 p-4"><input className="mt-1 shrink-0" type="checkbox" checked={Boolean(pin)} onChange={() => toggleForm(stage.key, form)} disabled={readOnly || (!compatible && !pin)} /><span className="min-w-0"><strong className="block text-sm font-semibold text-ink">{form.name}</strong><span className="mt-1 block break-words text-xs text-muted">{form.code} · Version {formVersion.versionNumber}</span>{!compatible && <span className="block text-warning">Purpose is incompatible with this action. Remove this pin or change the action.</span>}</span></label>
+              {pin && <details className="mx-4 mb-4 border-t border-line pt-3" aria-label={`${form.name} field preview`}>
+                <summary className="cursor-pointer text-xs font-semibold text-muted">Preview form fields{formDefinitions.data?.get(formVersion.id)?.fields.length ? ` (${formDefinitions.data.get(formVersion.id)!.fields.length})` : ''}</summary>
+                {formDefinitions.isPending ? <p className="mt-3 text-xs text-muted">Loading fields…</p> : formDefinitions.data?.get(formVersion.id)?.fields.length ? <ul className="mt-3 divide-y divide-line">
+                  {formDefinitions.data.get(formVersion.id)!.fields.map(field => <li key={field.key} className="flex items-center justify-between gap-4 py-2 text-xs"><span className="text-ink">{field.label}</span><span className="shrink-0 text-muted">{field.kind === 'textarea' ? 'Long text' : field.kind === 'select' ? 'Choice' : field.kind === 'text' ? 'Text' : field.kind}</span></li>)}
+                </ul> : <p className="mt-3 text-xs text-warning">Form fields could not be loaded.</p>}
+              </details>}
+              {pin && <div className="grid min-w-0 gap-4 border-t border-line bg-surface-muted p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
                 <FormField id={`${stage.key}-${formVersion.id}-required`} label="Requirement"><Select value={pin.required ? 'required' : 'optional'} onChange={event => updateStage(stage.key, current => ({ ...current, forms: current.forms.map(candidate => candidate.formVersionId === formVersion.id ? { ...candidate, required: event.target.value === 'required' } : candidate) }))} disabled={readOnly}><option value="required">Required</option><option value="optional">Optional</option></Select></FormField>
-                <FormField id={`${stage.key}-${formVersion.id}-completion`} label="Complete evidence"><Select value={pin.completionPoint} onChange={event => updateStage(stage.key, current => ({ ...current, forms: current.forms.map(candidate => candidate.formVersionId === formVersion.id ? { ...candidate, completionPoint: event.target.value as 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' } : candidate) }))} disabled={readOnly}><option value="BEFORE_ACTION">Before stage action</option><option value="BEFORE_STAGE_COMPLETION">Before stage completion</option></Select></FormField>
+                <FormField id={`${stage.key}-${formVersion.id}-completion`} label="Complete before"><Select value={pin.completionPoint} onChange={event => updateStage(stage.key, current => ({ ...current, forms: current.forms.map(candidate => candidate.formVersionId === formVersion.id ? { ...candidate, completionPoint: event.target.value as 'BEFORE_ACTION' | 'BEFORE_STAGE_COMPLETION' } : candidate) }))} disabled={readOnly}><option value="BEFORE_ACTION">Before stage action</option><option value="BEFORE_STAGE_COMPLETION">Before stage completion</option></Select></FormField>
               </div>}
             </div>;
           })}{visibleForms.length === 0 && <p className="field-help">No published compatible form is available for this action.</p>}</div></fieldset>
-          <aside className="rounded-lg border border-primary/20 bg-primary-soft p-3 text-sm" aria-label={`Execution preview for ${stage.name}`}>
-            <h4 className="font-semibold text-ink">Execution preview</h4>
+          </div>
+          <details className="rounded-lg border border-line bg-surface-muted p-3 text-sm">
+            <summary className="cursor-pointer font-semibold text-ink">Execution preview</summary>
+            <div className="mt-3">
             <p className="mt-1 text-muted">When ready, <span className="font-medium text-ink">{assignmentPreview}</span> in <span className="font-medium text-ink">{departments.find(department => department.id === stage.departmentId)?.name ?? 'the selected department'}</span> handles “{stage.name}” ({actionLabels[stage.action]}).</p>
             <p className="mt-1 text-muted">Evidence: {formPreview.length ? formPreview.join(' · ') : 'no form attached'}.</p>
             {branchPreview && <p className="mt-1 text-muted">Branch rule: {branchPreview}; otherwise this stage is skipped.</p>}
             <p className="mt-1 text-muted">Scheduling: {stage.schedule.kind === 'DEADLINE' ? `owner deadline ${stage.schedule.dueAfterMinutes} minutes after activation` : 'real production capacity through Planning after Engineering approval'}.</p>
             <p className="mt-1 text-muted">Next: {successors.length ? successors.map(successor => successor.name).join(', ') : 'workflow ends after this stage'}{successors.length > 1 ? ' (parallel successors; each also waits for its other predecessors)' : ''}.</p>
             {stage.schedule.kind === 'RESOURCE_CAPACITY' && <p className="mt-1 text-xs text-muted">Preview does not reserve capacity. Planning revalidates resources, skills, shifts, material and bookings.</p>}
-          </aside>
+            </div>
+          </details>
+          {!readOnly && validation.errors.some(error => error.stageKey === stage.key) && <div role="status" className="rounded-lg bg-warning-soft p-3 text-sm text-warning"><p className="font-semibold">Complete this stage before applying</p><ul className="mt-2 list-disc space-y-1 pl-4">{validation.errors.filter(error => error.stageKey === stage.key).map((error, index) => <li key={index}>{error.message}</li>)}</ul></div>}
         </article>;
       })}
+      </Dialog>
       {(saveMutation.error || actionMutation.error) && <p role="alert" className="text-sm text-danger">{(saveMutation.error || actionMutation.error)?.message}</p>}
       {roles.error && <p role="alert" className="text-sm text-danger">Role list unavailable. Stage ownership cannot be configured.</p>}
       {forms.error && <p role="alert" className="text-sm text-danger">Published forms could not be loaded.</p>}

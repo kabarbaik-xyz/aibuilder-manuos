@@ -74,6 +74,30 @@
 .wf-node .react-flow__handle:hover { box-shadow: 0 0 0 3px var(--primary-soft); }
 .wf-canvas .react-flow__edge-path { stroke: #899bb8; stroke-width: 1.75; }
 .wf-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: var(--primary); stroke-width: 2; }
+
+.lifecycle-map-panel { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.lifecycle-map-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; border-bottom: 1px solid var(--line); }
+.lifecycle-map-header h2 { color: var(--ink); font-size: 15px; font-weight: 650; }
+.lifecycle-map-counts { display: flex; flex: 0 0 auto; gap: 8px; color: var(--muted); font-size: 12px; }
+.lifecycle-map-counts span { padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-muted); }
+.lifecycle-map-canvas { width: 100%; height: min(58vh, 600px); min-height: 420px; background-color: #fbfcfe; background-image: linear-gradient(to right, rgb(231 235 242 / 30%) 1px, transparent 1px), linear-gradient(to bottom, rgb(231 235 242 / 30%) 1px, transparent 1px); background-size: 28px 28px; }
+.lifecycle-map-canvas .react-flow__controls { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 8px rgb(24 36 56 / 7%); }
+.lifecycle-map-canvas .react-flow__controls-button { width: 30px; height: 30px; border-bottom-color: var(--line); background: var(--surface); color: var(--muted); }
+.lifecycle-map-canvas .react-flow__controls-button:hover { background: var(--primary-soft); color: var(--primary); }
+.lifecycle-map-canvas .react-flow__minimap { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.lifecycle-map-canvas .react-flow__edge-path { stroke: #93a3bb; stroke-width: 1.8; }
+.lifecycle-map-canvas .react-flow__edge-textbg { fill: var(--surface); }
+.lifecycle-map-node { width: 260px; padding: 13px 14px; border: 1px solid #d9e1ed; border-radius: 11px; background: var(--surface); box-shadow: 0 5px 16px rgb(24 36 56 / 7%); color: var(--ink); cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
+.lifecycle-map-node:hover { transform: translateY(-2px); border-color: #9eb6f5; box-shadow: 0 9px 22px rgb(36 89 223 / 12%); }
+.lifecycle-map-node-topline { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .07em; }
+.lifecycle-map-node h3 { overflow: hidden; margin-top: 8px; color: var(--ink); font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.lifecycle-map-action { margin-top: 2px; color: var(--primary); font-size: 12px; font-weight: 550; }
+.lifecycle-map-meta { display: grid; gap: 3px; margin-top: 10px; color: var(--muted); font-size: 11px; }
+.lifecycle-map-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.lifecycle-map-tags span { padding: 3px 6px; border-radius: 5px; background: var(--surface-muted); color: var(--muted); font-size: 10px; }
+.lifecycle-map-handle { width: 10px; height: 10px; border: 2px solid var(--surface); background: var(--primary); }
+.lifecycle-map-empty { padding: 30px 20px; color: var(--muted); text-align: center; }
+@media (max-width: 640px) { .lifecycle-map-header { align-items: flex-start; flex-direction: column; padding: 14px; } .lifecycle-map-canvas { height: 56vh; min-height: 340px; } }
 .wf-ai-panel, .wf-advanced { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
 .wf-ai-panel > summary, .wf-advanced > summary { display: flex; align-items: center; gap: 9px; padding: 16px 20px; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; list-style: none; }
 .wf-ai-panel > summary::-webkit-details-marker, .wf-advanced > summary::-webkit-details-marker { display: none; }
