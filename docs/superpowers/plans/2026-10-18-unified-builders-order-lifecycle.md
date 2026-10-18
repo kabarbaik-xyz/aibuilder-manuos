@@ -96,8 +96,8 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Test invalid context fields, missing target, foreign order/workflow/checklist, missing workflow node, incompatible purpose and duplicate bindings; reject before write.
 - [x] Persist immutable binding sets and requiredness/completion point per published workflow version and instantiated subject. Hash the full execution-relevant configuration.
 - [x] Test that publishing/rebinding v2 neither changes the form rendered for existing v1 instances nor introduces a new required gate on them.
-- [ ] Materialize order specification forms on order/workflow initialization, before release. Ensure task and inspection evidence exist before their respective action gates.
-- [ ] Test the full required-order-form path: create order → see instance → draft save → final submit → release allowed. Release with absent/unfinished pinned form is rejected atomically.
+- [x] Materialize order specification forms on order/workflow initialization, before release. Ensure task and inspection evidence exist before their respective action gates.
+- [x] Test the full required-order-form path: create order → see instance → draft save → final submit → release allowed. Release with absent/unfinished pinned form is rejected atomically.
 - [ ] Treat legacy zero-binding instances explicitly: no retroactive requirement insertion. Add a compatibility reader and migration fixtures for existing forms/workflows.
 - [ ] Run `rtk proxy npx vitest run tests/integration/forms-binding-pins.test.ts tests/integration/forms-domain-gates.test.ts tests/integration/forms-history-context.test.ts`.
 

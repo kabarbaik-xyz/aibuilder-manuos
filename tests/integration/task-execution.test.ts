@@ -12,6 +12,7 @@ import { MastersService } from '@/server/modules/masters/service';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@/domain/errors';
 import { recordOutput } from '@/server/modules/execution/output';
 import { FormService } from '@/server/modules/forms/service';
+import { FormSubmissionService } from '@/server/modules/forms/submissions';
 
 describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
   let fixture: FactoryFixture;
@@ -139,6 +140,31 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
     await workflowService.submitReview(alpha.users.owner.principal, wfV1Id, 'key-wf-rev-v1');
     await workflowService.publishVersion(alpha.users.owner.principal, wfV1Id, 'key-wf-pub-v1');
 
+    const orderForm = await forms.createTemplate(alpha.users.owner.principal, {
+      code: `ORDER_SPEC_${randomUUID().slice(0, 8)}`,
+      name: 'Customer order specification',
+      purpose: 'ORDER_SPEC',
+    });
+    await forms.updateDraftVersion(alpha.users.owner.principal, orderForm.templateId, orderForm.versionId, {
+      expectedVersion: 1,
+      definition: {
+        schemaVersion: 1,
+        purpose: 'ORDER_SPEC',
+        fields: [{ key: 'specification', label: 'Approved specification', kind: 'text', required: true }],
+      },
+    }, 'task-execution-order-form-draft');
+    await forms.publishFormVersion(alpha.users.owner.principal, {
+      templateId: orderForm.templateId,
+      versionId: orderForm.versionId,
+      expectedVersion: 2,
+    });
+    await forms.bindFormVersion(alpha.users.owner.principal, {
+      formVersionId: orderForm.versionId,
+      context: 'ORDER_TYPE',
+      orderTypeId: alpha.masters.orderTypeId,
+      required: true,
+    }, 'task-execution-order-form-binding');
+
     // 2. Create Order
     const orderRes = await orderService.createOrderDraft(
       alpha.users.owner.principal,
@@ -178,6 +204,26 @@ describe('O05: Actual Planning, Assignment, and Operator Work Sessions', () => {
       revId,
       'key-eng-m3-approve'
     );
+
+    const orderFormInstance = await fixture.db.formInstance.findFirstOrThrow({
+      where: { workspaceId: alpha.workspaceId, subjectType: 'ORDER', subjectId: orderId, formVersionId: orderForm.versionId },
+    });
+    const submissions = new FormSubmissionService(fixture.db);
+    await submissions.saveDraft(alpha.users.owner.principal, {
+      instanceId: orderFormInstance.id,
+      expectedVersion: 1,
+      answers: { specification: 'Approved customer drawing rev C' },
+    }, 'task-execution-order-form-save');
+    const statusBeforeBlockedRelease = (await fixture.db.order.findFirstOrThrow({ where: { workspaceId: alpha.workspaceId, id: orderId } })).status;
+    await expect(releaseOrder(alpha.users.owner.principal, orderId, 'task-execution-order-release-pending-form', fixture.db))
+      .rejects.toThrow(/required form/i);
+    expect(await fixture.db.workflowInstance.count({ where: { workspaceId: alpha.workspaceId, orderId } })).toBe(0);
+    expect((await fixture.db.order.findFirstOrThrow({ where: { workspaceId: alpha.workspaceId, id: orderId } })).status).toBe(statusBeforeBlockedRelease);
+    await submissions.finalizeSubmission(alpha.users.owner.principal, {
+      instanceId: orderFormInstance.id,
+      expectedVersion: 2,
+      answers: { specification: 'Approved customer drawing rev C' },
+    }, 'task-execution-order-form-finalize');
 
     // 4. Release Order to generate tasks and material demands
     const releaseRes = await releaseOrder(
