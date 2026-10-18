@@ -67,6 +67,7 @@ export async function reassignLifecycleStage(
       if (!hasActionPermission || !roleEligible) throw new BadRequestError('The selected member is not eligible for this lifecycle action.');
 
       const oldMembershipId = stage.assignedMembershipId ?? (assignment.kind === 'MEMBER' ? assignment.membershipId : null);
+      if (oldMembershipId === candidate.id) throw new ConflictError('This lifecycle stage is already assigned to the selected member.');
       const nextAssignment = assignment.kind === 'MEMBER' ? { ...assignment, membershipId: candidate.id } : assignment;
       const updated = await tx.orderLifecycleStage.updateMany({
         where: { id: stage.id, workspaceId: principal.workspaceId, version: input.expectedVersion, state: stage.state },

@@ -215,6 +215,11 @@ describe('order lifecycle intake', () => {
       where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id } },
     });
 
+    await expect(reassignLifecycleStage(fixture.db, owner.principal, {
+      stageId: stage.id, expectedVersion: stage.version, membershipId: owner.membershipId, reason: 'No change needed',
+    }, 'lifecycle-review-noop-reassign')).rejects.toThrow(/already assigned/i);
+    expect(await fixture.db.orderLifecycleStage.findUniqueOrThrow({ where: { id: stage.id } })).toMatchObject({ version: stage.version });
+
     const reassigned = await reassignLifecycleStage(fixture.db, owner.principal, {
       stageId: stage.id, expectedVersion: stage.version, membershipId: planner.membershipId, reason: 'Coverage handoff',
     }, 'lifecycle-review-reassign');
