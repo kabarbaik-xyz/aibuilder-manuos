@@ -168,6 +168,10 @@ describe('order lifecycle intake', () => {
       orderedQuantity: '2',
       requestedDate: '2026-11-01T00:00:00.000Z',
     }, 'lifecycle-attach-order');
+    await expect(orderService.attachLifecycle({ ...owner.principal, facilityIds: [] }, order.data.id, {
+      expectedVersion: order.data.version,
+      workflowVersionId: versionId,
+    }, 'lifecycle-attach-out-of-scope')).rejects.toThrow(/facility/i);
     const previousRollout = process.env.NEXT_PUBLIC_MANUOS_ORDER_LIFECYCLE_ENABLED;
     process.env.NEXT_PUBLIC_MANUOS_ORDER_LIFECYCLE_ENABLED = 'false';
     try {

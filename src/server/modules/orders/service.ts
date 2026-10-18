@@ -597,6 +597,9 @@ export class OrderService {
         if (order.version !== input.expectedVersion) {
           throw new ConflictError(`Order version mismatch: expected ${input.expectedVersion}, but found ${order.version}`, 'STALE_VERSION', true);
         }
+        if (order.facilityId && !principal.facilityIds?.includes(order.facilityId)) {
+          throw new ForbiddenError(`Access to facility '${order.facilityId}' is not granted to this membership`);
+        }
         if (order.status !== 'DRAFT' || order.confirmedAt) {
           throw new BadRequestError('A lifecycle can only be attached before an order is confirmed.');
         }
