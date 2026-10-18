@@ -290,6 +290,10 @@ describe('order lifecycle intake', () => {
     expect(review.state).toBe('READY');
     expect(review.dueAt?.getTime()).toBeGreaterThanOrEqual(Date.now() + 29 * 60_000);
     expect(review.dueAt?.getTime()).toBeLessThanOrEqual(Date.now() + 30 * 60_000);
+    const completedEvent = await fixture.db.orderLifecycleEvent.findFirstOrThrow({
+      where: { workspaceId: fixture.alpha.workspaceId, instance: { orderId: order.data.id }, eventType: 'STAGE_COMPLETED' },
+    });
+    expect(JSON.parse(completedEvent.detailJson)).toEqual({ action: 'ORDER_CONFIRM', completionFact: 'ORDER_CONFIRMED' });
   });
 
   it('routes a published lifecycle from finalized order-form answers and skips the other branch', async () => {

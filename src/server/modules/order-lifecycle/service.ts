@@ -1,6 +1,7 @@
 import { ConflictError, BadRequestError } from '@/domain/errors';
 import { evaluateStageTransition, type LifecycleStageState } from '@/domain/order-lifecycle-runtime';
 import type { LifecycleAction } from '@/domain/order-lifecycle-definition';
+import { getLifecycleActionDescriptor } from './action-registry';
 
 type Tx = any;
 
@@ -36,6 +37,7 @@ export async function completeLifecycleAction(
   if (!ready) return;
 
   const { instance, stage } = ready;
+  const actionDescriptor = getLifecycleActionDescriptor(input.action);
   const assignment = JSON.parse(stage.assignmentJson) as
     | { kind: 'MEMBER'; membershipId: string }
     | { kind: 'DEPARTMENT_QUEUE'; departmentId: string; eligibleRoleCodes: string[] };
@@ -142,7 +144,7 @@ export async function completeLifecycleAction(
         toState: change.state,
         actorUserId: input.actorUserId,
         commandId: input.commandId,
-        detailJson: JSON.stringify({ action: input.action }),
+        detailJson: JSON.stringify({ action: input.action, completionFact: actionDescriptor.completionFact }),
       },
     });
   }

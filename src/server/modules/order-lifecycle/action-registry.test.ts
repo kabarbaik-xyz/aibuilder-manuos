@@ -8,6 +8,7 @@ describe('order lifecycle action registry', () => {
     for (const action of LIFECYCLE_ACTIONS) {
       expect(lifecycleActionRegistry[action].requiredPermission).toBeTruthy();
       expect(lifecycleActionRegistry[action].formPurposes.length).toBeGreaterThan(0);
+      expect(lifecycleActionRegistry[action].completionFact).toBeTruthy();
     }
   });
 
