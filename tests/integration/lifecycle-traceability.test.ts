@@ -63,6 +63,8 @@ describe('Order evidence timeline', () => {
     expect(searched.events).toHaveLength(1);
     expect(searched.events[0].shipmentId).toBe(shipment.id);
     expect(searched.events[0].references).not.toContain(shipment.id);
+    const searchedById = await getOrderEvidenceTimeline(fixture.db, alpha.users.owner.principal, order.data.id, { search: shipment.id });
+    expect(searchedById.events.map(event => event.reference)).toContain(`SHIPMENT:${shipment.id}:DELIVERED`);
   });
 
   it('does not reveal another facility order or customer-internal evidence', async () => {

@@ -402,7 +402,11 @@ export async function getOrderEvidenceTimeline(
   }
   events.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || a.reference.localeCompare(b.reference));
   const matching = search
-    ? events.filter(event => `${event.category} ${event.title} ${event.label} ${event.summary} ${event.references.join(' ')}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
+    ? events.filter(event => [
+        event.reference, event.category, event.title, event.label, event.summary,
+        ...event.references, event.orderId, event.lineId, event.jobId, event.taskId,
+        event.stageId, event.submissionId, event.lotId, event.shipmentId,
+      ].filter(Boolean).join(' ').toLocaleLowerCase().includes(search.toLocaleLowerCase()))
     : events;
   return { orderId, orderNumber: order.orderNumber, events: matching.slice(0, limit), sampled: sourceWasSampled || matching.length > limit, appliedSearch: search || null };
 }
