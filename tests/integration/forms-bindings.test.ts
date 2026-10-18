@@ -57,6 +57,51 @@ describe('published form workflow bindings', () => {
     }))).resolves.toBeUndefined();
   });
 
+  it('keeps an unbound legacy form instance authoritative without consulting current bindings', async () => {
+    const orderType = await fixture.db.orderType.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      code: `LEGACY_ORDER_TYPE_${randomUUID().slice(0, 8)}`,
+      name: 'Legacy order type',
+    } });
+    const order = await new OrderService(fixture.db).createOrderDraft(fixture.alpha.users.owner.principal, {
+      customerId: fixture.alpha.masters.customerId,
+      orderTypeId: orderType.id,
+      itemId: fixture.alpha.masters.fgItemId,
+      orderedQuantity: 1,
+      requestedDate: '2026-11-02T00:00:00.000Z',
+    }, `legacy-order-${randomUUID()}`);
+    const legacyForm = await forms.createTemplate(fixture.alpha.users.owner.principal, {
+      code: `LEGACY_FORM_${randomUUID().slice(0, 8)}`,
+      name: 'Legacy unbound specification',
+      purpose: 'ORDER_SPEC',
+    });
+    const legacyInstance = await fixture.db.formInstance.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: legacyForm.versionId,
+      subjectType: 'ORDER',
+      subjectId: order.data.id,
+      formBindingId: null,
+      required: true,
+      completionPoint: 'BEFORE_ACTION',
+      status: 'PENDING',
+    } });
+
+    await expect(fixture.db.$transaction((tx) => assertRequiredFormsFinalized(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      subjectType: 'ORDER',
+      subjectId: order.data.id,
+      completionPoint: 'BEFORE_ACTION',
+    }))).rejects.toThrow(/Legacy unbound specification/);
+
+    await fixture.db.formInstance.update({ where: { id: legacyInstance.id }, data: { status: 'SUBMITTED' } });
+    await expect(fixture.db.$transaction((tx) => assertRequiredFormsFinalized(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      subjectType: 'ORDER',
+      subjectId: order.data.id,
+      completionPoint: 'BEFORE_ACTION',
+    }))).resolves.toBeUndefined();
+  });
+
   it('pins an order form to a valid order type and records the command', async () => {
     const form = await forms.createTemplate(fixture.alpha.users.owner.principal, {
       code: `ORDER_BIND_${randomUUID().slice(0, 8)}`,
