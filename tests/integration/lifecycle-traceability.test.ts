@@ -3,6 +3,7 @@ import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { OrderService } from '@/server/modules/orders/service';
 import { getOrderEvidenceTimeline } from '@/server/modules/order-lifecycle/traceability';
 import { ForbiddenError, NotFoundError } from '@/domain/errors';
+import { FormService } from '@/server/modules/forms/service';
 
 describe('Order evidence timeline', () => {
   let fixture: FactoryFixture;
@@ -104,5 +105,67 @@ describe('Order evidence timeline', () => {
       reference: `RECOVERY_PROPOSAL:${applied.id}:APPROVED`, title: 'Reviewed schedule applied',
       summary: 'Applied 2 reviewed task assignments.',
     }));
+  });
+
+  it('omits task form evidence when the reader cannot access the underlying task', async () => {
+    const { alpha } = fixture;
+    const order = await new OrderService(fixture.db).createOrderDraft(alpha.users.owner.principal, {
+      customerId: alpha.masters.customerId, orderTypeId: alpha.masters.orderTypeId,
+      itemId: alpha.masters.fgItemId, orderedQuantity: '1', requestedDate: '2026-12-22T00:00:00.000Z',
+    }, 'evidence-timeline-task-form-order');
+    const workflowTemplate = await fixture.db.workflowTemplate.create({ data: {
+      workspaceId: alpha.workspaceId, orderTypeId: alpha.masters.orderTypeId,
+      code: 'WF-TIMELINE-PRIVATE-FORM', name: 'Timeline private form workflow',
+    } });
+    const workflowVersion = await fixture.db.workflowVersion.create({ data: {
+      workspaceId: alpha.workspaceId, templateId: workflowTemplate.id,
+      versionNumber: 1, status: 'PUBLISHED', definitionJson: '{}',
+    } });
+    const revision = await fixture.db.engineeringRevision.findFirstOrThrow({ where: { orderId: order.data.id } });
+    const workflowInstance = await fixture.db.workflowInstance.create({ data: {
+      workspaceId: alpha.workspaceId, orderId: order.data.id,
+      workflowVersionId: workflowVersion.id, engineeringRevisionId: revision.id,
+    } });
+    const task = await fixture.db.task.create({ data: {
+      workspaceId: alpha.workspaceId, instanceId: workflowInstance.id,
+      nodeKey: 'PRIVATE-OP', assignedTechnicianId: alpha.masters.technicianId,
+    } });
+    const formService = new FormService(fixture.db);
+    const form = await formService.createTemplate(alpha.users.owner.principal, {
+      code: 'TIMELINE_PRIVATE_TASK_FORM', name: 'Private task evidence', purpose: 'TASK_EVIDENCE',
+    });
+    await formService.publishFormVersion(alpha.users.owner.principal, {
+      templateId: form.templateId, versionId: form.versionId, expectedVersion: 1,
+    });
+    const formInstance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: alpha.workspaceId, formVersionId: form.versionId,
+      subjectType: 'TASK', subjectId: task.id,
+    }));
+    const submission = await fixture.db.formSubmission.create({ data: {
+      workspaceId: alpha.workspaceId, instanceId: formInstance.instanceId,
+      sequenceNumber: 1, status: 'FINAL', answersJson: '{}',
+      actorId: alpha.users.owner.principal.userId, finalizedAt: new Date('2026-12-20T10:00:00.000Z'),
+    } });
+    const ownerTimeline = await getOrderEvidenceTimeline(fixture.db, alpha.users.owner.principal, order.data.id);
+    expect(ownerTimeline.events.some(event => event.reference === `FORM_SUBMISSION:${submission.id}`)).toBe(true);
+
+    const role = await fixture.db.role.create({ data: {
+      workspaceId: alpha.workspaceId, code: 'TIMELINE_EVIDENCE_READER', name: 'Timeline evidence reader',
+    } });
+    await fixture.db.rolePermission.createMany({ data: ['order.read', 'forms.read'].map(permissionCode => ({
+      workspaceId: alpha.workspaceId, roleId: role.id, permissionCode,
+    })) });
+    await fixture.db.membershipRole.deleteMany({ where: { membershipId: alpha.users.qc.membershipId } });
+    await fixture.db.membershipRole.create({ data: {
+      workspaceId: alpha.workspaceId, membershipId: alpha.users.qc.membershipId, roleId: role.id,
+    } });
+    const restrictedReader = {
+      ...alpha.users.qc.principal,
+      permissions: new Set(['order.read', 'forms.read']),
+      roles: [role.code],
+    };
+
+    const timeline = await getOrderEvidenceTimeline(fixture.db, restrictedReader, order.data.id);
+    expect(timeline.events.some(event => event.reference === `FORM_SUBMISSION:${submission.id}`)).toBe(false);
   });
 });

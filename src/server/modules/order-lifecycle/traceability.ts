@@ -3,6 +3,7 @@ import { NotFoundError } from '@/domain/errors';
 import { formatQuantity } from '@/domain/quantity';
 import { Principal } from '@/server/auth/principal';
 import { requireAnyPermission } from '@/server/auth/permissions';
+import { FormSubmissionService } from '@/server/modules/forms/submissions';
 
 export interface OrderEvidenceEvent {
   reference: string;
@@ -270,7 +271,7 @@ export async function getOrderEvidenceTimeline(
   }
 
   if (principal.permissions.has('forms.read')) {
-    const inspections = principal.permissions.has('quality.read') && taskIds.length
+    const inspections = taskIds.length
       ? await db.inspection.findMany({ where: { workspaceId: principal.workspaceId, productionOutput: { taskId: { in: taskIds } } }, select: { id: true } })
       : [];
     const formInstances = await db.formInstance.findMany({
@@ -279,14 +280,33 @@ export async function getOrderEvidenceTimeline(
         ...(taskIds.length ? [{ subjectType: 'TASK', subjectId: { in: taskIds } }] : []),
         ...(inspections.length ? [{ subjectType: 'INSPECTION', subjectId: { in: inspections.map(inspection => inspection.id) } }] : []),
       ] },
-      select: { id: true, subjectType: true, subjectId: true, submissions: { where: { status: 'FINAL' }, select: { id: true, sequenceNumber: true, actorId: true, finalizedAt: true, correctionReason: true, instance: { select: { formVersion: { select: { versionNumber: true, contentHash: true, template: { select: { name: true } } } } } } } } },
+      select: { id: true, subjectType: true, subjectId: true },
       take: 100,
     });
     sourceWasSampled ||= formInstances.length === 100;
-    const submissionActorIds = [...new Set(formInstances.flatMap(instance => instance.submissions.map(submission => submission.actorId)))];
+    // A workspace-level forms.read grant is not enough to expose every task or
+    // inspection submission. Reuse the form domain's subject authorization.
+    const formSubmissionService = new FormSubmissionService(db);
+    const subjects = [...new Map(formInstances.map(instance => [`${instance.subjectType}:${instance.subjectId}`, {
+      subjectType: instance.subjectType as 'ORDER' | 'TASK' | 'INSPECTION', subjectId: instance.subjectId,
+    }])).values()];
+    const readableInstances = (await Promise.all(subjects.map(subject =>
+      formSubmissionService.listInstancesForSubject(principal, subject.subjectType, subject.subjectId)
+    ))).flat();
+    const readableInstanceIds = readableInstances.map(({ instance }) => instance.id);
+    const readableInstanceById = new Map(formInstances.filter(instance => readableInstanceIds.includes(instance.id)).map(instance => [instance.id, instance]));
+    const submissions = readableInstanceIds.length ? await db.formSubmission.findMany({
+      where: { workspaceId: principal.workspaceId, instanceId: { in: readableInstanceIds }, status: 'FINAL' },
+      select: { id: true, instanceId: true, sequenceNumber: true, actorId: true, finalizedAt: true, correctionReason: true, instance: { select: { formVersion: { select: { versionNumber: true, contentHash: true, template: { select: { name: true } } } } } } },
+      orderBy: [{ finalizedAt: 'desc' }, { id: 'desc' }], take: 500,
+    }) : [];
+    sourceWasSampled ||= submissions.length === 500;
+    const submissionActorIds = [...new Set(submissions.map(submission => submission.actorId))];
     const submissionActors = submissionActorIds.length ? await db.user.findMany({ where: { id: { in: submissionActorIds } }, select: { id: true, name: true } }) : [];
     const submissionActorById = new Map(submissionActors.map(actor => [actor.id, actor.name]));
-    for (const instance of formInstances) for (const submission of instance.submissions) {
+    for (const submission of submissions) {
+      const instance = readableInstanceById.get(submission.instanceId);
+      if (!instance) continue;
       const task = taskById.get(instance.subjectId);
       const mo = task?.jobsheet?.manufacturingOrder;
       const subject = instance.subjectType === 'ORDER' ? 'Order specification' : instance.subjectType === 'TASK' ? task?.nodeKey ?? 'Task evidence' : 'Inspection evidence';
