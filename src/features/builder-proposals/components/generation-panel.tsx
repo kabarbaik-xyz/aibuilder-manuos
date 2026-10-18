@@ -45,7 +45,7 @@ export function GenerationPanel({
     }
   };
 
-  if (embedded) {
+  if (embedded && target === 'FORM') {
     const examples = [
       { label: 'Inspection checklist', prompt: 'Create an inspection checklist with a required pass/fail result, measured dimension in mm, and defect notes required when the result is fail.' },
       { label: 'Order intake', prompt: 'Create an order intake form with customer reference, requested delivery date, material specification, and production notes.' },
@@ -75,12 +75,12 @@ export function GenerationPanel({
       {!embedded && <div className="flex items-center gap-2">
         <Icon name="spark" className="h-4 w-4 text-primary" />
         <span className="font-semibold text-xs uppercase tracking-wider text-ink">
-          Draft {target === 'WORKFLOW' ? 'workflow' : 'form'} with AI
+          Draft {target === 'FORM' ? 'form' : target === 'LIFECYCLE' ? 'order lifecycle' : 'routing'} with AI
         </span>
       </div>}
 
       <p className="text-xs text-muted">
-        {embedded ? 'Describe the fields and rules you need. Review the generated draft before applying it.' : 'Describe your manufacturing requirements, routing constraints, or inspection parameters. Review the generated draft before applying it.'}
+        {target === 'LIFECYCLE' ? 'Describe the stages, departments, handoffs and evidence you need. AI uses the current draft and available workspace records. Review its proposal before applying.' : 'Describe your manufacturing requirements, routing constraints, or inspection parameters. Review the generated draft before applying it.'}
       </p>
 
       <form onSubmit={handleGenerate} className="space-y-3">
@@ -89,7 +89,9 @@ export function GenerationPanel({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={
-            target === 'WORKFLOW'
+            target === 'LIFECYCLE'
+              ? 'e.g. Sales confirms the request, Engineering approves, PPIC schedules production, technicians execute, QC inspects, then Warehouse delivers. Attach compatible published forms to each stage.'
+              : target === 'WORKFLOW'
               ? 'e.g. Design a 3-step CNC process for aluminum bracket: rough cut, precision milling with 45min planned duration, and final dimensional QC inspection.'
               : 'e.g. Create a paint inspection form with finish type (painted/raw), conditional paint code visible only when painted, and dry film thickness.'
           }
@@ -116,7 +118,7 @@ export function GenerationPanel({
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
           <span className="small muted">Try an example:</span>
-          {target === 'WORKFLOW' ? (
+          {target === 'LIFECYCLE' ? <Button type="button" size="small" variant="soft" disabled={disabled || createMutation.isPending} onClick={() => setPrompt('Create an order-to-delivery lifecycle: Sales confirms requirements, Engineering approves the BOM and routing, PPIC plans capacity, Production executes, QC performs final inspection, then Warehouse confirms delivery. Use existing eligible department queues and compatible published forms.')} >Order to delivery</Button> : target === 'WORKFLOW' ? (
             <Button type="button" size="small" variant="soft" disabled={disabled || createMutation.isPending} onClick={() => setPrompt('Create a 3-step aluminum bracket route: rough cut, CNC milling requiring the verified machining skill and matching machine class, then dimensional inspection. Include realistic planned durations and predecessor dependencies.')}>CNC bracket route</Button>
           ) : (
             <Button type="button" size="small" variant="soft" disabled={disabled || createMutation.isPending} onClick={() => setPrompt('Create a paint inspection form with finish type, paint code required only when the finish is painted, and dry film thickness in microns.')}>Paint inspection form</Button>

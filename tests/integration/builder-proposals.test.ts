@@ -1,3 +1,4 @@
+import { fixtureBuilderAI } from '../fixtures/builder-ai';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { BuilderProposalService } from '../../src/server/modules/builder-proposals/service';
@@ -11,7 +12,7 @@ describe('WB02: AI Builder Proposals Lifecycle & Domain Authority', () => {
 
   beforeAll(async () => {
     fixture = await createFactoryFixture();
-    service = new BuilderProposalService(fixture.db);
+    service = new BuilderProposalService(fixture.db, fixtureBuilderAI);
   });
 
   afterAll(async () => {

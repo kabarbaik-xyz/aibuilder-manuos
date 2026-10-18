@@ -16,6 +16,9 @@ import { useSaveWorkflowVersionDraft, useWorkflowVersionAction } from '../hooks'
 import { WorkflowTemplateDto, WorkflowVersionDto } from '../api';
 import { lifecycleVersionActions } from '../lifecycle-version-actions';
 import { LifecycleWorkflowMap } from './lifecycle-workflow-map';
+import { GenerationPanel } from '@/features/builder-proposals/components/generation-panel';
+import { ProposalReview } from '@/features/builder-proposals/components/proposal-review';
+import type { BuilderProposalDto } from '@/server/modules/builder-proposals/contracts';
 import { LIFECYCLE_ACTIONS, QC_LIFECYCLE_OUTCOMES, OrderLifecycleDefinition, LifecycleAction, FormAnswerBranchCondition, validateLifecycleDefinition } from '@/domain/order-lifecycle-definition';
 
 interface DepartmentOption { id: string; name: string }
@@ -35,6 +38,7 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
   template: WorkflowTemplateDto; version: WorkflowVersionDto; departments: DepartmentOption[];
 }) {
   const router = useRouter();
+  const [aiProposal, setAiProposal] = useState<BuilderProposalDto | null>(null);
   const [definition, setDefinition] = useState<OrderLifecycleDefinition>(() => {
     try { return JSON.parse(version.definitionJson) as OrderLifecycleDefinition; }
     catch { return { schemaVersion: 1, name: template.name, stages: [] }; }
@@ -164,6 +168,16 @@ export function LifecycleDefinitionEditor({ template, version, departments }: {
         </div>
       </div>
       {!validation.isValid && <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm"><strong>Fix these before publish</strong><ul className="mt-2 list-disc pl-5">{validation.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.stageKey ? `${error.stageKey}${error.fieldKey ? ` › ${error.fieldKey}` : ''}: ` : ''}{error.message}</li>)}</ul></div>}
+      {!readOnly && <details className="rounded-xl border border-line bg-surface-muted">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink">Draft lifecycle with AI</summary>
+        <div className="border-t border-line bg-surface p-4">
+          {aiProposal ? <ProposalReview proposal={aiProposal} expectedTargetRevision={version.version} currentDefinition={definition} onDiscard={() => setAiProposal(null)} onApplied={() => {
+            setDefinition(JSON.parse(aiProposal.candidateJson) as OrderLifecycleDefinition);
+            setAiProposal(null);
+            router.refresh();
+          }} /> : <GenerationPanel embedded target="LIFECYCLE" targetDraftId={version.id} baseRevision={version.version} onGenerated={setAiProposal} />}
+        </div>
+      </details>}
       <Tabs variant="underline" ariaLabel="Workflow views" activeId={activeView} onChange={setActiveView} items={[
         { id: 'map', label: 'Node view', count: definition.stages.length },
         { id: 'edit', label: 'Edit view' },

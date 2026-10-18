@@ -7,13 +7,11 @@ import {
   CreateProposalInput,
   ApplyProposalInput,
   BuilderProposalDto,
-  BuilderTarget,
   ProposalStatus,
 } from './contracts';
-import { validateWorkflowDefinition, WorkflowDefinition } from '@/domain/workflow-definition';
-import { validateDefinition } from '@/domain/forms/schema';
 import { FormDefinition } from '@/domain/forms/types';
 import { callGeminiStructured } from '@/server/ai/gemini-client';
+import { generateBuilderCandidate } from './generation';
 import { WorkflowService } from '@/server/modules/workflow/service';
 import { FormService } from '@/server/modules/forms/service';
 
@@ -81,7 +79,7 @@ function hashContent(content: string): string {
 }
 
 export class BuilderProposalService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient, private readonly generate: typeof callGeminiStructured = callGeminiStructured) {}
 
   async createProposal(
     principal: Principal,
@@ -92,92 +90,8 @@ export class BuilderProposalService {
     const id = randomUUID();
     const now = new Date().toISOString();
 
-    let candidateObj: any;
-    let assumptions: string[] = [];
-    let questions: string[] = [];
-    let validationFindings: Array<{ field?: string; message: string }> = [];
-
-    if (input.target === 'WORKFLOW') {
-      // Bounded template or AI synthesis for manufacturing DAG
-      const promptLower = input.prompt.toLowerCase();
-      const isCnc = promptLower.includes('cnc') || promptLower.includes('milling') || promptLower.includes('lathe');
-      const isAssembly = promptLower.includes('assembly') || promptLower.includes('weld');
-
-      candidateObj = {
-        schemaVersion: 1,
-        name: isCnc ? 'Precision CNC Machining Flow' : isAssembly ? 'Fabrication & Assembly Flow' : 'Standard Manufacturing Flow',
-        nodes: [
-          {
-            key: 'OP10_PREP',
-            name: 'Material Cut & Preparation',
-            type: 'OPERATION',
-            plannedDurationMinutes: 30,
-          },
-          {
-            key: isCnc ? 'OP20_MILL' : 'OP20_ASSEMBLE',
-            name: isCnc ? 'CNC Milling Operation' : 'Subassembly Fit-up',
-            type: 'OPERATION',
-            plannedDurationMinutes: 60,
-          },
-          {
-            key: 'QC30_INSPECT',
-            name: 'In-Process Dimensional Inspection',
-            type: 'INSPECTION',
-            plannedDurationMinutes: 15,
-          },
-        ],
-        edges: [
-          { fromNodeKey: 'OP10_PREP', toNodeKey: isCnc ? 'OP20_MILL' : 'OP20_ASSEMBLE', joinPolicy: 'AND' },
-          { fromNodeKey: isCnc ? 'OP20_MILL' : 'OP20_ASSEMBLE', toNodeKey: 'QC30_INSPECT', joinPolicy: 'AND' },
-        ],
-      };
-
-      const val = validateWorkflowDefinition(candidateObj as WorkflowDefinition);
-      if (!val.isValid) {
-        validationFindings = val.errors.map((e) => ({ field: e.nodeKey || e.field, message: e.message }));
-      }
-      assumptions.push('Default planned durations set based on standard machining work center rates.');
-      assumptions.push('Final inspection step placed after all machining operations.');
-    } else {
-      // FORM Target
-      candidateObj = {
-        schemaVersion: 1,
-        purpose: 'QC_EVIDENCE',
-        fields: [
-          {
-            key: 'inspection_result',
-            label: 'Inspection Disposition',
-            kind: 'select',
-            required: true,
-            options: [
-              { value: 'pass', label: 'Pass' },
-              { value: 'fail', label: 'Fail' },
-            ],
-          },
-          {
-            key: 'defect_notes',
-            label: 'Defect Details',
-            kind: 'textarea',
-            required: true,
-            visibleWhen: { fieldKey: 'inspection_result', operator: 'equals', value: 'fail' },
-          },
-          {
-            key: 'measured_dimensions',
-            label: 'Measured Tolerance (mm)',
-            kind: 'decimal',
-            precision: 2,
-            required: false,
-          },
-        ],
-      };
-
-      try {
-        validateDefinition(candidateObj as FormDefinition);
-      } catch (err: any) {
-        validationFindings.push({ message: err.message || 'Invalid form definition' });
-      }
-      assumptions.push('Conditional visibility configured for defect notes when inspection fails.');
-    }
+    const { candidate: candidateObj, assumptions, questions, validationFindings, referenceLabels, baseRevision } =
+      await generateBuilderCandidate(this.prisma, principal, input, this.generate);
 
     const candidateJson = JSON.stringify(candidateObj);
     const candidateHash = hashContent(candidateJson);
@@ -188,13 +102,14 @@ export class BuilderProposalService {
       actorUserId: principal.userId,
       target: input.target,
       targetDraftId: input.targetDraftId,
-      baseRevision: input.baseRevision,
+      baseRevision,
       prompt: input.prompt,
       candidateJson,
       candidateHash,
       validationFindings,
       assumptions,
       questions,
+      referenceLabels,
       status: 'GENERATED',
       createdAt: now,
       updatedAt: now,
@@ -209,6 +124,7 @@ export class BuilderProposalService {
     if (!proposal || proposal.workspaceId !== principal.workspaceId) {
       throw new NotFoundError(`AI Builder proposal '${id}' not found`);
     }
+    BuilderProposalPolicy.requireGenerate(principal, proposal.target);
     return proposal;
   }
 
@@ -229,7 +145,7 @@ export class BuilderProposalService {
       throw new BadRequestError(`Cannot apply proposal in status '${proposal.status}'`);
     }
 
-    if (proposal.candidateHash !== input.reviewedCandidateHash) {
+    if (hashContent(proposal.candidateJson) !== proposal.candidateHash || proposal.candidateHash !== input.reviewedCandidateHash) {
       throw new ConflictError('Reviewed candidate hash does not match stored proposal. Please review the updated proposal.');
     }
 
@@ -247,7 +163,10 @@ export class BuilderProposalService {
     // Apply atomically to target draft
     let appliedDraftReference = '';
 
-    if (proposal.target === 'WORKFLOW') {
+    if (proposal.target === 'WORKFLOW' || proposal.target === 'LIFECYCLE') {
+      const target = await this.prisma.workflowVersion.findFirst({ where: { id: proposal.targetDraftId, workspaceId: principal.workspaceId }, select: { template: { select: { kind: true } } } });
+      if (!target) throw new NotFoundError('Selected workflow draft was not found.');
+      if ((proposal.target === 'LIFECYCLE') !== (target.template.kind === 'ORDER_LIFECYCLE')) throw new BadRequestError('AI proposal does not match this workflow kind.');
       await new WorkflowService(this.prisma).saveVersionDraft(principal, proposal.targetDraftId, {
         expectedVersion: input.expectedTargetRevision,
         definition: JSON.parse(proposal.candidateJson),
@@ -256,9 +175,10 @@ export class BuilderProposalService {
     } else {
       const target = await this.prisma.formVersion.findFirst({
         where: { id: proposal.targetDraftId, workspaceId: principal.workspaceId },
-        select: { templateId: true },
+        select: { templateId: true, template: { select: { purpose: true } } },
       });
       if (!target) throw new NotFoundError(`Form draft '${proposal.targetDraftId}' not found`);
+      if ((JSON.parse(proposal.candidateJson) as FormDefinition).purpose !== target.template.purpose) throw new BadRequestError('Generated form purpose does not match the selected template.');
       await new FormService(this.prisma).updateDraftVersion(principal, target.templateId, proposal.targetDraftId, {
         expectedVersion: input.expectedTargetRevision,
         definition: JSON.parse(proposal.candidateJson) as FormDefinition,

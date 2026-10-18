@@ -93,7 +93,7 @@ export class WorkflowService {
     return template;
   }
 
-  private async validateLifecycleReferences(
+  async validateLifecycleReferences(
     tx: any,
     workspaceId: string,
     definition: OrderLifecycleDefinition

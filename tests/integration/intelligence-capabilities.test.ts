@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
 import { CapabilityRegistryService } from '@/server/modules/intelligence/capabilities';
 
@@ -63,5 +63,14 @@ describe('CoreAI capability readiness', () => {
     expect(intake?.summary).toContain('TXT/CSV');
     expect(intake?.prerequisite).toContain('PDF/image OCR');
     expect(intake?.prerequisite).toContain('line-span citations');
+  });
+
+  it('reports AI builder provider readiness without pretending static generation is available', () => {
+    try {
+      vi.stubEnv('GEMINI_API_KEY', '');
+      expect(service.getCapabilities(fixture.alpha.users.owner.principal).capabilities.find(capability => capability.id === 'BLD-01')).toMatchObject({ state: 'UNCONFIGURED_PROVIDER', engineConfigured: false });
+      vi.stubEnv('GEMINI_API_KEY', 'fixture-key-not-a-real-provider-secret');
+      expect(service.getCapabilities(fixture.alpha.users.owner.principal).capabilities.find(capability => capability.id === 'BLD-01')).toMatchObject({ state: 'AVAILABLE', engineConfigured: true });
+    } finally { vi.unstubAllEnvs(); }
   });
 });

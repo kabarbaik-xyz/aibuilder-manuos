@@ -7,6 +7,83 @@ servers:
   - url: http://localhost:3000
     description: Local development server
 paths:
+  /api/ai/builder-proposals:
+    post:
+      summary: Generate a reviewable form, routing or order-lifecycle draft with AI
+      description: Requires workflow.author for WORKFLOW/LIFECYCLE or forms.create/forms.edit_draft for FORM. Loads only workspace-scoped persisted draft and active catalog context. No template fallback is returned on provider failure. Generation never changes the target draft. The target must be DRAFT; baseRevision is its optimistic-lock version, not versionNumber. Generated candidates include blocking schema/domain/catalog findings and must be reviewed before apply.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target, prompt]
+              properties:
+                target: { type: string, enum: [WORKFLOW, LIFECYCLE, FORM] }
+                prompt: { type: string, minLength: 1, maxLength: 8000 }
+                targetDraftId: { type: string }
+                baseRevision: { type: integer, minimum: 1 }
+            example:
+              target: LIFECYCLE
+              prompt: Sales confirms requirements, Engineering approves, PPIC plans capacity, Production executes, QC inspects, then Warehouse delivers. Use existing departments and published forms.
+              targetDraftId: editable-workflow-version-id
+              baseRevision: 3
+      responses:
+        '201':
+          description: Persisted proposal, not an applied draft
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BuilderProposal' }
+        '400': { description: Workflow target kind mismatch or invalid request }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Draft is no longer editable or baseRevision is stale }
+        '502': { description: AI_INVALID_RESPONSE - provider returned malformed proposal JSON }
+        '503': { description: AI_UNAVAILABLE - provider missing, unavailable or timed out; retryable }
+  /api/ai/builder-proposals/{id}:
+    get:
+      summary: Read a proposal in the authorized workspace
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Stored proposal; author capability is rechecked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/BuilderProposal' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/ai/builder-proposals/{id}/apply:
+    post:
+      summary: Apply a human-reviewed AI candidate to an editable draft
+      description: Requires workflow.author or forms.edit_draft. Verifies stored content hash, explicit acknowledgment, blocking findings, target kind/purpose and current optimistic-lock revision. Uses the normal domain draft-save command; never publishes. An obsolete candidate must be regenerated and reviewed again.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedTargetRevision, reviewedCandidateHash, humanAcknowledgment, idempotencyKey]
+              properties:
+                expectedTargetRevision: { type: integer, minimum: 1 }
+                reviewedCandidateHash: { type: string, minLength: 1 }
+                humanAcknowledgment: { type: boolean, enum: [true] }
+                idempotencyKey: { type: string, minLength: 1 }
+      responses:
+        '200': { description: Applied draft reference and APPLIED status; draft revision incremented }
+        '400': { description: Missing acknowledgment/target, blocking findings, purpose/kind mismatch or proposal no longer GENERATED }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Candidate hash mismatch or stale target revision }
   /api/intelligence/capabilities:
     get:
       summary: List AI capabilities visible to the authenticated workspace principal
@@ -3853,6 +3930,34 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    BuilderProposal:
+      type: object
+      required: [id, workspaceId, actorUserId, target, prompt, candidateJson, candidateHash, validationFindings, assumptions, questions, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        actorUserId: { type: string }
+        target: { type: string, enum: [WORKFLOW, LIFECYCLE, FORM] }
+        targetDraftId: { type: string }
+        baseRevision: { type: integer, minimum: 1 }
+        prompt: { type: string }
+        candidateJson: { type: string, description: Serialized validated-or-blocked definition, never executable instructions }
+        candidateHash: { type: string }
+        validationFindings:
+          type: array
+          items:
+            type: object
+            required: [message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+        assumptions: { type: array, items: { type: string } }
+        questions: { type: array, items: { type: string } }
+        referenceLabels: { type: object, additionalProperties: { type: string }, description: Authorized department, member, role and form display labels }
+        status: { type: string, enum: [GENERATED, APPLIED, DISCARDED, FAILED] }
+        appliedDraftReference: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     LifecycleBranchCondition:
       description: Typed activation rule. Legacy form conditions without kind remain accepted as FORM_ANSWER for published workflow compatibility.
       oneOf:

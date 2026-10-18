@@ -53,12 +53,13 @@ export function ProposalReview({
     candidate = null;
   }
   const current = currentDefinition && typeof currentDefinition === 'object' ? currentDefinition as Record<string, unknown> : {};
+  const nodeProperty = proposal.target === 'LIFECYCLE' ? 'stages' : 'nodes';
   const candidateRows = proposal.target === 'FORM'
     ? (Array.isArray(candidate?.fields) ? candidate.fields : []).filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'))
-    : (Array.isArray(candidate?.nodes) ? candidate.nodes : []).filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'));
+    : (Array.isArray(candidate?.[nodeProperty]) ? candidate[nodeProperty] : []).filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'));
   const currentRows = proposal.target === 'FORM'
     ? (Array.isArray(current.fields) ? current.fields : []).filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'))
-    : (Array.isArray(current.nodes) ? current.nodes : []).filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'));
+    : (Array.isArray(current[nodeProperty]) ? current[nodeProperty] : []).filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'));
   const rowKey = (row: Record<string, unknown>) => String(row.key ?? '');
   const removedRows = currentRows.filter(row => !candidateRows.some(candidateRow => rowKey(candidateRow) === rowKey(row)));
   const edges = Array.isArray(candidate?.edges) ? candidate.edges.filter((edge): edge is Record<string, unknown> => Boolean(edge && typeof edge === 'object')) : [];
@@ -116,7 +117,9 @@ export function ProposalReview({
               const key = rowKey(row);
               const previous = currentRows.find(value => rowKey(value) === key);
               const change = !previous ? 'Added' : JSON.stringify(previous) === JSON.stringify(row) ? 'Unchanged' : 'Changed';
-              const details = proposal.target === 'FORM'
+              const details = proposal.target === 'LIFECYCLE'
+                ? `${String(row.action ?? '').replaceAll('_', ' ')} · ${proposal.referenceLabels?.[String(row.departmentId)] ?? 'Department unavailable'} · ${row.assignment && typeof row.assignment === 'object' && (row.assignment as Record<string, unknown>).kind === 'MEMBER' ? proposal.referenceLabels?.[String((row.assignment as Record<string, unknown>).membershipId)] ?? 'Assigned person' : 'Department queue'} · ${Array.isArray(row.forms) ? row.forms.length : 0} form(s)${Array.isArray(row.predecessors) && row.predecessors.length ? ` · Starts after: ${row.predecessors.map(key => String(candidateRows.find(stage => rowKey(stage) === key)?.name ?? key)).join(', ')}` : ' · First stage'}`
+                : proposal.target === 'FORM'
                 ? `${String(row.kind ?? 'field')} · ${row.required ? 'Required' : 'Optional'}${Array.isArray(row.options) ? ` · Options: ${row.options.map(option => typeof option === 'object' && option ? String((option as Record<string, unknown>).label ?? (option as Record<string, unknown>).value ?? '') : '').filter(Boolean).join(', ')}` : ''}${row.visibleWhen && typeof row.visibleWhen === 'object' ? ` · Conditional visibility: ${String((row.visibleWhen as Record<string, unknown>).fieldKey ?? 'rule')}` : ''}`
                 : `${String(row.type ?? 'step')} · ${typeof row.plannedDurationMinutes === 'number' ? `${row.plannedDurationMinutes} planned minutes` : 'duration unavailable'}${row.requirements && typeof row.requirements === 'object' ? ` · Requirements: ${Object.entries(row.requirements as Record<string, unknown>).map(([name, value]) => `${name} ${Array.isArray(value) ? value.map(entry => typeof entry === 'object' && entry ? String((entry as Record<string, unknown>).skillId ?? (entry as Record<string, unknown>).id ?? '') : String(entry)).filter(Boolean).join(', ') : String(value)}`).join('; ')}` : ''}`;
               return <li key={`${key}:${index}`} className="flex flex-wrap items-start justify-between gap-2 p-3"><div><strong className="text-sm text-ink">{String(row.label ?? row.name ?? key ?? `Entry ${index + 1}`)}</strong><span className="ml-2 font-mono text-xs text-muted">{key}</span><p className="small muted mt-1">{details}</p></div><Badge variant={change === 'Added' ? 'blue' : change === 'Changed' ? 'warning' : 'default'}>{change}</Badge></li>;

@@ -190,13 +190,13 @@ export function FormDefinitionEditor({ template, version }: FormDefinitionEditor
               target="FORM"
               embedded
               targetDraftId={version.id}
-              baseRevision={version.versionNumber}
+              baseRevision={version.version}
               onGenerated={(prop) => setAiProposal(prop)}
             />
           ) : (
             <ProposalReview
               proposal={aiProposal}
-              expectedTargetRevision={version.versionNumber}
+              expectedTargetRevision={version.version}
               currentDefinition={definition}
               onApplied={() => {
                 setAiProposal(null);

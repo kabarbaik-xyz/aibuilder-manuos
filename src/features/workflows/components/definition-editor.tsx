@@ -285,13 +285,13 @@ export function DefinitionEditor({
             <GenerationPanel
               target="WORKFLOW"
               targetDraftId={version.id}
-              baseRevision={version.versionNumber}
+              baseRevision={version.version}
               onGenerated={(prop) => setAiProposal(prop)}
             />
           ) : (
             <ProposalReview
               proposal={aiProposal}
-              expectedTargetRevision={version.versionNumber}
+              expectedTargetRevision={version.version}
               currentDefinition={definition}
               onApplied={(ref) => {
                 setAiProposal(null);

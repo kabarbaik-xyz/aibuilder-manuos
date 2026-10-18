@@ -1,3 +1,4 @@
+import { fixtureBuilderAI } from '../fixtures/builder-ai';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { createFactoryFixture, FactoryFixture } from '../fixtures/factory';
@@ -223,7 +224,7 @@ describe('DF05: Form Gates & Domain Lifecycle Integration', () => {
 
   it('proves an AI-assisted form draft proposal applies to draft, publishes, pins to task, gates completion, and preserves pinned version', async () => {
     const { BuilderProposalService } = await import('../../src/server/modules/builder-proposals/service');
-    const proposalService = new BuilderProposalService(fixture.db);
+    const proposalService = new BuilderProposalService(fixture.db, fixtureBuilderAI);
 
     // 1. Create a draft form template
     const tpl = await formService.createTemplate(fixture.alpha.users.owner.principal, {
