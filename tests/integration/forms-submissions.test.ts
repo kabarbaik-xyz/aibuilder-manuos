@@ -287,6 +287,42 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       .toMatchObject({ status: 'PENDING', version: 1 });
   });
 
+  it('rejects an attachment linked to a different operational subject', async () => {
+    await fixture.db.inspection.createMany({ data: [
+      { id: 'qc-insp-attachment-target', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId },
+      { id: 'qc-insp-attachment-other', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId },
+    ] });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-attachment-target',
+    }));
+    const document = await fixture.db.document.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      storageKey: `forms/other-subject-${Date.now()}`,
+      fileName: 'other-inspection.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 20,
+      checksumSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      uploadedById: fixture.alpha.users.qc.userId,
+    } });
+    await fixture.db.documentLink.create({ data: {
+      workspaceId: fixture.alpha.workspaceId,
+      documentId: document.id,
+      parentType: 'INSPECTION',
+      parentId: 'qc-insp-attachment-other',
+    } });
+
+    await expect(submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: { finish: 'raw', dry_film_microns: '30.0', evidence_files: [document.id] },
+    })).rejects.toThrow(/Attachment .* unavailable for this form subject/i);
+    expect(await fixture.db.formInstance.findUniqueOrThrow({ where: { id: instance.instanceId } }))
+      .toMatchObject({ status: 'PENDING', version: 1 });
+  });
+
   it('serializes competing finalizations and replays an idempotent result once', async () => {
     await fixture.db.inspection.create({ data: { id: 'qc-insp-finalize-race', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
@@ -438,7 +474,7 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
       expectedVersion: 2,
       reason: 'Attach an inaccessible document',
       answers: { finish: 'raw', dry_film_microns: '35.0', evidence_files: [foreignDocument.id] },
-    })).rejects.toThrow(/Attachment .* unavailable in this workspace/i);
+    })).rejects.toThrow(/Attachment .* unavailable for this form subject/i);
 
     // Valid correction succeeds and links supersedesId
     const correctionRes = await submissionService.createCorrection(fixture.alpha.users.qc.principal, {

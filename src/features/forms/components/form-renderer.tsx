@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { DatePicker } from '@/components/ui/date-picker';
+import { getFormAttachmentUploadLink, type FormAttachmentSubjectType } from './attachment-context';
 
 export interface FormRendererProps {
   definition: FormDefinition;
@@ -15,6 +16,7 @@ export interface FormRendererProps {
   onChange?: (nextValue: Answers) => void;
   issues?: FormIssue[];
   readOnly?: boolean;
+  attachmentSubject?: { type: FormAttachmentSubjectType; id: string };
 }
 
 export function FormRenderer({
@@ -23,6 +25,7 @@ export function FormRenderer({
   onChange,
   issues = [],
   readOnly = false,
+  attachmentSubject,
 }: FormRendererProps) {
   const rendererId = useId().replace(/:/g, '');
   const visibleKeys = evaluateVisibility(definition, value);
@@ -157,7 +160,7 @@ export function FormRenderer({
               );
             }
             case 'attachment':
-              return <AttachmentControl value={Array.isArray(val) ? val : []} onChange={(next) => handleFieldChange(field.key, next)} readOnly={readOnly} />;
+              return <AttachmentControl value={Array.isArray(val) ? val : []} onChange={(next) => handleFieldChange(field.key, next)} readOnly={readOnly} uploadLink={attachmentSubject ? getFormAttachmentUploadLink(attachmentSubject.type, attachmentSubject.id) : undefined} />;
             case 'reference':
               return (
                 <ReferenceControl
@@ -228,7 +231,7 @@ function ReferenceControl({ id, referenceType, value, onChange, disabled }: {
   );
 }
 
-function AttachmentControl({ id, value, onChange, readOnly }: { id?: string; value: string[]; onChange: (next: string[]) => void; readOnly: boolean }) {
+function AttachmentControl({ id, value, onChange, readOnly, uploadLink }: { id?: string; value: string[]; onChange: (next: string[]) => void; readOnly: boolean; uploadLink?: { parentType: 'ORDER' | 'TASK'; parentId: string } }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -247,6 +250,10 @@ function AttachmentControl({ id, value, onChange, readOnly }: { id?: string; val
         if (!['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) throw new Error(`${file.name}: gunakan PDF, PNG, atau JPEG.`);
         const form = new FormData();
         form.set('file', file);
+        if (uploadLink) {
+          form.set('parentType', uploadLink.parentType);
+          form.set('parentId', uploadLink.parentId);
+        }
         const response = await fetch('/api/documents/upload', { method: 'POST', body: form });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.id) throw new Error(payload.error?.message || `Gagal mengunggah ${file.name}.`);

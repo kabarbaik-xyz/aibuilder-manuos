@@ -180,7 +180,8 @@ export class FormSubmissionService {
     tx: Prisma.TransactionClient,
     principal: Principal,
     definition: FormDefinition,
-    answers: Answers
+    answers: Answers,
+    subject: { subjectType: 'ORDER' | 'TASK' | 'INSPECTION'; subjectId: string }
   ): Promise<void> {
     for (const field of definition.fields) {
       const value = answers[field.key];
@@ -200,10 +201,17 @@ export class FormSubmissionService {
         for (const documentId of value) {
           if (typeof documentId !== 'string') continue;
           const document = await tx.document.findFirst({
-            where: { id: documentId, workspaceId: principal.workspaceId },
+            where: {
+              id: documentId,
+              workspaceId: principal.workspaceId,
+              OR: [
+                { uploadedById: principal.userId, links: { none: {} } },
+                { links: { some: { workspaceId: principal.workspaceId, parentType: subject.subjectType, parentId: subject.subjectId } } },
+              ],
+            },
             select: { id: true },
           });
-          if (!document) throw new BadRequestError(`Attachment '${documentId}' is unavailable in this workspace.`);
+          if (!document) throw new BadRequestError(`Attachment '${documentId}' is unavailable for this form subject.`);
         }
       }
     }
@@ -316,7 +324,7 @@ export class FormSubmissionService {
       });
       if (!current) throw new NotFoundError(`Form instance '${input.instanceId}' not found`);
       await this.assertInstanceAccess(principal, current, tx);
-      await this.assertAnswerReferences(tx, principal, definition, validationRes.normalized);
+      await this.assertAnswerReferences(tx, principal, definition, validationRes.normalized, current);
       if (current.version !== input.expectedVersion || current.status === 'SUBMITTED') {
         throw new ConflictError(`Form instance '${input.instanceId}' changed or is already finalized`);
       }
@@ -407,7 +415,7 @@ export class FormSubmissionService {
       });
       if (!current) throw new NotFoundError(`Form instance '${input.instanceId}' not found`);
       await this.assertInstanceAccess(principal, current, tx);
-      await this.assertAnswerReferences(tx, principal, definition, validationRes.normalized);
+      await this.assertAnswerReferences(tx, principal, definition, validationRes.normalized, current);
       if (current.version !== input.expectedVersion || current.status === 'SUBMITTED') {
         throw new ConflictError(`Form instance '${input.instanceId}' changed or is already finalized`);
       }
@@ -534,7 +542,7 @@ export class FormSubmissionService {
       });
       if (!current) throw new NotFoundError(`Form instance '${input.instanceId}' not found`);
       await this.assertInstanceAccess(principal, current, tx);
-      await this.assertAnswerReferences(tx, principal, definition, validationRes.normalized);
+      await this.assertAnswerReferences(tx, principal, definition, validationRes.normalized, current);
       const currentLatest = current.submissions[0];
       if (current.version !== input.expectedVersion || current.status !== 'SUBMITTED' || !currentLatest || currentLatest.status !== 'FINAL') {
         throw new ConflictError(`Form instance '${input.instanceId}' changed before correction`);
