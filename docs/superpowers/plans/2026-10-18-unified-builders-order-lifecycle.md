@@ -233,7 +233,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - Spec sends an instruction-injection question with an out-of-scope order ID and requested delivery-state change; grounded fallback stays within the server-selected order and DB status remains unchanged. Live-provider refusal/self-approval behavior is not proven because no paid live model call was run.
 - [ ] AI builder changes apply only to authorized drafts after deterministic schema/catalog validation. Operational AI changes create the existing validated proposal; approval invokes Task8/domain adapters and never direct state mutation.
 - [ ] Test that prompt text cannot change actor/workspace, unlock forms, self-approve schedules or claim unsupported facts. Provider failure produces an honest grounded fallback with no mutation.
-- [ ] Update capabilities/help copy so only connected behaviors are advertised.
+- [x] Update capabilities/help copy so only connected behaviors are advertised; Recovery explicitly says schedule review/apply are connected and alternative strategies are unavailable, covered by the capability registry spec.
 
 ### Task10: Connected order evidence timeline and passport links
 

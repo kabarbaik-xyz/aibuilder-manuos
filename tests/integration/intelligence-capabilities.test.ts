@@ -52,6 +52,8 @@ describe('CoreAI capability readiness', () => {
       statusLabel: 'Schedule review and transactional Apply available; alternatives unavailable',
     });
     expect(recovery?.prerequisite).toContain('Before applying, revalidate current bookings and versions');
+    expect(recovery?.summary).toContain('Alternative recovery strategies remain unavailable');
+    expect(recovery?.unavailableReason).toContain('Overtime');
   });
 
   it('describes supported RFQ file types and remaining citation limits', () => {
