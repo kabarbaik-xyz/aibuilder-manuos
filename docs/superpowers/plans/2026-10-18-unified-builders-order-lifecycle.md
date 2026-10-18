@@ -147,11 +147,11 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Create:** `src/features/workflows/components/stage-assignment-editor.tsx`, `stage-form-bindings.tsx`, `stage-execution-preview.tsx`; authenticated binding/catalog routes under `src/app/api/workflows/`.
 **Tests:** extend workflow canvas adapter/state tests; create `tests/browser/lifecycle-builder.spec.ts`.
 
-- [ ] Let author select stage action, department, eligible roles and specific member or department queue. Show resulting access separately from organization metadata.
-- [ ] Select published forms by readable template/version, requiredness and completion point; show field preview, definition hash/version and unsupported/missing references.
-- [ ] Select deadline vs resource-capacity scheduling. Only resource-capacity stages can invoke approved production routing and Planning; do not demand machines for Sales/approval/delivery administration.
+- [x] Let author select stage action, department, eligible roles and specific member or department queue. Show resulting access separately from organization metadata.
+- [x] Select published forms by readable template/version, requiredness and completion point; show field preview, definition hash/version and unsupported/missing references.
+- [x] Select deadline vs resource-capacity scheduling. Only resource-capacity stages can invoke approved production routing and Planning; do not demand machines for Sales/approval/delivery administration.
 - [ ] Make routing conditions and rejection/rework outcomes configurable through typed controls, not free JSON or raw condition codes.
-- [ ] Preview who receives work, what forms are shown, what blocks completion and which stage/branch activates next. Preview remains non-mutating and is not proof of actual scheduling capacity.
+- [x] Preview who receives work, what forms are shown, what blocks completion and which stage/branch activates next. Preview remains non-mutating and is not proof of actual scheduling capacity.
 - [ ] Publish validation reports errors at the exact stage/field; published view is read-only with fork action.
 - [ ] Prove an author configures and publishes an example without API tools/raw IDs; unsupported configuration cannot publish.
 
@@ -167,10 +167,12 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 
 **Interfaces:** `startOrderLifecycle(tx, principal, {orderId, workflowVersionId})` validates and pins, creates first stage/assignment/forms atomically. `applyStageDomainAction(tx, principal, {stageInstanceId, expectedVersion, actionPayload})` invokes the existing typed domain internals and advances lifecycle in the same command transaction.
 
-- [ ] Show workflow name/version and Order type compatibility in intake. Prefilled defaults must be visible, overridable only with an authorized compatible published workflow, and explicit in the saved record.
-- [ ] Create order + initial lifecycle + pinned first-stage forms in one transaction. Failed assignment/form materialization rolls back the order creation; duplicate submit replays once.
-- [ ] Distinguish lifecycle version selected at intake from production-routing version selected at engineering. Show both links/versions and why each applies.
-- [ ] Register adapters for order confirmation, engineering approval, planning readiness, production aggregation, QC finalization, delivery confirmation and evidence-only review. Reuse transaction-aware domain validation, not direct status updates.
+- [x] Show workflow name/version and Order type compatibility in intake. Prefilled defaults must be visible, overridable only with an authorized compatible published workflow, and explicit in the saved record.
+- [x] Create order + initial lifecycle + pinned first-stage forms in one transaction; the isolated intake spec proves the selected published version and first-stage assignment are pinned with the created order.
+- [x] Verify lifecycle-intake replay returns the same order and lifecycle instance for the same idempotency key.
+- [ ] Add a rollback assertion for failed initial form materialization.
+- [x] Distinguish lifecycle version selected at intake from production-routing version selected at engineering. Show both links/versions and why each applies.
+- [x] Register completion facts for order confirmation, engineering approval, applied Planning proposal, production aggregation, QC finalization, full delivery, and evidence review. Existing typed domain commands invoke lifecycle completion in their transaction; lifecycle events retain the action and completion fact.
 - [ ] An already-recorded domain outcome must reconcile idempotently; stage buttons and existing module actions must not create contradictory progression or duplicate events.
 - [ ] Engineering omission is allowed only where valid approved engineering/routing/material prerequisites already exist; stage configuration never bypasses release safeguards.
 - [ ] Test multiple lines/jobs, independently pinned routing, failed approval, duplicate release and alternate workflows with a different administrative sequence.
@@ -181,11 +183,11 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Create:** `src/features/work-items/` for shared read model and stage detail; `src/server/modules/order-lifecycle/queries.ts`; scoped stage queue/claim/reassign/action API routes.
 **Tests:** `tests/integration/lifecycle-assignment.test.ts`, `tests/browser/lifecycle-personas.spec.ts`.
 
-- [ ] Expose department queue and personal assignments for Sales, Engineering, PPIC, Technician, QC and Delivery using actual permission/assignment scope. Do not add a universal read permission to make the UI work.
+- [x] Expose department queue and personal assignments for Sales, Engineering, PPIC, Technician, QC and Delivery using actual permission/assignment scope. Do not add a universal read permission to make the UI work.
 - [x] Specific-member assignments require active eligible membership; ineligible or disabled recipients block and can be reassigned explicitly, with no silent fallback to administrator. Queue claim remains atomic.
 - [ ] General ownership uses membership IDs. Capacity scheduling resolves linked technician IDs; users cannot self-assert technician identity.
-- [ ] Show stage action, due date/schedule, predecessor blockers, pinned forms and required evidence. Mount SubmissionPanel in the real order/task/inspection contexts.
-- [ ] Clarify task/stage completion vs form submission; once all gates pass, execute the domain action with explicit consequences and applicable approval.
+- [x] Show stage action, due date/schedule, predecessor blockers, pinned forms and required evidence. Mount SubmissionPanel in the real order/task/inspection contexts.
+- [x] Clarify task/stage completion vs form submission; once all gates pass, execute the domain action with explicit consequences and applicable approval.
 - [x] Record reassignment actor/reason and claim actor transactionally in the lifecycle event stream.
 - [x] Notify the active previous and new assignee transactionally through in-app notifications. External email/Slack delivery is outside this plan.
 - [ ] Log in through the normal flow per persona in isolated E2E; verify menus, landing destination, queue, form access and handoff to the next actor, including multi-role behavior.
@@ -198,9 +200,9 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Create:** `src/server/modules/order-lifecycle/scheduling.ts`.
 **Tests:** `tests/integration/lifecycle-scheduling.test.ts`; extend existing finite-capacity, dispatch and workforce suites only for new behaviors.
 
-- [ ] Link lifecycle production/planning stages to the real job/Task instances and booking IDs. Never copy a second independent schedule into lifecycle state.
+- [x] Link lifecycle production/planning stages to the real job/Task instances and booking IDs. Never copy a second independent schedule into lifecycle state.
 - [x] Surface current production task status and confirmed Planning bookings in the order lifecycle panel, linked to the live task detail. Booking rows are read from the existing task/resource-booking records; no duplicate schedule is persisted.
-- [ ] Compute feasibility using dependency graph, shift/roster, technician skill/cert validity, machine capability, existing bookings, material readiness and facility scope.
+- [x] Compute feasibility using dependency graph, shift/roster, technician skill/cert validity, machine capability, existing bookings, material readiness and facility scope. Lifecycle proposal application uses the existing Planning revalidation path.
 - [ ] Administrative stages display deadline/owner and actual progress; they do not appear as production capacity without an explicit supported resource model.
 - [ ] Stage activation creates schedulable work or reveals existing released tasks; it does not silently confirm bookings.
 - [ ] Preview schedule/reschedule impact on successor jobs and expected completion. Keep contractual promised date separate; changing customer commitment requires its existing approval path.
