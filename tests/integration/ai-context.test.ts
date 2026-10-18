@@ -341,6 +341,10 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       orderNumber: order.data.orderNumber, state: 'PENDING_APPROVAL', taskCount: 1,
       projectedEndAt: '2026-12-20T09:00:00.000Z', mustRevalidateBeforeApply: true,
     }));
+    const recoveryAnswer = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'What is the recovery review status?', { type: 'ORDER', id: order.data.id });
+    const recoveryAnswerData = recoveryAnswer.status === 'SUCCESS' ? recoveryAnswer.data : recoveryAnswer.fallbackData;
+    expect(recoveryAnswerData?.answer).toContain('awaiting approval');
+    expect(recoveryAnswerData?.answer).toContain('revalidated before apply');
     await fixture.db.task.update({ where: { id: taskId }, data: { version: { increment: 1 } } });
     const staleRecoveryContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { orderId: order.data.id });
     expect(staleRecoveryContext.recoveryReviews).toEqual([]);

@@ -57,7 +57,7 @@ export class ProductionBrainService {
     }
 
     const model = process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest';
-    const promptVersion = 'brain-qa-v9-final-form-evidence';
+    const promptVersion = 'brain-qa-v10-pending-recovery-review';
     const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
     // 1. Check scoped cache
@@ -90,6 +90,9 @@ ${(inventoryQuestion ? [] : context.resources).map((r) => `  * ${r.code} (${r.na
 - Current Order Workflow Stages (${inventoryQuestion ? 'omitted: inventory-only question' : context.lifecycleStages.length}):
 ${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.orderNumber}: ${stage.workflowName} v${stage.workflowVersion}, ${stage.name} (${stage.action.replaceAll('_', ' ')}) is ${stage.state.replaceAll('_', ' ').toLowerCase()} in ${stage.department}; owner ${stage.assignedTo ?? 'eligible department queue'}, due ${stage.dueAt ?? 'not set'}, scheduling ${stage.scheduleKind.toLowerCase()}${stage.blockers.length ? `; waiting on ${stage.blockers.join(', ')}` : ''}`).join('\n')}
 
+- Pending Recovery Reviews (${inventoryQuestion ? 'omitted: inventory-only question' : context.recoveryReviews.length}):
+${(inventoryQuestion ? [] : context.recoveryReviews).map(review => `  * ${review.orderNumber}: saved finite-capacity schedule review projects completion ${review.projectedEndAt}; evaluated ${review.evaluatedAt}; ${review.taskCount} task(s); pending human approval. Its saved snapshot matches current order/job/task versions, but capacity, materials and qualifications must be revalidated before apply.`).join('\n')}
+
 - Assigned/Plannable Tasks (${context.tasks.length}):
 ${(inventoryQuestion ? [] : context.tasks).map(task => `  * ${task.orderNumber} / operation ${task.nodeKey}, status ${task.status}, planned ${task.plannedMinutes ?? 'unavailable'} minutes, actual ${task.actualMinutes ?? 'unavailable'} minutes${task.blockers.length ? `; blockers: ${task.blockers.map(blocker => `${blocker.severity ? `${blocker.severity} ` : ''}${blocker.summary}${blocker.owner ? ` (owner ${blocker.owner})` : ''}${blocker.expectedResolutionAt ? `, expected ${blocker.expectedResolutionAt}` : ''}`).join('; ')}` : ''}`).join('\n')}
 
@@ -112,6 +115,7 @@ Rules:
 - Form evidence contains only finalized answers from form instances the current user can read. Drafts, attachments and reference IDs are omitted; do not treat absent answers as evidence that a requirement was not submitted.
 - For workflow questions: use only the supplied current stage, department, owner, due date, and scheduling policy. A stage state is not proof that its domain action or evidence has completed; use task, QC, and delivery records for those outcomes.
 - For blocker questions: identify only blockers explicitly listed on the task or lifecycle stage. Name the recorded owner and expected resolution time when present. Recovery options may be called validated only when a supplied, current proposal explicitly validates them; otherwise explain the blocker and point to its owner without inventing a workaround.
+- A pending Recovery schedule review is a saved proposal, not an approved change or a guarantee of current capacity. State that human approval and live apply-time revalidation are still required; do not describe unavailable alternative strategies as evaluated.
 - Translate enum values into natural words: IN_PRODUCTION → In production, PARTIALLY_DELIVERED → Partially delivered. Do not print raw status codes, UUIDs, or internal field names.
 - If there is an evidenced issue, finish with one concrete next step. If none is evidenced, do not invent urgency or recommendations. Make missing evidence explicit.
 - State briefly that this covers the accessible sample, not the whole factory. Never present sample counts as workspace totals. Do not claim an item is raw material or finished goods unless context explicitly supports that classification.
@@ -186,6 +190,16 @@ Rules:
     const q = question.toLowerCase();
     const activeOrders = context.orders.filter((o) => !['DELIVERED', 'CANCELLED', 'DRAFT'].includes(o.status));
     const readableStatus = (status: string) => status.toLowerCase().replaceAll('_', ' ');
+    if (/recover|reschedul|schedule review/i.test(q)) {
+      const reviews = context.recoveryReviews.slice(0, 2);
+      return reviews.length ? {
+        answer: `A saved schedule review is awaiting approval for ${reviews.map(review => review.orderNumber).join(' and ')}.\n\n### Review status\n${reviews.map(review => `- Projected completion: ${review.projectedEndAt} (${review.taskCount} tasks).`).join('\n')}\n- The saved snapshot still matches order and task versions.\n- A human must approve it, and current capacity, materials, and qualifications are revalidated before apply.\n\nThis covers only the accessible sample; it is not a factory-wide recovery view.`,
+        evidenceRefs: reviews.map(review => review.orderNumber), linkToScreen: 'orchestrator',
+      } : {
+        answer: 'No current pending schedule review is present in this accessible snapshot. A planner can generate a new finite-capacity review for an active released job; alternative recovery strategies are not connected.',
+        evidenceRefs: [], linkToScreen: 'orchestrator',
+      };
+    }
     const selectedOrder = scopedRecord?.type === 'ORDER' ? context.orders.find(order => order.id === scopedRecord.id) : undefined;
     if (selectedOrder) return {
       answer: `${selectedOrder.orderNumber} is ${readableStatus(selectedOrder.status)}.\n\n### Order details\n- Item: ${selectedOrder.itemCode}.\n- Ordered quantity: ${selectedOrder.orderedQty}.\n- Promised delivery: ${selectedOrder.promisedDate ?? 'Not committed'}.\n\nThis summary covers the selected order only.`,
