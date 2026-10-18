@@ -237,6 +237,47 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
     }, winnerKey)).rejects.toThrow(/different request payload/i);
   });
 
+  it('serializes competing draft saves and replays the winning idempotent request once', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-draft-save-race', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-draft-save-race',
+    }));
+    const answersA = { finish: 'raw' };
+    const answersB = { finish: 'painted', paint_code: 'RAL-7035' };
+    const keys = ['qc-draft-save-race-a', 'qc-draft-save-race-b'];
+    const competing = await Promise.allSettled([
+      submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+        instanceId: instance.instanceId, expectedVersion: 1, answers: answersA,
+      }, keys[0]),
+      submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+        instanceId: instance.instanceId, expectedVersion: 1, answers: answersB,
+      }, keys[1]),
+    ]);
+    expect(competing.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(competing.filter((result) => result.status === 'rejected')).toHaveLength(1);
+
+    const winnerIndex = competing[0].status === 'fulfilled' ? 0 : 1;
+    const winnerKey = keys[winnerIndex];
+    const winnerAnswers = winnerIndex === 0 ? answersA : answersB;
+    const winner = await submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId, expectedVersion: 1, answers: winnerAnswers,
+    }, winnerKey);
+    const submissionsBeforeReplay = await fixture.db.formSubmission.count({ where: { instanceId: instance.instanceId } });
+    const replay = await submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId, expectedVersion: 1, answers: winnerAnswers,
+    }, winnerKey);
+    expect(replay).toEqual(winner);
+    expect(await fixture.db.formSubmission.count({ where: { instanceId: instance.instanceId } })).toBe(submissionsBeforeReplay);
+    await expect(submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: winnerIndex === 0 ? answersB : answersA,
+    }, winnerKey)).rejects.toThrow(/different request payload/i);
+  });
+
   it('records the authenticated principal when a caller forges an actor field', async () => {
     await fixture.db.inspection.create({ data: { id: 'qc-insp-forged-actor', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {

@@ -79,7 +79,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 **Interfaces:** `resolveFormSubjectAccess(tx, principal, {subjectType, subjectId}, action)` returns authorized subject/facility/assignment; throws without revealing foreign records. Form writes consume strict parsed payload, expectedVersion and command idempotency; return existing envelope plus command metadata.
 
 - [x] Add negative tests: same-workspace unassigned technician, outside-facility order/inspection, revoked member, customer role, forged actor, unauthorized correction.
-- [ ] Add two competing saves/finalizations/publishes against one version; exactly one wins. Replay the same idempotency key; no extra submission/event is created. Changed payload with same key conflicts.
+- [x] Add two competing saves/finalizations/publishes against one version; exactly one wins. Replay the same idempotency key; no extra submission/event is created. Changed payload with same key conflicts.
 - [x] Resolve subject access inside the write transaction, using existing domain permission conventions. Do not grant generic form-author permission access to every operational form.
 - [x] Move authoring/binding/submission mutations under executeCommand, with transaction-aware helpers and conditional version/status updates. Do not allow saveDraft to reopen an already-finalized instance.
 - [ ] Preserve actor/time, correction reason and supersedes links; attach correction documents using the same validated mechanism as original finalization.
