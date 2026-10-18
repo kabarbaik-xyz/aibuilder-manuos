@@ -143,6 +143,7 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     }));
     const customerContext = await buildAuthorizedContext(alpha.users.customerUser.principal, fixture.db, { orderId: order.data.id });
     expect(customerContext.lifecycleStages).toEqual([]);
+    expect(customerContext.recoveryReviews).toEqual([]);
   });
 
   it('limits assistant evidence to a server-resolved order context', async () => {
@@ -314,6 +315,35 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       sequenceNumber: 1,
       answers: [{ field: 'Setup notes', value: 'Clamp inspected and secured.' }],
     }));
+
+    const task = await fixture.db.task.findUniqueOrThrow({ where: { id: taskId }, include: { instance: true } });
+    const recoverySnapshot = {
+      id: 'ai-recovery-review', orderId: order.data.id, orderNumber: order.data.orderNumber,
+      mode: 'SCHEDULE_REVIEW', state: 'SAVED', options: [], createdAt: new Date().toISOString(),
+      scheduleReview: {
+        instanceId: task.instanceId, workflowVersionId: task.instance.workflowVersionId,
+        engineeringRevisionId: task.instance.engineeringRevisionId,
+        facilityTimezone: 'Asia/Jakarta', horizonStart: '2026-12-20T08:00:00.000Z', horizonEnd: '2026-12-21T08:00:00.000Z',
+        evaluatedAt: new Date().toISOString(), projectedEndAt: '2026-12-20T09:00:00.000Z',
+        taskVersions: [{ taskId, version: task.version }],
+        tasks: [{ taskId, version: task.version, nodeKey: 'OP-10', startAt: '2026-12-20T08:00:00.000Z', endAt: '2026-12-20T08:40:00.000Z', technicianName: null, machineName: 'Fixture machine', predecessorTaskIds: [] }],
+        assumptions: ['Saved for review only.'],
+      },
+    };
+    await fixture.db.recoveryProposal.create({
+      data: {
+        workspaceId: alpha.workspaceId, orderId: order.data.id, orderVersion: (await fixture.db.order.findUniqueOrThrow({ where: { id: order.data.id } })).version,
+        proposalJson: JSON.stringify(recoverySnapshot), status: 'PROPOSED', proposedById: alpha.users.planner.userId,
+      },
+    });
+    const recoveryContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { orderId: order.data.id });
+    expect(recoveryContext.recoveryReviews).toContainEqual(expect.objectContaining({
+      orderNumber: order.data.orderNumber, state: 'PENDING_APPROVAL', taskCount: 1,
+      projectedEndAt: '2026-12-20T09:00:00.000Z', mustRevalidateBeforeApply: true,
+    }));
+    await fixture.db.task.update({ where: { id: taskId }, data: { version: { increment: 1 } } });
+    const staleRecoveryContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { orderId: order.data.id });
+    expect(staleRecoveryContext.recoveryReviews).toEqual([]);
     await expect(brainService.answerProductionQuestion(alpha.users.customerUser.principal, 'What is blocking this task?', { type: 'TASK', id: taskId })).rejects.toThrow(/not available/i);
   });
 

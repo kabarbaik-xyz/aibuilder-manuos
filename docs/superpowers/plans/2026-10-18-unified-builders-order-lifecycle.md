@@ -226,6 +226,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Include evidence provenance/timestamps and distinguish current records, historical snapshots, restricted/missing data and actual totals vs samples. Exclude secrets, unauthorized form fields and unrelated departments' restricted records.
 - [x] Support contextual questions about why a task/stage is blocked and who owns the next action, using authorized active issues and predecessor states. Evidence links still resolve through readable authorized records, never model-authored URLs.
 - [ ] Include only currently validated recovery options from the existing proposal adapter; do not invent a workaround when no current proposal exists.
+- Current AI context includes only pending schedule reviews whose order/job/workflow/engineering pins, complete open-task versions and future slots still match. It labels them as pending and requires live capacity revalidation before apply; this is not yet the requested fresh recovery-option evaluation, so the item remains open.
 - [ ] AI builder changes apply only to authorized drafts after deterministic schema/catalog validation. Operational AI changes create the existing validated proposal; approval invokes Task8/domain adapters and never direct state mutation.
 - [ ] Test that prompt text cannot change actor/workspace, unlock forms, self-approve schedules or claim unsupported facts. Provider failure produces an honest grounded fallback with no mutation.
 - [ ] Update capabilities/help copy so only connected behaviors are advertised.

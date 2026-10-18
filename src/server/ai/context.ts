@@ -4,6 +4,7 @@ import { Principal } from '@/server/auth/principal';
 import { createHash } from 'crypto';
 import { canonicalJson } from '@/server/db/transaction';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
+import { z } from 'zod';
 
 export interface AuthorizedContextScope {
   orderId?: string;
@@ -91,9 +92,18 @@ export interface AuthorizedContextLifecycleStage {
   blockers: string[];
 }
 
+export interface AuthorizedContextRecoveryReview {
+  orderNumber: string;
+  projectedEndAt: string;
+  evaluatedAt: string;
+  taskCount: number;
+  state: 'PENDING_APPROVAL';
+  mustRevalidateBeforeApply: true;
+}
+
 export interface AuthorizedContext {
   snapshotCapturedAt: string;
-  coverage: Record<'orders' | 'tasks' | 'confirmedBookings' | 'submittedFormEvidence' | 'inventory' | 'resources' | 'lifecycleStages', {
+  coverage: Record<'orders' | 'tasks' | 'confirmedBookings' | 'submittedFormEvidence' | 'inventory' | 'resources' | 'lifecycleStages' | 'recoveryReviews', {
     status: 'AVAILABLE' | 'EMPTY' | 'RESTRICTED';
     includedCount: number;
     limit: number;
@@ -108,6 +118,7 @@ export interface AuthorizedContext {
   inventory: AuthorizedContextInventory[];
   resources: AuthorizedContextResource[];
   lifecycleStages: AuthorizedContextLifecycleStage[];
+  recoveryReviews: AuthorizedContextRecoveryReview[];
   disruptions: AuthorizedContextDisruption[];
   evidenceIndex: string[]; // Serialized valid IDs, order numbers, part numbers, machine codes
   contextHash: string;
@@ -340,6 +351,62 @@ export async function buildAuthorizedContext(
     }),
   }));
 
+  // A recovery review is useful to AI only while its persisted order, active job,
+  // workflow/engineering pins and complete open-task version set still match.
+  // Applying it always performs the authoritative live capacity revalidation.
+  const recoveryReviews: AuthorizedContextRecoveryReview[] = [];
+  const canReadRecoveryReviews = !effectiveCustomerId && principal.permissions.has('planning.read') && orders.length > 0;
+  const pendingRecoveryRows = canReadRecoveryReviews ? await prisma.recoveryProposal.findMany({
+    where: { workspaceId, orderId: { in: orders.map(order => order.id) }, status: 'PROPOSED' },
+    include: { order: { select: { orderNumber: true, version: true, status: true } } },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    take: 20,
+  }) : [];
+  const recoverySnapshotSchema = z.object({
+    mode: z.literal('SCHEDULE_REVIEW'),
+    scheduleReview: z.object({
+      instanceId: z.string(), workflowVersionId: z.string(), engineeringRevisionId: z.string(),
+      evaluatedAt: z.string().datetime(), projectedEndAt: z.string().datetime(),
+      taskVersions: z.array(z.object({ taskId: z.string(), version: z.number().int() })),
+      tasks: z.array(z.object({ taskId: z.string(), version: z.number().int(), startAt: z.string().datetime(), endAt: z.string().datetime() })),
+    }),
+  });
+  for (const row of pendingRecoveryRows) {
+    if (row.order.version !== row.orderVersion || ['DELIVERED', 'CANCELLED'].includes(row.order.status)) continue;
+    let saved: z.infer<typeof recoverySnapshotSchema>;
+    try {
+      const parsed = recoverySnapshotSchema.safeParse(JSON.parse(row.proposalJson));
+      if (!parsed.success) continue;
+      saved = parsed.data;
+    } catch {
+      continue;
+    }
+    const snapshot = saved.scheduleReview;
+    const instance = await prisma.workflowInstance.findFirst({
+      where: { workspaceId, id: snapshot.instanceId, orderId: row.orderId, status: 'ACTIVE', workflowVersionId: snapshot.workflowVersionId, engineeringRevisionId: snapshot.engineeringRevisionId },
+      select: { id: true },
+    });
+    if (!instance || snapshot.tasks.length === 0 || snapshot.taskVersions.length !== snapshot.tasks.length) continue;
+    const openTasks = await prisma.task.findMany({
+      where: { workspaceId, instanceId: instance.id, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+      select: { id: true, version: true, status: true },
+      orderBy: [{ id: 'asc' }],
+    });
+    const savedVersions = new Map(snapshot.taskVersions.map(task => [task.taskId, task.version]));
+    const savedTasks = new Map(snapshot.tasks.map(task => [task.taskId, task]));
+    if (openTasks.length !== savedVersions.size || openTasks.some(task => savedVersions.get(task.id) !== task.version || !['PENDING', 'READY'].includes(task.status))) continue;
+    const now = Date.now();
+    if (snapshot.tasks.some(task => new Date(task.startAt).getTime() <= now || new Date(task.endAt).getTime() <= new Date(task.startAt).getTime() || savedVersions.get(task.taskId) !== task.version || !savedTasks.has(task.taskId))) continue;
+    recoveryReviews.push({
+      orderNumber: row.order.orderNumber,
+      projectedEndAt: snapshot.projectedEndAt,
+      evaluatedAt: snapshot.evaluatedAt,
+      taskCount: snapshot.tasks.length,
+      state: 'PENDING_APPROVAL',
+      mustRevalidateBeforeApply: true,
+    });
+  }
+
   // 3. Fetch inventory balances
   const balances = !effectiveCustomerId && principal.permissions.has('inventory.read') ? await prisma.stockBalance.findMany({
     where: {
@@ -459,6 +526,7 @@ export async function buildAuthorizedContext(
     inventory: { status: effectiveCustomerId || !principal.permissions.has('inventory.read') ? 'RESTRICTED' as const : balances.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: balances.length, limit: 30, sampled: balances.length === 30 },
     resources: { status: !canReadResources ? 'RESTRICTED' as const : resources.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: resources.length, limit: 20, sampled: machines.length === 10 || technicians.length === 10 },
     lifecycleStages: { status: effectiveCustomerId || !canReadOrders ? 'RESTRICTED' as const : dbLifecycleStages.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbLifecycleStages.length, limit: 60, sampled: dbLifecycleStages.length === 60 },
+    recoveryReviews: { status: !canReadRecoveryReviews ? 'RESTRICTED' as const : recoveryReviews.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: recoveryReviews.length, limit: 20, sampled: pendingRecoveryRows.length === 20 },
   };
 
   // Deterministic context hash
@@ -475,6 +543,7 @@ export async function buildAuthorizedContext(
     inventory,
     resources,
     lifecycleStages,
+    recoveryReviews,
     coverage,
     evidenceIndex: [...evidenceSet].sort(),
   };
@@ -495,6 +564,7 @@ export async function buildAuthorizedContext(
     inventory,
     resources,
     lifecycleStages,
+    recoveryReviews,
     disruptions,
     evidenceIndex: Array.from(evidenceSet),
     contextHash,
