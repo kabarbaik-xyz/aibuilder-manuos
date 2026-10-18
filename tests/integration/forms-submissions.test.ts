@@ -66,6 +66,28 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
           kind: 'attachment',
           required: false,
         },
+        {
+          key: 'safety_verified',
+          label: 'Safety verified',
+          kind: 'boolean',
+          required: false,
+        },
+        {
+          key: 'operations_checked',
+          label: 'Operations checked',
+          kind: 'multiselect',
+          required: false,
+          options: [
+            { value: 'setup', label: 'Setup' },
+            { value: 'calibration', label: 'Calibration' },
+          ],
+        },
+        {
+          key: 'inspection_date',
+          label: 'Inspection date',
+          kind: 'date',
+          required: false,
+        },
       ],
     };
 
@@ -181,6 +203,39 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
     expect(reloaded.latestSubmission?.answers.finish).toBe('raw');
     expect(reloaded.latestSubmission?.answers.dry_film_microns).toBe('45.5');
     expect(reloaded.latestSubmission?.answers.paint_code).toBeUndefined();
+  });
+
+  it('round-trips typed boolean, multiselect, date, and decimal evidence through draft and final submission', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-typed-values', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-typed-values',
+    }));
+    const answers = {
+      finish: 'raw',
+      dry_film_microns: '30.5',
+      safety_verified: true,
+      operations_checked: ['setup', 'calibration'],
+      inspection_date: '2026-10-18',
+    };
+
+    const draft = await submissionService.saveDraft(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers,
+    }, 'typed-form-values-draft');
+    expect(draft.version).toBe(2);
+    const finalized = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 2,
+      answers,
+    }, 'typed-form-values-finalize');
+    expect(finalized.version).toBe(3);
+
+    const reloaded = await submissionService.getInstance(fixture.alpha.users.qc.principal, instance.instanceId);
+    expect(reloaded.latestSubmission?.answers).toMatchObject(answers);
   });
 
   it('rejects references that are not active records in the current workspace', async () => {
