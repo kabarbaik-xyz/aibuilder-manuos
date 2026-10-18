@@ -237,6 +237,26 @@ describe('DF03: Real Submission Commands, Access Boundaries, and Evidence Lifecy
     }, winnerKey)).rejects.toThrow(/different request payload/i);
   });
 
+  it('records the authenticated principal when a caller forges an actor field', async () => {
+    await fixture.db.inspection.create({ data: { id: 'qc-insp-forged-actor', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
+    const instance = await fixture.db.$transaction((tx) => formService.createFormInstance(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      formVersionId: versionId,
+      subjectType: 'INSPECTION',
+      subjectId: 'qc-insp-forged-actor',
+    }));
+
+    const result = await submissionService.finalizeSubmission(fixture.alpha.users.qc.principal, {
+      instanceId: instance.instanceId,
+      expectedVersion: 1,
+      answers: { finish: 'raw', dry_film_microns: '45.5' },
+      actorId: fixture.alpha.users.owner.userId,
+    } as Parameters<typeof submissionService.finalizeSubmission>[1]);
+
+    await expect(fixture.db.formSubmission.findUniqueOrThrow({ where: { id: result.submissionId } }))
+      .resolves.toMatchObject({ actorId: fixture.alpha.users.qc.userId });
+  });
+
   it('creates an authorized correction with mandatory reason, preserving supersedes link', async () => {
     await fixture.db.inspection.create({ data: { id: 'qc-insp-004', workspaceId: fixture.alpha.workspaceId, sourceType: 'PRODUCTION_OUTPUT', inspectedAtoms: 1n, inspectorUserId: fixture.alpha.users.qc.userId } });
     const instance = await fixture.db.$transaction(async (tx) => {
