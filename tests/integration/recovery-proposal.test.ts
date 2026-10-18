@@ -35,7 +35,6 @@ describe('SCH-09/AII-06: recovery proposal resolution lifecycle', () => {
         orderVersion: order.version,
         approverMembershipId,
         proposalJson: JSON.stringify({ id: 'seed-proposal', orderId: order.id }),
-        approverMembershipId: alpha.users.owner.principal.membershipId,
       },
     });
     orderId = order.id;
