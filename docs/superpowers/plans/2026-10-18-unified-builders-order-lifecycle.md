@@ -173,7 +173,8 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] A retired pinned form blocks new intake and the isolated order count is unchanged, proving failed initial form materialization rolls the order back.
 - [x] Distinguish lifecycle version selected at intake from production-routing version selected at engineering. Show both links/versions and why each applies.
 - [x] Register completion facts for order confirmation, engineering approval, applied Planning proposal, production aggregation, QC finalization, full delivery, and evidence review. Existing typed domain commands invoke lifecycle completion in their transaction; lifecycle events retain the action and completion fact.
-- [ ] An already-recorded domain outcome must reconcile idempotently; stage buttons and existing module actions must not create contradictory progression or duplicate events.
+- [x] Same-key replay of order confirmation and applied schedule proposals preserves one lifecycle completion event and one booking application.
+- [ ] Reconcile already-recorded outcomes idempotently across every domain adapter, including retries under a new command key; stage buttons and existing module actions must not create contradictory progression or duplicate events.
 - [ ] Engineering omission is allowed only where valid approved engineering/routing/material prerequisites already exist; stage configuration never bypasses release safeguards.
 - [ ] Test multiple lines/jobs, independently pinned routing, failed approval, duplicate release and alternate workflows with a different administrative sequence.
 
