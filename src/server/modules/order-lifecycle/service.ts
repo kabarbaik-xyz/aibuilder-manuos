@@ -14,8 +14,16 @@ export async function assertLifecycleActionReady(
     include: { stages: true },
   });
   if (!instance) return null;
-  const matchingStages = instance.stages.filter((candidate: any) => candidate.action === input.action && (!input.stageId || candidate.id === input.stageId));
-  if (matchingStages.length === 0) return null;
+  const actionStages = instance.stages.filter((candidate: any) => candidate.action === input.action);
+  if (actionStages.length === 0) {
+    throw new BadRequestError(`The selected order lifecycle does not include '${input.action}'.`);
+  }
+  const matchingStages = input.stageId
+    ? actionStages.filter((candidate: any) => candidate.id === input.stageId)
+    : actionStages;
+  if (matchingStages.length === 0) {
+    throw new BadRequestError(`The selected lifecycle stage does not match action '${input.action}'.`);
+  }
   const stage = matchingStages.find((candidate: any) => ['READY', 'ACTIVE'].includes(candidate.state));
   if (!stage) {
     const nextStage = instance.stages.find((candidate: any) => candidate.state === 'READY');

@@ -176,6 +176,7 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 - [x] Same-key replay of order confirmation and applied schedule proposals preserves one lifecycle completion event and one booking application.
 - Order confirmation with a new command key after success is rejected before any repeat transition; its regression spec still observes exactly one completion event. Other domain adapters remain to be audited.
 - Evidence-review stage completion also rejects a concurrent stale version and a new-key retry after success; one concurrent call produces the sole completion event. This does not yet prove retries across every domain adapter.
+- An active selected lifecycle now rejects a domain action that is absent from its pinned stages, closing the legacy-adapter bypass; the isolated intake spec covers this. Cross-adapter replay and alternate-workflow coverage remain open.
 - [ ] Reconcile already-recorded outcomes idempotently across every domain adapter, including retries under a new command key; stage buttons and existing module actions must not create contradictory progression or duplicate events.
 - [ ] Engineering omission is allowed only where valid approved engineering/routing/material prerequisites already exist; stage configuration never bypasses release safeguards.
 - [ ] Test multiple lines/jobs, independently pinned routing, failed approval, duplicate release and alternate workflows with a different administrative sequence.

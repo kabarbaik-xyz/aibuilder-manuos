@@ -6,6 +6,7 @@ import { listLifecycleDepartmentMembers, listLifecycleWorkItems } from '@/server
 import { claimLifecycleStage, completeEvidenceReviewStage, reassignLifecycleStage } from '@/server/modules/order-lifecycle/assignments';
 import { FormService } from '@/server/modules/forms/service';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
+import { completeLifecycleAction } from '@/server/modules/order-lifecycle/service';
 
 describe('order lifecycle intake', () => {
   let fixture: FactoryFixture;
@@ -77,6 +78,13 @@ describe('order lifecycle intake', () => {
     });
 
     expect(created.data.lifecycleWorkflowVersionId).toBe(versionId);
+    await expect(fixture.db.$transaction((tx) => completeLifecycleAction(tx, {
+      workspaceId: fixture.alpha.workspaceId,
+      orderId: created.data.id,
+      action: 'PLAN_PRODUCTION',
+      actorUserId: owner.userId,
+      commandId: 'lifecycle-unconfigured-planning-action',
+    }))).rejects.toThrow(/does not include/i);
     expect(lifecycle?.workflowVersionId).toBe(versionId);
     expect(lifecycle?.stages).toHaveLength(1);
     expect(lifecycle?.stages[0]).toMatchObject({
