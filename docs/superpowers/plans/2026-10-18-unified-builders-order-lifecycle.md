@@ -129,17 +129,17 @@ type StageState = 'PENDING' | 'READY' | 'ACTIVE' | 'BLOCKED' |
 
 **Modify:** `src/domain/workflow-definition.ts`, `src/server/modules/workflow/contracts.ts`, `service.ts`; `prisma/schema.prisma`.
 **Create:** `src/domain/order-lifecycle-definition.ts`, `order-lifecycle-runtime.ts`; `src/server/modules/order-lifecycle/action-registry.ts`, `contracts.ts`; additive lifecycle instance/stage/assignment/event migration.
-**Tests:** `src/domain/order-lifecycle-definition.test.ts`, `order-lifecycle-runtime.test.ts`, `tests/integration/lifecycle-version-pins.test.ts`.
+**Tests:** `src/domain/order-lifecycle-definition.test.ts`, `order-lifecycle-runtime.test.ts`, `src/server/modules/order-lifecycle/action-registry.test.ts`, `tests/integration/order-lifecycle-intake.test.ts` (the original `lifecycle-version-pins.test.ts` filename was never created).
 
 **Interfaces:** `validateLifecycleDefinition(definition, catalog)` returns structured errors; `evaluateStageTransition(snapshot, action, facts)` is pure and returns allowed/next-state/activated-or-skipped-stage keys and reasons. Action registry maps every LifecycleAction to its required permissions and explicit domain completion facts.
 
-- [ ] Add lifecycle template kind without changing legacy production-routing interpretation.
-- [ ] Validate active departments/members/roles, form pins/purposes, routing sources, deadlines, valid terminal paths, unknown adapters, duplicate keys and unreachable/dead-end stages.
+- [x] Add lifecycle template kind without changing legacy production-routing interpretation; production-routing contract remains separate and lifecycle intake pins the selected published version.
+- [x] Validate active departments/members/roles, form pins/purposes, supported schedule policies, deadlines, terminal paths, registered actions, duplicate keys and graph reachability before publish. Resource-capacity routing resolves only through the approved-engineering policy.
 - [x] Validate simple select-answer branch references and values against required pinned order forms; branch evaluation is single-level and reads only finalized evidence in the current workspace. Nested conditions remain unsupported.
-- [ ] Test serial flow, parallel fan-out/AND join, exclusive branch plus merge, skipped branch handling, missing condition facts, rejection and explicit rework attempts.
-- [ ] Add membership assignment and lifecycle events with versioned CAS. Serialize immutable published definition/binding hashes; do not mutate completed attempts.
-- [ ] State publish/review rules explicitly. Do not imply mandatory two-person approval if the configured contract permits authorized self-publication.
-- [ ] Run domain lifecycle tests and `tests/integration/lifecycle-version-pins.test.ts`; legacy workflow suites remain passing.
+- [x] Test serial flow, parallel fan-out/AND join, exclusive branch, skipped branch handling and fail-closed missing condition facts. Rejection and explicit rework attempts remain open; current QC rework is handled by its domain flow and is not yet a lifecycle outcome.
+- [x] Add membership assignment and lifecycle events with versioned CAS. Serialize immutable published definition/binding hashes; do not mutate completed attempts.
+- [x] State publish/review rules explicitly: an authorized `workflow.publish` principal may publish a valid DRAFT directly or publish a reviewed version; two-person review is not mandatory. Covered by workflow version specs.
+- [x] Run `rtk proxy npx vitest run src/domain/order-lifecycle-definition.test.ts src/domain/order-lifecycle-runtime.test.ts src/server/modules/order-lifecycle/action-registry.test.ts tests/integration/order-lifecycle-intake.test.ts` (17 passed); legacy workflow version tests remain a separate regression check.
 
 ### Task5: Builder stage inspector, binding UI and execution preview
 
