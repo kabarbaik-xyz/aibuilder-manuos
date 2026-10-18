@@ -4,12 +4,15 @@ import { Principal } from '@/server/auth/principal';
 import { createHash } from 'crypto';
 import { canonicalJson } from '@/server/db/transaction';
 import { FormSubmissionService } from '@/server/modules/forms/submissions';
+import { BadRequestError } from '@/domain/errors';
+import { ScheduleProposalService } from '@/server/modules/planning/schedule-proposals';
 import { z } from 'zod';
 
 export interface AuthorizedContextScope {
   orderId?: string;
   itemId?: string;
   taskId?: string;
+  evaluateRecovery?: boolean;
 }
 
 export interface AuthorizedContextOrder {
@@ -109,6 +112,18 @@ export interface AuthorizedContextRecoveryReview {
   mustRevalidateBeforeApply: true;
 }
 
+export interface AuthorizedContextRecoveryEvaluation {
+  orderNumber: string;
+  status: string;
+  projectedEndAt: string | null;
+  evaluatedAt: string;
+  taskCount: number;
+  scheduledTaskCount: number;
+  blockers: string[];
+  readOnly: true;
+  applied: false;
+}
+
 export interface AuthorizedContextQcSummary {
   orderNumber: string;
   finalizedInspections: number;
@@ -122,7 +137,7 @@ export interface AuthorizedContextQcSummary {
 
 export interface AuthorizedContext {
   snapshotCapturedAt: string;
-  coverage: Record<'orders' | 'tasks' | 'confirmedBookings' | 'submittedFormEvidence' | 'inventory' | 'resources' | 'lifecycleStages' | 'recoveryReviews' | 'qcSummaries', {
+  coverage: Record<'orders' | 'tasks' | 'confirmedBookings' | 'submittedFormEvidence' | 'inventory' | 'resources' | 'lifecycleStages' | 'recoveryReviews' | 'currentRecoveryEvaluation' | 'qcSummaries', {
     status: 'AVAILABLE' | 'EMPTY' | 'RESTRICTED';
     includedCount: number;
     limit: number;
@@ -138,6 +153,7 @@ export interface AuthorizedContext {
   resources: AuthorizedContextResource[];
   lifecycleStages: AuthorizedContextLifecycleStage[];
   recoveryReviews: AuthorizedContextRecoveryReview[];
+  currentRecoveryEvaluation: AuthorizedContextRecoveryEvaluation | null;
   qcSummaries: AuthorizedContextQcSummary[];
   disruptions: AuthorizedContextDisruption[];
   evidenceIndex: string[]; // Serialized valid IDs, order numbers, part numbers, machine codes
@@ -514,6 +530,48 @@ export async function buildAuthorizedContext(
     });
   }
 
+  let currentRecoveryEvaluation: AuthorizedContextRecoveryEvaluation | null = null;
+  if (scope?.evaluateRecovery && canReadRecoveryReviews && scope.orderId && orders.length === 1) {
+    const activeInstances = await prisma.workflowInstance.findMany({
+      where: { workspaceId, orderId: scope.orderId, status: 'ACTIVE' },
+      select: { id: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 2,
+    });
+    const evaluatedAt = new Date().toISOString();
+    if (activeInstances.length !== 1) {
+      currentRecoveryEvaluation = {
+        orderNumber: orders[0].orderNumber,
+        status: activeInstances.length ? 'MULTIPLE_ACTIVE_JOBS' : 'NO_ACTIVE_JOB',
+        projectedEndAt: null, evaluatedAt, taskCount: 0, scheduledTaskCount: 0,
+        blockers: [activeInstances.length ? 'Select one active production job in Planning before evaluating capacity.' : 'No active production job is available for a schedule preview.'],
+        readOnly: true, applied: false,
+      };
+    } else {
+      try {
+        const schedule = await new ScheduleProposalService(prisma).propose(principal, {
+          orderId: scope.orderId, instanceId: activeInstances[0].id,
+          startHorizon: new Date(Date.now() + 5 * 60_000).toISOString(), horizonDays: 30,
+        });
+        const unscheduled = schedule.tasks.filter(task => task.status !== 'SCHEDULED');
+        currentRecoveryEvaluation = {
+          orderNumber: orders[0].orderNumber, status: schedule.state,
+          projectedEndAt: schedule.projectedEndAt ?? null, evaluatedAt: schedule.evaluatedAt,
+          taskCount: schedule.tasks.length,
+          scheduledTaskCount: schedule.tasks.filter(task => task.status === 'SCHEDULED').length,
+          blockers: [...new Set(unscheduled.flatMap(task => task.reasons.map(reason => `${task.nodeKey}: ${reason}`)))].slice(0, 8),
+          readOnly: true, applied: false,
+        };
+      } catch (error) {
+        if (!(error instanceof BadRequestError)) throw error;
+        currentRecoveryEvaluation = {
+          orderNumber: orders[0].orderNumber, status: 'UNAVAILABLE', projectedEndAt: null,
+          evaluatedAt, taskCount: 0, scheduledTaskCount: 0,
+          blockers: ['The current schedule cannot be evaluated; review the active job in Planning.'],
+          readOnly: true, applied: false,
+        };
+      }
+    }
+  }
+
   // 3. Fetch inventory balances
   const balances = !effectiveCustomerId && principal.permissions.has('inventory.read') ? await prisma.stockBalance.findMany({
     where: {
@@ -634,6 +692,7 @@ export async function buildAuthorizedContext(
     resources: { status: !canReadResources ? 'RESTRICTED' as const : resources.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: resources.length, limit: 20, sampled: machines.length === 10 || technicians.length === 10 },
     lifecycleStages: { status: effectiveCustomerId || !canReadOrders ? 'RESTRICTED' as const : dbLifecycleStages.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: dbLifecycleStages.length, limit: 60, sampled: dbLifecycleStages.length === 60 },
     recoveryReviews: { status: !canReadRecoveryReviews ? 'RESTRICTED' as const : recoveryReviews.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: recoveryReviews.length, limit: 20, sampled: pendingRecoveryRows.length === 20 },
+    currentRecoveryEvaluation: { status: !canReadRecoveryReviews ? 'RESTRICTED' as const : currentRecoveryEvaluation ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: Number(Boolean(currentRecoveryEvaluation)), limit: 1, sampled: false },
     qcSummaries: { status: !canReadQc ? 'RESTRICTED' as const : qcSummaries.length ? 'AVAILABLE' as const : 'EMPTY' as const, includedCount: qcSummaries.length, limit: 100, sampled: qcInspections.length === 100 },
   };
 
@@ -652,6 +711,7 @@ export async function buildAuthorizedContext(
     resources,
     lifecycleStages,
     recoveryReviews,
+    currentRecoveryEvaluation,
     qcSummaries,
     coverage,
     evidenceIndex: [...evidenceSet].sort(),
@@ -674,6 +734,7 @@ export async function buildAuthorizedContext(
     resources,
     lifecycleStages,
     recoveryReviews,
+    currentRecoveryEvaluation,
     qcSummaries,
     disruptions,
     evidenceIndex: Array.from(evidenceSet),

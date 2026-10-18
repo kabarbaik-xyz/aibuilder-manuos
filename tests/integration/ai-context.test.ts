@@ -385,6 +385,13 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
       orderNumber: order.data.orderNumber, state: 'PENDING_APPROVAL', taskCount: 1,
       projectedEndAt: '2026-12-20T09:00:00.000Z', mustRevalidateBeforeApply: true,
     }));
+    const bookingCountBeforeFreshPreview = await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId } });
+    const freshRecoveryContext = await buildAuthorizedContext(alpha.users.planner.principal, fixture.db, { orderId: order.data.id, evaluateRecovery: true });
+    expect(freshRecoveryContext.currentRecoveryEvaluation).toEqual(expect.objectContaining({
+      orderNumber: order.data.orderNumber, readOnly: true, applied: false, taskCount: 1,
+      scheduledTaskCount: expect.any(Number), evaluatedAt: expect.any(String), status: expect.any(String),
+    }));
+    expect(await fixture.db.resourceBooking.count({ where: { workspaceId: alpha.workspaceId, taskId } })).toBe(bookingCountBeforeFreshPreview);
     const recoveryAnswer = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'What is the recovery review status?', { type: 'ORDER', id: order.data.id });
     const recoveryAnswerData = recoveryAnswer.status === 'SUCCESS' ? recoveryAnswer.data : recoveryAnswer.fallbackData;
     expect(recoveryAnswerData?.answer).toContain('awaiting approval');
@@ -395,7 +402,8 @@ describe('I04: Shared Grounded-AI Boundary and Production Brain', () => {
     const staleRecoveryAnswer = await brainService.answerProductionQuestion(alpha.users.planner.principal, 'What recovery options are validated?', { type: 'ORDER', id: order.data.id });
     const staleRecoveryAnswerData = staleRecoveryAnswer.status === 'SUCCESS' ? staleRecoveryAnswer.data : staleRecoveryAnswer.fallbackData;
     expect(staleRecoveryAnswerData?.answer).toMatch(/no current pending schedule review/i);
-    expect(staleRecoveryAnswerData?.answer).toMatch(/alternative recovery strategies are not connected/i);
+    expect(staleRecoveryAnswerData?.answer).toMatch(/fresh finite-capacity preview/i);
+    expect(staleRecoveryAnswerData?.answer).toMatch(/does not change bookings/i);
     await expect(brainService.answerProductionQuestion(alpha.users.customerUser.principal, 'What is blocking this task?', { type: 'TASK', id: taskId })).rejects.toThrow(/not available/i);
   });
 

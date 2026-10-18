@@ -44,8 +44,9 @@ export class ProductionBrainService {
     ]);
 
     const startTime = Date.now();
+    const asksRecovery = /recover|reschedul|schedule review/i.test(question);
     const context = await buildAuthorizedContext(principal, this.prisma, scopedRecord
-      ? scopedRecord.type === 'ORDER' ? { orderId: scopedRecord.id }
+      ? scopedRecord.type === 'ORDER' ? { orderId: scopedRecord.id, evaluateRecovery: asksRecovery }
         : scopedRecord.type === 'ITEM' ? { itemId: scopedRecord.id }
           : { taskId: scopedRecord.id }
       : undefined);
@@ -58,7 +59,7 @@ export class ProductionBrainService {
     }
 
     const model = process.env.GEMINI_FLASH_MODEL || 'gemini-flash-lite-latest';
-    const promptVersion = 'brain-qa-v12-lifecycle-qc-facts';
+    const promptVersion = 'brain-qa-v13-fresh-recovery-preview';
     const cacheKey = `brain:${context.contextHash}:${model}:${promptVersion}:${question.trim().toLowerCase()}`;
 
     // 1. Check scoped cache
@@ -94,6 +95,9 @@ ${(inventoryQuestion ? [] : context.lifecycleStages).map(stage => `  * ${stage.o
 - Pending Recovery Reviews (${inventoryQuestion ? 'omitted: inventory-only question' : context.recoveryReviews.length}):
 ${(inventoryQuestion ? [] : context.recoveryReviews).map(review => `  * ${review.orderNumber}: saved finite-capacity schedule review projects completion ${review.projectedEndAt}; evaluated ${review.evaluatedAt}; ${review.taskCount} task(s); pending human approval. Its saved snapshot matches current order/job/task versions, but capacity, materials and qualifications must be revalidated before apply.`).join('\n')}
 
+- Fresh finite-capacity preview (${inventoryQuestion || !context.currentRecoveryEvaluation ? 'not requested or unavailable' : 1}):
+${!inventoryQuestion && context.currentRecoveryEvaluation ? `  * ${context.currentRecoveryEvaluation.orderNumber}: evaluated ${context.currentRecoveryEvaluation.evaluatedAt}; ${context.currentRecoveryEvaluation.scheduledTaskCount}/${context.currentRecoveryEvaluation.taskCount} open task(s) fit current finite capacity; state ${context.currentRecoveryEvaluation.status}; projected finish ${context.currentRecoveryEvaluation.projectedEndAt ?? 'unavailable'}; blockers ${context.currentRecoveryEvaluation.blockers.join('; ') || 'none recorded'}. This is an ephemeral preview and changes no booking.` : ''}
+
 - Initial finalized QC summaries (${inventoryQuestion ? 'omitted: inventory-only question' : context.qcSummaries.length}; excludes follow-up reinspections to avoid counting the same rework twice):
 ${(inventoryQuestion ? [] : context.qcSummaries).map(qc => `  * ${qc.orderNumber}: ${qc.finalizedInspections} initial inspection(s), ${qc.inspectedQty} inspected, ${qc.passedQty} passed, ${qc.reworkQty} rework, ${qc.scrappedQty} scrapped; disposition(s) ${qc.dispositions.join(', ') || 'not recorded'}; latest finalized ${qc.latestFinalizedAt}.`).join('\n')}
 
@@ -121,6 +125,7 @@ Rules:
 - For QC questions: use only finalized QC summaries and their recorded quantities/dispositions. Do not infer pass rates or treat open inspections as finalized evidence.
 - For blocker questions: identify only blockers explicitly listed on the task or lifecycle stage. Name the recorded owner and expected resolution time when present. Recovery options may be called validated only when a supplied, current proposal explicitly validates them; otherwise explain the blocker and point to its owner without inventing a workaround.
 - A pending Recovery schedule review is a saved proposal, not an approved change or a guarantee of current capacity. State that human approval and live apply-time revalidation are still required; do not describe unavailable alternative strategies as evaluated.
+- A fresh finite-capacity preview is current read-only evidence for the selected order only. It is not a saved approval or booking; direct the planner to review/apply through Planning, which rechecks current records. Never describe the preview as applied.
 - Translate enum values into natural words: IN_PRODUCTION → In production, PARTIALLY_DELIVERED → Partially delivered. Do not print raw status codes, UUIDs, or internal field names.
 - If there is an evidenced issue, finish with one concrete next step. If none is evidenced, do not invent urgency or recommendations. Make missing evidence explicit.
 - State briefly that this covers the accessible sample, not the whole factory. Never present sample counts as workspace totals. Do not claim an item is raw material or finished goods unless context explicitly supports that classification.
@@ -196,6 +201,20 @@ Rules:
     const activeOrders = context.orders.filter((o) => !['DELIVERED', 'CANCELLED', 'DRAFT'].includes(o.status));
     const readableStatus = (status: string) => status.toLowerCase().replaceAll('_', ' ');
     if (/recover|reschedul|schedule review/i.test(q)) {
+      const evaluation = context.currentRecoveryEvaluation;
+      if (evaluation) {
+        const reviews = context.recoveryReviews.filter(review => review.orderNumber === evaluation.orderNumber).slice(0, 2);
+        const reviewStatus = reviews.length
+          ? `### Saved review\n- A saved schedule review is awaiting approval. Its snapshot still matches order and task versions, and a human must approve it. Capacity, materials, and qualifications are revalidated before apply.\n\n`
+          : '### Saved review\n- No current pending schedule review is saved; the evaluation below is a newly generated preview.\n\n';
+        const previewLines = evaluation.status === 'COMPLETE'
+          ? [`- A fresh finite-capacity preview schedules all ${evaluation.taskCount} open task(s).`, `- Projected completion: ${evaluation.projectedEndAt ?? 'not available'}.`]
+          : [`- The preview schedules ${evaluation.scheduledTaskCount} of ${evaluation.taskCount} open task(s); a complete schedule is not currently available.`, ...evaluation.blockers.slice(0, 4).map(blocker => `- ${blocker}`)];
+        return {
+          answer: `${evaluation.orderNumber} has a fresh finite-capacity preview from ${evaluation.evaluatedAt}.\n\n${reviewStatus}### Current preview\n${previewLines.join('\n')}\n\n### Next step\n- This read-only preview does not change bookings. Review and apply the schedule in Planning, where capacity and versions are checked again.`,
+          evidenceRefs: [evaluation.orderNumber], linkToScreen: 'orchestrator',
+        };
+      }
       const reviews = context.recoveryReviews.slice(0, 2);
       return reviews.length ? {
         answer: `A saved schedule review is awaiting approval for ${reviews.map(review => review.orderNumber).join(' and ')}.\n\n### Review status\n${reviews.map(review => `- Projected completion: ${review.projectedEndAt} (${review.taskCount} tasks).`).join('\n')}\n- The saved snapshot still matches order and task versions.\n- A human must approve it, and current capacity, materials, and qualifications are revalidated before apply.\n\nThis covers only the accessible sample; it is not a factory-wide recovery view.`,
