@@ -23,9 +23,9 @@ This document details the configuration, deployment, and rollback procedures for
 
 3. **Artifact Registry Repository:**
    ```bash
-   gcloud artifacts repositories create manuos-repo \
+   gcloud artifacts repositories create <YOUR_REPO_NAME> \
      --repository-format=docker \
-     --location=asia-southeast1 \
+     --location=<YOUR_REGION> \
      --description="Docker repository for ManuOS container images"
    ```
 
@@ -37,7 +37,7 @@ ManuOS requires `GEMINI_API_KEY` strictly on the server side. Never expose this 
 
 1. **Create the Secret in Secret Manager:**
    ```bash
-   echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets create manuos-gemini-key \
+   echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets create <YOUR_GEMINI_SECRET_NAME> \
      --data-file=- \
      --replication-policy="automatic"
    ```
@@ -46,7 +46,7 @@ ManuOS requires `GEMINI_API_KEY` strictly on the server side. Never expose this 
    ```bash
    PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) --format='value(projectNumber)')
 
-   gcloud secrets add-iam-policy-binding manuos-gemini-key \
+   gcloud secrets add-iam-policy-binding <YOUR_GEMINI_SECRET_NAME> \
      --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
      --role="roles/secretmanager.secretAccessor"
    ```
@@ -60,24 +60,24 @@ Build the multi-stage standalone container using Google Cloud Build or local Doc
 ### Option A: Using Google Cloud Build (Recommended)
 ```bash
 gcloud builds submit \
-  --tag asia-southeast1-docker.pkg.dev/$(gcloud config get-value project)/manuos-repo/manuos-web:v1.0.0 .
+  --tag <YOUR_REGION>-docker.pkg.dev/$(gcloud config get-value project)/<YOUR_REPO_NAME>/manuos-web:v1.0.0 .
 ```
 
 ### Option B: Local Docker Build & Push
 ```bash
 # Authenticate Docker to Artifact Registry
-gcloud auth configure-docker asia-southeast1-docker.pkg.dev
+gcloud auth configure-docker <YOUR_REGION>-docker.pkg.dev
 
 # Build image
-docker build -t asia-southeast1-docker.pkg.dev/$(gcloud config get-value project)/manuos-repo/manuos-web:v1.0.0 .
+docker build -t <YOUR_REGION>-docker.pkg.dev/$(gcloud config get-value project)/<YOUR_REPO_NAME>/manuos-web:v1.0.0 .
 
 # Test locally on port 8080
 docker run -p 8080:8080 \
   -e GEMINI_API_KEY="test_key" \
-  asia-southeast1-docker.pkg.dev/$(gcloud config get-value project)/manuos-repo/manuos-web:v1.0.0
+  <YOUR_REGION>-docker.pkg.dev/$(gcloud config get-value project)/<YOUR_REPO_NAME>/manuos-web:v1.0.0
 
 # Push to Artifact Registry
-docker push asia-southeast1-docker.pkg.dev/$(gcloud config get-value project)/manuos-repo/manuos-web:v1.0.0
+docker push <YOUR_REGION>-docker.pkg.dev/$(gcloud config get-value project)/<YOUR_REPO_NAME>/manuos-web:v1.0.0
 ```
 
 ---
@@ -87,9 +87,9 @@ docker push asia-southeast1-docker.pkg.dev/$(gcloud config get-value project)/ma
 Deploy with recommended demo specifications (1 vCPU, 1 GB RAM, min-instances 1 to eliminate cold starts):
 
 ```bash
-gcloud run deploy manuos-service \
-  --image asia-southeast1-docker.pkg.dev/$(gcloud config get-value project)/manuos-repo/manuos-web:v1.0.0 \
-  --region asia-southeast1 \
+gcloud run deploy <YOUR_SERVICE_NAME> \
+  --image <YOUR_REGION>-docker.pkg.dev/$(gcloud config get-value project)/<YOUR_REPO_NAME>/manuos-web:v1.0.0 \
+  --region <YOUR_REGION> \
   --platform managed \
   --allow-unauthenticated \
   --port 8080 \
@@ -98,20 +98,20 @@ gcloud run deploy manuos-service \
   --min-instances 1 \
   --max-instances 5 \
   --set-env-vars NODE_ENV=production,GEMINI_FLASH_MODEL=gemini-2.5-flash \
-  --set-secrets GEMINI_API_KEY=manuos-gemini-key:latest
+  --set-secrets GEMINI_API_KEY=<YOUR_GEMINI_SECRET_NAME>:latest
 ```
 
 ---
 
 ## 5. Verification & Smoke Testing
 
-Once deployment completes, Cloud Run will output a service URL (e.g., `https://manuos-service-xxxx-as.a.run.app`).
+Once deployment completes, Cloud Run will output a service URL (e.g., `https://<YOUR_SERVICE_URL>`).
 
 1. **Verify Health Check Endpoint:**
    ```bash
    curl -s https://<YOUR_SERVICE_URL>/api/health
    # Expected output:
-   # {"status":"ok","timestamp":"2026-11-24T09:00:00Z","service":"manuos-web","version":"1.0.0"}
+   # {"status":"ok","timestamp":"...","service":"manuos-web","version":"1.0.0"}
    ```
 
 2. **Verify AI Grounding Endpoint:**
@@ -131,17 +131,23 @@ Once deployment completes, Cloud Run will output a service URL (e.g., `https://m
 ### Immediate Rollback to Previous Revision
 ```bash
 # List revisions
-gcloud run revisions list --service manuos-service --region asia-southeast1
+gcloud run revisions list --service <YOUR_SERVICE_NAME> --region <YOUR_REGION>
 
 # Route 100% traffic to previous stable revision
-gcloud run services update-traffic manuos-service \
-  --region asia-southeast1 \
+gcloud run services update-traffic <YOUR_SERVICE_NAME> \
+  --region <YOUR_REGION> \
   --to-revisions <PREVIOUS_REVISION_NAME>=100
 ```
 
 ### Scale Down Post-Demo (To Avoid Costs)
 ```bash
-gcloud run services update manuos-service \
-  --region asia-southeast1 \
+gcloud run services update <YOUR_SERVICE_NAME> \
+  --region <YOUR_REGION> \
   --min-instances 0
 ```
+
+---
+
+## Public Prototype
+
+The live demo is available at: **https://manuos-web-111572702355.us-central1.run.app**

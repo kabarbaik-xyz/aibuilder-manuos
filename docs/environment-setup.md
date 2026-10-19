@@ -85,9 +85,9 @@ This document specifies the validated runtime versions, dependencies, provider S
 
 1. **GCP Project & Services:**
    - GCP Project ID (configured during deployment).
-   - Artifact Registry repository: `manuos-repo`.
-   - Cloud Run service: `manuos-web`.
-   - Secret Manager Secret: `GEMINI_API_KEY`.
+   - Artifact Registry repository: `<YOUR_REPO_NAME>`.
+   - Cloud Run service: `<YOUR_SERVICE_NAME>`.
+   - Secret Manager Secret: `<YOUR_GEMINI_SECRET_NAME>`.
 2. **Container Runtime:**
    - Multi-stage Dockerfile using `node:20-alpine`.
    - Standalone output (`output: 'standalone'` in `next.config.ts`).
@@ -96,3 +96,9 @@ This document specifies the validated runtime versions, dependencies, provider S
 3. **Graceful Fallback Mode:**
    - If `GEMINI_API_KEY` is not set or Cloud Run secret is omitted during initial testing, the application runs in complete deterministic fallback mode.
    - All deterministic engines, graph views, and recovery simulations function with clear non-AI badges.
+
+---
+
+## Public Prototype
+
+The live demo is available at: **https://manuos-web-111572702355.us-central1.run.app**
