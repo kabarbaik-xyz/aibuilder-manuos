@@ -33,6 +33,9 @@ dist/
 .env*
 !.env.example
 
+# Cloud Build config (local backup only - do not commit until repo is private)
+cloudbuild.yaml
+
 # Vercel
 .vercel
 
